@@ -4,8 +4,13 @@ import {
   mobileCatalog,
   type GezelRuntimePlugin,
 } from '@bendyline/gezel-capacitor';
-import type { MobileModelInventory, MobileProvider } from '@bendyline/gezel/mobile-providers';
+import type {
+  MobileModelDownload,
+  MobileModelInventory,
+  MobileProvider,
+} from '@bendyline/gezel/mobile-providers';
 import type { AiChatEvent, AiPreferences } from '@bendyline/docblocks/host';
+import type { EmbeddingConnection } from '@bendyline/gezel-app-sdk/browser';
 import { createMobileAi } from '../src/ai/host';
 import { buildReviewRequest } from '../../react/src/Ai/ai-assistant';
 import { WELCOME_DOCUMENT_CONTENT } from '../../react/src/DocBlocksShell/welcome-document';
@@ -19,7 +24,7 @@ const request = {
   temperature: 0.7,
 };
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
-function fixture(initial: Partial<AiPreferences> = {}) {
+function fixture(initial: Partial<AiPreferences> = {}, downloadRetryDelaysMs = [1, 1, 1]) {
   const calls: string[] = [];
   let emit: (value: { requestId: string; delta: string }) => void = () => {};
   let preferences: unknown = { enabled: false, model: null, reviewMode: 'explicit', ...initial };
@@ -97,6 +102,7 @@ function fixture(initial: Partial<AiPreferences> = {}) {
       preferences = value;
     },
     requestTimeoutMs: 40,
+    downloadRetryDelaysMs,
   });
   return {
     ...host,
@@ -496,6 +502,111 @@ describe('explicit mobile model installation', () => {
     if (!result.ok) assert.equal(result.error.code, 'cancelled');
     assert.equal(cancelled, true);
   });
+
+  // Each native attempt saves `step` more bytes, then fails with the next
+  // scripted error; once the errors run out, the download completes.
+  function flakyDownload(f: ReturnType<typeof fixture>, errors: string[], step = 100) {
+    const entry = catalog[0];
+    const source = { ...entry.source, sizeBytes: entry.approxSizeBytes };
+    const id = '11111111-1111-4111-8111-111111111111';
+    const modelId = '22222222-2222-4222-8222-222222222222';
+    let record: MobileModelDownload | undefined;
+    const native = { resumes: 0 };
+    const attempt = (downloadedBytes: number) => {
+      record = { id, source, name: entry.name, downloadedBytes, state: 'downloading' };
+      return { download: record };
+    };
+    f.runtime.resolveModelSource = async () => ({ source });
+    f.runtime.startModelDownload = async () => attempt(0);
+    f.runtime.resumeModelDownload = async (input) => {
+      assert.equal(input.id, id);
+      native.resumes++;
+      return attempt(record!.downloadedBytes);
+    };
+    f.runtime.listModelDownloads = async () => {
+      if (record?.state === 'downloading') {
+        const error = errors.shift();
+        if (error === undefined) {
+          f.models.models.push({
+            id: modelId,
+            name: entry.name,
+            sizeBytes: source.sizeBytes,
+            source,
+          });
+          record = { ...record, state: 'complete', downloadedBytes: source.sizeBytes, modelId };
+        } else
+          record = {
+            ...record,
+            state: 'failed',
+            downloadedBytes: record.downloadedBytes + step,
+            error,
+          };
+      }
+      return { downloads: record ? [record] : [] };
+    };
+    return { entry, native, modelId };
+  }
+  it('resumes an interrupted download until the model is installed', async () => {
+    const f = fixture({ enabled: true });
+    // More interruptions than retries: each one saved bytes, so none exhausts the budget.
+    const { entry, native, modelId } = flakyDownload(f, [
+      'unexpected end of stream',
+      'Software caused connection abort',
+      'Model download failed (HTTP 503)',
+      'The network connection was lost.',
+      'Model transfer ended early. Resume to continue.',
+    ]);
+    const progress: string[] = [];
+    const result = await f.ai.installModel!(entry.id, (event) => progress.push(event.phase)).done;
+    assert.ok(result.ok, JSON.stringify(result));
+    if (result.ok) assert.equal(result.value.id, `llama-cpp:${modelId}`);
+    assert.equal(native.resumes, 5);
+    assert.equal(progress.filter((phase) => phase === 'retrying').length, 5);
+  });
+  it('gives up in plain language when retries save nothing', async () => {
+    const f = fixture({ enabled: true });
+    const { entry, native } = flakyDownload(f, Array(10).fill('unexpected end of stream'), 0);
+    const result = await f.ai.installModel!(entry.id).done;
+    assert.equal(native.resumes, 3);
+    assert.ok(!result.ok);
+    if (!result.ok) {
+      assert.equal(result.error.code, 'model-download-failed');
+      assert.match(result.error.message, /interrupted.*continue where it stopped/);
+      assert.equal(result.error.detail, 'unexpected end of stream');
+    }
+  });
+  for (const [error, message] of [
+    ['Model SHA-256 verification failed. No model was installed.', /damaged/],
+    ['Model download failed (HTTP 404)', /could not be downloaded/],
+    [
+      'Model source changed its resume identity or byte range; remove this download and try again',
+      /could not be downloaded/,
+    ],
+  ] as const) {
+    it(`does not retry a failure resuming would repeat: ${error}`, async () => {
+      const f = fixture({ enabled: true });
+      const { entry, native } = flakyDownload(f, [error]);
+      const result = await f.ai.installModel!(entry.id).done;
+      assert.equal(native.resumes, 0);
+      assert.ok(!result.ok);
+      if (!result.ok) {
+        assert.equal(result.error.code, 'model-download-failed');
+        assert.match(result.error.message, message);
+        assert.equal(result.error.detail, error);
+      }
+    });
+  }
+  it('cancels while waiting to retry without touching the saved download', async () => {
+    const f = fixture({ enabled: true }, [60_000]);
+    const { entry, native } = flakyDownload(f, ['unexpected end of stream']);
+    const handle = f.ai.installModel!(entry.id, (event) => {
+      if (event.phase === 'retrying') handle.cancel();
+    });
+    const result = await handle.done;
+    assert.ok(!result.ok);
+    if (!result.ok) assert.equal(result.error.code, 'cancelled');
+    assert.equal(native.resumes, 0);
+  });
 });
 
 describe('mobile AI answer content', () => {
@@ -566,6 +677,144 @@ describe('mobile AI shared progress', () => {
       events.filter((event) => event.kind === 'done' || event.kind === 'error').length,
       1,
     );
+    await f.ai.setPreferences({ enabled: false });
+  });
+});
+
+describe('mobile knowledge', () => {
+  type Knowledge = NonNullable<EmbeddingConnection['knowledge']>;
+  type Action = Parameters<Knowledge['update']>[0];
+  const passage = {
+    uri: `knowledge://bendyline/regional-pacific-northwest/panama-hotel#chunk=${'0'.repeat(32)}`,
+    title: 'Panama Hotel (Seattle)',
+    text: 'The Panama Hotel opened in 1910.',
+    catalogId: 'regional-pacific-northwest',
+    version: '2026.10.5',
+  };
+  const catalog = {
+    id: 'regional-pacific-northwest',
+    name: 'Pacific Northwest',
+    description: '',
+    version: '2026.10.5',
+    installedVersion: '2026.10.5',
+    enabled: true,
+    updateAvailable: false,
+    downloadBytes: 1,
+    documents: 1,
+    state: 'installed' as const,
+    percent: null,
+    message: null,
+  };
+  function withKnowledge(overrides: Partial<Knowledge> = {}) {
+    const f = fixture({ enabled: true });
+    const updates: Action[] = [];
+    const queries: string[] = [];
+    let stateCalls = 0;
+    const knowledge: Knowledge = {
+      state: async () => {
+        stateCalls++;
+        return {
+          catalogs: [catalog],
+          reranker: { ready: false, downloading: false, message: null },
+          improvement: null,
+        };
+      },
+      update: async (action) => {
+        updates.push(action);
+      },
+      retrieve: async (query) => {
+        queries.push(query.query);
+        return { reranked: false, passages: [passage] };
+      },
+      ...overrides,
+    };
+    f.setLoad(async () => ({
+      ...(await connectEmbeddingRuntime(f.runtime, { pollIntervalMs: 10 })),
+      knowledge,
+    }));
+    return { ...f, updates, queries, stateCalls: () => stateCalls };
+  }
+
+  it('lists catalogs and maps the improvement action to the SDK', async () => {
+    const f = withKnowledge();
+    const state = await f.ai.knowledge.state();
+    assert.ok(state.ok, JSON.stringify(state));
+    assert.deepEqual(state.value, { catalogs: [catalog], improvement: null });
+    assert.deepEqual(await f.ai.knowledge.update({ action: 'improve' }), { ok: true, value: null });
+    assert.deepEqual(await f.ai.knowledge.update({ action: 'install', catalogId: catalog.id }), {
+      ok: true,
+      value: null,
+    });
+    assert.deepEqual(f.updates, [
+      { action: 'prepare-reranker' },
+      { action: 'install', catalogId: catalog.id },
+    ]);
+    await f.ai.setPreferences({ enabled: false });
+  });
+
+  it('reports a refused catalog action as a failed result', async () => {
+    const f = withKnowledge({
+      update: async () => {
+        throw Object.assign(new Error('Better knowledge results are not available'), {
+          code: 'unsupported',
+        });
+      },
+    });
+    const result = await f.ai.knowledge.update({ action: 'improve' });
+    assert.equal(result.ok, false);
+    await f.ai.setPreferences({ enabled: false });
+  });
+
+  it('grounds a request in retrieved passages and names their catalog', async () => {
+    const f = withKnowledge();
+    let routed: Parameters<GezelRuntimePlugin['generate']>[0] | undefined;
+    f.runtime.generate = async (input) => {
+      routed = input;
+      return { text: 'It opened in 1910.', stopReason: 'stop' };
+    };
+    const events: AiChatEvent[] = [];
+    const result = await f.ai.chat(
+      {
+        purpose: 'write',
+        messages: [{ role: 'user', content: 'Tell me about the Panama Hotel.' }],
+        knowledgeQuery: 'Panama Hotel',
+      },
+      (event) => events.push(event),
+    ).done;
+    assert.ok(result.ok, JSON.stringify(result));
+    assert.deepEqual(f.queries, ['Panama Hotel']);
+    assert.ok(routed?.messages.some((message) => message.content.includes(passage.text)));
+    // No catalog listing ran first: the request looks the name up itself.
+    const knowledge = events.find((event) => event.kind === 'knowledge');
+    assert.deepEqual(knowledge?.kind === 'knowledge' && knowledge.knowledge, {
+      outcome: 'used',
+      sources: [{ catalogId: catalog.id, name: 'Pacific Northwest', titles: [passage.title] }],
+      evidence: [{ title: passage.title, catalogId: catalog.id, text: passage.text }],
+    });
+    // The names stay cached for the next request.
+    const calls = f.stateCalls();
+    assert.ok((await f.ai.chat(request, () => {}).done).ok);
+    assert.equal(f.stateCalls(), calls);
+    await f.ai.setPreferences({ enabled: false });
+  });
+
+  it('answers without passages when retrieval fails', async () => {
+    const f = withKnowledge({
+      retrieve: async () => {
+        throw new Error('The knowledge worker stopped');
+      },
+    });
+    let routed: Parameters<GezelRuntimePlugin['generate']>[0] | undefined;
+    f.runtime.generate = async (input) => {
+      routed = input;
+      return { text: 'Hello!', stopReason: 'stop' };
+    };
+    const events: AiChatEvent[] = [];
+    const result = await f.ai.chat(request, (event) => events.push(event)).done;
+    assert.ok(result.ok, JSON.stringify(result));
+    assert.equal(routed?.messages.at(-1)?.content, 'Hello');
+    const knowledge = events.find((event) => event.kind === 'knowledge');
+    assert.ok(knowledge?.kind === 'knowledge' && knowledge.knowledge.outcome !== 'used');
     await f.ai.setPreferences({ enabled: false });
   });
 });

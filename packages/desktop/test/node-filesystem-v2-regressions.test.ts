@@ -1,9 +1,15 @@
 import { expect } from 'chai';
+import type { BigIntStats } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { FsError, parseWorkspacePath } from '@bendyline/docblocks/filesystem';
-import { NodeWorkspaceFileSystemV2 } from '../main/node-workspace-filesystem-v2.js';
+import {
+  NodeWorkspaceFileSystemV2,
+  createConcurrencyLimit,
+  isOnlineOnlyFile,
+  type NodeWorkspaceReadableFile,
+} from '../main/node-workspace-filesystem-v2.js';
 import { getWorkspaceRoots, type WorkspaceRoots } from '../main/workspace-roots.js';
 
 const p = parseWorkspacePath;
@@ -172,5 +178,211 @@ describe('native filesystem publication and browsing regressions', () => {
       .catch((error: unknown) => error);
     expect((failure as FsError).code).to.equal('conflict');
     expect(await fs.readFile(path.join(rootPath, 'nested', 'note.md'), 'utf8')).to.equal('after');
+  });
+
+  describe('online-only cloud placeholders', () => {
+    const text = (read: { readonly data: ArrayBuffer } | null) =>
+      new TextDecoder().decode(read?.data);
+
+    async function nodeHandle(absolute: string): Promise<NodeWorkspaceReadableFile> {
+      const handle = await fs.open(absolute, 'r');
+      return {
+        stat: () => handle.stat({ bigint: true }),
+        readFile: () => handle.readFile(),
+        close: () => handle.close(),
+      };
+    }
+
+    /** Model `names` as dataless until a read downloads them, gated by `release`. */
+    async function cloudWorkspace(names: readonly string[]) {
+      const online = new Set<bigint>();
+      for (const name of names) {
+        await fs.writeFile(path.join(rootPath, name), `${name} bytes`);
+        online.add((await fs.stat(path.join(rootPath, name), { bigint: true })).ino);
+      }
+      const opened: string[] = [];
+      const downloading = new Set<string>();
+      const gates = new Map<string, () => void>();
+      const release = (name: string) => gates.get(name)?.();
+      const options = {
+        isOnlineOnly: (stat: BigIntStats) => online.has(stat.ino),
+        openReadableFile: async (absolute: string): Promise<NodeWorkspaceReadableFile> => {
+          const name = path.basename(absolute);
+          opened.push(name);
+          const handle = await nodeHandle(absolute);
+          const { ino } = await handle.stat();
+          if (!online.has(ino)) return handle;
+          return {
+            ...handle,
+            readFile: async () => {
+              downloading.add(name);
+              await new Promise<void>((resolve) => gates.set(name, resolve));
+              downloading.delete(name);
+              online.delete(ino);
+              return handle.readFile();
+            },
+          };
+        },
+      };
+      return { options, online, opened, downloading, release };
+    }
+
+    async function until(predicate: () => boolean, label: string): Promise<void> {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        if (predicate()) return;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      throw new Error(`Timed out waiting for ${label}.`);
+    }
+
+    it('recognizes macOS dataless files by their missing blocks', () => {
+      const stat = (size: bigint, blocks: bigint, file = true) =>
+        ({ isFile: () => file, size, blocks }) as unknown as BigIntStats;
+      expect(isOnlineOnlyFile(stat(10n, 0n), 'darwin')).to.equal(true);
+      expect(isOnlineOnlyFile(stat(10n, 8n), 'darwin')).to.equal(false);
+      expect(isOnlineOnlyFile(stat(0n, 0n), 'darwin')).to.equal(false);
+      expect(isOnlineOnlyFile(stat(10n, 0n, false), 'darwin')).to.equal(false);
+      expect(isOnlineOnlyFile(stat(10n, 0n), 'win32')).to.equal(false);
+      expect(isOnlineOnlyFile(stat(10n, 0n), 'linux')).to.equal(false);
+    });
+
+    it('lists a placeholder without downloading it and keeps its version after eviction', async () => {
+      await fs.writeFile(path.join(rootPath, 'local.md'), 'local');
+      const cloud = await cloudWorkspace(['cloud.webm']);
+      provider = new NodeWorkspaceFileSystemV2(id, 'Cloud', rootPath, roots, cloud.options);
+
+      const listed = await provider.readDirectory(p(''));
+      const placeholder = listed.find((entry) => entry.name === 'cloud.webm');
+      expect(placeholder?.kind === 'file' && placeholder.onlineOnly).to.equal(true);
+      expect(listed.find((entry) => entry.name === 'local.md')).to.not.have.property('onlineOnly');
+      expect(cloud.opened).to.deep.equal(['local.md']);
+
+      const reading = provider.readFile(p('cloud.webm'));
+      await until(() => cloud.downloading.has('cloud.webm'), 'download');
+      cloud.release('cloud.webm');
+      const read = await reading;
+      expect(text(read)).to.equal('cloud.webm bytes');
+      expect(read?.entry).to.not.have.property('onlineOnly');
+      expect(read?.entry.version).to.not.equal(placeholder?.version);
+
+      // Evicted again: listed online-only, but with the content version it was read at.
+      cloud.online.add((await fs.stat(path.join(rootPath, 'cloud.webm'), { bigint: true })).ino);
+      const [evicted] = (await provider.readDirectory(p(''))).filter(
+        (entry) => entry.name === 'cloud.webm',
+      );
+      expect(evicted?.kind === 'file' && evicted.onlineOnly).to.equal(true);
+      expect(evicted?.version).to.equal(read?.entry.version);
+    });
+
+    it('downloads a placeholder without holding up the rest of the workspace', async () => {
+      await fs.writeFile(path.join(rootPath, 'acy.md'), '# acy');
+      const cloud = await cloudWorkspace(['camera.webm']);
+      provider = new NodeWorkspaceFileSystemV2(id, 'Cloud', rootPath, roots, cloud.options);
+
+      const video = provider.readFile(p('camera.webm'));
+      await until(() => cloud.downloading.has('camera.webm'), 'download');
+      // Opening a document and listing its folder finish mid-download.
+      expect(text(await provider.readFile(p('acy.md')))).to.equal('# acy');
+      expect((await provider.readDirectory(p(''))).map((entry) => entry.name)).to.include(
+        'camera.webm',
+      );
+      expect(cloud.downloading.has('camera.webm')).to.equal(true);
+
+      cloud.release('camera.webm');
+      expect(text(await video)).to.equal('camera.webm bytes');
+    });
+
+    it('answers a stat without downloading, so the size check before a read never holds the workspace', async () => {
+      await fs.writeFile(path.join(rootPath, 'acy.md'), '# acy');
+      const cloud = await cloudWorkspace(['camera.webm']);
+      provider = new NodeWorkspaceFileSystemV2(id, 'Cloud', rootPath, roots, cloud.options);
+
+      // The renderer stats a file to choose an inline or a chunked read.
+      const stat = await provider.stat(p('camera.webm'));
+      expect(stat?.kind === 'file' && stat.onlineOnly).to.equal(true);
+      expect(stat?.kind === 'file' && stat.size).to.equal('camera.webm bytes'.length);
+      expect(cloud.opened).to.deep.equal([]);
+
+      const video = provider.readFile(p('camera.webm'));
+      await until(() => cloud.downloading.has('camera.webm'), 'download');
+      expect((await provider.stat(p('camera.webm')))?.kind).to.equal('file');
+      expect(text(await provider.readFile(p('acy.md')))).to.equal('# acy');
+
+      cloud.release('camera.webm');
+      expect(text(await video)).to.equal('camera.webm bytes');
+    });
+
+    it('removes and moves a placeholder at the version a stat or listing gave, without downloading it', async () => {
+      const cloud = await cloudWorkspace(['old.webm', 'gone.webm']);
+      provider = new NodeWorkspaceFileSystemV2(id, 'Cloud', rootPath, roots, cloud.options);
+
+      const old = await provider.stat(p('old.webm'));
+      await provider.move(p('old.webm'), p('new.webm'), { expectedVersion: old?.version });
+      const gone = (await provider.readDirectory(p(''))).find(
+        (entry) => entry.name === 'gone.webm',
+      );
+      await provider.remove(p('gone.webm'), { missing: 'error', expectedVersion: gone?.version });
+
+      expect((await fs.readdir(rootPath)).sort()).to.deep.equal(['new.webm']);
+      expect(cloud.opened).to.deep.equal([]);
+    });
+
+    it('downloads at most two large placeholders at a time, and never queues a document behind them', async () => {
+      const videos = ['one.webm', 'two.webm', 'three.webm'];
+      const videoBytes = 9 * 1024 * 1024;
+      const cloud = await cloudWorkspace([...videos, 'acy.md', 'figure.png']);
+      for (const name of videos) await fs.truncate(path.join(rootPath, name), videoBytes);
+      provider = new NodeWorkspaceFileSystemV2(id, 'Cloud', rootPath, roots, cloud.options);
+
+      const reads = videos.map((name) => provider!.readFile(p(name)));
+      await until(() => cloud.downloading.size === 2, 'two video downloads');
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(cloud.downloading.size).to.equal(2);
+      const queued = videos.find((name) => !cloud.downloading.has(name))!;
+
+      const document = provider.readFile(p('acy.md'));
+      const image = provider.readFile(p('figure.png'));
+      await until(
+        () => cloud.downloading.has('acy.md') && cloud.downloading.has('figure.png'),
+        'document and image downloads',
+      );
+      cloud.release('acy.md');
+      cloud.release('figure.png');
+      expect(text(await document)).to.equal('acy.md bytes');
+      expect(text(await image)).to.equal('figure.png bytes');
+      expect(cloud.downloading.has(queued)).to.equal(false);
+
+      for (const name of videos.filter((video) => video !== queued)) cloud.release(name);
+      await until(() => cloud.downloading.has(queued), 'queued video download');
+      cloud.release(queued);
+      expect((await Promise.all(reads)).map((read) => read?.data.byteLength)).to.deep.equal(
+        videos.map(() => videoBytes),
+      );
+    });
+
+    it('starts urgent queued downloads first, newest first', async () => {
+      const limit = createConcurrencyLimit(1);
+      const started: string[] = [];
+      const gates = new Map<string, () => void>();
+      const run = (name: string, urgent = false) =>
+        limit(async () => {
+          started.push(name);
+          await new Promise<void>((resolve) => gates.set(name, resolve));
+        }, urgent);
+
+      const runs = [
+        run('first'),
+        run('video'),
+        run('image'),
+        run('acy.md', true),
+        run('inotes.md', true),
+      ];
+      for (let count = 1; count <= runs.length; count += 1) {
+        await until(() => started.length === count, `task ${count}`);
+        gates.get(started[count - 1])?.();
+      }
+      await Promise.all(runs);
+      expect(started).to.deep.equal(['first', 'inotes.md', 'acy.md', 'video', 'image']);
+    });
   });
 });

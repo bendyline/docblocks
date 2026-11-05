@@ -4,6 +4,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { openInitializedSite } from './helpers/site.js';
+import { showWriteView } from './helpers/toolbar.js';
 
 /**
  * Accessibility audits using axe-core against the DocBlocks site shell.
@@ -35,7 +36,7 @@ for (const theme of ['Light', 'Dark']) {
     page,
   }) => {
     await openInitializedSite(page);
-    await page.getByRole('tab', { name: 'Write', exact: true }).click();
+    await showWriteView(page);
     const heading = page.getByRole('button', { name: 'Heading 2', exact: true });
     await heading.click();
     await expect(heading).toHaveAttribute('aria-pressed', 'true');
@@ -72,20 +73,25 @@ for (const theme of ['Light', 'Dark']) {
         hovered.violations,
         `${theme} / ${accent} active hover: ${formatViolations(hovered.violations)}`,
       ).toEqual([]);
-      await page.getByRole('button', { name: 'Choose Use mode', exact: true }).click();
-      // Measure the settled menu, not the partially transparent entrance frame.
-      await page.locator('.squisq-use-mode-menu').evaluate(async (element) => {
-        await Promise.all(element.getAnimations({ subtree: true }).map((entry) => entry.finished));
-      });
-      const menuScan = await new AxeBuilder({ page })
-        .include('.squisq-use-mode-menu')
-        .withRules(['color-contrast'])
-        .analyze();
-      expect(
-        menuScan.violations,
-        `${theme} / ${accent} mode menu: ${formatViolations(menuScan.violations)}`,
-      ).toEqual([]);
-      await page.keyboard.press('Escape');
+      for (const menu of ['Write mode', 'Use mode']) {
+        await page.getByRole('button', { name: `Choose ${menu}`, exact: true }).click();
+        // Measure the settled menu, not the partially transparent entrance frame.
+        await page.locator('.squisq-view-mode-menu').evaluate(async (element) => {
+          await Promise.all(
+            element.getAnimations({ subtree: true }).map((entry) => entry.finished),
+          );
+        });
+        const menuScan = await new AxeBuilder({ page })
+          .include('.squisq-view-mode-menu')
+          .withRules(['color-contrast'])
+          .analyze();
+        expect(
+          menuScan.violations,
+          `${theme} / ${accent} ${menu} menu: ${formatViolations(menuScan.violations)}`,
+        ).toEqual([]);
+        await page.keyboard.press('Escape');
+        await expect(page.locator('.squisq-view-mode-menu')).toHaveCount(0);
+      }
     }
   });
 }

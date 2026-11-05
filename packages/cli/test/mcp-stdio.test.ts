@@ -303,10 +303,24 @@ describe('MCP CLI stdio transport', function () {
       code: 'conflict',
       stage: 'materialize',
       format: null,
-      hint: null,
       retryable: false,
     });
     expect(parsedError.error.message).to.include('already exists');
+    expect(parsedError.error.hint).to.include('Save to a new path with ifExists "error"');
+
+    const nothingToReplace = await callTool(cli.client, 'save_artifact', {
+      artifactUri: converted.artifact.uri,
+      destination: {
+        rootId: writableRoot.id,
+        path: 'not-saved-yet.md',
+        ifExists: 'replace',
+        expectedSha256: converted.artifact.sha256,
+      },
+    });
+    expect(nothingToReplace.isError).to.equal(true);
+    const replaceError = parseMcpErrorResult(nothingToReplace.structuredContent);
+    expect(replaceError?.error).to.include({ code: 'conflict', retryable: false });
+    expect(replaceError?.error.hint).to.include('Save again with ifExists "error"');
     expect(JSON.stringify(parsedError)).not.to.include(writeRoot);
   });
 

@@ -85,6 +85,16 @@ describe('opening saved native exports', () => {
     expect(opened).to.deep.equal([]);
   });
 
+  it('opens a saved export after the OS changes only its metadata', async () => {
+    // macOS rewrites xattrs on Desktop/Documents files after a save; chmod is
+    // a portable stand-in that moves ctime without touching bytes or mtime.
+    const grant = await saved('report.docx');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await fs.chmod(grant.file, 0o600);
+    await openSavedExport(owner, documentKey, grant.grantId, actions);
+    expect(opened).to.deep.equal(['default:report.docx']);
+  });
+
   it('rejects files modified or deleted after saving', async () => {
     const grant = await saved('report.pdf');
     await fs.writeFile(grant.file, 'changed file');

@@ -15,6 +15,9 @@ import {
   parseAiImageEvent,
   parseAiImageInstallEvent,
   parseAiImageModelList,
+  parseAiImageModel,
+  parseAiImageStyle,
+  parseAiImageStyleList,
   parseAiImagePreferences,
   parseAiImagePreferencesPatch,
   parseAiImageRequest,
@@ -23,7 +26,8 @@ import type {
   AiError,
   AiImageAccess,
   AiImageEvent,
-  AiImageModel,
+  AiImageInstallHandle,
+  AiProgress,
   AiImageResult,
   AiImagesAPI,
   AiResult,
@@ -74,6 +78,56 @@ export function createAiImagesApi(
   ipc: AiImagesIpc,
   mintId: (prefix: string) => string,
 ): AiImagesAPI {
+  function install<T>(
+    id: string,
+    onProgress: ((progress: AiProgress) => void) | undefined,
+    parse: (value: unknown) => T | null,
+    channel: string,
+  ): AiImageInstallHandle<T> {
+    const requestId = mintId(channel === 'install' ? 'ai-image-model' : 'ai-image-style');
+    let finished = false;
+    let settle: (value: AiResult<T>) => void = () => undefined;
+    const done = new Promise<AiResult<T>>((resolve) => {
+      settle = resolve;
+    });
+    const finish = (value: AiResult<T>) => {
+      if (finished) return;
+      finished = true;
+      ipc.removeListener(`ai:images:${channel}:event`, listener);
+      settle(value);
+    };
+    const listener: IpcListener = (_event, payload) => {
+      if (finished) return;
+      const raw = streamPayload(payload, requestId);
+      if (raw === undefined) return;
+      const event = parseAiImageInstallEvent(raw, parse);
+      if (!event) {
+        void ipc.invoke(`ai:images:${channel}:cancel`, requestId).catch(() => undefined);
+        finish({ ok: false, error: failure(UNREADABLE) });
+        return;
+      }
+      if (event.kind === 'progress') onProgress?.(event.progress);
+      else if (event.kind === 'done') finish({ ok: true, value: event.model });
+      else finish({ ok: false, error: event.error });
+    };
+    if (!isAiImageModelId(id)) {
+      finish({ ok: false, error: failure('Invalid image model.') });
+    } else {
+      ipc.on(`ai:images:${channel}:event`, listener);
+      ipc.invoke(`ai:images:${channel}:start`, requestId, id).catch((cause: unknown) => {
+        finish({ ok: false, error: failure('DocBlocks could not start the download.', cause) });
+      });
+    }
+    return {
+      done,
+      cancel: () => {
+        if (!finished) {
+          void ipc.invoke(`ai:images:${channel}:cancel`, requestId).catch(() => undefined);
+        }
+      },
+    };
+  }
+
   const unavailable: AiImageAccess = {
     kind: 'unavailable',
     reason: 'not-connected',
@@ -99,6 +153,16 @@ export function createAiImagesApi(
     async models() {
       return result(await ipc.invoke('ai:images:models'), parseAiImageModelList);
     },
+    async styles() {
+      return result(await ipc.invoke('ai:images:styles'), parseAiImageStyleList);
+    },
+    async removeStyle(id) {
+      if (!isAiImageModelId(id)) return { ok: false, error: failure('Invalid image style.') };
+      const removed = result(await ipc.invoke('ai:images:removeStyle', id), (value) =>
+        value === null ? true : null,
+      );
+      return removed.ok ? { ok: true, value: null } : removed;
+    },
     async removeModel(id) {
       if (!isAiImageModelId(id)) return { ok: false, error: failure('Invalid image model.') };
       const removed = result(await ipc.invoke('ai:images:remove', id), (value) =>
@@ -120,50 +184,8 @@ export function createAiImagesApi(
       if (!preferences) throw new Error(UNREADABLE);
       return preferences;
     },
-    installModel(id, onProgress) {
-      const requestId = mintId('ai-image-model');
-      let finished = false;
-      let settle: (value: AiResult<AiImageModel>) => void = () => undefined;
-      const done = new Promise<AiResult<AiImageModel>>((resolve) => {
-        settle = resolve;
-      });
-      const finish = (value: AiResult<AiImageModel>) => {
-        if (finished) return;
-        finished = true;
-        ipc.removeListener('ai:images:install:event', listener);
-        settle(value);
-      };
-      const listener: IpcListener = (_event, payload) => {
-        if (finished) return;
-        const raw = streamPayload(payload, requestId);
-        if (raw === undefined) return;
-        const event = parseAiImageInstallEvent(raw);
-        if (!event) {
-          void ipc.invoke('ai:images:install:cancel', requestId).catch(() => undefined);
-          finish({ ok: false, error: failure(UNREADABLE) });
-          return;
-        }
-        if (event.kind === 'progress') onProgress?.(event.progress);
-        else if (event.kind === 'done') finish({ ok: true, value: event.model });
-        else finish({ ok: false, error: event.error });
-      };
-      if (!isAiImageModelId(id)) {
-        finish({ ok: false, error: failure('Invalid image model.') });
-      } else {
-        ipc.on('ai:images:install:event', listener);
-        ipc.invoke('ai:images:install:start', requestId, id).catch((cause: unknown) => {
-          finish({ ok: false, error: failure('DocBlocks could not start the download.', cause) });
-        });
-      }
-      return {
-        done,
-        cancel: () => {
-          if (!finished) {
-            void ipc.invoke('ai:images:install:cancel', requestId).catch(() => undefined);
-          }
-        },
-      };
-    },
+    installModel: (id, onProgress) => install(id, onProgress, parseAiImageModel, 'install'),
+    installStyle: (id, onProgress) => install(id, onProgress, parseAiImageStyle, 'install-style'),
     generate(value, onEvent) {
       const requestId = mintId('ai-image');
       let finished = false;

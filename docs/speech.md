@@ -159,7 +159,10 @@ file, retry without redownload, and malformed manifests.
   sentence; fenced code is skipped — and streams them into a progressive Web
   Audio player using Gezel's auto-play rule.
 - **Settings → Speech** downloads, updates, removes and chooses models, picks the voice
-  and speed, and previews the voice.
+  and speed, and previews the voice. Model downloads continue while Settings is
+  closed; reopening restores progress, cancellation and any download failure.
+  The voice preview still stops when Settings closes. Downloads are scoped to
+  the app window, so closing or reloading that window cancels them.
 - Native menu: Edit → **Dictate in DocBlocks** / **Read Aloud**
   (`edit:toggleDictation`, `edit:readAloud`), named apart from macOS's own
   "Start Dictation…".

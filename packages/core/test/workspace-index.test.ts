@@ -302,6 +302,39 @@ describe('workspace index', () => {
     index.dispose();
   });
 
+  it('indexes online-only documents by name without downloading them', async () => {
+    const provider = await seed({ 'local.md': '# Local\n', 'cloud.md': '# Cloud\n' });
+    const probe = spy(provider, { watch: false });
+    let cloudOnline = true;
+    const flag = (entry: FileSystemEntrySnapshot): FileSystemEntrySnapshot =>
+      cloudOnline && entry.kind === 'file' && entry.path === 'cloud.md'
+        ? { ...entry, onlineOnly: true }
+        : entry;
+    const index = createIndex({
+      ...probe.source,
+      stat: async (path) => {
+        const entry = await probe.source.stat(path);
+        return entry && flag(entry);
+      },
+      readDirectory: async (path) => (await probe.source.readDirectory(path)).map(flag),
+    });
+    index.start();
+    await waitFor(settled(index), 'ready');
+
+    expect(probe.reads).to.deep.equal(['local.md']);
+    expect(index.getDocument('cloud.md')?.issue).to.equal('online-only');
+    expect(index.getDocument('cloud.md')?.title).to.equal('cloud');
+    expect(index.getStatus().pendingCount).to.equal(0);
+
+    // Once the file is on this device, the next listing reads it.
+    cloudOnline = false;
+    probe.reads.length = 0;
+    index.refresh();
+    await waitFor(() => index.getDocument('cloud.md')?.title === 'Cloud', 'download');
+    expect(probe.reads).to.deep.equal(['cloud.md']);
+    index.dispose();
+  });
+
   it('stops issuing provider calls once disposed mid-listing', async () => {
     const provider = await seed({ 'a/one.md': '# One\n', 'b/two.md': '# Two\n' });
     let release!: () => void;

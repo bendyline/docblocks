@@ -271,16 +271,26 @@ export class McpFileAuthority {
       const parentIdentity = await readMaterializationParentIdentity(target, this.writeRoots);
       const current = await lstat(target).catch(() => null);
       if (current?.isSymbolicLink()) throw new Error('MCP output cannot replace a symbolic link');
-      if (ifExists === 'error' && current) throw new Error('MCP output already exists');
+      if (ifExists === 'error' && current) {
+        throw destinationConflict('MCP output already exists', ALREADY_EXISTS_HINT);
+      }
       if (expectedSha256) {
-        if (!current?.isFile()) throw new Error('MCP output hash precondition failed');
+        if (!current) {
+          throw destinationConflict(
+            'MCP output hash precondition failed: nothing exists at the destination',
+            NOTHING_TO_REPLACE_HINT,
+          );
+        }
+        if (!current.isFile()) throw new Error('MCP output hash precondition failed');
         const actual = await hashFileBounded(
           target,
           this.maxInputFileBytes,
           signal,
           this.dependencies.afterMaterializationHashChunk,
         );
-        if (actual !== expectedSha256) throw new Error('MCP output hash precondition failed');
+        if (actual !== expectedSha256) {
+          throw destinationConflict('MCP output hash precondition failed', STALE_HASH_HINT);
+        }
       }
 
       const temporary = path.join(
@@ -366,7 +376,9 @@ export class McpFileAuthority {
       return;
     } catch (error: unknown) {
       // A genuinely occupied target must refuse, never fall back.
-      if (isNodeErrorCode(error, 'EEXIST')) throw new Error('MCP output already exists');
+      if (isNodeErrorCode(error, 'EEXIST')) {
+        throw destinationConflict('MCP output already exists', ALREADY_EXISTS_HINT);
+      }
       if (!isLinkUnsupportedError(error)) throw error;
     }
 
@@ -374,7 +386,9 @@ export class McpFileAuthority {
     try {
       handle = await open(target, 'wx');
     } catch (error: unknown) {
-      if (isNodeErrorCode(error, 'EEXIST')) throw new Error('MCP output already exists');
+      if (isNodeErrorCode(error, 'EEXIST')) {
+        throw destinationConflict('MCP output already exists', ALREADY_EXISTS_HINT);
+      }
       throw error;
     }
     try {
@@ -649,4 +663,24 @@ async function withMaterializationLock<T>(target: string, operation: () => Promi
 
 function authorityError(message: string, hint: string): Error & { code: string; hint: string } {
   return Object.assign(new Error(message), { code: 'unauthorized-path', hint });
+}
+
+/*
+ * A destination refusal an agent can correct names the call that works. With
+ * a bare "hash precondition failed", Qwen 3.5 9B sent the new artifact's own
+ * SHA-256 with ifExists "replace" for a file that did not exist yet, 17 times
+ * in one turn (Gezel strategy screen, 2026-11-04).
+ */
+const ALREADY_EXISTS_HINT =
+  'A file is already at this path. Save to a new path with ifExists "error", or replace it with ifExists "replace" and expectedSha256 set to the SHA-256 of the file now there (the sha256 returned when it was saved).';
+const NOTHING_TO_REPLACE_HINT =
+  'Nothing is at this path yet, so there is nothing to replace. Save again with ifExists "error" and no expectedSha256.';
+const STALE_HASH_HINT =
+  'expectedSha256 must be the SHA-256 of the file now at this path (the sha256 returned when it was saved), not of the artifact being saved. To keep both, save to a new path with ifExists "error".';
+
+function destinationConflict(
+  message: string,
+  hint: string,
+): Error & { code: string; hint: string } {
+  return Object.assign(new Error(message), { code: 'conflict', hint });
 }

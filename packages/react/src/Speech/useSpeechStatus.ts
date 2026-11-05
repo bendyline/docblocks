@@ -18,7 +18,7 @@ export function useSpeechStatus(speech: DocBlocksHostSpeechAPI): SpeechStatus | 
         // people there to fix it.
         const readiness = {
           state: 'unavailable' as const,
-          reason: 'DocBlocks could not check speech on this computer.',
+          reason: 'DocBlocks could not check speech on this device.',
         };
         if (live) setStatus((current) => current ?? { stt: readiness, tts: readiness });
       },

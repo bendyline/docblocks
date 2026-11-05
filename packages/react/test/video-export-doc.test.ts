@@ -13,6 +13,7 @@ import {
 import assert from 'node:assert/strict';
 import type { Doc } from '@bendyline/squisq/schemas';
 
+import { PresentationInvalidError } from '../src/Export/export-errors.js';
 import { buildVideoExportDoc, persistedTransformStyle } from '../src/Export/video-export-doc.js';
 
 // Trimmed from the document that exposed the bug: an untemplated `##` section
@@ -92,7 +93,11 @@ describe('video export document', () => {
       plan.beats.map((beat) => beat.id),
     );
     expect(exported.audio.segments).to.deep.equal([]);
-    await assert.rejects(buildVideoExportDoc(source + '\n\nChanged.'), /text has changed/);
+    await assert.rejects(
+      buildVideoExportDoc(source + '\n\nChanged.'),
+      (error: unknown) =>
+        error instanceof PresentationInvalidError && /text has changed/.test(error.message),
+    );
     await assert.rejects(
       buildVideoExportDoc(
         source.replace('# An idea', '{[audio src=take.webm anchor=document]}\n\n# An idea'),

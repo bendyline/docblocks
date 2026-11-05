@@ -258,11 +258,14 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'generate',
     'getPreferences',
     'installModel',
+    'installStyle',
     'models',
     'onAccess',
     'removeModel',
+    'removeStyle',
     'requestAccess',
     'setPreferences',
+    'styles',
   ]);
   // Both engines are present: the fixture runs the source app against the fake
   // whisper-server and narration utility.

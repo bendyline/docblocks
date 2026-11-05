@@ -1,4 +1,5 @@
 import { expect, test } from './helpers/test.js';
+import { showWriteView } from './helpers/toolbar.js';
 
 test.describe('mobile web-editor ship readiness', () => {
   test.use({ viewport: { width: 390, height: 844 } });
@@ -29,8 +30,7 @@ test.describe('mobile web-editor ship readiness', () => {
     const exportAndShare = page.getByRole('button', { name: 'Export and share' });
     await expect(exportAndShare).toBeVisible({ timeout: 20_000 });
 
-    await page.getByRole('tab', { name: 'Write' }).click();
-    await expect(page.getByRole('tab', { name: 'Write' })).toHaveAttribute('aria-selected', 'true');
+    await showWriteView(page);
 
     const clippedControls = await page.locator('.squisq-toolbar button').evaluateAll((buttons) =>
       buttons

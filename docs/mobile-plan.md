@@ -31,6 +31,13 @@ The verified fix is installed in the regular **DocBlocks 2.6.2, build 4** app an
 
 Android no longer ships Gemini Nano. ML Kit's GenAI terms bar apps likely to be used by people under 18 and prohibit production use of Preview services, and the SDK reports usage metrics to Google. The app's Gradle build excludes `com.google.mlkit`, which also drops Play Services, Firebase encoders, Guava and Google's datatransport from the release graph; the mobile host hides the provider Gezel still reports as unavailable. On an arm64 API 35 emulator the native fixture tests, Settings opt-in and synthetic engine streaming passed with ML Kit absent. The same pass added in-app reporting for AI output (App Store 1.2, Google Play's AI-Generated Content policy), removed the About dialog's beta notice (App Store 2.2), turned recording off on native WebViews, declared iOS camera, microphone and photo-library-add purposes for the system picker and share sheet, and routed external `target="_blank"` links through `host.shell.openExternal`.
 
+**Published Gezel plugin — November 4, 2026**
+
+Gezel now publishes `@bendyline/gezel-capacitor`. Mobile pins `1.0.0` from npm with the core `1.2.13` and App SDK `1.1.13` it depends on exactly, the same releases desktop runs. The vendored `-docblocks.3` tarball, its provenance files and `refresh-gezel.mjs` are gone. The plugin carries native release v0.1.57, and the speech plugin is now named `GezelOfflineSpeech`. The published plugin has no gezel-speech runtime, so dictation, narration and knowledge-question embeddings report unavailable until a native release publishes one; the Gradle lock, `native/android/dependencies.json` and `NATIVE_NOTICES.txt` drop `gezel-speech` to match.
+
+- Build, notices, `mobile:check` (now Gezel's installed-package verifier plus the Gradle lock against the plugin's native version), lint, format, typecheck, critical coverage, 3,463 unit tests and `mobile:test:available` passed. The Android Debug build resolved exactly the locked graph, and `cap sync` registered all three plugins on both platforms.
+- Not run: E2E suites, iOS/Android AI smoke tests, and any device or simulator run.
+
 **Gezel v0.1.54 update — October 28, 2026**
 
 Mobile now pins the published Gezel core `1.2.11` and App SDK `1.1.11`, the releases desktop ships, so both surfaces share one copy. Only the unpublished Capacitor plugin remains vendored, as `0.1.0-docblocks.3`, packed from a tree identical to public Gezel `main` with native release v0.1.54. The release's Android engine libraries are now stripped (its archive fell from 29 MB to 5 MB, the vendored plugin from 41 MB to 18 MB) and remain 16 KB page-aligned.

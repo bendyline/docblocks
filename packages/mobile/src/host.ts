@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { installMobileAi } from './ai';
+import { installMobileSpeech } from './speech';
 import { routeExternalLinks } from './external-links';
 import {
   encodeMobileBytes,
@@ -43,6 +44,9 @@ export async function installMobileHost(): Promise<void> {
   if (Capacitor.getPlatform() === 'android') await native.chooseStorage();
   const info = parseMobileBootstrap(await native.bootstrap());
   const mobileAi = Capacitor.isPluginAvailable('GezelRuntime') ? installMobileAi() : undefined;
+  const mobileSpeech = Capacitor.isPluginAvailable('GezelOfflineSpeech')
+    ? installMobileSpeech()
+    : undefined;
   const prepare = new Set<(request: HostPrepareCloseRequest) => Promise<HostPrepareCloseResult>>();
   const resume = new Set<() => void>();
   const back = new Set<() => boolean>();
@@ -64,6 +68,7 @@ export async function installMobileHost(): Promise<void> {
   const host: DocBlocksHostAPI = {
     env: info.env,
     ...(mobileAi ? { ai: mobileAi.ai } : {}),
+    ...(mobileSpeech ? { speech: mobileSpeech.speech } : {}),
     fsV2: createMobileFileSystemBridge((request) => native.request({ request }), info.capabilities),
     workspaces: {
       // Native lists the current default workspace first; it can change after
@@ -131,7 +136,10 @@ export async function installMobileHost(): Promise<void> {
   };
   (globalThis as typeof globalThis & { docBlocksHost: DocBlocksHostAPI }).docBlocksHost = host;
   routeExternalLinks(openExternal);
-  window.addEventListener('pagehide', () => mobileAi?.suspend());
+  window.addEventListener('pagehide', () => {
+    mobileAi?.suspend();
+    mobileSpeech?.suspend();
+  });
   mobileAi?.resume();
   window.addEventListener('docblocksIncoming', () => {
     void drainOpenRequests().catch(reportImportError);
@@ -142,6 +150,7 @@ export async function installMobileHost(): Promise<void> {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       mobileAi?.suspend();
+      mobileSpeech?.suspend();
       const request: HostPrepareCloseRequest = {
         requestId: crypto.randomUUID(),
         reason: 'app-background',
@@ -153,6 +162,7 @@ export async function installMobileHost(): Promise<void> {
         });
     } else {
       mobileAi?.resume();
+      mobileSpeech?.resume();
       for (const listener of resume) listener();
       void drainOpenRequests().catch(reportImportError);
     }

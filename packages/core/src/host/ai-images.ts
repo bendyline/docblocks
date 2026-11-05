@@ -1,6 +1,6 @@
 import type { AiError, AiProgress, AiResult } from './ai.js';
 import { parseAiError, parseAiProgress } from './ai-wire-policy.js';
-import { HOST_WIRE_LIMITS, isBoundedString } from './wire-policy.js';
+import { HOST_WIRE_LIMITS, isBoundedString, parseExternalHttpUrl } from './wire-policy.js';
 
 /**
  * On-device image generation.
@@ -70,6 +70,7 @@ export interface AiImageModel {
   /** Installed in a store the provider reads but this app does not own; not removable here. */
   readonly shared: boolean;
   readonly license: string | null;
+  readonly licenseUrl?: string | null;
   /** False when the license forbids commercial use; null when the provider does not say. */
   readonly commercialUse: boolean | null;
   /** Draws legible text, which design graphics depend on. */
@@ -82,12 +83,29 @@ export interface AiImageModel {
   readonly fit: AiImageModelFit | null;
 }
 
+export interface AiImageStyle extends Pick<
+  AiImageModel,
+  | 'id'
+  | 'label'
+  | 'description'
+  | 'state'
+  | 'downloadBytes'
+  | 'license'
+  | 'licenseUrl'
+  | 'commercialUse'
+> {
+  /** Opaque model ids this style was checked against. */
+  readonly baseModels: readonly string[];
+}
+
 export interface AiImagePreferences {
   /** The model "Generate image" uses; null lets the provider choose an installed one. */
   readonly model: string | null;
   /** The model Illustrate's design graphics use; null offers none. */
   readonly designModel: string | null;
   readonly aspect: AiImageAspect;
+  /** Preferred rendering style for Generate image. Absent on older installs. */
+  readonly style?: string | null;
 }
 
 export type AiImagePreferencesPatch = Partial<AiImagePreferences>;
@@ -99,6 +117,8 @@ export interface AiImageRequest {
   readonly model?: string;
   readonly aspect?: AiImageAspect;
   readonly seed?: number;
+  /** An installed style compatible with model; omitted for no style. */
+  readonly style?: string;
 }
 
 export interface AiImageResult {
@@ -136,13 +156,13 @@ export interface AiImageHandle {
   cancel(): void;
 }
 
-export type AiImageInstallEvent =
+export type AiImageInstallEvent<T = AiImageModel> =
   | { readonly kind: 'progress'; readonly progress: AiProgress }
-  | { readonly kind: 'done'; readonly model: AiImageModel }
+  | { readonly kind: 'done'; readonly model: T }
   | { readonly kind: 'error'; readonly error: AiError };
 
-export interface AiImageInstallHandle {
-  readonly done: Promise<AiResult<AiImageModel>>;
+export interface AiImageInstallHandle<T = AiImageModel> {
+  readonly done: Promise<AiResult<T>>;
   /** Stop the download. Starting it again resumes. */
   cancel(): void;
 }
@@ -156,6 +176,12 @@ export interface AiImagesAPI {
   /** Start a model download from an explicit gesture. */
   installModel(id: string, onProgress?: (progress: AiProgress) => void): AiImageInstallHandle;
   removeModel(id: string): Promise<AiResult<null>>;
+  styles?(): Promise<AiResult<readonly AiImageStyle[]>>;
+  installStyle?(
+    id: string,
+    onProgress?: (progress: AiProgress) => void,
+  ): AiImageInstallHandle<AiImageStyle>;
+  removeStyle?(id: string): Promise<AiResult<null>>;
   getPreferences(): Promise<AiImagePreferences>;
   setPreferences(patch: AiImagePreferencesPatch): Promise<AiImagePreferences>;
   generate(request: AiImageRequest, onEvent: (event: AiImageEvent) => void): AiImageHandle;
@@ -260,7 +286,13 @@ const MODEL_KEYS = [
 ] as const;
 
 export function parseAiImageModel(value: unknown): AiImageModel | null {
-  if (!record(value) || !exact(value, MODEL_KEYS)) return null;
+  if (!record(value) || !within(value, MODEL_KEYS, ['licenseUrl'])) return null;
+  if (
+    value.licenseUrl !== undefined &&
+    value.licenseUrl !== null &&
+    !parseExternalHttpUrl(value.licenseUrl)
+  )
+    return null;
   if (!isAiImageModelId(value.id) || !label(value.label)) return null;
   if (value.description !== null && !message(value.description)) return null;
   if (
@@ -309,6 +341,7 @@ export function parseAiImageModel(value: unknown): AiImageModel | null {
     downloadBytes: value.downloadBytes as number | null,
     shared: value.shared,
     license: value.license,
+    ...(value.licenseUrl !== undefined ? { licenseUrl: value.licenseUrl as string | null } : {}),
     commercialUse: value.commercialUse as boolean | null,
     rendersText: value.rendersText,
     promptStyle: value.promptStyle,
@@ -331,16 +364,85 @@ export function parseAiImageModelList(value: unknown): AiImageModel[] | null {
   return models;
 }
 
+export function parseAiImageStyle(value: unknown): AiImageStyle | null {
+  if (
+    !record(value) ||
+    !within(
+      value,
+      [
+        'id',
+        'label',
+        'description',
+        'state',
+        'downloadBytes',
+        'license',
+        'commercialUse',
+        'baseModels',
+      ],
+      ['licenseUrl'],
+    )
+  )
+    return null;
+  if (
+    !Array.isArray(value.baseModels) ||
+    value.baseModels.length === 0 ||
+    value.baseModels.length > AI_IMAGE_WIRE_LIMITS.models ||
+    !value.baseModels.every(isAiImageModelId)
+  )
+    return null;
+  const { baseModels, ...fields } = value;
+  const model = parseAiImageModel({
+    ...fields,
+    shared: false,
+    rendersText: false,
+    promptStyle: null,
+    hardwareTier: null,
+    minRamGb: null,
+    fit: null,
+  });
+  if (!model) return null;
+  return {
+    id: model.id,
+    label: model.label,
+    description: model.description,
+    state: model.state,
+    downloadBytes: model.downloadBytes,
+    license: model.license,
+    ...(model.licenseUrl !== undefined ? { licenseUrl: model.licenseUrl } : {}),
+    commercialUse: model.commercialUse,
+    baseModels: [...baseModels],
+  };
+}
+
+export function parseAiImageStyleList(value: unknown): AiImageStyle[] | null {
+  if (!Array.isArray(value) || value.length > AI_IMAGE_WIRE_LIMITS.models) return null;
+  const styles: AiImageStyle[] = [];
+  for (const raw of value) {
+    const style = parseAiImageStyle(raw);
+    if (!style || styles.some((entry) => entry.id === style.id)) return null;
+    styles.push(style);
+  }
+  return styles;
+}
+
 export function parseAiImagePreferences(value: unknown): AiImagePreferences | null {
-  if (!record(value) || !exact(value, ['model', 'designModel', 'aspect'])) return null;
+  if (!record(value) || !within(value, ['model', 'designModel', 'aspect'], ['style'])) return null;
   if (value.model !== null && !isAiImageModelId(value.model)) return null;
   if (value.designModel !== null && !isAiImageModelId(value.designModel)) return null;
   if (!isAiImageAspect(value.aspect)) return null;
-  return { model: value.model, designModel: value.designModel, aspect: value.aspect };
+  if (value.style !== undefined && value.style !== null && !isAiImageModelId(value.style))
+    return null;
+  return {
+    model: value.model,
+    designModel: value.designModel,
+    aspect: value.aspect,
+    ...(value.style !== undefined ? { style: value.style as string | null } : {}),
+  };
 }
 
 export function parseAiImagePreferencesPatch(value: unknown): AiImagePreferencesPatch | null {
-  if (!record(value) || !within(value, [], ['model', 'designModel', 'aspect'])) return null;
+  if (!record(value) || !within(value, [], ['model', 'designModel', 'aspect', 'style']))
+    return null;
   const patch: { -readonly [K in keyof AiImagePreferences]?: AiImagePreferences[K] } = {};
   if ('model' in value) {
     if (value.model !== null && !isAiImageModelId(value.model)) return null;
@@ -354,11 +456,18 @@ export function parseAiImagePreferencesPatch(value: unknown): AiImagePreferences
     if (!isAiImageAspect(value.aspect)) return null;
     patch.aspect = value.aspect;
   }
+  if ('style' in value) {
+    if (value.style !== null && !isAiImageModelId(value.style)) return null;
+    patch.style = value.style;
+  }
   return patch;
 }
 
 export function parseAiImageRequest(value: unknown): AiImageRequest | null {
-  if (!record(value) || !within(value, ['prompt'], ['negativePrompt', 'model', 'aspect', 'seed']))
+  if (
+    !record(value) ||
+    !within(value, ['prompt'], ['negativePrompt', 'model', 'aspect', 'seed', 'style'])
+  )
     return null;
   if (!isBoundedString(value.prompt, AI_IMAGE_WIRE_LIMITS.promptCharacters, 1)) return null;
   if (!value.prompt.trim()) return null;
@@ -370,6 +479,7 @@ export function parseAiImageRequest(value: unknown): AiImageRequest | null {
   if (value.model !== undefined && !isAiImageModelId(value.model)) return null;
   if (value.aspect !== undefined && !isAiImageAspect(value.aspect)) return null;
   if (value.seed !== undefined && !count(value.seed, 2_147_483_647)) return null;
+  if (value.style !== undefined && !isAiImageModelId(value.style)) return null;
   return {
     prompt: value.prompt,
     ...(value.negativePrompt !== undefined
@@ -378,6 +488,7 @@ export function parseAiImageRequest(value: unknown): AiImageRequest | null {
     ...(value.model !== undefined ? { model: value.model as string } : {}),
     ...(value.aspect !== undefined ? { aspect: value.aspect as AiImageAspect } : {}),
     ...(value.seed !== undefined ? { seed: value.seed as number } : {}),
+    ...(value.style !== undefined ? { style: value.style as string } : {}),
   };
 }
 
@@ -475,7 +586,15 @@ export function parseAiImageEvent(value: unknown): AiImageEvent | null {
   return null;
 }
 
-export function parseAiImageInstallEvent(value: unknown): AiImageInstallEvent | null {
+export function parseAiImageInstallEvent(value: unknown): AiImageInstallEvent | null;
+export function parseAiImageInstallEvent<T>(
+  value: unknown,
+  parse: (value: unknown) => T | null,
+): AiImageInstallEvent<T> | null;
+export function parseAiImageInstallEvent(
+  value: unknown,
+  parse: (value: unknown) => unknown = parseAiImageModel,
+): AiImageInstallEvent<unknown> | null {
   if (!record(value)) return null;
   if (value.kind === 'progress') {
     if (!exact(value, ['kind', 'progress'])) return null;
@@ -484,7 +603,7 @@ export function parseAiImageInstallEvent(value: unknown): AiImageInstallEvent | 
   }
   if (value.kind === 'done') {
     if (!exact(value, ['kind', 'model'])) return null;
-    const model = parseAiImageModel(value.model);
+    const model = parse(value.model);
     return model ? { kind: 'done', model } : null;
   }
   if (value.kind === 'error') {

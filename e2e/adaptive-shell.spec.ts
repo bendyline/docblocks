@@ -328,40 +328,51 @@ test.describe('adaptive shell on a phone', () => {
     expect(fontSize).toBeGreaterThanOrEqual(16);
   });
 
-  test('centres the Use-mode button on the Slideshow label at any text size', async ({
+  test('centres the mode buttons on the Write and Slideshow labels at any text size', async ({
     page,
   }, testInfo) => {
     test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
     await openWelcomeDocument(page);
-    const trigger = page.getByRole('button', { name: 'Choose Use mode', exact: true });
-    await expect(trigger).toBeVisible();
+    const modeButtons = [
+      { name: 'Choose Write mode', view: 'wysiwyg' },
+      { name: 'Choose Use mode', view: 'preview' },
+    ] as const;
+    for (const { name } of modeButtons) {
+      await expect(page.getByRole('button', { name, exact: true })).toBeVisible();
+    }
     // Android scales every font to the system text size and leaves padding
     // alone; scaling both font sizes reproduces that here.
     for (const zoom of [1, 1.15, 1.3]) {
       await page.locator('.db-shell').evaluate((shell, scale) => {
         for (const node of shell.querySelectorAll<HTMLElement>(
-          '.squisq-toolbar-view-tab, .squisq-use-mode-trigger',
+          '.squisq-toolbar-view-tab, .squisq-view-mode-trigger',
         )) {
           node.style.fontSize = `${13 * scale}px`;
         }
       }, zoom);
-      const geometry = await trigger.evaluate((button) => {
-        const label = document.querySelector('.squisq-toolbar-use-tab .squisq-toolbar-view-tab');
-        if (!label) throw new Error('Slideshow tab not found');
-        const range = document.createRange();
-        range.selectNodeContents(label);
-        const text = range.getBoundingClientRect();
-        const box = button.querySelector('svg');
-        if (!box) throw new Error('Use-mode glyph not found');
-        const rect = box.getBoundingClientRect();
-        return {
-          offset: (rect.top + rect.bottom) / 2 - (text.top + text.bottom) / 2,
-          border: Number.parseFloat(getComputedStyle(box).borderTopWidth),
-        };
-      });
-      expect(Math.abs(geometry.offset), `at ${zoom * 100}% text`).toBeLessThanOrEqual(1);
-      // A visible outline, so the arrow reads as a button.
-      expect(geometry.border).toBeGreaterThanOrEqual(1);
+      for (const { name, view } of modeButtons) {
+        const geometry = await page
+          .getByRole('button', { name, exact: true })
+          .evaluate((button, tabView) => {
+            const label = document.querySelector(
+              `.squisq-toolbar-view-tab[data-view="${tabView}"]`,
+            );
+            if (!label) throw new Error(`${tabView} tab not found`);
+            const range = document.createRange();
+            range.selectNodeContents(label);
+            const text = range.getBoundingClientRect();
+            const face = button.querySelector('.squisq-view-mode-trigger-face');
+            if (!face) throw new Error('Mode button face not found');
+            const rect = face.getBoundingClientRect();
+            return {
+              offset: (rect.top + rect.bottom) / 2 - (text.top + text.bottom) / 2,
+              border: Number.parseFloat(getComputedStyle(face).borderTopWidth),
+            };
+          }, view);
+        expect(Math.abs(geometry.offset), `${name} at ${zoom * 100}% text`).toBeLessThanOrEqual(1);
+        // A visible outline, so the arrow reads as a button.
+        expect(geometry.border).toBeGreaterThanOrEqual(1);
+      }
     }
   });
 
@@ -388,6 +399,34 @@ test.describe('adaptive shell on a phone', () => {
     if (!menu) throw new Error('Export menu did not open');
     expect(menu.x).toBeGreaterThanOrEqual(0);
     expect(menu.x + menu.width).toBeLessThanOrEqual(viewport.width + 1);
+  });
+
+  test('sizes Use-mode controls and rows like Write', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
+    await openWelcomeDocument(page);
+    const measure = async (selector: string) => {
+      // Visible only: Squisq keeps a hidden measuring copy of the preview controls.
+      const control = page.locator(selector).filter({ visible: true }).first();
+      const box = await control.boundingBox();
+      const glyph = await control.locator('svg').first().boundingBox();
+      if (!box || !glyph) throw new Error(`${selector} is not laid out`);
+      return { center: box.y + box.height / 2, height: box.height, glyph: glyph.width };
+    };
+    const write = await measure('.squisq-toolbar > .squisq-view-menu .squisq-toolbar-button');
+
+    await page.locator('.squisq-toolbar-use-tab .squisq-toolbar-view-tab').click();
+    await expect(page.locator('.squisq-toolbar > .squisq-preview-controls')).toBeVisible();
+    // Squisq sizes these as a compact desktop cluster; on a phone they sat in
+    // ~31px rows with 24px segments and a 14px print glyph.
+    for (const selector of ['.squisq-preview-seg-btn', '.squisq-print-trigger']) {
+      const control = await measure(selector);
+      expect(Math.abs(control.center - write.center), selector).toBeLessThanOrEqual(1);
+      expect(control.height, selector).toBeGreaterThanOrEqual(write.height);
+    }
+    expect((await measure('.squisq-print-trigger')).glyph).toBeCloseTo(write.glyph, 0);
+    // The document controls wrap to their own row, a full Write row below.
+    const documentRow = await measure('.squisq-toolbar > .squisq-view-menu .squisq-toolbar-button');
+    expect(documentRow.center - write.center).toBeGreaterThanOrEqual(44);
   });
 
   test('never scrolls horizontally', async ({ page }, testInfo) => {

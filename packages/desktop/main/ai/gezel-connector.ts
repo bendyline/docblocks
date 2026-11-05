@@ -175,6 +175,19 @@ type GezelAspect = NonNullable<Parameters<DesktopEmbeddingImages['generate']>[0]
 
 function adaptImages(images: DesktopEmbeddingImages): ProviderImages {
   return {
+    // A Gezel daemon that predates styles refuses with `styles_unsupported`.
+    styles: {
+      models: (signal) => images.styles({ signal }),
+      async ensure(id, signal) {
+        const result = await images.ensureStyle(id, { signal });
+        return result.status === 'ready'
+          ? { status: 'ready' }
+          : { status: 'downloading', jobId: result.jobId };
+      },
+      ensureEvents: (jobId, signal) => images.styleEnsureEvents(jobId, { signal }),
+      cancelEnsure: (jobId) => images.cancelStyleEnsure(jobId),
+      remove: (id, signal) => images.removeStyle(id, { signal }),
+    },
     access: (signal) => images.access({ signal }),
     requestAccess: (onVerificationCode) => images.requestAccess({ onVerificationCode }),
     models: (signal) => images.models({ signal }),
@@ -197,6 +210,7 @@ function adaptImages(images: DesktopEmbeddingImages): ProviderImages {
             ? { aspectRatio: input.aspectRatio as GezelAspect }
             : {}),
           ...(input.seed !== undefined ? { seed: input.seed } : {}),
+          ...(input.style ? { style: input.style } : {}),
         },
         {
           signal,

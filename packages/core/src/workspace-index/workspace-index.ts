@@ -661,6 +661,7 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       },
       entry.version,
       entry.kind === 'file' ? entry.size : 0,
+      entry.kind === 'file' && entry.onlineOnly === true,
       null,
       previous,
     );
@@ -681,6 +682,7 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       },
       source?.version ?? null,
       source?.kind === 'file' ? source.size : 0,
+      source?.kind === 'file' && source.onlineOnly === true,
       layout,
       previous,
     );
@@ -690,6 +692,7 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     identity: DocumentIdentity,
     sourceVersion: FileSystemVersion | null,
     sourceSize: number,
+    sourceOnlineOnly: boolean,
     layout: OutsideInLayout | null,
     previous: DocumentState | undefined,
   ): DocumentState {
@@ -716,6 +719,10 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
         text: previous.analysis.text,
       };
       state.analysisVersion = previous.analysisVersion;
+    } else if (sourceOnlineOnly) {
+      // Reading would download it from the cloud. Index it by name until a
+      // later listing finds it on this device, which queues a real read.
+      state.analysis = nameOnlyDocument(identity, 'online-only');
     }
     return state;
   }

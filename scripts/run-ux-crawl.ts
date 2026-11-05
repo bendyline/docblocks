@@ -13,6 +13,7 @@
  *   npm run ux:crawl -- --review          # functional, export, accessibility audit
  *   npm run ux:crawl -- --affordances     # click every control; contact sheet
  *   npm run ux:crawl -- --pages           # every static page × 7 profiles; downloads
+ *   npm run ux:crawl -- --scale           # isolated editor typing/load benchmark
  *   LIVE_UX_BASE_URL=https://docblocks.com npm run ux:crawl   # the live site
  *
  * The service worker only exists in a production build, which is the same
@@ -79,8 +80,9 @@ async function main(): Promise<void> {
   const review = passThrough.includes('--review');
   const affordances = passThrough.includes('--affordances');
   const pages = passThrough.includes('--pages');
-  if ([review, affordances, pages].filter(Boolean).length > 1) {
-    throw new Error('Choose one of --review, --affordances, or --pages.');
+  const scale = passThrough.includes('--scale');
+  if ([review, affordances, pages, scale].filter(Boolean).length > 1) {
+    throw new Error('Choose one of --review, --affordances, --pages, or --scale.');
   }
   const entry = review
     ? path.join(repoRoot, 'e2e', 'site-ship-review.ts')
@@ -88,9 +90,12 @@ async function main(): Promise<void> {
       ? path.join(repoRoot, 'e2e', 'site-affordance-crawl.ts')
       : pages
         ? path.join(repoRoot, 'e2e', 'site-pages-crawl.ts')
-        : crawlEntry;
+        : scale
+          ? path.join(repoRoot, 'e2e', 'site-scale-review.ts')
+          : crawlEntry;
   const crawlArgs = passThrough.filter(
-    (argument) => !['--no-build', '--review', '--affordances', '--pages'].includes(argument),
+    (argument) =>
+      !['--no-build', '--review', '--affordances', '--pages', '--scale'].includes(argument),
   );
 
   const externalBaseUrl = process.env.LIVE_UX_BASE_URL;

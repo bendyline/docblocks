@@ -1,10 +1,11 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from './helpers/test.js';
+import { selectWriteMode, showWriteView } from './helpers/toolbar.js';
 
 async function openWelcome(page: Page) {
   await page.goto('/');
   await page.getByRole('button', { name: 'Tour the welcome document', exact: true }).click();
-  await page.getByRole('tab', { name: 'Write', exact: true }).click();
+  await showWriteView(page);
 }
 
 async function expectFits(element: Locator) {
@@ -27,9 +28,9 @@ for (const width of [320, 390, 412]) {
     await page.setViewportSize({ width, height: 844 });
     await openWelcome(page);
     const editor = page.locator('.ProseMirror').first();
-    for (const mode of ['Block-at-a-time', 'Timeline']) {
+    for (const mode of ['Blocks', 'Timeline'] as const) {
+      await selectWriteMode(page, mode);
       await page.getByRole('button', { name: 'View options', exact: true }).click();
-      await page.getByRole('menuitemradio', { name: mode, exact: true }).click();
       const previews = page.getByRole('menuitemcheckbox', {
         name: 'Show block previews',
         exact: true,

@@ -14,11 +14,13 @@ import type {
   AiImageAspect,
   AiImageHandle,
   AiImageModel,
+  AiImageStyle,
   AiImageProgress,
   AiImageResult,
   AiImagesAPI,
   DocBlocksHostAiAPI,
 } from '@bendyline/docblocks/host';
+import { imageModelFits } from '../Settings/image-model-facts.js';
 import { AI_IMAGE_ASPECTS } from '@bendyline/docblocks/host';
 import {
   imageAccessSentence,
@@ -75,6 +77,8 @@ export function AiImagePanel({ ai, onClose }: AiImagePanelProps) {
   const [aspect, setAspect] = useState<AiImageAspect>('1:1');
   const [model, setModel] = useState<string | null>(null);
   const [models, setModels] = useState<readonly AiImageModel[] | null>(null);
+  const [styles, setStyles] = useState<readonly AiImageStyle[]>([]);
+  const [style, setStyle] = useState<string | null>(null);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [results, setResults] = useState<ImageResult[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
@@ -93,6 +97,7 @@ export function AiImagePanel({ ai, onClose }: AiImagePanelProps) {
         if (!live) return;
         setAspect(preferences.aspect);
         setModel(preferences.model);
+        setStyle(preferences.style ?? null);
       })
       .catch(() => undefined);
     return () => {
@@ -103,6 +108,14 @@ export function AiImagePanel({ ai, onClose }: AiImagePanelProps) {
   useEffect(() => {
     if (!images || !ready) return;
     let live = true;
+    void images
+      .styles?.()
+      .then((result) => {
+        if (live) setStyles(result.ok ? result.value : []);
+      })
+      .catch(() => {
+        if (live) setStyles([]);
+      });
     void images.models().then((result) => {
       if (!live) return;
       if (result.ok) {
@@ -126,8 +139,14 @@ export function AiImagePanel({ ai, onClose }: AiImagePanelProps) {
     };
   }, []);
 
-  const installed = (models ?? []).filter((entry) => entry.state === 'installed');
+  const installed = (models ?? []).filter(
+    (entry) => entry.state === 'installed' && imageModelFits(entry),
+  );
   const chosen = installed.find((entry) => entry.id === model) ?? installed[0] ?? null;
+  const compatibleStyles = styles.filter(
+    (entry) => entry.state === 'installed' && chosen && entry.baseModels.includes(chosen.id),
+  );
+  const chosenStyle = compatibleStyles.find((entry) => entry.id === style) ?? null;
   const rendering = results.some((result) => result.status === 'rendering');
 
   const update = useCallback((key: string, change: Partial<ImageResult>) => {
@@ -158,7 +177,12 @@ export function AiImagePanel({ ai, onClose }: AiImagePanelProps) {
       ...current,
     ]);
     const started = images.generate(
-      { prompt: text.trim(), aspect: shape, model: chosen.id },
+      {
+        prompt: text.trim(),
+        aspect: shape,
+        model: chosen.id,
+        ...(chosenStyle ? { style: chosenStyle.id } : {}),
+      },
       (event) => {
         if (event.kind === 'progress') update(key, { progress: event.progress });
       },
@@ -187,7 +211,8 @@ export function AiImagePanel({ ai, onClose }: AiImagePanelProps) {
 
   const chooseModel = (next: string) => {
     setModel(next);
-    void images?.setPreferences({ model: next }).catch(() => undefined);
+    setStyle(null);
+    void images?.setPreferences({ model: next, style: null }).catch(() => undefined);
   };
 
   const insert = async (result: ImageResult) => {
@@ -311,6 +336,26 @@ export function AiImagePanel({ ai, onClose }: AiImagePanelProps) {
                 onChange={(event) => chooseModel(event.target.value)}
               >
                 {installed.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {compatibleStyles.length > 0 && (
+            <label className="db-ai-field db-ai-field--inline">
+              Rendering style
+              <select
+                value={chosenStyle?.id ?? ''}
+                onChange={(event) => {
+                  const next = event.currentTarget.value || null;
+                  setStyle(next);
+                  void images?.setPreferences({ style: next }).catch(() => undefined);
+                }}
+              >
+                <option value="">No style</option>
+                {compatibleStyles.map((entry) => (
                   <option key={entry.id} value={entry.id}>
                     {entry.label}
                   </option>

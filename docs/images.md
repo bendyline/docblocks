@@ -31,12 +31,16 @@ has:
 - `models()`, `installModel()` (cancel stops the download; starting again
   resumes), `removeModel()` (refuses a model shared from Gezel's own store).
   Image models never appear in the chat model list.
+- Optional `styles()`, `installStyle()` and `removeStyle()` expose catalog LoRA
+  rendering styles. Style downloads use the same cancellable, owner-scoped
+  protocol as model downloads. Catalog ids are opaque: renderers never send
+  weight paths, URLs, strengths, or engine arguments.
 - `getPreferences()` / `setPreferences()` — the model for Generate image, the
-  model for design graphics (`rendersText` models only), and the default shape.
+  model for design graphics (`rendersText` models only), the default shape, and the preferred rendering style.
   Stored in `userData/ai/images.json`, never `settings.json`, whose parser
   quarantines a file with unknown keys on older builds.
 - `generate(request, onEvent)` — a prompt, an aspect ratio (Gezel picks the
-  pixels inside the model's range), an optional model and seed. Progress has
+  pixels inside the model's range), an optional model, installed style id, and seed. Progress has
   phases: `queued`, `loading-model` (the first render after the engine starts
   loads the weights — minutes for a 49 GB model), `sampling`, `decoding`. It
   ends in one `done` with the PNG bytes, or one `error`. Cancelling stops the
@@ -75,9 +79,39 @@ checks the PNG signature of a finished render.
   at the cursor as one undo step. File names carry the seed and a time stamp,
   because the media provider overwrites a file of the same name.
 - **Settings → AI assistance → Image generation** (`Settings/AiImageSettings.tsx`)
-  lists models with size, license, "Not for commercial use", "Draws legible
-  text", and "Workstation · 96 GB+" where they apply. Models the provider says
-  cannot run here cannot be downloaded.
+  shows installed models and active downloads. **Add model…** opens a searchable
+  catalog; `wont-run` and `over-limit` models are hidden using the provider's
+  assessment, while tight or uncertain fits keep their explanation. Installed
+  models remain visible for removal even if their fit changes. Size, commercial
+  restrictions, text-rendering capability and hardware requirements remain visible.
+  License names link to the catalog's license text through the external URL policy.
+  Model and style downloads continue while Settings is closed. Reopening Settings
+  restores progress and Cancel, or refreshes installed models and reports a failure
+  received while closed. The shared `Settings/model-downloads.ts` session owns
+  these subscriptions for the renderer, as it does for text and speech models;
+  closing or reloading the app window remains a host cancellation boundary.
+- **Rendering styles → Add style…** lists styles compatible with downloaded,
+  usable models. The Generate image panel offers only downloaded styles for the
+  chosen model, plus **No style**. Switching models clears the style selection.
+  Design graphics retain their compiled prompt style; this preference applies to
+  Generate image. A standalone Gezel daemon that predates styles refuses them with
+  `styles_unsupported`; Settings shows an update message for styles and keeps
+  ordinary image generation available.
+
+## Gezel rollout
+
+The companion changes in `../gezel` add `/v1/images/styles`, its ensure/progress/
+cancel/remove routes, and a `style` field on generation requests. The SDK exposes
+`styles`, `ensureStyle`, `styleEnsureEvents`, `cancelStyleEnsure` and `removeStyle`
+through `DesktopEmbeddingImages`; model and style listings carry `license_url`.
+Hosted inference stages Gilde's `image-loras` alongside image models. The service
+accepts only catalog style ids and refuses a style not installed for the chosen
+model. Existing image permissions also cover these routes.
+
+These shipped in App SDK `1.1.12`, inference `1.0.7` and core `1.2.12`, which
+the desktop pins; the embedded runtime serves styles. A standalone Gezel needs
+service `1.2.12` or later. Use the repository's supported `link:gezel` workflow
+to test unreleased Gezel changes; do not patch installed packages.
 
 ## Design graphics
 

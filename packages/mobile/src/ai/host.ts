@@ -1,5 +1,6 @@
 import {
   AI_WIRE_LIMITS,
+  knowledgeChatEvent,
   parseAiChatProgress,
   parseAiChatRequest,
   parseAiPreferences,
@@ -13,25 +14,42 @@ import {
   type DocBlocksHostAiAPI,
 } from '@bendyline/docblocks/host';
 import {
+  abortableDelay,
   createEmbedding,
+  knowledgeContext,
   type EmbeddingConnection,
   type ModelDescriptor,
 } from '@bendyline/gezel-app-sdk/browser';
 import { modelChoices } from './models';
-import { aiError, checkCancelled, failure, MobileAiError, notify } from './errors';
+import {
+  aiError,
+  checkCancelled,
+  downloadFailure,
+  failure,
+  interruptedDownload,
+  MobileAiError,
+  notify,
+} from './errors';
 
 export interface MobileAiOptions {
   load(): Promise<EmbeddingConnection>;
   readPreferences(): unknown;
   writePreferences(preferences: AiPreferences): void;
   requestTimeoutMs?: number;
+  /** Waits before each retry of an interrupted download that saved no new bytes. */
+  downloadRetryDelaysMs?: readonly number[];
 }
 const defaults: AiPreferences = { enabled: false, model: null, reviewMode: 'explicit' };
 const provider = { name: 'Gezel', version: '0.1.0', mode: 'hosted' as const };
 // The Android build excludes ML Kit (android/app/build.gradle). Gezel still
 // reports its provider, as unavailable, so DocBlocks never offers it.
 const excludedProviders = new Set(['android-mlkit']);
+// About a minute of trying while the network is gone; long enough to ride out
+// a Wi-Fi to cellular handoff or a brief dead zone.
+const downloadRetryDelaysMs = [2_000, 5_000, 10_000, 20_000, 30_000];
 const offered = (id: string) => !excludedProviders.has(id.split(':')[0]);
+/** Catalog names label a request's sources; reading them once per interval keeps chats quick. */
+const CATALOG_NAMES_MS = 30_000;
 
 export function createMobileAi(options: MobileAiOptions) {
   let preferences = parseAiPreferences(options.readPreferences()) ?? defaults;
@@ -44,6 +62,13 @@ export function createMobileAi(options: MobileAiOptions) {
   let choices: AiModelInfo[] = [];
   let suspended = false;
   let operation: AbortController | undefined;
+  let catalogs: { at: number; names: Map<string, string>; enabled: boolean } | undefined;
+  const rememberCatalogs = (list: readonly { id: string; name: string; enabled: boolean }[]) =>
+    (catalogs = {
+      at: Date.now(),
+      names: new Map(list.map((catalog) => [catalog.id, catalog.name])),
+      enabled: list.some((catalog) => catalog.enabled),
+    });
   const update = (next: AiStatus) => {
     status = next;
     for (const listener of listeners) notify(listener, next);
@@ -98,6 +123,37 @@ export function createMobileAi(options: MobileAiOptions) {
     ready();
   };
   const ai: DocBlocksHostAiAPI = {
+    knowledge: {
+      async state() {
+        try {
+          const { catalogs: list, improvement } = await embedding.knowledge.state();
+          rememberCatalogs(list);
+          return {
+            ok: true,
+            value: {
+              catalogs: list,
+              improvement: improvement
+                ? { downloadBytes: improvement.downloadBytes, downloading: improvement.downloading }
+                : null,
+            },
+          };
+        } catch (error) {
+          return failure(error);
+        }
+      },
+      async update(action) {
+        try {
+          // Enabling or disabling changes what the next request may cite.
+          catalogs = undefined;
+          await embedding.knowledge.update(
+            action.action === 'improve' ? { action: 'prepare-reranker' } : action,
+          );
+          return { ok: true, value: null };
+        } catch (error) {
+          return failure(error);
+        }
+      },
+    },
     providerInstalled: async () => false,
     status: async () => {
       if (preferences.enabled && !suspended && embedding.state !== 'ready') await start();
@@ -183,20 +239,49 @@ export function createMobileAi(options: MobileAiOptions) {
               'model-unavailable',
               'This model is not available in DocBlocks.',
             );
-          const installed = await embedding.models.prepare(id, {
-            allowDownload: true,
-            signal: controller.signal,
-            onProgress: (event) =>
+          let percent: number | null = null;
+          let bytes = 0,
+            saved = 0,
+            stalled = 0;
+          let installed: ModelDescriptor;
+          while (true) {
+            try {
+              installed = await embedding.models.prepare(id, {
+                allowDownload: true,
+                signal: controller.signal,
+                onProgress: (event) => {
+                  if (event.bytesWritten !== undefined) bytes = Math.max(bytes, event.bytesWritten);
+                  percent =
+                    event.percent ??
+                    (event.totalBytes && event.bytesWritten !== undefined
+                      ? (100 * event.bytesWritten) / event.totalBytes
+                      : null);
+                  notify(onProgress, { phase: event.phase, message: event.message, percent });
+                },
+              });
+              break;
+            } catch (error) {
+              // Preparing again resumes from the saved bytes, so only attempts
+              // that saved nothing new spend the retry budget.
+              if (bytes > saved) {
+                saved = bytes;
+                stalled = 0;
+              }
+              const delay = (options.downloadRetryDelaysMs ?? downloadRetryDelaysMs)[stalled++];
+              if (controller.signal.aborted || delay === undefined || !interruptedDownload(error))
+                throw error;
               notify(onProgress, {
-                phase: event.phase,
-                message: event.message,
-                percent:
-                  event.percent ??
-                  (event.totalBytes && event.bytesWritten !== undefined
-                    ? (100 * event.bytesWritten) / event.totalBytes
-                    : null),
-              }),
-          });
+                phase: 'retrying',
+                message: `Download interrupted. Trying again in ${Math.max(1, Math.round(delay / 1000))} seconds…`,
+                percent,
+              });
+              // abortableDelay throws synchronously once aborted, and rejects with the bare abort reason.
+              checkCancelled(controller.signal);
+              await abortableDelay(delay, controller.signal).catch(() =>
+                checkCancelled(controller.signal),
+              );
+            }
+          }
           await refresh();
           checkCancelled(controller.signal);
           const model = choices.find((entry) => entry.id === installed.id);
@@ -207,7 +292,7 @@ export function createMobileAi(options: MobileAiOptions) {
             );
           return { ok: true, value: model };
         } catch (error) {
-          return failure(error);
+          return { ok: false, error: downloadFailure(error) };
         } finally {
           release(controller);
         }
@@ -253,18 +338,47 @@ export function createMobileAi(options: MobileAiOptions) {
             timedOut = true;
             controller.abort();
           }, options.requestTimeoutMs ?? 180_000);
+          const maxTokens = Math.min(
+            request.maxTokens ??
+              (request.purpose === 'write'
+                ? (model.default_output_tokens ?? model.max_output_tokens ?? 2048)
+                : 512),
+            model.max_output_tokens ?? 2048,
+            Math.max(1, (model.context_window ?? 4096) - 1),
+          );
+          // Reference passages from enabled catalogs; retrieval never fails the request.
+          const context = await knowledgeContext(embedding.knowledge, request.messages, {
+            signal: controller.signal,
+            contextWindow: model.context_window ?? null,
+            maxOutputTokens: maxTokens,
+            maxPromptCharacters: AI_WIRE_LIMITS.promptCharacters,
+            maxMessages: AI_WIRE_LIMITS.messageEntries,
+            ...(request.knowledgeCitations ? { citations: 'numbered' as const } : {}),
+            ...(request.knowledgeQuery?.trim() ? { query: request.knowledgeQuery } : {}),
+          });
+          checkCancelled(controller.signal);
+          // Names label the cited sources; whether any catalog is on labels the rest.
+          if (
+            !catalogs ||
+            Date.now() - catalogs.at > CATALOG_NAMES_MS ||
+            context.passages.some((passage) => !catalogs?.names.has(passage.catalogId))
+          )
+            await embedding.knowledge
+              .state({ signal: controller.signal })
+              .then(({ catalogs: list }) => rememberCatalogs(list))
+              .catch(() => undefined);
+          const knowledge = knowledgeChatEvent(
+            context.status,
+            context.passages,
+            catalogs?.names,
+            context.status === 'used' || catalogs?.enabled === true,
+          );
+          if (knowledge) emit({ kind: 'knowledge', knowledge });
           const result = await embedding.streamText(
             {
               model: model.id,
-              messages: [...request.messages],
-              maxTokens: Math.min(
-                request.maxTokens ??
-                  (request.purpose === 'write'
-                    ? (model.default_output_tokens ?? model.max_output_tokens ?? 2048)
-                    : 512),
-                model.max_output_tokens ?? 2048,
-                Math.max(1, (model.context_window ?? 4096) - 1),
-              ),
+              messages: context.messages,
+              maxTokens,
               // Sampling support comes from inventory, never a host/provider-name test.
               ...(model.supported_options?.includes('temperature') &&
               request.temperature !== undefined

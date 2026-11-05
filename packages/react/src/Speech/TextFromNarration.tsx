@@ -167,7 +167,7 @@ export function TextFromNarrationDialog({
         />
       </div>
       <p className="db-narration-note">
-        Audio stays on this computer. Limit: 10 minutes; uploads up to 25 MB.
+        Audio stays on this device. Limit: 10 minutes; uploads up to 25 MB.
       </p>
       {!allowRecording && (
         <p className="db-narration-note">

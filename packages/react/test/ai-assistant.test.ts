@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import { mock } from 'node:test';
 
 import {
   aiReviewReplyWasCutOff,
@@ -6,6 +7,8 @@ import {
   buildDraftRequest,
   buildDraftContinuation,
   buildReviewRequest,
+  buildReviewRequests,
+  buildReviewFollowUp,
   findUniqueExcerpt,
   parseAiReviewResponse,
   parseTruncatedAiReviewResponse,
@@ -155,6 +158,39 @@ describe('AI editor assistant', () => {
     expect(isAiReviewStyle('facts')).to.equal(true);
     expect(isAiReviewStyle('toString')).to.equal(false);
     expect(isAiReviewStyle('')).to.equal(false);
+  });
+
+  it('grounds resume reviews in the current local day and refreshes it for a new review', () => {
+    // At this local hour UTC may already be tomorrow. July 2026 is in the past.
+    mock.timers.enable({ apis: ['Date'], now: new Date(2026, 10, 1, 23, 30) });
+    try {
+      const source = '# Experience\n\nDec 2023 – July 2026';
+      const request = buildReviewRequest(source, 'resume');
+      expect(request.messages[0]?.content)
+        .to.contain('Current local date: 2026-11-01 (YYYY-MM-DD)')
+        .and.contain('Do not flag dates on or before today as future dates')
+        .and.contain('ask the author to verify it');
+      expect(request.messages[1]?.content).to.contain('Dec 2023 – July 2026');
+
+      const parts = buildReviewRequests(
+        `${source}\n\n${'Accomplishment.\n\n'.repeat(1_000)}`,
+        'resume',
+        4_096,
+      );
+      expect(parts.length).to.be.greaterThan(1);
+      for (const part of parts) {
+        expect(part.messages[0]?.content).to.contain('Current local date: 2026-11-01');
+      }
+
+      mock.timers.setTime(new Date(2026, 10, 2, 0, 5).getTime());
+      expect(buildReviewRequest(source, 'resume').messages[0]?.content).to.contain(
+        'Current local date: 2026-11-02',
+      );
+      // Continuing the original review retains its original date context.
+      expect(buildReviewFollowUp(request, []).messages[0]).to.deep.equal(request.messages[0]);
+    } finally {
+      mock.timers.reset();
+    }
   });
 
   it('removes prompt tags a model echoes around its whole reply', () => {

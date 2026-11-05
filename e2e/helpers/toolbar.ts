@@ -2,6 +2,64 @@ import type { Locator, Page } from '@playwright/test';
 import { expect } from './test.js';
 
 /**
+ * Switch to the Write view. Clicking the tab you're already on opens its
+ * Write mode menu instead, which then sits over whatever the test clicks
+ * next, so only click when another view is selected. `data-view` is the
+ * stable hook: the tab's label follows the Write mode (Write, Blocks,
+ * Timeline).
+ */
+export async function showWriteView(scope: Page | Locator): Promise<void> {
+  const tab = scope.locator('[role="tab"][data-view="wysiwyg"]');
+  if ((await tab.getAttribute('aria-selected')) !== 'true') await tab.click();
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+}
+
+/** Picks a Write layout from the menu beside the Write tab; it also enters Write. */
+export async function selectWriteMode(
+  page: Page,
+  mode: 'Write' | 'Blocks' | 'Timeline',
+): Promise<void> {
+  await page.getByRole('button', { name: 'Choose Write mode', exact: true }).click();
+  const item = page
+    .getByRole('menu', { name: 'Write mode', exact: true })
+    .getByRole('menuitemradio', { name: mode, exact: true });
+  await item.click();
+  await expect(item).toBeHidden();
+}
+
+/**
+ * Show the Attachments panel, wherever the toolbar put its toggle: inline,
+ * or under More actions once the row is too narrow to keep it.
+ */
+export async function openAttachments(page: Page): Promise<void> {
+  const toolbar = page.locator('.squisq-toolbar');
+  const inline = toolbar.locator('.squisq-toolbar-files-toggle');
+  // Wait for the toolbar's width measurement to settle: the toggle either
+  // fits inside the toolbar or has been marked as moved to More actions.
+  await expect
+    .poll(() =>
+      inline.evaluate((button) => {
+        if (button.classList.contains('squisq-toolbar-button--overflowed')) return 'overflow';
+        const bar = button.closest('.squisq-toolbar')?.getBoundingClientRect();
+        const rect = button.getBoundingClientRect();
+        return !!bar && rect.width > 0 && rect.right <= bar.right ? 'inline' : 'settling';
+      }),
+    )
+    .not.toBe('settling');
+
+  if (await inline.isVisible()) {
+    await inline.click();
+  } else {
+    await toolbar.locator('.squisq-toolbar-overflow-trigger').click();
+    await page
+      .locator('.squisq-toolbar-overflow-menu')
+      .getByRole('button', { name: /^Show attachments/ })
+      .click();
+  }
+  await expect(page.locator('.squisq-media-bin')).toBeVisible();
+}
+
+/**
  * Open the first heading's picker for appearance assertions. The default
  * selected/hovered tags disappear whenever the editor loses focus. Choose
  * persistent tags through View options so the ordinary click

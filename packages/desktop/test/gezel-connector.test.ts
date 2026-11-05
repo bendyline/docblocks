@@ -751,6 +751,11 @@ describe('Gezel connector with the real embedding SDK', () => {
       ensureEvents: async function* () {},
       cancelEnsure: async () => undefined,
       remove: async () => undefined,
+      styles: async () => [{ id: 'watercolor', base_models: ['sd-cpp:x'] }],
+      ensureStyle: async (id: string) => ({ status: 'downloading' as const, jobId: `job-${id}` }),
+      styleEnsureEvents: async function* () {},
+      cancelStyleEnsure: async () => undefined,
+      removeStyle: async () => undefined,
       generate: async (
         input: unknown,
         options: { onProgress?: (progress: Record<string, unknown>) => void },
@@ -801,12 +806,22 @@ describe('Gezel connector with the real embedding SDK', () => {
     const store = await connectorFor(true).connect({ interactive: false });
     expect(asked).to.deep.equal([true, false]);
     expect(store.images).to.equal(undefined);
+    const signal = new AbortController().signal;
+    expect(await desktop.images!.styles!.models(signal)).to.deep.equal([
+      { id: 'watercolor', base_models: ['sd-cpp:x'] },
+    ]);
+    expect(await desktop.images!.styles!.ensure('watercolor', signal)).to.deep.equal({
+      status: 'downloading',
+      jobId: 'job-watercolor',
+    });
     const progress: unknown[] = [];
     await desktop.images!.generate(
-      { prompt: 'A lighthouse', aspectRatio: '16:9', seed: 3 },
-      { signal: new AbortController().signal, onProgress: (p) => progress.push(p) },
+      { prompt: 'A lighthouse', aspectRatio: '16:9', seed: 3, style: 'watercolor' },
+      { signal, onProgress: (p) => progress.push(p) },
     );
-    expect(generated).to.deep.equal([{ prompt: 'A lighthouse', aspectRatio: '16:9', seed: 3 }]);
+    expect(generated).to.deep.equal([
+      { prompt: 'A lighthouse', aspectRatio: '16:9', seed: 3, style: 'watercolor' },
+    ]);
     expect(progress).to.deep.equal([{ phase: 'sampling', step: 1, totalSteps: 4 }]);
   });
 

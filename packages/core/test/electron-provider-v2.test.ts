@@ -493,6 +493,37 @@ describe('ElectronFileSystemProviderV2', () => {
     await provider.dispose();
   });
 
+  it('carries the online-only flag across the host boundary and rejects other values', async () => {
+    const entry = {
+      kind: 'file' as const,
+      path: parseWorkspacePath('/cloud.md'),
+      name: 'cloud.md',
+      size: 4,
+      version: parseFileSystemVersion('metadata-v1'),
+      lastModified: new Date(0).toISOString(),
+    };
+    let onlineOnly: unknown = true;
+    installHost({
+      readDirectory: async () => ({ ok: true, value: [{ ...entry, onlineOnly }] }),
+    });
+    const provider = new ElectronFileSystemProviderV2('workspace', 'Workspace', '/tmp/workspace');
+
+    const [listed] = await provider.readDirectory(parseWorkspacePath('/'));
+    expect(listed?.kind === 'file' ? listed.onlineOnly : undefined).to.equal(true);
+
+    onlineOnly = undefined;
+    const [local] = await provider.readDirectory(parseWorkspacePath('/'));
+    expect(local).to.not.have.property('onlineOnly');
+
+    onlineOnly = 'yes';
+    const failure = await provider
+      .readDirectory(parseWorkspacePath('/'))
+      .catch((error: unknown) => error);
+    expect(failure).to.be.instanceOf(Error);
+    expect((failure as Error).message).to.include('online-only');
+    await provider.dispose();
+  });
+
   it('bridges ordered watch events and uses awaitable unsubscribe', async () => {
     const host = installHost();
     const provider = new ElectronFileSystemProviderV2('workspace', 'Workspace', '/tmp/workspace');

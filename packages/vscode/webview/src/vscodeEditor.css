@@ -45,8 +45,10 @@
   padding-bottom: 2px;
 }
 
-.db-vscode-editor .squisq-use-mode-trigger {
-  padding-bottom: 7px;
+/* Squisq centres the ▾ mode buttons on its 4px label padding; follow the 2px
+   lower label. */
+.db-vscode-editor .squisq-view-mode-trigger {
+  padding-bottom: 0;
 }
 
 /* VS Code's tighter heading metrics leave the properties chip just below the

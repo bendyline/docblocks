@@ -1,5 +1,6 @@
 import { AI_WIRE_LIMITS } from '@bendyline/docblocks/host';
 import type { AiChatRequest } from '@bendyline/docblocks/host';
+import { localDateStamp } from '../local-date.js';
 import { completeLeadingObjects } from './ai-json.js';
 import { documentTitle } from './document-title.js';
 import {
@@ -223,7 +224,11 @@ export function buildReviewRequest(
       {
         role: 'system',
         content:
-          `You are a careful document reviewer inside DocBlocks. ${brief} Do not critique Markdown syntax, ` +
+          'You are a careful document reviewer inside DocBlocks. ' +
+          `Current local date: ${localDateStamp(new Date())} (YYYY-MM-DD). ` +
+          'Use this date when deciding whether document dates are in the past, present or future. ' +
+          'Do not flag dates on or before today as future dates. ' +
+          `${brief} Do not critique Markdown syntax, ` +
           `code, URLs, or frontmatter. Return only a JSON array ${count}, ` +
           'most important first. Every object must have exactly these keys: "quote" (a short, exact, ' +
           'contiguous excerpt copied from the document), "replacement" (improved Markdown for that excerpt, or ' +

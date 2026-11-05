@@ -1,4 +1,5 @@
-import type { AiResult } from './ai.js';
+import type { AiChatKnowledge, AiChatKnowledgeSource, AiResult } from './ai.js';
+import { AI_WIRE_LIMITS } from './ai-wire-policy.js';
 import { HOST_WIRE_LIMITS, isBoundedString } from './wire-policy.js';
 
 /** Provider-neutral catalog management. IDs never authorize filesystem access. */
@@ -38,6 +39,63 @@ export type AiKnowledgeAction =
 export interface AiKnowledgeAPI {
   state(): Promise<AiResult<AiKnowledgeState>>;
   update(action: AiKnowledgeAction): Promise<AiResult<null>>;
+}
+
+/** A reference passage a provider gave the model, as a host receives it. */
+export interface AiKnowledgePassage {
+  readonly title: string;
+  readonly catalogId: string;
+  readonly text: string;
+}
+
+/** Group cited passages by catalog, in the order the provider ranked them. */
+export function knowledgeSources(
+  passages: readonly AiKnowledgePassage[],
+  names: ReadonlyMap<string, string> | undefined,
+): AiChatKnowledgeSource[] {
+  const sources = new Map<string, { name: string; titles: string[] }>();
+  for (const passage of passages) {
+    let source = sources.get(passage.catalogId);
+    if (!source) {
+      if (sources.size >= AI_WIRE_LIMITS.knowledgeSources) continue;
+      const name = names?.get(passage.catalogId) ?? passage.catalogId;
+      source = { name: name.slice(0, 256), titles: [] };
+      sources.set(passage.catalogId, source);
+    }
+    const title = passage.title.trim().slice(0, AI_WIRE_LIMITS.knowledgeTitleCharacters);
+    if (
+      title &&
+      !source.titles.includes(title) &&
+      source.titles.length < AI_WIRE_LIMITS.knowledgeTitles
+    ) {
+      source.titles.push(title);
+    }
+  }
+  return [...sources].map(([catalogId, { name, titles }]) => ({ catalogId, name, titles }));
+}
+
+/**
+ * The `knowledge` chat event for one retrieval: what was cited, or that
+ * nothing was. Null when no catalog is enabled, so no indicator appears.
+ */
+export function knowledgeChatEvent(
+  status: 'used' | 'none' | 'skipped',
+  passages: readonly AiKnowledgePassage[],
+  names: ReadonlyMap<string, string> | undefined,
+  anyEnabled: boolean,
+): AiChatKnowledge | null {
+  if (status === 'used')
+    return {
+      outcome: 'used',
+      sources: knowledgeSources(passages, names),
+      // In citation order: the model was asked to cite `evidence[0]` as [1].
+      evidence: passages.map((passage) => ({
+        title: passage.title.trim().slice(0, AI_WIRE_LIMITS.knowledgeTitleCharacters),
+        catalogId: passage.catalogId,
+        text: passage.text,
+      })),
+    };
+  return anyEnabled ? { outcome: status } : null;
 }
 
 function record(value: unknown): value is Record<string, unknown> {

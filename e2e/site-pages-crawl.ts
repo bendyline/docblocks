@@ -2223,7 +2223,15 @@ function assess(): void {
       note({ severity: 'low', area: 'links', page, message: `${check.href}: ${check.note}` });
     }
     if (typeof check.status === 'string' && /^https?$|^mailto$|^tel$/.test(check.status)) continue;
-    const ok = typeof check.status === 'number' && check.status < 400;
+    // A working skip link on the deliberately missing page retains that page's
+    // HTTP 404. Only exempt its own fragments; links from real pages to the
+    // missing route must still fail, as must missing fragment targets above.
+    const expectedNotFoundFragment =
+      check.kind === 'fragment' &&
+      check.status === NOT_FOUND_STATUS &&
+      new URL(check.href).pathname === NOT_FOUND_PAGE &&
+      check.sources.every((source) => source === NOT_FOUND_PAGE);
+    const ok = (typeof check.status === 'number' && check.status < 400) || expectedNotFoundFragment;
     if (!ok && check.status !== null) {
       note({
         severity: check.kind === 'external' ? 'medium' : 'high',

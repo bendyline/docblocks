@@ -35,10 +35,34 @@ material for that layout.
 The summary layouts are Title, Section divider, Key idea, Big statement (only the
 headline, when it is 60 characters or fewer), Quote from the text (one sentence of
 the section, word for word), Key number (a prominent figure such as 40% or $3
-million), Definition, List, Comparison, Steps diagram, and Image. The automatic
-planner never picks the divider, big statement, quote, key number, or definition
-on its own; they come from a section preference or an AI suggestion, and an AI
-quote or figure must appear in the passage.
+million), Definition, List, Comparison, Steps diagram, Cards, Process, Cycle,
+Layers, and Image. The automatic planner never picks the divider, big statement,
+quote, key number, definition, or layers on its own; they come from a section
+preference or an AI suggestion, and an AI quote or figure must appear in the
+passage.
+
+Cards, Process, Cycle and Layers draw a slide's points instead of listing them:
+parallel ideas as cards side by side, ordered stages as numbered steps joined by
+arrows, a repeating sequence as stages on a ring, and nested parts (a core and the
+layers around it) as concentric rings, innermost first, each called out. A point
+written `Label: detail` sets its label in bold. A process whose stages each open
+with a date, in order, is drawn as a timeline. A comparison of two points sets
+them as two panels with a "vs" mark between them. Automatic slides with several
+points become cards (a sentence that defines its subject, such as "Antibodies are
+proteins…", is labelled by that subject); a passage whose sentences open "First…
+Then… Finally…" becomes a process, kept on one slide, or a cycle when it says the
+sequence repeats. Key ideas, lists, comparisons, definitions, key numbers and big
+statements share the same headline lockup and type, so a deck reads as one
+design: a key number sits large beside what it means, and a big statement sets in
+the headline face rather than capitals.
+
+Each card or stage appears as the narration reaches the sentence it summarizes
+(the first as the headline settles); in a slideshow or the recorder, Next reveals
+them in turn. With the theme's motion profile, each one assembles as it arrives:
+arrows and timeline track draw on, numbered badges and rings pop, cards lift and
+words rise, and a key number counts up. These layouts need a Squisq release that
+includes them; until then the designer offers only the layouts the installed
+Squisq supports.
 
 A section can instead be shown **As authored**, labeled with the block type it
 renders with, such as **As authored (Bar Chart)**. That section becomes one slide
@@ -51,15 +75,28 @@ Automatic slides are titled with their section heading and show the section's
 own sentences beneath it, so a slide never repeats its title as its body. Each
 document image appears once, on a slide from the section that contains it.
 
-A section's embedded videos and diagrams (a `<video>`, a hosted video, a Mermaid
-or SVG fence, or a `diagram` / `tree` / `timeline` fence) appear beside its slide
-text rather than being dropped. The section's slides are shared out among them in
-source order, so every one is shown. A diagram or HTML video stays on screen across
-consecutive slides, and the video plays on from where the previous slide left it
-instead of restarting. A slide that carries one prefers a list over a steps
-diagram, unless the section's layout preference says steps. Timed clips attached
-to a section, such as a `{[audio …]}` music bed, start on its first slide and stop
-where the section ends.
+A section's features (its tables, its pictures, and its embedded videos and
+diagrams: a `<video>`, a hosted video, a Mermaid or SVG fence, or a `diagram` /
+`tree` / `timeline` fence) appear on its slides in every layout and density
+rather than being dropped. The section's slides are shared out among them in
+source order, so every one is shown. A table, picture, diagram or HTML video stays
+on screen across consecutive slides, and the video plays on from where the
+previous slide left it instead of restarting. A picture normally gets its own
+image slide; when no slide shows it that way (a layout preference other than
+Image, or more pictures than slides) it appears beside the slide text instead. A
+slide that carries one prefers a list over a steps diagram, unless the section's
+layout preference says steps. Timed clips attached to a section, such as a
+`{[audio …]}` music bed, start on its first slide and stop where the section ends.
+
+A slide that carries a feature keeps its words short so the feature has the room:
+at most two points, each cut at a clause near 100 characters (points typed in
+**Customize slide wording** stand as written). The words summarize the section's
+prose: a table's cells and a diagram's source never become a slide's points, and
+never start a slide of their own at any density. A table is drawn whole beneath
+the headline and points at the slide's full width, its cells wrapping and keeping
+their own line breaks, with the type set as large as every row allows. A chart
+section summarized this way shows its data as a table; show it **As authored** to
+draw the chart.
 
 **Use dynamic slides** saves the preferences and selects the Dynamic slides
 summarization mode in one undoable edit. It also disables the redundant automatic
@@ -69,7 +106,7 @@ from the draft; applying makes that reset durable.
 **Hide this slide in the presentation** leaves the selected slide out of the deck
 and video in any density. The narration still speaks its passage, so the shown
 slide before it stays on screen (or, at the very start, the next shown slide opens
-the deck). A section's videos and diagrams move to its shown slides, and its music
+the deck). A section's features move to its shown slides, and its music
 bed still plays. Hidden slides stay in the designer's list, struck through, and
 still preview, so they can be shown again; AI never suggests wording for them. At
 least one slide must stay shown. A hidden slide is remembered by a short key for
@@ -78,9 +115,14 @@ splits the section differently, shows it again.
 
 **Customize slide wording (slides only)** overrides a section's opening headline
 or highlights. With an AI model connected, **Suggest with AI** proposes headlines,
-condensed points, and layouts one slide at a time. Each accepted suggestion appears in the
+condensed points, and layouts one slide at a time. A deck of 3 to 16 slides to
+suggest is first planned as a whole: one request chooses every slide's layout
+together, so the deck varies by design (no layout on more than a third of the
+slides), and each slide's request then uses its planned layout where the passage
+can fill it. Each accepted suggestion appears in the
 slide list and preview as soon as it arrives, marked **AI**; the footer shows which
-slide is being suggested, and **Stop** keeps everything suggested so far. Only
+slide is being suggested, and **Stop** keeps everything suggested so far. On a
+slide that carries a feature, AI is asked for at most two short points. Only
 accepted AI results are stored; failed suggestions get one repair attempt, then
 retain the automatic version. AI never runs automatically while typing.
 

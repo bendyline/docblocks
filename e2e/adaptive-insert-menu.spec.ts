@@ -1,5 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from './helpers/test.js';
+import { showWriteView } from './helpers/toolbar.js';
 
 async function expectMenuInsideViewport(menu: Locator): Promise<void> {
   await expect(menu).toBeVisible();
@@ -22,7 +23,7 @@ async function expectMenuInsideViewport(menu: Locator): Promise<void> {
 async function openWelcomeInWrite(page: Page): Promise<void> {
   await page.goto('/');
   await page.getByRole('button', { name: 'Tour the welcome document', exact: true }).click();
-  await page.getByRole('tab', { name: 'Write', exact: true }).click();
+  await showWriteView(page);
 }
 
 test.describe('Insert menu on narrow screens', () => {

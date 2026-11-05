@@ -80,6 +80,17 @@ web_modules/
 .env.*
 !.env.example
 
+# Store signing material. CI decodes these from repository secrets; a local
+# store build (e.g. the Mac App Store profile at
+# packages/desktop/embedded.provisionprofile) must never be committed.
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.mobileprovision
+*.provisionprofile
+AuthKey_*.p8
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
@@ -167,6 +178,3 @@ reports/
 /.release-audit-2.1.2-20260717
 /ship-audit
 /release-candidate-audit
-
-# Verified first-party mobile SDK preview, pinned by the npm lockfile.
-!packages/mobile/vendor/*.tgz

@@ -53,7 +53,10 @@ import { useAiStatus, unavailableSentence } from '../Ai/ai-status.js';
 import { AiReportButton } from '../Ai/AiOutputReport.js';
 import { refinePresentationPlan } from './presentation-ai.js';
 
-const LABELS: Record<PresentationLayout, string> = {
+// Keyed by layout name rather than Squisq's union, so the designer lists the
+// layouts the installed Squisq offers (`PRESENTATION_LAYOUTS`) on either side
+// of a release that adds some.
+const LABELS: Record<PresentationLayout, string> & Record<string, string | undefined> = {
   title: 'Title',
   divider: 'Section divider',
   statement: 'Key idea',
@@ -65,9 +68,21 @@ const LABELS: Record<PresentationLayout, string> = {
   comparison: 'Comparison',
   steps: 'Steps diagram',
   image: 'Image',
+  cards: 'Cards',
+  process: 'Process',
+  cycle: 'Cycle',
+  layers: 'Layers',
 };
 /** What a chosen layout shows, and which slides it can apply to. */
-const LAYOUT_HELP: Record<PresentationBeatLayout, string> = {
+const LAYOUT_HELP: Record<PresentationBeatLayout, string> & Record<string, string | undefined> = {
+  cards:
+    'The highlights side by side as cards, each “Label: detail” with its label in bold. Used on slides with at least two.',
+  process:
+    'The highlights as numbered stages joined by arrows, revealed as the narration reaches them. Used on slides with at least two.',
+  cycle:
+    'The highlights as stages on a ring, the last leading back to the first. Used on slides with at least three.',
+  layers:
+    'The highlights as nested parts, innermost first, drawn as concentric rings with each part called out. Used on slides with at least three.',
   authored:
     'Shows this section as written, as one slide for its whole narration. To change its block type, use the block picker in the editor.',
   title: 'A large headline with one supporting line.',
@@ -323,7 +338,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
   const layoutLabel = (layout: PresentationBeatLayout, blockId: string | undefined) =>
     layout === AUTHORED_PRESENTATION_LAYOUT
       ? (authoredLabels.get(blockId ?? '') ?? 'As authored')
-      : LABELS[layout];
+      : (LABELS[layout] ?? layout);
   // Layout changes can split or merge slides. Follow the source passage rather
   // than a slide number, which could now belong to a different section.
   const selectedIndex = Math.max(
@@ -694,7 +709,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
                       (layout) => layout !== 'image' || beat.imageSrc,
                     ).map((layout) => (
                       <option key={layout} value={layout}>
-                        {LABELS[layout]}
+                        {LABELS[layout] ?? layout}
                       </option>
                     ))}
                   </optgroup>

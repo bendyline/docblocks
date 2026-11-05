@@ -44,7 +44,7 @@ import type { ExportBlobSaver } from './run-export.js';
 import { browserSaveMode, saveActionLabel } from './browser-save.js';
 import { buildExportFilename } from './export-filename.js';
 import { hostErrorDetail } from './host-error.js';
-import { PdfReplacementsError } from './export-errors.js';
+import { PdfReplacementsError, PresentationInvalidError } from './export-errors.js';
 import { createImageSaveOutput } from './image-save.js';
 import { OpenAfterSaveCheckbox } from './OpenAfterSaveCheckbox.js';
 import { loadOpenAfterExport, saveOpenAfterExport } from '../preferences/export.js';
@@ -183,10 +183,17 @@ function loadVideoExportModules(): Promise<VideoExportModules> {
   videoExportModulesPromise ??= Promise.all([
     import('@bendyline/squisq-video-react'),
     import('@bendyline/squisq-react/standalone-source'),
-  ]).then(([videoModule, playerModule]) => ({
-    Modal: videoModule.VideoExportModal,
-    playerScript: playerModule.PLAYER_BUNDLE,
-  }));
+  ])
+    .then(([videoModule, playerModule]) => ({
+      Modal: videoModule.VideoExportModal,
+      playerScript: playerModule.PLAYER_BUNDLE,
+    }))
+    .catch((error: unknown) => {
+      // A failed chunk load is often transient; let the next attempt retry
+      // instead of replaying this rejection until the app restarts.
+      videoExportModulesPromise = null;
+      throw error;
+    });
   return videoExportModulesPromise;
 }
 
@@ -474,8 +481,14 @@ export function ExportToolbarControls({
         ]);
         setVideoModules(modules);
         setVideoDoc(exportDoc);
-      } catch {
-        setVideoLoadError('Video export could not be loaded.');
+      } catch (caught) {
+        // An invalid presentation (stale narration, a pinned slide time) is
+        // something the person can fix, so say what it is.
+        setVideoLoadError(
+          caught instanceof PresentationInvalidError
+            ? `Video export is unavailable. ${caught.message}`
+            : 'Video export could not be loaded.',
+        );
       } finally {
         setVideoLoading(false);
       }

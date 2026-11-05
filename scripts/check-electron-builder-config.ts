@@ -1006,9 +1006,15 @@ const mainRequires = new Set(
 const gezelPeerRuntimes: Readonly<Record<string, string>> = {
   '@huggingface/transformers': '@bendyline/gezel-knowledge',
 };
+// Resolve loaders as the inference package that imports them does: npm may
+// nest them under it rather than hoist them beside the desktop package.
+const gezelInference = installedPackageDirectory(
+  '@bendyline/gezel-inference',
+  path.dirname(desktopManifestPath),
+);
 for (const [dependency, loader] of Object.entries(gezelPeerRuntimes)) {
   const loaderManifest = readJsonRecord(
-    path.join(installedPackageDirectory(loader, path.dirname(desktopManifestPath)), 'package.json'),
+    path.join(installedPackageDirectory(loader, gezelInference), 'package.json'),
   );
   const peers = loaderManifest.peerDependencies;
   if (!isRecord(peers) || typeof peers[dependency] !== 'string') {

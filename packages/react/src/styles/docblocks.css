@@ -192,6 +192,12 @@
 
 :root:has(.db-shell[data-theme='dark']),
 .db-shell[data-theme='dark'] {
+  /* Native control chrome (a <select>'s chevron, an unchecked radio or
+     checkbox, a number spinner) is painted from `color-scheme`, not from
+     the tokens below. Without it a dark shell keeps light-scheme widgets:
+     iOS draws a black chevron on the dark input. On the root too, because
+     Squisq portals its menus and dialogs onto <body>. */
+  color-scheme: dark;
   --db-bg: #1a1812;
   --db-bg-subtle: #262219;
   --db-bg-hover: #3a3528;
@@ -246,6 +252,7 @@
 @media (prefers-color-scheme: dark) {
   :root:has(.db-shell:not([data-theme='light'])),
   .db-shell:not([data-theme='light']) {
+    color-scheme: dark;
     --db-bg: #1a1812;
     --db-bg-subtle: #262219;
     --db-bg-hover: #3a3528;
@@ -335,8 +342,19 @@
   color: var(--db-text-muted);
 }
 
+/* The heading is the workspace's name, which can be long: it gives way to the
+   actions and is cut short rather than wrapping or pushing them off. */
+.db-explorer-toolbar > .db-explorer-title {
+  min-width: 0;
+  margin-right: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .db-explorer-actions {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 2px;
 }
@@ -2100,6 +2118,9 @@ body.db-resizing-sidebar * {
   content: '';
   flex: 1 0 0;
   order: 2;
+  /* The spring is the one item every document-controls row has, so it sets
+     that row to Write's 44px. */
+  height: 44px;
 }
 
 .db-shell[data-db-form-factor='phone'][data-db-orientation='portrait']
@@ -2107,6 +2128,28 @@ body.db-resizing-sidebar * {
   > .squisq-preview-controls
   ~ :not(.squisq-presentation-control, .squisq-print-trigger) {
   order: 2;
+}
+
+/* Use modes put Squisq's preview controls where Write has its actions row.
+   Squisq sizes them as a compact desktop cluster (24px segments, a 14px print
+   glyph), so on a phone they read smaller than Write's 28px buttons and their
+   rows packed to about 31px. Match Write instead: 44px rows, 28px segments,
+   and toolbar-sized glyphs. Squisq icons are 1.15em, so 15px gives Write's
+   17px glyph. */
+.db-shell--mobile .squisq-toolbar > .squisq-preview-controls {
+  height: 44px;
+}
+
+.db-shell--mobile .squisq-preview-seg-btn {
+  min-height: 28px;
+}
+
+.db-shell--mobile .squisq-print-trigger .squisq-icon {
+  font-size: 15px;
+}
+
+.db-shell--mobile .squisq-presentation-menu-trigger {
+  width: 24px;
 }
 
 /* The compact layout puts Squisq's overflow trigger part-way along the second
@@ -3416,32 +3459,18 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   padding-bottom: 10px;
 }
 
-/* The Use-mode chooser beside Slideshow reads as a button, not a stray glyph:
-   a bordered 22px box centred on the label. The label's centre rises with
-   its line box, and Android scales text to the system font size while
-   leaving padding alone, so a fixed offset left the arrow 3px low at 115%.
-   The offset is therefore half a line box (`lh`) at the label's own 13px,
-   which Android scales in step. The trigger still spans the tab's height as
-   the tap target. */
-.db-shell .squisq-use-mode-trigger {
-  width: auto;
-  padding: 0 6px 11px 2px;
-  padding-bottom: calc(0.5lh + 2.5px);
+/* The ▾ mode buttons beside Write and Slideshow centre their 24px face on the
+   tab label. Squisq anchors the face to the underline, matched to its own 4px
+   label padding, so the lifted label above needs the button's padding lifted
+   with it. The label's centre rises with its line box, and Android scales
+   text to the system font size while leaving padding alone, so a fixed
+   offset left the arrow 3px low at 115%. The offset is therefore half a line
+   box (`lh`) at the label's own 13px, which Android scales in step. The
+   trigger still spans the tab's height as the tap target. */
+.db-shell .squisq-view-mode-trigger {
+  padding-bottom: 9.5px;
+  padding-bottom: calc(0.5lh + 1px);
   font-size: 13px;
-}
-
-.db-shell .squisq-use-mode-trigger > svg {
-  box-sizing: content-box;
-  padding: 5px;
-  border: 1px solid var(--db-border-strong);
-  border-radius: 5px;
-  transform: none;
-  transition: background-color 0.12s ease;
-}
-
-.db-shell .squisq-use-mode-trigger:hover > svg,
-.db-shell .squisq-use-mode-trigger--open > svg {
-  background: var(--db-bg-hover);
 }
 
 .squisq-toolbar-button[aria-label='Insert image'] {
@@ -4966,11 +4995,11 @@ html:has(.db-shell[data-theme='dark'][data-accent='gray']) {
   --db-badge-text-hover: #ffffff;
 }
 
-/* The Use mode menu is portaled to document.body, outside both the DocBlocks
-   shell and the Squisq editor shell. Consume the palette hoisted to `html`
-   above so its surface, states, icons, and text follow every DocBlocks theme
-   and accent instead of falling back to Squisq's standalone blue/slate UI. */
-html:has(.db-shell) .squisq-use-mode-menu {
+/* The Write and Use mode menus are portaled to document.body, outside both the
+   DocBlocks shell and the Squisq editor shell. Consume the palette hoisted to
+   `html` above so their surface, states, icons, and text follow every DocBlocks
+   theme and accent instead of falling back to Squisq's standalone blue/slate UI. */
+html:has(.db-shell) .squisq-view-mode-menu {
   background: var(--db-bg-raised);
   border-color: var(--db-border);
   box-shadow:
@@ -4978,39 +5007,39 @@ html:has(.db-shell) .squisq-use-mode-menu {
     0 2px 6px var(--db-shadow);
 }
 
-html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-item {
+html:has(.db-shell) .squisq-view-mode-menu .squisq-view-mode-menu-item {
   color: var(--db-text-secondary);
 }
 
-html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-item:hover,
-html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-item:focus-visible {
+html:has(.db-shell) .squisq-view-mode-menu .squisq-view-mode-menu-item:hover,
+html:has(.db-shell) .squisq-view-mode-menu .squisq-view-mode-menu-item:focus-visible {
   background: var(--db-bg-hover);
   color: var(--db-text);
 }
 
-html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-item--selected {
+html:has(.db-shell) .squisq-view-mode-menu .squisq-view-mode-menu-item--selected {
   background: var(--db-accent-tint-strong);
   color: var(--db-accent-deep);
 }
 
-html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-icon {
+html:has(.db-shell) .squisq-view-mode-menu .squisq-view-mode-menu-icon {
   background: var(--db-bg-hover);
   color: var(--db-text-muted);
 }
 
 html:has(.db-shell)
-  .squisq-use-mode-menu
-  .squisq-use-mode-menu-item--selected
-  .squisq-use-mode-menu-icon {
+  .squisq-view-mode-menu
+  .squisq-view-mode-menu-item--selected
+  .squisq-view-mode-menu-icon {
   background: var(--db-accent-soft-25);
   color: var(--db-accent-hover);
 }
 
-html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-summary {
+html:has(.db-shell) .squisq-view-mode-menu .squisq-view-mode-menu-summary {
   color: var(--db-text-secondary);
 }
 
-html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-check {
+html:has(.db-shell) .squisq-view-mode-menu .squisq-view-mode-menu-check {
   color: var(--db-accent-hover);
 }
 
@@ -5774,7 +5803,7 @@ html:has(.db-shell[data-theme='dark'])
 
 /* Toolbar overflow menu. Squisq portals it onto <body> (2.12+), outside the
    shell, so these rules reach it through `html:has(.db-shell)` like the
-   Insert and Use mode menus. Squisq intentionally ships a neutral slate
+   Insert and Write/Use mode menus. Squisq intentionally ships a neutral slate
    palette; inside DocBlocks this popover should use the same surfaces,
    borders, text, and interaction colors as our other shell menus. The
    contextual template/transition controls need explicit treatment too,
@@ -6435,6 +6464,28 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 .db-save-toast--error {
   color: #fff;
   background: var(--db-danger, #a33a35);
+}
+
+/* Shown where the toast appears while a document takes a moment to open. */
+.db-opening-notice {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  z-index: 200;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 8px 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--db-text);
+  background: var(--db-bg-elevated, var(--db-bg));
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px var(--db-shadow);
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
 .db-document-conflict {
@@ -8932,9 +8983,9 @@ button.db-git-file-row:hover {
   }
 
   /* The label's padding is 8px less here, and so is the button's. */
-  .db-shell .squisq-use-mode-trigger {
-    padding-bottom: 3px;
-    padding-bottom: calc(0.5lh - 5.5px);
+  .db-shell .squisq-view-mode-trigger {
+    padding-bottom: 1.5px;
+    padding-bottom: calc(0.5lh - 7px);
   }
 
   /* The 32px caption row leaves little room around Squisq's 28px action

@@ -42,8 +42,8 @@ export function DictationSettingsControls({ session }: SpeechSectionProps) {
     <fieldset className="db-settings-fieldset">
       <legend className="db-settings-legend">Dictation</legend>
       <p className="db-settings-hint">
-        Dictation runs on this computer; your voice never leaves it. Models download only when you
-        choose.
+        Dictation runs on this device; your voice never leaves it. Models download only when you
+        choose. Downloads continue when Settings is closed.
         {appBytes > 0 ? ` Dictation models are using ${formatModelSize(appBytes)}.` : ''}
       </p>
       <SpeechErrorNotice error={error} />
@@ -91,8 +91,8 @@ export function NarrationSettingsControls({ session }: SpeechSectionProps) {
     <fieldset className="db-settings-fieldset">
       <legend className="db-settings-legend">Narration</legend>
       <p className="db-settings-hint">
-        Narration runs on this computer; your documents never leave it. Voices download only when
-        you choose.
+        Narration runs on this device; your documents never leave it. Voices download only when you
+        choose. Downloads continue when Settings is closed.
         {appBytes > 0 ? ` Narration voices are using ${formatModelSize(appBytes)}.` : ''}
       </p>
       <SpeechErrorNotice error={error} />
@@ -106,7 +106,7 @@ export function NarrationSettingsControls({ session }: SpeechSectionProps) {
           </ul>
         </>
       ) : (
-        <p className="db-settings-hint">Narration is not available on this computer.</p>
+        <p className="db-settings-hint">Narration is not available on this device.</p>
       )}
       {ttsModel?.installed && (
         <>

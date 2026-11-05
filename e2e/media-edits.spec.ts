@@ -1,5 +1,6 @@
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
+import { openAttachments } from './helpers/toolbar.js';
 
 /**
  * Media edits end to end on the site: a recording uploaded into a document is
@@ -60,7 +61,7 @@ test('cleans up a clip’s audio non-destructively and renders it in the backgro
   // places leading media in the document tray, collapsed to a pill.
   const content = page.locator('.squisq-editor-content [contenteditable="true"]').first();
   await expect(content).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { name: /^Attachments/ }).click();
+  await openAttachments(page);
   await page
     .locator('.squisq-media-bin input[type="file"]')
     .setInputFiles({ name: 'take.wav', mimeType: 'audio/wav', buffer: Buffer.from(wavBytes()) });

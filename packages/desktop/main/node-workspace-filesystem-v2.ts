@@ -7,6 +7,7 @@ import {
   WORKSPACE_ROOT,
   fsErrorFromUnknown,
   isIgnoredWorkspaceEntryName,
+  isMarkdownFileName,
   parseFileSystemVersion,
   parseWorkspacePath,
   workspacePathBasename,
@@ -124,6 +125,8 @@ export interface NodeWorkspaceFileSystemV2Options {
   readonly traversalEntryLimit?: number;
   /** Optional lower snapshot byte ceiling; always clamped to the host wire limit. */
   readonly snapshotByteLimit?: number;
+  /** Injectable cloud-placeholder test; defaults to `isOnlineOnlyFile`. */
+  readonly isOnlineOnly?: (stat: BigIntStats) => boolean;
 }
 
 interface RememberedContentDigest {
@@ -159,6 +162,76 @@ const LISTABLE_READ_ISSUE_CODES: ReadonlySet<FsErrorCode> = new Set([
 ]);
 /** Remembered file digests; the oldest is evicted first (~200 bytes each). */
 const MAX_REMEMBERED_CONTENT_DIGESTS = 50_000;
+/**
+ * Cloud-placeholder downloads in flight across every workspace. Each holds a
+ * libuv thread for as long as the network takes, so a document full of
+ * online-only media must not claim the whole pool. Large files have their own
+ * lane, so a document or an image never queues behind a video.
+ */
+const MAX_CONCURRENT_LARGE_ONLINE_ONLY_DOWNLOADS = 2;
+const MAX_CONCURRENT_SMALL_ONLINE_ONLY_DOWNLOADS = 4;
+const LARGE_ONLINE_ONLY_DOWNLOAD_BYTES = 8n * 1024n * 1024n;
+/**
+ * Operations that observe a cloud placeholder without needing its bytes. A
+ * stat, a listing, and the remove or move that follows them agree on the
+ * placeholder's version without downloading it. Writes still compare content.
+ */
+const PLACEHOLDER_METADATA_OPERATIONS: ReadonlySet<FsOperation> = new Set<FsOperation>([
+  'stat',
+  'list',
+  'watch',
+  'remove',
+  'move',
+]);
+
+/**
+ * A file a cloud sync client (OneDrive, iCloud Drive, Dropbox) keeps online
+ * until something reads it. macOS reports these "dataless" files with no
+ * allocated blocks, and any read blocks until the whole file has downloaded.
+ * Node exposes no equivalent signal for Windows placeholders, so this is
+ * macOS-only. A fully sparse local file also matches, which is harmless: it
+ * is still listed and read, just not hashed while browsing.
+ */
+export function isOnlineOnlyFile(
+  stat: BigIntStats,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  return platform === 'darwin' && stat.isFile() && stat.size > 0n && stat.blocks === 0n;
+}
+
+/**
+ * Run at most `limit` tasks at once. Waiting tasks start in arrival order,
+ * except urgent ones, which go to the front of the queue, newest first.
+ */
+export function createConcurrencyLimit(
+  limit: number,
+): <T>(task: () => Promise<T>, urgent?: boolean) => Promise<T> {
+  let active = 0;
+  const waiting: (() => void)[] = [];
+  return async (task, urgent = false) => {
+    if (active < limit) active += 1;
+    else {
+      await new Promise<void>((resolve) =>
+        urgent ? waiting.unshift(resolve) : waiting.push(resolve),
+      );
+    }
+    try {
+      return await task();
+    } finally {
+      // Hand the slot straight to the next waiter, or release it.
+      const next = waiting.shift();
+      if (next) next();
+      else active -= 1;
+    }
+  };
+}
+
+const limitLargeOnlineOnlyDownload = createConcurrencyLimit(
+  MAX_CONCURRENT_LARGE_ONLINE_ONLY_DOWNLOADS,
+);
+const limitSmallOnlineOnlyDownload = createConcurrencyLimit(
+  MAX_CONCURRENT_SMALL_ONLINE_ONLY_DOWNLOADS,
+);
 
 /**
  * Correctness-first Node implementation used behind Electron IPC.
@@ -175,7 +248,10 @@ const MAX_REMEMBERED_CONTENT_DIGESTS = 50_000;
  * bytes returned by readFile/snapshot remain coupled to
  * one stable descriptor observation. Directory versions track native metadata
  * and descendant changes observed by this provider; shallow browsing does not
- * hash an entire collapsed subtree.
+ * hash an entire collapsed subtree. Stats, listings, removes and moves never
+ * hash a cloud placeholder (`isOnlineOnlyFile`), which would download it;
+ * explicit reads download one before taking the root lock, so the wait never
+ * blocks the rest of the workspace.
  */
 export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
   public readonly id: string;
@@ -195,6 +271,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
   private readonly echoBatches: EchoBatch[] = [];
   private readonly acquireWatcher: (rootPath: string) => WorkspaceWatcherHandle;
   private readonly openReadableFile: (absolutePath: string) => Promise<NodeWorkspaceReadableFile>;
+  private readonly isOnlineOnly: (stat: BigIntStats) => boolean;
   private readonly traversalEntryLimit: number;
   private readonly snapshotByteLimit: number;
   private watchSession: WatchSession | null = null;
@@ -216,6 +293,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     this.roots = roots;
     this.acquireWatcher = options.acquireWatcher ?? acquireWorkspaceWatcher;
     this.openReadableFile = options.openReadableFile ?? openNodeReadableFile;
+    this.isOnlineOnly = options.isOnlineOnly ?? ((stat) => isOnlineOnlyFile(stat));
     this.traversalEntryLimit = boundedProviderLimit(
       options.traversalEntryLimit,
       HOST_WIRE_LIMITS.arrayEntries,
@@ -262,6 +340,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
 
   public async readFile(path: WorkspacePath): Promise<FileSystemFileRead | null> {
     const canonical = this.canonical(path);
+    await this.downloadIfOnlineOnly(canonical);
     return this.execute('read', canonical, null, async () => {
       const scanned = await this.tryReadStableFile(canonical, 'read');
       if (!scanned) return null;
@@ -315,6 +394,13 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     sink: (chunks: AsyncIterable<Uint8Array>) => Promise<void>,
   ): Promise<FileSystemFileSnapshot | null> {
     const canonical = this.canonical(path);
+    return this.downloadIfOnlineOnly(canonical).then(() => this.readToLocked(canonical, sink));
+  }
+
+  private readToLocked(
+    canonical: WorkspacePath,
+    sink: (chunks: AsyncIterable<Uint8Array>) => Promise<void>,
+  ): Promise<FileSystemFileSnapshot | null> {
     return this.execute('read', canonical, null, async () => {
       const kind = await this.nativeKind(canonical, 'read');
       if (kind === null) return null;
@@ -772,6 +858,41 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     return promise;
   }
 
+  /**
+   * Download a cloud placeholder before a read takes the root lock. The
+   * download lasts as long as the network does, and every other read,
+   * listing and save in the workspace waits on that lock. Reading never
+   * changes the file, so warming it unlocked is safe; the locked read that
+   * follows then reads local bytes. Failures are left for that read to report.
+   */
+  private async downloadIfOnlineOnly(itemPath: WorkspacePath): Promise<void> {
+    if (this.disposed) return;
+    try {
+      const abs = await this.resolveRead(itemPath, 'read');
+      const stat = await fs.stat(abs, { bigint: true });
+      if (!this.isOnlineOnly(stat)) return;
+      const limit =
+        stat.size > LARGE_ONLINE_ONLY_DOWNLOAD_BYTES
+          ? limitLargeOnlineOnlyDownload
+          : limitSmallOnlineOnlyDownload;
+      await limit(
+        async () => {
+          const handle = await this.openReadableFile(abs);
+          try {
+            // Stream through the bytes without keeping them.
+            await (handle.hashFile ? handle.hashFile() : handle.readFile());
+          } finally {
+            await handle.close();
+          }
+        },
+        // A document someone is opening goes ahead of media still waiting.
+        isMarkdownFileName(workspacePathBasename(itemPath)),
+      );
+    } catch {
+      // Missing files, permissions and I/O errors surface from the locked read.
+    }
+  }
+
   private mutate<T>(
     operation: FsOperation,
     itemPath: WorkspacePath,
@@ -1034,6 +1155,18 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     operation: FsOperation,
     readRetry: ReadRetryBudget,
   ): Promise<ScannedFile> {
+    // Hashing a cloud placeholder downloads it under the root lock. A stat
+    // that only picks between an inline and a chunked read would then hold
+    // every other operation in the workspace for the whole download. Version
+    // it from what is already known.
+    if (PLACEHOLDER_METADATA_OPERATIONS.has(operation) && this.isOnlineOnly(stat)) {
+      return onlineOnlyFile(
+        itemPath,
+        stat,
+        operation,
+        this.rememberedContentDigest(itemPath, stat),
+      );
+    }
     try {
       return await this.statStableFile(itemPath, operation, readRetry);
     } catch (error: unknown) {
@@ -1831,6 +1964,33 @@ function unreadableFile(
     version: versionForUnreadableFile(itemPath, stat),
     lastModified: stat.mtime.toISOString(),
     readIssue,
+    data: new ArrayBuffer(0),
+  });
+  return { root, entries: [root] };
+}
+
+/**
+ * A cloud placeholder observed without reading its bytes.
+ * A digest remembered from an earlier read keeps its content version stable
+ * across eviction; otherwise the version comes from metadata.
+ */
+function onlineOnlyFile(
+  itemPath: WorkspacePath,
+  stat: BigIntStats,
+  operation: FsOperation,
+  rememberedDigest: string | null,
+): ScannedFile {
+  const root: FileSystemSnapshotFile = Object.freeze({
+    kind: 'file',
+    path: itemPath,
+    name: workspacePathBasename(itemPath),
+    size: snapshotFileSize(itemPath, stat, operation),
+    version:
+      rememberedDigest === null
+        ? versionForUnreadableFile(itemPath, stat)
+        : versionForFile(itemPath, rememberedDigest),
+    lastModified: stat.mtime.toISOString(),
+    onlineOnly: true,
     data: new ArrayBuffer(0),
   });
   return { root, entries: [root] };

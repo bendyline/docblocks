@@ -111,6 +111,42 @@ describe('image preload bridge', () => {
     expect(ipc.invoked.some((call) => call.channel === 'ai:images:generate:cancel')).to.equal(true);
   });
 
+  it('owns style download streams, validates compatibility, and forwards cancellation', async () => {
+    const style = {
+      id: 'watercolor',
+      label: 'Watercolor',
+      description: null,
+      state: 'installed',
+      downloadBytes: 10,
+      license: 'MIT',
+      commercialUse: true,
+      baseModels: ['sd-cpp:test'],
+    };
+    const ipc = new FakeIpc({ 'ai:images:styles': { ok: true, value: [style] } });
+    const api = createAiImagesApi(ipc, mintId);
+    expect(await api.styles!()).to.deep.equal({ ok: true, value: [style] });
+    const handle = api.installStyle!('watercolor');
+    const start = ipc.invoked.find((call) => call.channel === 'ai:images:install-style:start')!;
+    const requestId = start.args[0];
+    ipc.emit('ai:images:install-style:event', {
+      requestId: 'another-window',
+      event: { kind: 'done', model: style },
+    });
+    expect(ipc.listeners.get('ai:images:install-style:event')?.size).to.equal(1);
+    handle.cancel();
+    expect(ipc.invoked.at(-1)?.channel).to.equal('ai:images:install-style:cancel');
+    ipc.emit('ai:images:install-style:event', { requestId, event: { kind: 'done', model: style } });
+    expect(await handle.done).to.deep.equal({ ok: true, value: style });
+    expect(ipc.listeners.get('ai:images:install-style:event')?.size).to.equal(0);
+    const malformed = api.installStyle!('watercolor');
+    const malformedId = ipc.invoked.at(-1)!.args[0];
+    ipc.emit('ai:images:install-style:event', {
+      requestId: malformedId,
+      event: { kind: 'done', model: { ...style, baseModels: [] } },
+    });
+    expect((await malformed.done).ok).to.equal(false);
+  });
+
   it('never sends an invalid request to main', async () => {
     const ipc = new FakeIpc();
     const result = await createAiImagesApi(ipc, mintId).generate({ prompt: '' }, () => undefined)

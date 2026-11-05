@@ -17,6 +17,7 @@ import type {
   AiImageEvent,
   AiImageInstallEvent,
   AiImageModel,
+  AiImageStyle,
   AiImagePhase,
   AiImagePreferences,
   AiImagePreferencesPatch,
@@ -25,7 +26,11 @@ import type {
   AiResult,
   AiStatus,
 } from '@bendyline/docblocks/host';
-import { AI_IMAGE_FIT_VERDICTS, HOST_WIRE_LIMITS } from '@bendyline/docblocks/host';
+import {
+  AI_IMAGE_FIT_VERDICTS,
+  HOST_WIRE_LIMITS,
+  parseExternalHttpUrl,
+} from '@bendyline/docblocks/host';
 import { AiHostError, aiError, toAiError } from './ai-errors.js';
 
 /** What the provider's image surface reports about this app. */
@@ -40,12 +45,27 @@ export interface ProviderImageModel {
   readonly shared?: boolean;
   readonly download_bytes?: number;
   readonly license?: string;
+  readonly license_url?: string;
   readonly commercial_use?: boolean;
   readonly renders_text?: boolean;
   readonly prompt_style?: string;
   readonly hardware_tier?: string;
   readonly min_ram_gb?: number;
   readonly fit?: { readonly verdict: string; readonly reason: string };
+}
+
+export interface ProviderImageStyle extends Pick<
+  ProviderImageModel,
+  | 'id'
+  | 'name'
+  | 'description'
+  | 'availability'
+  | 'download_bytes'
+  | 'license'
+  | 'license_url'
+  | 'commercial_use'
+> {
+  readonly base_models: readonly string[];
 }
 
 export type ProviderEnsureEvent =
@@ -77,10 +97,8 @@ export interface ProviderImage {
 }
 
 /** The provider's image surface, as the connector adapts it. */
-export interface ProviderImages {
-  access(signal: AbortSignal): Promise<ProviderImageAccess>;
-  requestAccess(onVerificationCode: (code: string) => void): Promise<void>;
-  models(signal: AbortSignal): Promise<readonly ProviderImageModel[]>;
+export interface ProviderImageDownloads<T> {
+  models(signal: AbortSignal): Promise<readonly T[]>;
   ensure(
     id: string,
     signal: AbortSignal,
@@ -90,6 +108,12 @@ export interface ProviderImages {
   ensureEvents(jobId: string, signal: AbortSignal): AsyncIterable<ProviderEnsureEvent>;
   cancelEnsure(jobId: string): Promise<void>;
   remove(id: string, signal: AbortSignal): Promise<void>;
+}
+
+export interface ProviderImages extends ProviderImageDownloads<ProviderImageModel> {
+  access(signal: AbortSignal): Promise<ProviderImageAccess>;
+  requestAccess(onVerificationCode: (code: string) => void): Promise<void>;
+  styles?: ProviderImageDownloads<ProviderImageStyle>;
   generate(
     input: {
       prompt: string;
@@ -97,6 +121,7 @@ export interface ProviderImages {
       model?: string;
       aspectRatio?: string;
       seed?: number;
+      style?: string;
     },
     options: { signal: AbortSignal; onProgress(progress: ProviderImageProgress): void },
   ): Promise<ProviderImage>;
@@ -165,6 +190,22 @@ const IMAGE_ERRORS: ReadonlyMap<string, [AiError['code'], string]> = new Map([
     'model_not_installed',
     ['model-unavailable', 'That image model is not installed. Download it in Settings.'],
   ],
+  ['styles_unsupported', ['unsupported', 'Update Gezel to add image styles.']],
+  [
+    'style_not_available',
+    [
+      'model-unavailable',
+      'That style is not installed for this image model. Choose a compatible style.',
+    ],
+  ],
+  [
+    'style_model_required',
+    ['model-unavailable', 'Download a compatible image model before adding this style.'],
+  ],
+  [
+    'media_model_wont_run',
+    ['model-unavailable', 'That image model is too large for this computer.'],
+  ],
   ['unknown_model', ['model-unavailable', 'Gezel does not offer that image model.']],
   ['model_wont_run', ['model-unavailable', 'That image model is too large for this computer.']],
   [
@@ -230,6 +271,7 @@ export function toAiImageModel(model: ProviderImageModel): AiImageModel {
       typeof bytes === 'number' && Number.isSafeInteger(bytes) && bytes >= 0 ? bytes : null,
     shared: model.shared === true,
     license: model.license ? clip(model.license, label) : null,
+    ...(model.license_url ? { licenseUrl: parseExternalHttpUrl(model.license_url) ?? null } : {}),
     commercialUse: typeof model.commercial_use === 'boolean' ? model.commercial_use : null,
     rendersText: model.renders_text === true,
     promptStyle:
@@ -251,6 +293,21 @@ export function toAiImageModel(model: ProviderImageModel): AiImageModel {
             reason: clip(fit.reason, message),
           }
         : null,
+  };
+}
+
+export function toAiImageStyle(style: ProviderImageStyle): AiImageStyle {
+  const model = toAiImageModel(style);
+  return {
+    id: model.id,
+    label: model.label,
+    description: model.description,
+    state: model.state,
+    downloadBytes: model.downloadBytes,
+    license: model.license,
+    licenseUrl: model.licenseUrl ?? null,
+    commercialUse: model.commercialUse,
+    baseModels: [...style.base_models],
   };
 }
 
@@ -353,15 +410,31 @@ export class AiImageService {
     }
   }
 
-  async models(): Promise<AiResult<readonly AiImageModel[]>> {
-    const images = this.options.images();
+  models(): Promise<AiResult<readonly AiImageModel[]>> {
+    return this.listAssets(this.options.images(), toAiImageModel);
+  }
+
+  styles(): Promise<AiResult<readonly AiImageStyle[]>> {
+    const styles = this.options.images()?.styles;
+    if (!styles)
+      return Promise.resolve({
+        ok: false,
+        error: aiError('unsupported', 'Update Gezel to add image styles.'),
+      });
+    return this.listAssets(styles, toAiImageStyle);
+  }
+
+  private async listAssets<T, U extends { id: string }>(
+    images: ProviderImageDownloads<T> | null,
+    convert: (item: T) => U,
+  ): Promise<AiResult<readonly U[]>> {
     if (!images)
       return { ok: false, error: aiError('provider-unavailable', NOT_CONNECTED.message) };
     const controller = new AbortController();
     const clear = timeoutSignal(controller, LOOKUP_TIMEOUT_MS);
     try {
       const models = await images.models(controller.signal);
-      return { ok: true, value: dedupe(models.map(toAiImageModel)) };
+      return { ok: true, value: dedupe(models.map(convert)) };
     } catch (error) {
       return { ok: false, error: imageError(error) };
     } finally {
@@ -369,8 +442,17 @@ export class AiImageService {
     }
   }
 
-  async removeModel(id: string): Promise<AiResult<null>> {
-    const images = this.options.images();
+  removeModel(id: string): Promise<AiResult<null>> {
+    return this.removeAsset(id, false);
+  }
+
+  removeStyle(id: string): Promise<AiResult<null>> {
+    return this.removeAsset(id, true);
+  }
+
+  private async removeAsset(id: string, style: boolean): Promise<AiResult<null>> {
+    const provider = this.options.images();
+    const images = style ? provider?.styles : provider;
     if (!images)
       return { ok: false, error: aiError('provider-unavailable', NOT_CONNECTED.message) };
     const controller = new AbortController();
@@ -379,8 +461,9 @@ export class AiImageService {
       await images.remove(id, controller.signal);
       const preferences = await this.options.preferences.get();
       const patch: AiImagePreferencesPatch = {
-        ...(preferences.model === id ? { model: null } : {}),
-        ...(preferences.designModel === id ? { designModel: null } : {}),
+        ...(style && preferences.style === id ? { style: null } : {}),
+        ...(!style && preferences.model === id ? { model: null } : {}),
+        ...(!style && preferences.designModel === id ? { designModel: null } : {}),
       };
       if (Object.keys(patch).length > 0) await this.options.preferences.set(patch);
       return { ok: true, value: null };
@@ -400,16 +483,49 @@ export class AiImageService {
   }
 
   startInstall(key: string, id: string, emit: AiImageInstallEmitter): void {
+    this.startDownload(key, id, emit, this.options.images(), toAiImageModel, 'model');
+  }
+
+  startStyleInstall(
+    key: string,
+    id: string,
+    emit: (event: AiImageInstallEvent<AiImageStyle>) => void,
+  ): void {
+    this.startDownload(
+      key,
+      id,
+      emit,
+      this.options.images()?.styles ?? null,
+      toAiImageStyle,
+      'style',
+    );
+  }
+
+  private startDownload<T extends { id: string }, U>(
+    key: string,
+    id: string,
+    emit: (event: AiImageInstallEvent<U>) => void,
+    images: ProviderImageDownloads<T> | null,
+    convert: (item: T) => U,
+    kind: 'model' | 'style',
+  ): void {
     let ended = false;
-    const end = (event: Extract<AiImageInstallEvent, { kind: 'done' | 'error' }>) => {
+    const end = (event: Extract<AiImageInstallEvent<U>, { kind: 'done' | 'error' }>) => {
       if (ended) return;
       ended = true;
       this.installs.delete(key);
       emit(event);
     };
-    const images = this.options.images();
     if (this.disposed || !images) {
-      end({ kind: 'error', error: aiError('provider-unavailable', NOT_CONNECTED.message) });
+      end({
+        kind: 'error',
+        error: aiError(
+          kind === 'style' && !this.disposed ? 'unsupported' : 'provider-unavailable',
+          kind === 'style' && !this.disposed
+            ? 'Update Gezel to add image styles.'
+            : NOT_CONNECTED.message,
+        ),
+      });
       return;
     }
     if (this.installs.has(key)) {
@@ -440,20 +556,24 @@ export class AiImageService {
             if (event.type === 'error') {
               throw new AiHostError(
                 'model-download-failed',
-                'Gezel could not download the model.',
+                `Gezel could not download the ${kind}.`,
                 event.error,
               );
             }
             if (event.type === 'done') break;
-            emit({ kind: 'progress', progress: installProgress(event) });
+            emit({ kind: 'progress', progress: installProgress(event, kind) });
           }
         }
         if (controller.signal.aborted)
           throw new AiHostError('cancelled', 'The download was cancelled.');
         const listed = await images.models(controller.signal);
         const model = listed.find((entry) => entry.id === id);
-        if (!model) throw new AiHostError('model-unavailable', 'Gezel no longer lists that model.');
-        end({ kind: 'done', model: toAiImageModel(model) });
+        if (!model || ('availability' in model && model.availability !== 'available'))
+          throw new AiHostError(
+            'model-unavailable',
+            `Gezel does not have that ${kind} downloaded.`,
+          );
+        end({ kind: 'done', model: convert(model) });
       } catch (error) {
         end({
           kind: 'error',
@@ -507,6 +627,7 @@ export class AiImageService {
             prompt: request.prompt,
             ...(request.negativePrompt ? { negativePrompt: request.negativePrompt } : {}),
             ...(model ? { model } : {}),
+            ...(request.style ? { style: request.style } : {}),
             aspectRatio: request.aspect ?? preferences.aspect,
             ...(request.seed !== undefined ? { seed: request.seed } : {}),
           },
@@ -636,16 +757,16 @@ export class AiImageService {
   }
 }
 
-function dedupe(models: AiImageModel[]): AiImageModel[] {
+function dedupe<T extends { id: string }>(models: T[]): T[] {
   const seen = new Set<string>();
   return models.filter((model) => !seen.has(model.id) && seen.add(model.id));
 }
 
-function installProgress(event: ProviderEnsureEvent): AiProgress {
+function installProgress(event: ProviderEnsureEvent, kind: 'model' | 'style'): AiProgress {
   if (event.type === 'progress') {
     const percent =
       event.totalBytes > 0 ? Math.min(100, (event.bytesWritten / event.totalBytes) * 100) : null;
-    return { phase: 'downloading', message: 'Downloading the image model…', percent };
+    return { phase: 'downloading', message: `Downloading the image ${kind}…`, percent };
   }
   if (event.type === 'retrying') {
     return {

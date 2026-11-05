@@ -4,6 +4,8 @@ import {
   parseAiImageEvent,
   parseAiImageInstallEvent,
   parseAiImageModelList,
+  parseAiImageStyleList,
+  parseAiImageStyle,
   parseAiImagePreferences,
   parseAiImagePreferencesPatch,
   parseAiImageRequest,
@@ -60,6 +62,40 @@ describe('AI image wire policy', () => {
     );
     expect(parseAiImageModelList([{ ...ming, hardwareTier: 'datacenter' }])).to.equal(null);
     expect(parseAiImageModelList(Array(257).fill(ming))).to.equal(null);
+  });
+
+  it('validates style compatibility, license links and style requests at the boundary', () => {
+    const style = {
+      id: 'watercolor',
+      label: 'Watercolor',
+      description: null,
+      state: 'installed',
+      downloadBytes: 100,
+      license: 'MIT',
+      licenseUrl: 'https://huggingface.co/example/style/blob/main/LICENSE',
+      commercialUse: true,
+      baseModels: [ming.id],
+    };
+    expect(parseAiImageStyleList([style])).to.deep.equal([style]);
+    for (const bad of [
+      { ...style, baseModels: [] },
+      { ...style, baseModels: [''] },
+      { ...style, path: '/tmp/weights' },
+      { ...style, licenseUrl: 'javascript:alert(1)' },
+      { ...style, licenseUrl: 'https://user:secret@example.com/license' },
+    ])
+      expect(parseAiImageStyleList([bad])).to.equal(null);
+    expect(parseAiImageStyleList([style, style])).to.equal(null);
+    expect(
+      parseAiImageInstallEvent({ kind: 'done', model: style }, parseAiImageStyle),
+    ).to.deep.equal({ kind: 'done', model: style });
+    expect(parseAiImageRequest({ prompt: 'A bird', style: 'watercolor' })).to.deep.equal({
+      prompt: 'A bird',
+      style: 'watercolor',
+    });
+    expect(parseAiImageRequest({ prompt: 'A bird', style: '' })).to.equal(null);
+    expect(parseAiImagePreferencesPatch({ style: null })).to.deep.equal({ style: null });
+    expect(parseAiImageModelList([{ ...ming, licenseUrl: 'file:///secret' }])).to.equal(null);
   });
 
   it('accepts preferences and patches, never extra keys', () => {

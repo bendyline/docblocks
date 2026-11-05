@@ -55,6 +55,19 @@ interface Component extends ArtifactComponent {
   readonly lockKey: string;
   readonly repository: string;
   readonly lockfile?: string;
+  /** Repository-relative license texts, when the package itself is not installed. */
+  readonly licenseFiles?: readonly string[];
+}
+
+/** The `npm/manifest.json` a Gezel package carries for code compiled into its dist. */
+interface BundledLicenseManifest {
+  readonly schemaVersion: number;
+  readonly packages: readonly {
+    readonly name: string;
+    readonly version: string;
+    readonly license: string;
+    readonly texts: readonly { readonly file: string }[];
+  }[];
 }
 
 interface LicenseMaterial {
@@ -70,6 +83,11 @@ interface LicenseMaterialCollection {
 
 interface Surface {
   readonly artifactManifest?: string;
+  /**
+   * License manifests carried by packages that compile third-party code into
+   * their own dist, which then appears in neither the lockfile nor the graph.
+   */
+  readonly bundledLicenseManifests?: readonly string[];
   readonly description: string;
   readonly excludedDependencyNames?: ReadonlySet<string>;
   readonly id: string;
@@ -105,8 +123,11 @@ const surfaces: readonly Surface[] = [
     id: 'mobile',
     title: 'DocBlocks Capacitor distribution',
     description:
-      'Packages in the mobile renderer output graph, its copied WASM engines, and the Capacitor native runtime. Android framework dependencies have their native notice alongside this notice.',
+      'Packages in the mobile renderer output graph, its copied WASM engines, the third-party code compiled into @bendyline/gezel-capacitor, and the Capacitor native runtime. Android framework dependencies have their native notice alongside this notice.',
     artifactManifest: 'packages/mobile/dist/THIRD_PARTY_COMPONENTS.json',
+    bundledLicenseManifests: [
+      'node_modules/@bendyline/gezel-capacitor/dist/licenses/npm/manifest.json',
+    ],
     supplementalPackages: [
       '@capacitor/core',
       '@capacitor/ios',
@@ -393,6 +414,25 @@ function componentFromIdentity(identity: ArtifactComponent): Component {
   return component;
 }
 
+/** The packages a bundled license manifest lists, each with its staged license texts. */
+function bundledLicenseComponents(manifestPath: string): readonly Component[] {
+  const manifest = JSON.parse(
+    readFileSync(path.join(repoRoot, manifestPath), 'utf8'),
+  ) as BundledLicenseManifest;
+  if (manifest.schemaVersion !== 1 || !Array.isArray(manifest.packages))
+    throw new Error(`${manifestPath} is not a bundled license manifest.`);
+  const directory = path.posix.dirname(manifestPath);
+  return manifest.packages.map((entry) => ({
+    name: entry.name,
+    version: entry.version,
+    license: entry.license,
+    lockKey: directory,
+    lockfile: manifestPath,
+    repository: repositoryUrl(null, entry.name, false),
+    licenseFiles: entry.texts.map((text) => path.posix.join(directory, text.file)),
+  }));
+}
+
 async function componentsForSurface(surface: Surface): Promise<readonly Component[]> {
   const byIdentity = new Map<string, Component>();
   const add = (component: Component | null): void => {
@@ -414,6 +454,11 @@ async function componentsForSurface(surface: Surface): Promise<readonly Componen
   }
   for (const packageName of surface.supplementalPackages ?? []) {
     add(componentFromLockKey(rootLockKey(packageName)));
+  }
+  // A package the app also installs keeps its own lockfile entry and license.
+  for (const manifest of surface.bundledLicenseManifests ?? []) {
+    for (const component of bundledLicenseComponents(manifest))
+      if (!byIdentity.has(`${component.name}@${component.version}`)) add(component);
   }
 
   return [...byIdentity.values()].sort(
@@ -482,8 +527,9 @@ function collectLicenseMaterials(components: readonly Component[]): LicenseMater
   for (const component of components) {
     const retainedFiles = retainedLicenseFiles(component.name);
     const packageFiles = packageLicenseFiles(component);
-    const files =
-      retainedFiles.length > 0
+    const files = component.licenseFiles
+      ? component.licenseFiles.map((file) => path.join(repoRoot, file))
+      : retainedFiles.length > 0
         ? retainedFiles.map((file) => path.join(repoRoot, file))
         : packageFiles.length > 0
           ? packageFiles
@@ -510,6 +556,9 @@ function surfaceAssetNotes(surface: Surface): readonly string[] {
   if (surface.id === 'mobile')
     return [
       'Fonts and their license texts ship under fonts/. The native app bundles this notice and all WASM licenses for offline access.',
+      "The narration frontend compiled in from `@bendyline/gezel` embeds Kokoro's phoneme vocabulary (https://github.com/hexgrad/kokoro) and pronunciation readings generated from misaki's dictionaries (https://github.com/hexgrad/misaki), both Apache-2.0; the Apache License 2.0 text is reproduced below. The pronunciation dictionaries ship gzipped as `assets/lexicon-*-en-*.bin`, from `@bendyline/gezel-capacitor/kokoro-lexicon/`, which carries their license.",
+      'The knowledge catalog reader (`knowledge-worker.js` with SQLite in `sqlite3.wasm`) and the question tokenizer are compiled into `@bendyline/gezel-capacitor`; their packages are listed above from the license manifest that package carries.',
+      'AI models, speech models, and voices are not part of this distribution. They are downloaded only when you choose them, and each remains under the license published by its provider.',
     ];
   if (surface.id === 'site') {
     return [

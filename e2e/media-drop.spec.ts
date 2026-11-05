@@ -1,5 +1,6 @@
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
+import { openAttachments } from './helpers/toolbar.js';
 
 /**
  * Video and audio files dropped onto a document are stored beside it and
@@ -63,7 +64,7 @@ test('inserts dropped video and audio as players wherever it lands', async ({ pa
   );
 
   // On the Attachments panel, with no MIME type from the OS.
-  await page.getByRole('button', { name: /^Attachments/ }).click();
+  await openAttachments(page);
   const bin = page.locator('.squisq-media-bin');
   await expect(bin.getByText('clip.mp4')).toBeVisible();
   await bin.evaluate(dropFile, { name: 'voice.m4a', type: '' });
