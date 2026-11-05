@@ -1,3 +1,9 @@
+## @bendyline/docblocks [2.7.12](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@2.7.11...@bendyline/docblocks@2.7.12) (2026-11-05)
+
+### Bug Fixes
+
+* Prepare store releases and refresh mobile UX ([#42](https://github.com/bendyline/docblocks/issues/42)) ([99dcec4](https://github.com/bendyline/docblocks/commit/99dcec46ce9a891ae11b20f407c018127ac86301))
+
 ## @bendyline/docblocks [2.7.11](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@2.7.10...@bendyline/docblocks@2.7.11) (2026-11-01)
 
 ### Bug Fixes
