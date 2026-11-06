@@ -706,6 +706,25 @@ describe('Gezel connector with the real embedding SDK', () => {
     expect(fixture.starts).to.deep.equal([]);
   });
 
+  it('verifies a Windows payload against the pins packaging left it', async () => {
+    const manifest = { schemaVersion: 2 as const, release: '0.1.57', platforms: {} };
+    const fixture = hosted({
+      hostNative: {
+        nativeBinDir: path.join(root, 'native'),
+        distributionProfile: 'store',
+        allowStandaloneMacPayload: false,
+        canHost: true,
+        stagedWithoutUv: true,
+      },
+      loadWindowsManifest: async () => manifest,
+    });
+    const connection = await fixture.connect();
+    expect(fixture.verifications).to.deep.equal([
+      { candidates: [path.join(root, 'native')], allowStandaloneMacPayload: false, manifest },
+    ]);
+    await connection.close();
+  });
+
   it('never loads or starts the bundled service below its OS floor', async () => {
     const reason = 'Built-in AI and dictation need macOS 13.3 or later.';
     const stopped = new Error('Stopped after inspecting the SDK connection options');

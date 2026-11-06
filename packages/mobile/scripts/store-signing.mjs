@@ -7,7 +7,7 @@ import process from 'node:process';
 // The Mac App Store build's bundle ID: App Store universal purchase requires one
 // bundle ID across both platforms.
 export const IOS_APP_ID = 'com.bendyline.docblocks';
-export const ANDROID_APP_ID = 'com.bendyline.docblocks.mobile';
+export const ANDROID_APP_ID = 'com.bendyline.docblocks';
 // Product-wide, so the Mac App Store build can later share iCloud Drive › DocBlocks.
 export const ICLOUD_CONTAINER = 'iCloud.com.bendyline.docblocks';
 export const STORE_SECRETS = {

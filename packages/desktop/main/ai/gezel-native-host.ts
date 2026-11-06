@@ -15,6 +15,8 @@ export interface GezelNativeHost {
   readonly unavailableReason?: string;
   /** MAS payloads are re-signed and authenticated by the enclosing store app. */
   readonly macAppStore?: boolean;
+  /** Windows payloads DocBlocks staged itself have no uv.exe. */
+  readonly stagedWithoutUv?: boolean;
 }
 
 export interface GezelNativeHostInput {
@@ -77,6 +79,7 @@ export function resolveGezelNativeHost(input: GezelNativeHostInput): GezelNative
       canHost: !unavailableReason && (platform !== 'darwin' || arch === 'arm64'),
       ...(unavailableReason ? { unavailableReason } : {}),
       ...(macAppStore ? { macAppStore: true } : {}),
+      ...(platform === 'win32' ? { stagedWithoutUv: true } : {}),
     };
   }
   const configured = env.DOCBLOCKS_GEZEL_NATIVE_BIN_DIR?.trim();
@@ -97,5 +100,6 @@ export function resolveGezelNativeHost(input: GezelNativeHostInput): GezelNative
     allowStandaloneMacPayload: true,
     canHost: staged,
     ...(staged ? {} : { unavailableReason: UNSTAGED_NATIVE_REASON }),
+    ...(platform === 'win32' && !configured ? { stagedWithoutUv: true } : {}),
   };
 }

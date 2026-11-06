@@ -419,6 +419,25 @@ function requireWindowsTrayIcon(): void {
 
 requireWindowsTrayIcon();
 
+/** electron-builder replaces any tile missing here with its sample art, the Electron logo. */
+function requireMicrosoftStoreTiles(): void {
+  const tiles: readonly (readonly [string, number, number])[] = [
+    ['StoreLogo', 50, 50],
+    ['Square44x44Logo', 44, 44],
+    ['Square150x150Logo', 300, 300],
+    ['Wide310x150Logo', 620, 300],
+  ];
+  for (const [name, width, height] of tiles) {
+    const file = path.join(repoRoot, 'packages/desktop/resources/appx', `${name}.png`);
+    if (!existsSync(file) || !isPngOfSize(file, width, height)) {
+      failConfigPolicy(`resources/appx/${name}.png must be a ${width}x${height} PNG.`);
+    }
+  }
+  process.stdout.write('electron-builder.yml: Microsoft Store tiles OK\n');
+}
+
+requireMicrosoftStoreTiles();
+
 function requireLinuxPackageMetadata(): void {
   if (!isRecord(config)) {
     failConfigPolicy('electron-builder.yml must contain an object configuration.');

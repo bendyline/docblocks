@@ -121,6 +121,9 @@ export interface AppMenuProps {
 /** The same guide the sidebar footer's Docs link opens. */
 const DOCUMENTATION_URL = 'https://docblocks.com/docs/';
 
+/** The App Store and Google Play require this link inside the app, not only on the listing. */
+const PRIVACY_POLICY_URL = 'https://docblocks.com/privacy/';
+
 const MORE_INFORMATION_URLS: Readonly<Record<HostSurfaceKind | 'web', string>> = Object.freeze({
   electron: 'https://docblocks.com/desktop/',
   capacitor: 'https://docblocks.com/web/',
@@ -339,6 +342,17 @@ export function AppMenu({
               onClick={() => closeMenu(false)}
             >
               Documentation
+            </a>
+            <a
+              className="db-app-menu-item"
+              role="menuitem"
+              tabIndex={-1}
+              href={PRIVACY_POLICY_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => closeMenu(false)}
+            >
+              Privacy Policy
             </a>
             <button
               className="db-app-menu-item"

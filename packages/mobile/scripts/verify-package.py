@@ -46,7 +46,7 @@ else:
         # AAPT binary XML and bundle protobuf retain string values in UTF-8 or UTF-16.
         for forbidden in ['MANAGE_EXTERNAL_STORAGE', 'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE', 'com.bendyline.docblocks.mobile.tests']:
             assert forbidden.encode() not in manifest and forbidden.encode('utf-16le') not in manifest, forbidden
-assert config['appId'] == 'com.bendyline.docblocks.mobile'
+assert config['appId'] == 'com.bendyline.docblocks'
 assert 'url' not in config.get('server', {}) and not config.get('server', {}).get('allowNavigation')
 assert all(actual.get(name) == digest for name, digest in expected.items()), 'Native web payload is stale or incomplete'
 assert not any('ffmpeg-core' in name for name in actual)

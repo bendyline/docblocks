@@ -40,7 +40,7 @@
 #                     APPLE_MAS_CERTIFICATE_P12_BASE64,
 #                     APPLE_MAS_CERTIFICATE_PASSWORD,
 #                     MAS_PROVISIONING_PROFILE_BASE64, APPLE_TEAM_ID.
-#   Google Play:      a Play Console app for com.bendyline.docblocks.mobile
+#   Google Play:      a Play Console app for com.bendyline.docblocks
 #                     enrolled in Play App Signing; Google re-signs with the
 #                     app signing key. Secrets: ANDROID_UPLOAD_KEYSTORE_BASE64,
 #                     ANDROID_UPLOAD_KEYSTORE_PASSWORD, ANDROID_UPLOAD_KEY_ALIAS,

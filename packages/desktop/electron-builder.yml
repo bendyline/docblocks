@@ -142,8 +142,8 @@ nsis:
 # Auto-update is disabled at runtime via process.windowsStore. The identity
 # values below MUST match the app reservation in Partner Center exactly;
 # check-store-packages.ts compares them with each built package (README.md,
-# "Store packages"). Tile assets are read from resources/appx/ if present,
-# otherwise electron-builder generates them from resources/icon.png.
+# "Store packages"). Tile assets are read from resources/appx/. Any that are
+# missing fall back to electron-builder's sample art, the Electron logo.
 appx:
   identityName: BendylineLLC.DocBlocks
   publisher: CN=791A4319-B5A9-4402-928A-D644A8E3351D
@@ -153,6 +153,9 @@ appx:
   backgroundColor: '#1e1e1e'
   languages:
     - en-US
+  # Windows 10 1809, the floor the Store listing states. electron-builder uses
+  # it for MaxVersionTested too while that stays unset.
+  minVersion: 10.0.17763.0
 
 # macOS configuration
 # Signing uses the "Developer ID Application" certificate from the keychain.
