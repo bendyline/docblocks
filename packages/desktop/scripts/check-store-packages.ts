@@ -124,20 +124,30 @@ async function entitlementsOf(file: string, work: string): Promise<Record<string
   return plistJson(plist);
 }
 
-/** A provisioning profile carries dates and data, which plutil cannot render as JSON. */
-function profileFields(plist: string): Record<string, unknown> {
-  const field = (key: string, format: 'json' | 'raw') => {
-    const extracted = run('/usr/bin/plutil', ['-extract', key, format, '-o', '-', plist]);
-    if (!extracted.ok) return undefined;
-    return format === 'json' ? JSON.parse(extracted.stdout) : extracted.stdout.trim();
+/**
+ * A provisioning profile carries dates and data. plutil can refuse JSON for a
+ * file holding them, even when the extracted key has neither, so collections
+ * leave as XML and convert on their own.
+ */
+function profileFields(plist: string, work: string): Record<string, unknown> {
+  const collection = (key: string, required = true): unknown => {
+    const file = path.join(work, `profile-${key}.plist`);
+    const extracted = run('/usr/bin/plutil', ['-extract', key, 'xml1', '-o', file, plist]);
+    if (extracted.ok) return plistJson(file);
+    if (required) fail(`Cannot read ${key} from the profile:\n  ${extracted.output.trim()}`);
+    return undefined;
+  };
+  const raw = (key: string) => {
+    const extracted = run('/usr/bin/plutil', ['-extract', key, 'raw', '-o', '-', plist]);
+    return extracted.ok ? extracted.stdout.trim() : undefined;
   };
   return {
-    TeamIdentifier: field('TeamIdentifier', 'json'),
-    Platform: field('Platform', 'json'),
-    ProvisionedDevices: field('ProvisionedDevices', 'json'),
-    ProvisionsAllDevices: field('ProvisionsAllDevices', 'json'),
-    Entitlements: field('Entitlements', 'json'),
-    ExpirationDate: field('ExpirationDate', 'raw'),
+    TeamIdentifier: collection('TeamIdentifier'),
+    Platform: collection('Platform'),
+    ProvisionedDevices: collection('ProvisionedDevices', false),
+    ProvisionsAllDevices: raw('ProvisionsAllDevices') === 'true',
+    Entitlements: collection('Entitlements'),
+    ExpirationDate: raw('ExpirationDate'),
   };
 }
 
@@ -187,7 +197,7 @@ async function checkMas(buildNumber: string, artifactsDir: string): Promise<void
     const decoded = path.join(work, 'profile.plist');
     if (!run('/usr/bin/security', ['cms', '-D', '-i', profilePath, '-o', decoded]).ok)
       fail(`${app} has no readable embedded.provisionprofile.`);
-    const profile = masProfileViolations(profileFields(decoded), new Date());
+    const profile = masProfileViolations(profileFields(decoded, work), new Date());
     report('provisioning profile', profile.violations);
     const team = profile.team;
     // Every remaining check compares against this team.
