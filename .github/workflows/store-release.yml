@@ -86,7 +86,7 @@ jobs:
   # build lacks its signing secrets or a valid mobile build number.
   preflight:
     name: Check Inputs and Signing Secrets
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       windows: ${{ steps.targets.outputs.windows }}
       macos: ${{ steps.targets.outputs.macos }}
@@ -145,7 +145,7 @@ jobs:
   quality:
     name: Canonical Quality Gate
     needs: preflight
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -174,7 +174,7 @@ jobs:
   create-draft-release:
     name: Create Private Draft Release
     needs: [preflight, quality]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
 
@@ -228,7 +228,7 @@ jobs:
   build-msix:
     needs: [preflight, quality, create-draft-release]
     if: ${{ needs.preflight.outputs.windows == 'true' }}
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     permissions:
       contents: write
 
@@ -408,7 +408,7 @@ jobs:
   build-aab:
     needs: [preflight, quality, create-draft-release]
     if: ${{ needs.preflight.outputs.android == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: write
