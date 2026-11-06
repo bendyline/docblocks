@@ -329,10 +329,10 @@ async function requireMatrixOsCoverage(relativePath: string): Promise<void> {
   }
 
   const runnerOs: Readonly<Record<string, string>> = {
-    'ubuntu-latest': 'Linux',
-    'macos-latest': 'macOS',
+    'ubuntu-24.04': 'Linux',
+    'macos-26': 'macOS',
     'macos-15': 'macOS',
-    'windows-latest': 'Windows',
+    'windows-2025-vs2026': 'Windows',
   };
 
   /** Whether a step's `if:` lets it run on one runner OS. */

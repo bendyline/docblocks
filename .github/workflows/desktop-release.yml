@@ -46,7 +46,7 @@ permissions:
 jobs:
   quality:
     name: Canonical Quality Gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -106,7 +106,7 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   build-windows:
     needs: quality
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     # Job-level so step `if:` conditionals can read it — a step's own `env:`
     # block is NOT visible to that same step's `if:`.
     env:
@@ -451,7 +451,7 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   build-linux:
     needs: quality
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -526,7 +526,7 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   build-vscode-vsix:
     needs: quality
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -573,7 +573,7 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   release:
     needs: [build-windows, build-macos, build-linux, build-vscode-vsix]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
 

@@ -185,7 +185,8 @@ function verifyIpa(ipa, settings) {
   if (
     !plistValue(
       entitlements,
-      'com.apple.developer.ubiquity-container-identifiers',
+      // plutil reads a dot as a key path separator.
+      'com\\.apple\\.developer\\.ubiquity-container-identifiers',
       'json',
     )?.includes(ICLOUD_CONTAINER)
   )

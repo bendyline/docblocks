@@ -12,7 +12,10 @@ permissions:
 jobs:
   build-and-test:
     name: Build & Test
-    runs-on: ubuntu-latest
+    # Pinned here and in every workflow: `ubuntu-latest` moved to 26.04 in
+    # November 2026 and Playwright 1.58.2 cannot install browsers there, which
+    # fails `npm ci` itself. Move to 26.04 deliberately, with a Playwright bump.
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -71,7 +74,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        os: [macos-26, windows-2025-vs2026, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -144,7 +147,7 @@ jobs:
       # and the fixtures already branch on them without CI ever taking those
       # branches.
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-26, windows-2025-vs2026]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -190,7 +193,7 @@ jobs:
 
   e2e:
     name: Site E2E Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build-and-test
 
     steps:
@@ -236,7 +239,7 @@ jobs:
 
   vscode-e2e:
     name: VS Code Web E2E Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build-and-test
 
     steps:
@@ -293,7 +296,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-26, windows-2025-vs2026]
 
     steps:
       - name: Checkout
@@ -331,7 +334,7 @@ jobs:
 
   commitlint:
     name: Lint Commit Messages
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout

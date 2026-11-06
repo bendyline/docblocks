@@ -29,7 +29,7 @@ concurrency:
 jobs:
   build:
     name: Build & Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -180,7 +180,7 @@ jobs:
 
   deploy-pages:
     name: Deploy Pages
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build
     if: inputs.deploy_pages
     environment:

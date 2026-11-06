@@ -51,16 +51,16 @@ test('cleans up a clip’s audio non-destructively and renders it in the backgro
   await page.getByRole('button', { name: 'New File' }).click();
   await page.locator('.db-new-item-input').fill('media-take');
   await page.locator('.db-new-item-add').click();
-  const row = page.locator('.db-tree-row', { hasText: 'media-take' });
-  await expect(row).toBeVisible({ timeout: 10_000 });
-  await row.click();
+
+  // New File opens the document. Clicking its row as well would reload it, and
+  // the reload replaces the editor and toolbar this test is about to use.
+  const content = page.getByRole('textbox', { name: 'Edit media-take.md', exact: true });
+  await expect(content).toBeVisible({ timeout: 30_000 });
 
   // Upload the recording through the Attachments panel: it is stored in
   // media-take_files/ and inserted at the cursor as an <audio> element (the
   // form a recorder inserts). In a document with no body text yet, Squisq
   // places leading media in the document tray, collapsed to a pill.
-  const content = page.locator('.squisq-editor-content [contenteditable="true"]').first();
-  await expect(content).toBeVisible({ timeout: 30_000 });
   await openAttachments(page);
   await page
     .locator('.squisq-media-bin input[type="file"]')
