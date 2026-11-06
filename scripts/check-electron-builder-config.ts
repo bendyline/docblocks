@@ -158,6 +158,16 @@ function requireBundledGezelEngines(): void {
       'MAS signing must authenticate, sandbox-sign and pin native engines before sealing the app.',
     );
   }
+  const { scripts } = JSON.parse(
+    readFileSync(path.join(repoRoot, 'packages/desktop/package.json'), 'utf8'),
+  ) as { scripts: Record<string, string> };
+  for (const name of ['dist:mas', 'dist:mas:dev']) {
+    if (!scripts[name]?.includes('-c.electronFuses.resetAdHocDarwinSignature=false')) {
+      failConfigPolicy(
+        `${name} must not reset ad-hoc signatures: it would overwrite the signed Gezel engines.`,
+      );
+    }
+  }
   const entitlements = readFileSync(
     path.join(repoRoot, 'packages/desktop/entitlements.mas.plist'),
     'utf8',

@@ -68,6 +68,10 @@ electronFuses:
   # created. Unsigned local Apple Silicon builds are not followed by
   # electron-builder's Developer ID signing pass, so restore a valid ad-hoc
   # signature here; signed release builds replace it immediately afterward.
+  # dist:mas and dist:mas:dev turn this off: fuses run after the afterPack hook,
+  # and this reset is a --deep ad-hoc re-sign that keeps each file's requirements.
+  # It would strip the identity from the Gezel engines the hook signed and that
+  # signIgnore then leaves alone, so they fail their own designated requirement.
   resetAdHocDarwinSignature: true
   runAsNode: false
   # Cookie encryption keeps its key in the macOS Keychain / a Linux keyring, so
