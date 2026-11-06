@@ -18,8 +18,9 @@ import path from 'node:path';
 import process from 'node:process';
 import { findJdk21 } from './jdk.mjs';
 import {
-  APP_ID,
+  ANDROID_APP_ID,
   ICLOUD_CONTAINER,
+  IOS_APP_ID,
   configureProject,
   decodeSecret,
   exportOptions,
@@ -179,8 +180,8 @@ function verifyIpa(ipa, settings) {
   run('codesign', ['-d', '--entitlements', entitlements, '--xml', app], { stdio: 'ignore' });
   if (plistValue(entitlements, 'get-task-allow') === 'true')
     throw new Error('The IPA is signed for development (get-task-allow).');
-  if (!plistValue(entitlements, 'application-identifier')?.endsWith(`.${APP_ID}`))
-    throw new Error(`The IPA is not signed for ${APP_ID}.`);
+  if (!plistValue(entitlements, 'application-identifier')?.endsWith(`.${IOS_APP_ID}`))
+    throw new Error(`The IPA is not signed for ${IOS_APP_ID}.`);
   if (
     !plistValue(
       entitlements,
@@ -318,7 +319,7 @@ try {
     JSON.stringify(
       {
         platform,
-        appId: APP_ID,
+        appId: platform === 'android' ? ANDROID_APP_ID : IOS_APP_ID,
         version,
         buildNumber: Number(buildNumber),
         signed: true,

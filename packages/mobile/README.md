@@ -14,7 +14,7 @@ npm run ios       # build, sync, open Xcode
 npm run android   # build, sync, open Android Studio
 ```
 
-To install on an iPhone, select the device and development team in Xcode and Run. The application ID is `com.bendyline.docblocks.mobile`. Signing credentials and team IDs are not checked in. CLI equivalent, after `npm run mobile:sync:ios`:
+To install on an iPhone, select the device and development team in Xcode and Run. The bundle ID is `com.bendyline.docblocks`, shared with the Mac App Store build for universal purchase; the Android application ID is `com.bendyline.docblocks.mobile`. Signing credentials and team IDs are not checked in. CLI equivalent, after `npm run mobile:sync:ios`:
 
 ```sh
 xcodebuild -project packages/mobile/ios/App/App.xcodeproj -scheme App \
@@ -23,7 +23,7 @@ xcodebuild -project packages/mobile/ios/App/App.xcodeproj -scheme App \
   -allowProvisioningUpdates build
 xcrun devicectl device install app --device DEVICE_UDID \
   reports/mobile-ios/Build/Products/Debug-iphoneos/App.app
-xcrun devicectl device process launch --device DEVICE_UDID com.bendyline.docblocks.mobile
+xcrun devicectl device process launch --device DEVICE_UDID com.bendyline.docblocks
 ```
 
 Install updates in place; do not uninstall the personal app to troubleshoot it. The phone must be unlocked for launch. Android's equivalent is `adb -s DEVICE_ID install -r app-debug.apk`, using the APK under `android/app/build/outputs/apk/debug/` after building `:app:assembleDebug`.
@@ -81,7 +81,7 @@ npm run mobile:store -- android 42   # Play app bundle signed with the upload ke
 npm run mobile:store -- ios 42       # App Store Connect IPA and dSYMs
 ```
 
-It runs the same build, check, and payload verification as `mobile:package`, and fails before building when a signing input is missing. Android verifies the bundle's upload-key signature with `jarsigner`. iOS accepts only an unexpired App Store Connect profile for `com.bendyline.docblocks.mobile` that grants iCloud Documents for `iCloud.com.bendyline.docblocks`, and the one Apple Distribution identity it authorizes. It signs only the App target's Release configuration, then checks the exported IPA's signature, embedded profile, and entitlements. It restores the Xcode project, keychain search list, and profiles afterwards. Output goes under `reports/mobile-store/`, with a JSON manifest of SHA-256 hashes.
+It runs the same build, check, and payload verification as `mobile:package`, and fails before building when a signing input is missing. Android verifies the bundle's upload-key signature with `jarsigner`. iOS accepts only an unexpired App Store Connect profile for `com.bendyline.docblocks` that grants iCloud Documents for `iCloud.com.bendyline.docblocks`, and the one Apple Distribution identity it authorizes. It signs only the App target's Release configuration, then checks the exported IPA's signature, embedded profile, and entitlements. It restores the Xcode project, keychain search list, and profiles afterwards. Output goes under `reports/mobile-store/`, with a JSON manifest of SHA-256 hashes.
 
 See [the implementation plan and qualification record](../../docs/mobile-plan.md) for device evidence and remaining physical-device/store qualification. Broad physical-device AI performance and store qualification remain open.
 

@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect } from 'chai';
 import {
-  APP_ID,
   ICLOUD_CONTAINER,
+  IOS_APP_ID,
   STORE_SECRETS,
   configureProject,
   decodeSecret,
@@ -14,6 +14,7 @@ import {
   parseKeychains,
   profileSettings,
 } from '../scripts/store-signing.mjs';
+import { MAS_BUNDLE_ID } from '../../desktop/scripts/store-package-policy.js';
 
 // Store-signing failure cases run without keys or native SDKs. The store
 // release workflow's native jobs provide the Gradle/Xcode integration coverage.
@@ -32,7 +33,7 @@ function storeProfile(overrides: Record<string, unknown> = {}) {
     teamIdentifier: ['TEAM123456'],
     applicationIdentifierPrefix: ['TEAM123456'],
     entitlements: {
-      'application-identifier': `TEAM123456.${APP_ID}`,
+      'application-identifier': `TEAM123456.${IOS_APP_ID}`,
       'com.apple.developer.team-identifier': 'TEAM123456',
       'com.apple.developer.ubiquity-container-identifiers': [ICLOUD_CONTAINER],
       'get-task-allow': false,
@@ -89,7 +90,7 @@ describe('mobile store signing', () => {
     expect(options.destination).to.equal('export');
     expect(options.signingStyle).to.equal('manual');
     expect(options.manageAppVersionAndBuildNumber).to.equal(false);
-    expect(options.provisioningProfiles).to.deep.equal({ [APP_ID]: settings.profile });
+    expect(options.provisioningProfiles).to.deep.equal({ [IOS_APP_ID]: settings.profile });
     expect(options.iCloudContainerEnvironment).to.equal('Production');
   });
 
@@ -161,9 +162,13 @@ describe('mobile store signing', () => {
     expect(signed.split('/* End XCBuildConfiguration section */')[1]).to.equal(
       project.split('/* End XCBuildConfiguration section */')[1],
     );
-    expect(() => configureProject(project.replaceAll(APP_ID, 'com.other.app'), settings)).to.throw(
-      /exactly one DocBlocks App Release/u,
-    );
+    expect(() =>
+      configureProject(project.replaceAll(IOS_APP_ID, 'com.other.app'), settings),
+    ).to.throw(/exactly one DocBlocks App Release/u);
+  });
+
+  it('shares the Mac App Store bundle ID, which universal purchase requires', () => {
+    expect(IOS_APP_ID).to.equal(MAS_BUNDLE_ID);
   });
 
   it('restores the keychain search list it read', () => {

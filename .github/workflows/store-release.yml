@@ -47,7 +47,8 @@
 #                     ANDROID_UPLOAD_KEY_PASSWORD.
 #   App Store (iOS):  an "Apple Distribution" .p12 (the identity is shared with
 #                     macOS) and an App Store Connect provisioning profile for
-#                     com.bendyline.docblocks.mobile that authorizes it.
+#                     com.bendyline.docblocks that authorizes it (one bundle ID
+#                     with the Mac build, for universal purchase).
 #                     Secrets: IOS_DISTRIBUTION_CERTIFICATE_BASE64,
 #                     IOS_DISTRIBUTION_CERTIFICATE_PASSWORD,
 #                     IOS_PROVISIONING_PROFILE_BASE64.

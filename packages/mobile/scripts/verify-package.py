@@ -15,7 +15,7 @@ if platform == 'ios':
     bundle = pathlib.Path(artifact)
     app = bundle / ('Products/Applications/App.app' if (bundle / 'Products').is_dir() else 'Payload/App.app')
     info = plistlib.loads((app / 'Info.plist').read_bytes())
-    assert info['CFBundleIdentifier'] == 'com.bendyline.docblocks.mobile'
+    assert info['CFBundleIdentifier'] == 'com.bendyline.docblocks'
     assert info['CFBundleShortVersionString'] == version and info['CFBundleVersion'] == build_number
     assert info.get('UIFileSharingEnabled') is True and info.get('LSSupportsOpeningDocumentsInPlace') is True, 'Device documents are hidden from Files'
     assert info['NSUbiquitousContainers']['iCloud.com.bendyline.docblocks']['NSUbiquitousContainerIsDocumentScopePublic'] is True, 'iCloud Drive folder is not public'
