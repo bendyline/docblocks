@@ -30,32 +30,33 @@ export async function selectWriteMode(
 /**
  * Show the Attachments panel, wherever the toolbar put its toggle: inline,
  * or under More actions once the row is too narrow to keep it.
+ *
+ * There is no settled moment to wait for. A new toolbar displays every control
+ * and then collapses them over several measure passes, so the toggle can pass
+ * any check and be `display: none` before the click lands, and an unlimited
+ * click then waits out the test for a button that is not coming back. Each
+ * attempt therefore clicks on a short limit and the next one looks again.
+ * `aria-pressed` tracks the panel wherever the toggle is, so a retry cannot
+ * close it.
  */
 export async function openAttachments(page: Page): Promise<void> {
   const toolbar = page.locator('.squisq-toolbar');
-  const inline = toolbar.locator('.squisq-toolbar-files-toggle');
-  // Wait for the toolbar's width measurement to settle: the toggle either
-  // fits inside the toolbar or has been marked as moved to More actions.
-  await expect
-    .poll(() =>
-      inline.evaluate((button) => {
-        if (button.classList.contains('squisq-toolbar-button--overflowed')) return 'overflow';
-        const bar = button.closest('.squisq-toolbar')?.getBoundingClientRect();
-        const rect = button.getBoundingClientRect();
-        return !!bar && rect.width > 0 && rect.right <= bar.right ? 'inline' : 'settling';
-      }),
-    )
-    .not.toBe('settling');
+  const toggle = toolbar.locator('.squisq-toolbar-files-toggle');
+  const menu = page.locator('.squisq-toolbar-overflow-menu');
+  const timeout = 2_000;
 
-  if (await inline.isVisible()) {
-    await inline.click();
-  } else {
-    await toolbar.locator('.squisq-toolbar-overflow-trigger').click();
-    await page
-      .locator('.squisq-toolbar-overflow-menu')
-      .getByRole('button', { name: /^Show attachments/ })
-      .click();
-  }
+  await expect(async () => {
+    if ((await toggle.getAttribute('aria-pressed', { timeout })) === 'true') return;
+    if (await toggle.isVisible()) {
+      await toggle.click({ timeout });
+    } else {
+      if (!(await menu.isVisible())) {
+        await toolbar.locator('.squisq-toolbar-overflow-trigger').click({ timeout });
+      }
+      await menu.getByRole('button', { name: /^Show attachments/ }).click({ timeout });
+    }
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true', { timeout });
+  }).toPass({ timeout: 30_000 });
   await expect(page.locator('.squisq-media-bin')).toBeVisible();
 }
 
