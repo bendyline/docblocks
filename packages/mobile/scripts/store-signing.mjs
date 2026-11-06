@@ -4,7 +4,10 @@ import { writeFileSync } from 'node:fs';
 import process from 'node:process';
 // Pure release-signing checks for store-native.mjs. Everything here runs
 // without signing material or native SDKs, so the Mocha suite covers it on Linux.
-export const APP_ID = 'com.bendyline.docblocks.mobile';
+// The Mac App Store build's bundle ID: App Store universal purchase requires one
+// bundle ID across both platforms.
+export const IOS_APP_ID = 'com.bendyline.docblocks';
+export const ANDROID_APP_ID = 'com.bendyline.docblocks.mobile';
 // Product-wide, so the Mac App Store build can later share iCloud Drive › DocBlocks.
 export const ICLOUD_CONTAINER = 'iCloud.com.bendyline.docblocks';
 export const STORE_SECRETS = {
@@ -43,7 +46,7 @@ export function decodeSecret(name, destination, env = process.env) {
   writeFileSync(destination, Buffer.from(value, 'base64'), { mode: 0o600 });
 }
 /**
- * Accepts only an unexpired App Store Connect profile registered for APP_ID,
+ * Accepts only an unexpired App Store Connect profile registered for IOS_APP_ID,
  * and returns the one Apple Distribution identity in `identities` (the output
  * of `security find-identity -v -p codesigning`) that the profile authorizes.
  */
@@ -63,9 +66,9 @@ export function profileSettings(profile, identities, now = new Date()) {
   // The App ID prefix can differ from the team ID for older Apple accounts.
   ensure(
     profile.applicationIdentifierPrefix.some(
-      (prefix) => entitlements['application-identifier'] === `${prefix}.${APP_ID}`,
+      (prefix) => entitlements['application-identifier'] === `${prefix}.${IOS_APP_ID}`,
     ),
-    `The provisioning profile must be explicitly registered for ${APP_ID}.`,
+    `The provisioning profile must be explicitly registered for ${IOS_APP_ID}.`,
   );
   ensure(
     entitlements['com.apple.developer.ubiquity-container-identifiers']?.includes(ICLOUD_CONTAINER),
@@ -105,7 +108,7 @@ export function configureProject(text, settings) {
     /(\t\t[0-9A-F]{24} \/\* Release \*\/ = \{\n\t\t\tisa = XCBuildConfiguration;\n(?:[^\n]*\n)*?\t\t\tbuildSettings = \{\n)(.*?)(\t\t\t\};\n\t\t\tname = Release;\n\t\t\};)/gsu;
   let count = 0;
   const result = text.replace(pattern, (match, head, body, tail) => {
-    if (!body.includes(`PRODUCT_BUNDLE_IDENTIFIER = ${APP_ID};`)) return match;
+    if (!body.includes(`PRODUCT_BUNDLE_IDENTIFIER = ${IOS_APP_ID};`)) return match;
     count += 1;
     let signed = body;
     for (const [key, value] of Object.entries({
@@ -130,7 +133,7 @@ export function exportOptions(settings) {
     signingStyle: 'manual',
     teamID: settings.team,
     signingCertificate: settings.certificate,
-    provisioningProfiles: { [APP_ID]: settings.profile },
+    provisioningProfiles: { [IOS_APP_ID]: settings.profile },
     manageAppVersionAndBuildNumber: false,
     uploadSymbols: true,
     // The profile allows both iCloud environments; store builds use Production.

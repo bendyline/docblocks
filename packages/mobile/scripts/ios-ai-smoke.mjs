@@ -65,7 +65,7 @@ await writeFile(
   projectFile,
   (await readFile(projectFile, 'utf8'))
     .replaceAll(
-      'PRODUCT_BUNDLE_IDENTIFIER = com.bendyline.docblocks.mobile;',
+      'PRODUCT_BUNDLE_IDENTIFIER = com.bendyline.docblocks;',
       `PRODUCT_BUNDLE_IDENTIFIER = ${appId};`,
     )
     // The test app keeps device storage only and never joins the iCloud container.
