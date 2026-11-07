@@ -94,6 +94,31 @@ describe('presentation AI refinement', () => {
         null,
       );
   });
+  it('reads numbers as numbers and keeps a range whole', () => {
+    const source = createPresentationPlan(
+      markdownToDoc(
+        parseMarkdown(
+          '# The lake\n\nAbout 1,400 people live on its shores, and 40 percent of them fish 10 to 12 hours a day.',
+        ),
+      ),
+    );
+    const index = source.beats.findIndex((beat) =>
+      source.sourceText.slice(beat.sourceStart, beat.sourceEnd).includes('1,400'),
+    );
+    const reply = (layout: string, headline: string, points: string[]) =>
+      parsePresentationRefinement(JSON.stringify({ layout, headline, points }), source, index);
+    // Thousands separators and percent signs do not change a number.
+    assert.ok(reply('statement', 'Life on the lake', ['About 1400 people live on its shores']));
+    assert.ok(reply('statement', 'Life on the lake', ['40% of them fish']));
+    // A number is a whole number in the passage, not a run of its digits.
+    assert.equal(
+      reply('statement', 'Life on the lake', ['About 140 people live on its shores']),
+      null,
+    );
+    // A figure the passage gives as a range is never shown as one end of it.
+    assert.equal(reply('stat', '12 hours a day', ['40 percent of them fish']), null);
+    assert.ok(reply('stat', '10 to 12 hours a day', ['40 percent of them fish']));
+  });
   it('accepts condensed points from the passage and drops points that echo the headline', () => {
     const source = plan();
     const beat = parsePresentationRefinement(
