@@ -308,8 +308,8 @@ npm run dist:appx
 npm run check:store-packages -- msix
 ```
 
-The workflow's `build_number` input becomes the MAS `CFBundleVersion` through
-`mas.bundleVersion`. Never set `BUILD_NUMBER` in a desktop build's environment:
+The workflow's run number, or its optional `build_number` override, becomes the
+MAS `CFBundleVersion` through `mas.bundleVersion`. Never set `BUILD_NUMBER` in a desktop build's environment:
 electron-builder appends it to the version (`2.7.8.42`), which App Store Connect
 rejects. The Microsoft Store reserves the fourth MSIX version field, so a Store
 resubmission needs a new desktop version. `check-store-packages.ts` reads the
