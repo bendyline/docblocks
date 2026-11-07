@@ -313,11 +313,17 @@ The workflow's `build_number` input becomes the MAS `CFBundleVersion` through
 electron-builder appends it to the version (`2.7.8.42`), which App Store Connect
 rejects. The Microsoft Store reserves the fourth MSIX version field, so a Store
 resubmission needs a new desktop version. `check-store-packages.ts` reads the
-built bytes: each AppX package's identity, architecture and version against
-`electron-builder.yml`; for MAS, the installer and app signatures against the
-embedded profile's team, the entitlements, `Info.plist` (including the
-exempt-encryption declaration), the helper set, and the app's own runtime
-verifier over its Gezel engines.
+built bytes: each AppX package's identity, architecture, version and minimum
+Windows version against `electron-builder.yml`, that it holds no `uv.exe`, and
+the app's own check over its unpacked Gezel engines; for MAS, the installer and
+app signatures against the embedded profile's team, the entitlements,
+`Info.plist` (including the exempt-encryption declaration), the helper set, and
+the app's own runtime verifier over its Gezel engines.
+
+Windows builds, Store and direct alike, leave out `uv.exe`. It only provisions
+Python for MLX, which never runs on Windows, and installs code at runtime.
+`stage-gezel-native.cjs` removes it and `main/ai/gezel-windows-native.ts` drops
+it from the pins Gezel verifies against. Change both together.
 
 ### Intel Macs
 

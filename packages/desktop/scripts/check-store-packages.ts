@@ -5,8 +5,9 @@
  *   npx tsx scripts/check-store-packages.ts msix [artifacts-dir]
  *   npx tsx scripts/check-store-packages.ts mas <build-number> [artifacts-dir]
  *
- * `msix` reads each architecture's AppxManifest.xml (Windows' bsdtar reads the
- * package's zip container). `mas` needs macOS: it checks the installer and app
+ * `msix` reads each architecture's AppxManifest.xml and file list (Windows'
+ * bsdtar reads the package's zip container), then runs the app's own check over
+ * the unpacked Gezel engines. `mas` needs macOS: it checks the installer and app
  * signatures against the embedded provisioning profile's team, the app and
  * helper entitlements, Info.plist, and the helper set, then runs the app's own
  * runtime verifier over the relocated Gezel engines. Policy lives in
@@ -16,11 +17,13 @@
 import { spawnSync } from 'node:child_process';
 import { readdirSync, readFileSync, readlinkSync, statSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { verifyMasNativePayload } from '../main/ai/gezel-mas-native.js';
+import { windowsNativeManifest } from '../main/ai/gezel-windows-native.js';
 import {
   MSIX_ARCHITECTURES,
   appxManifestViolations,
@@ -30,6 +33,7 @@ import {
   masHelperViolations,
   masInfoViolations,
   masProfileViolations,
+  msixPayloadViolations,
   type BundleEntry,
 } from './store-package-policy.js';
 
@@ -70,11 +74,11 @@ function artifacts(directory: string): string[] {
   }
 }
 
-function checkMsix(artifactsDir: string): void {
+async function checkMsix(artifactsDir: string): Promise<void> {
   const config = yaml.load(readFileSync(path.join(packageRoot, 'electron-builder.yml'), 'utf8'));
   const appx = (config as { appx?: Record<string, string | undefined> }).appx ?? {};
-  const { identityName, publisher, displayName, publisherDisplayName } = appx;
-  if (!identityName || !publisher || !displayName || !publisherDisplayName)
+  const { identityName, publisher, displayName, publisherDisplayName, minVersion } = appx;
+  if (!identityName || !publisher || !displayName || !publisherDisplayName || !minVersion)
     fail('electron-builder.yml must define the complete Partner Center appx identity.');
   // GNU tar, which Git for Windows can put first on PATH, cannot read zip.
   const tar =
@@ -82,6 +86,8 @@ function checkMsix(artifactsDir: string): void {
       ? path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe')
       : 'tar';
   const names = artifacts(artifactsDir);
+  const { verifyNativeBinaries } = await import('@bendyline/gezel-inference');
+  const manifest = await windowsNativeManifest(createRequire(import.meta.url).resolve);
   for (const architecture of MSIX_ARCHITECTURES) {
     const matches = names.filter((name) =>
       ['appx', 'msix'].some((extension) => name.endsWith(`-win-${architecture}.${extension}`)),
@@ -103,9 +109,23 @@ function checkMsix(artifactsDir: string): void {
         publisherDisplayName,
         version,
         architecture,
+        minVersion,
       }),
     );
-    process.stdout.write(`  ${matches[0]}: identity, architecture and version checked\n`);
+    const listed = run(tar, ['-tf', path.join(artifactsDir, matches[0])]);
+    if (!listed.ok) fail(`Cannot list ${matches[0]}:\n  ${listed.output.trim()}`);
+    report(matches[0], msixPayloadViolations(listed.stdout.split('\n')));
+
+    // The same check the shipped app runs before it starts an engine.
+    const unpacked = architecture === 'x64' ? 'win-unpacked' : `win-${architecture}-unpacked`;
+    const engines = await verifyNativeBinaries({
+      candidates: [path.join(artifactsDir, unpacked, 'resources', 'gezel-native')],
+      platform: 'win32',
+      arch: architecture,
+      manifest,
+    });
+    if (!engines.reused) failures.push(`${matches[0]}: Gezel engines: ${engines.reason}`);
+    process.stdout.write(`  ${matches[0]}: identity, architecture, version and engines checked\n`);
   }
 }
 
@@ -264,7 +284,7 @@ async function checkMas(buildNumber: string, artifactsDir: string): Promise<void
 
 const [mode, ...rest] = process.argv.slice(2);
 const defaultArtifactsDir = path.join(packageRoot, 'dist', 'artifacts');
-if (mode === 'msix') checkMsix(path.resolve(rest[0] ?? defaultArtifactsDir));
+if (mode === 'msix') await checkMsix(path.resolve(rest[0] ?? defaultArtifactsDir));
 else if (mode === 'mas')
   await checkMas(rest[0] ?? '', path.resolve(rest[1] ?? defaultArtifactsDir));
 else

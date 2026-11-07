@@ -44,6 +44,7 @@ describe('bundled Gezel host policy', () => {
       distributionProfile: 'store',
       allowStandaloneMacPayload: false,
       canHost: true,
+      stagedWithoutUv: true,
     });
   });
 
@@ -66,6 +67,7 @@ describe('bundled Gezel host policy', () => {
       distributionProfile: 'store',
       allowStandaloneMacPayload: true,
       canHost: true,
+      stagedWithoutUv: true,
     });
     // Unstaged: say how to fix it rather than letting Gezel fetch engines.
     expect(
@@ -76,7 +78,25 @@ describe('bundled Gezel host policy', () => {
       allowStandaloneMacPayload: true,
       canHost: false,
       unavailableReason: UNSTAGED_NATIVE_REASON,
+      stagedWithoutUv: true,
     });
+  });
+
+  it('expects UV only where packaging keeps it', () => {
+    const native = path.resolve('/src/gezel/native-bin');
+    const source = { isPackaged: false, resourcesPath: '', appPath, exists: () => true };
+    // A developer's own payload is whatever Gezel released, so it is pinned in full.
+    expect(
+      resolveGezelNativeHost({
+        ...source,
+        env: { DOCBLOCKS_GEZEL_NATIVE_BIN_DIR: native },
+        platform: 'win32',
+        arch: 'x64',
+      }),
+    ).not.to.have.property('stagedWithoutUv');
+    expect(
+      resolveGezelNativeHost({ ...packaged, platform: 'linux', arch: 'x64' }),
+    ).not.to.have.property('stagedWithoutUv');
   });
 
   it('allows an explicit staged development payload and rejects relative overrides', () => {

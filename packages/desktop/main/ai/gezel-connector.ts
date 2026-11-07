@@ -22,6 +22,7 @@ import type {
 } from './ai-service.js';
 import type { GezelNativeHost } from './gezel-native-host.js';
 import { verifyMasNativePayload } from './gezel-mas-native.js';
+import { windowsNativeManifest, type NativeFileManifest } from './gezel-windows-native.js';
 import {
   gezelKnowledgeState,
   updateGezelKnowledge,
@@ -53,6 +54,8 @@ export interface GezelConnectorOptions {
   readonly standalone?: boolean;
   /** Test seam for {@link knowledgeRuntimeInstalled}. */
   readonly knowledgeRuntime?: () => boolean;
+  /** Test seam for {@link windowsNativeManifest}. */
+  readonly loadWindowsManifest?: () => Promise<NativeFileManifest>;
 }
 
 /**
@@ -384,10 +387,15 @@ export class GezelConnector implements AiConnector {
               'runtime-missing',
               'This Gezel service cannot verify bundled engines.',
             );
-          return verify({
+          // The SDK's minimal module shape omits Gezel's `manifest` option.
+          const options = {
             ...input,
             allowStandaloneMacPayload: hostNative?.allowStandaloneMacPayload,
-          });
+            ...(hostNative?.stagedWithoutUv
+              ? { manifest: await (this.options.loadWindowsManifest ?? windowsNativeManifest)() }
+              : {}),
+          };
+          return verify(options);
         },
       },
     };

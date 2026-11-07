@@ -7,6 +7,7 @@ import {
   masHelperViolations,
   masInfoViolations,
   masProfileViolations,
+  msixPayloadViolations,
 } from '../scripts/store-package-policy.js';
 
 const TEAM = 'JXA5M4VK3V';
@@ -38,7 +39,11 @@ const INFO = {
 };
 
 /** The shape electron-builder's AppX target writes. */
-function appxManifest(architecture: string, version = '2.7.8.0'): string {
+function appxManifest(
+  architecture: string,
+  version = '2.7.8.0',
+  minVersion = '10.0.17763.0',
+): string {
   return `<?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10">
   <Identity Name="BendylineLLC.DocBlocks" ProcessorArchitecture="${architecture}" Publisher="CN=791A4319-B5A9-4402-928A-D644A8E3351D" Version="${version}" />
@@ -47,6 +52,9 @@ function appxManifest(architecture: string, version = '2.7.8.0'): string {
     <PublisherDisplayName>Bendyline, LLC</PublisherDisplayName>
     <Logo>assets\\StoreLogo.png</Logo>
   </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="${minVersion}" MaxVersionTested="${minVersion}" />
+  </Dependencies>
   <Applications>
     <Application Id="DocBlocks" Executable="app\\DocBlocks.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements DisplayName="Something else" />
@@ -62,6 +70,7 @@ const APPX = {
   publisherDisplayName: 'Bendyline, LLC',
   version: '2.7.8',
   architecture: 'arm64',
+  minVersion: '10.0.17763.0',
 };
 
 function pkgutil(leaf: string): string {
@@ -214,10 +223,27 @@ describe('store package policy', () => {
         'Identity Version is 2.7.8.42, expected 2.7.8.0',
       ]);
       expect(
+        appxManifestViolations(appxManifest('arm64', '2.7.8.0', '10.0.16299.0'), APPX),
+      ).to.deep.equal(['MinVersion is 10.0.16299.0, expected 10.0.17763.0']);
+      expect(
         appxManifestViolations(appxManifest('arm64'), { ...APPX, publisherDisplayName: 'Other' }),
       ).to.deep.equal(['PublisherDisplayName is Bendyline, LLC, expected Other']);
       expect(appxManifestViolations('<Package />', APPX)).to.deep.equal([
         'AppxManifest.xml has no Identity element',
+      ]);
+    });
+
+    it('rejects UV anywhere in the package', () => {
+      const engines = 'app/resources/gezel-native/win32-x64';
+      expect(
+        msixPayloadViolations([
+          `${engines}/gezel-service-host.exe`,
+          `${engines}/THIRD_PARTY_LICENSES/native/LICENSE-uv-MIT.txt`,
+          '',
+        ]),
+      ).to.deep.equal([]);
+      expect(msixPayloadViolations([`${engines}/uv.exe\r`])).to.deep.equal([
+        'UV must not ship: it installs Python packages at runtime',
       ]);
     });
   });

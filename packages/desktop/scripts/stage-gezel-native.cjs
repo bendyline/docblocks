@@ -1,5 +1,5 @@
 /** electron-builder adapter. Gezel owns archive pins, extraction, and verification. */
-const { readFile } = require('node:fs/promises');
+const { readFile, rm } = require('node:fs/promises');
 const { createRequire } = require('node:module');
 const path = require('node:path');
 const { stageVcRuntime } = require('./stage-vc-runtime.cjs');
@@ -42,6 +42,9 @@ async function stageGezelNative({ appDir, platform, arch, os }, overrides = {}) 
     cache: path.join(appDir, 'dist', 'gezel-native-cache'),
     ...(overrides.fetchImpl ? { fetchImpl: overrides.fetchImpl } : {}),
   });
+  // UV only provisions Python for MLX, which never runs on Windows, and installs
+  // code at runtime. main/ai/gezel-windows-native.ts drops it from the pins too.
+  if (platform === 'win32') await rm(path.join(destination, `win32-${arch}`, 'uv.exe'));
   await (overrides.verifyNativePlatformRequirements ?? verifyNativePlatformRequirements)({
     directory: destination,
     platform,

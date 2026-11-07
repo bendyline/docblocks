@@ -160,6 +160,7 @@ export interface AppxExpectation {
   readonly publisherDisplayName: string;
   readonly version: string;
   readonly architecture: string;
+  readonly minVersion: string;
 }
 
 function decodeXml(value: string): string {
@@ -173,7 +174,8 @@ function decodeXml(value: string): string {
 
 /**
  * The package identity Partner Center matches against the app reservation.
- * The Store reserves the fourth version field, so it must be zero.
+ * The Store reserves the fourth version field, so it must be zero. MinVersion
+ * decides which PCs the Store offers the app to, which the listing also states.
  */
 export function appxManifestViolations(manifest: string, expected: AppxExpectation): string[] {
   const identity = /<Identity\b([^>]*)>/u.exec(manifest)?.[1];
@@ -186,6 +188,7 @@ export function appxManifestViolations(manifest: string, expected: AppxExpectati
     const value = new RegExp(`<${name}>([^<]*)</${name}>`, 'u').exec(properties)?.[1];
     return value === undefined ? undefined : decodeXml(value);
   };
+  const minVersion = /<TargetDeviceFamily\b[^>]*\bMinVersion="([^"]*)"/u.exec(manifest)?.[1];
   const violations: string[] = [];
   const checks: Array<[string, string | undefined, string]> = [
     ['Identity Name', attributes.Name, expected.name],
@@ -194,9 +197,17 @@ export function appxManifestViolations(manifest: string, expected: AppxExpectati
     ['Identity Version', attributes.Version, `${expected.version}.0`],
     ['DisplayName', element('DisplayName'), expected.displayName],
     ['PublisherDisplayName', element('PublisherDisplayName'), expected.publisherDisplayName],
+    ['MinVersion', minVersion, expected.minVersion],
   ];
   for (const [label, actual, wanted] of checks)
     if (actual !== wanted)
       violations.push(`${label} is ${actual ?? 'missing'}, expected ${wanted}`);
   return violations;
+}
+
+/** Every path in the package. UV only provisions Python for MLX, which never runs on Windows. */
+export function msixPayloadViolations(files: readonly string[]): string[] {
+  return files.some((file) => /(?:^|\/)uv\.exe$/iu.test(file.trim()))
+    ? ['UV must not ship: it installs Python packages at runtime']
+    : [];
 }

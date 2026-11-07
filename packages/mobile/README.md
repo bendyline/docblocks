@@ -14,7 +14,7 @@ npm run ios       # build, sync, open Xcode
 npm run android   # build, sync, open Android Studio
 ```
 
-To install on an iPhone, select the device and development team in Xcode and Run. The bundle ID is `com.bendyline.docblocks`, shared with the Mac App Store build for universal purchase; the Android application ID is `com.bendyline.docblocks.mobile`. Signing credentials and team IDs are not checked in. CLI equivalent, after `npm run mobile:sync:ios`:
+To install on an iPhone, select the device and development team in Xcode and Run. The bundle ID is `com.bendyline.docblocks`, shared with the Mac App Store build for universal purchase, and the Android application ID is the same. Signing credentials and team IDs are not checked in. CLI equivalent, after `npm run mobile:sync:ios`:
 
 ```sh
 xcodebuild -project packages/mobile/ios/App/App.xcodeproj -scheme App \

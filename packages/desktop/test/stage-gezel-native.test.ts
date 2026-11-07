@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,6 +12,20 @@ const {
   stageForTarget,
 } = require('../scripts/stage-gezel-native.cjs');
 const { REQUIRED_DLLS } = require('../scripts/stage-vc-runtime.cjs');
+
+/** What Gezel's packager extracts for one Windows architecture. */
+async function stagedWindowsEngines({
+  destination,
+  arch,
+}: {
+  destination: string;
+  arch: string;
+}): Promise<void> {
+  const engines = path.join(destination, `win32-${arch}`);
+  await mkdir(engines, { recursive: true });
+  for (const file of ['gezel-service-host.exe', 'uv.exe'])
+    await writeFile(path.join(engines, file), file);
+}
 
 describe('Gezel native packaging adapter', () => {
   let root: string;
@@ -126,6 +140,7 @@ describe('Gezel native packaging adapter', () => {
           arch: string;
         }) => {
           calls.push(options);
+          await stagedWindowsEngines(options);
         },
         verifyNativePlatformRequirements: async () => {},
       },
@@ -169,12 +184,52 @@ describe('Gezel native packaging adapter', () => {
         arch: 1,
       },
       {
-        stageElectronNative: async () => {},
+        stageElectronNative: stagedWindowsEngines,
         vcRuntime: { env: { DOCBLOCKS_VCRUNTIME_DIR: crt }, verify: () => undefined },
       },
     );
     expect(
       await readFile(path.join(root, 'dist', 'vc-runtime', 'x64', 'vcruntime140.dll'), 'utf8'),
     ).to.equal('vcruntime140.dll');
+  });
+
+  it('leaves UV out of Windows engines and keeps everything else', async () => {
+    const destination = await stageForSourceBuild(
+      { appDir: root, platform: 'win32', arch: 'arm64' },
+      {
+        stageElectronNative: stagedWindowsEngines,
+        verifyNativePlatformRequirements: async () => {},
+      },
+    );
+    expect(await readdir(path.join(destination, 'win32-arm64'))).to.deep.equal([
+      'gezel-service-host.exe',
+    ]);
+  });
+
+  it('keeps UV on other platforms', async () => {
+    const destination = await stageForSourceBuild(
+      { appDir: root, platform: 'darwin', arch: 'arm64' },
+      {
+        stageElectronNative: async ({ destination }: { destination: string }) => {
+          await mkdir(path.join(destination, 'darwin-arm64'), { recursive: true });
+          await writeFile(path.join(destination, 'darwin-arm64', 'uv'), 'uv');
+        },
+        verifyNativePlatformRequirements: async () => {},
+      },
+    );
+    expect(await readdir(path.join(destination, 'darwin-arm64'))).to.deep.equal(['uv']);
+  });
+
+  it('fails the build when a Gezel release moves UV', async () => {
+    let failure: NodeJS.ErrnoException | undefined;
+    try {
+      await stageForSourceBuild(
+        { appDir: root, platform: 'win32', arch: 'x64' },
+        { stageElectronNative: async () => {}, verifyNativePlatformRequirements: async () => {} },
+      );
+    } catch (error) {
+      failure = error as NodeJS.ErrnoException;
+    }
+    expect(failure?.code).to.equal('ENOENT');
   });
 });

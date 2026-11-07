@@ -17,7 +17,9 @@ android {
     namespace = "com.bendyline.docblocks.mobile"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId (project.hasProperty("docblocksTestApp") ? "com.bendyline.docblocks.mobile.tests" : "com.bendyline.docblocks.mobile")
+        // The Play package name, permanent once uploaded. `namespace` above only
+        // names the Java package, which ships nowhere users can see it.
+        applicationId (project.hasProperty("docblocksTestApp") ? "com.bendyline.docblocks.mobile.tests" : "com.bendyline.docblocks")
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode((project.findProperty("docblocksVersionCode") ?: "1").toInteger())

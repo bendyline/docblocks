@@ -238,12 +238,15 @@ describe('AppMenu settings', () => {
         '---',
         'Keyboard shortcuts',
         'Documentation',
+        'Privacy Policy',
         'About',
       ]);
 
-      const docs = menu?.querySelector<HTMLAnchorElement>('a[role="menuitem"]');
+      const [docs, privacy] = menu?.querySelectorAll<HTMLAnchorElement>('a[role="menuitem"]') ?? [];
       expect(docs?.getAttribute('href')).to.equal('https://docblocks.com/docs/');
       expect(docs?.getAttribute('target')).to.equal('_blank');
+      expect(privacy?.getAttribute('href')).to.equal('https://docblocks.com/privacy/');
+      expect(privacy?.getAttribute('target')).to.equal('_blank');
 
       const shortcuts = [...(menu?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find(
         (button) => button.getAttribute('aria-keyshortcuts') === 'F1',
