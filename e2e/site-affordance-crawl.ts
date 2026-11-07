@@ -657,10 +657,21 @@ async function crawlSurface(browser: Browser, surface: Surface): Promise<void> {
   }
 }
 
+/**
+ * Switch to Write unless it is already showing. Clicking the selected Write
+ * tab opens its mode menu (Write, Blocks, Timeline) over the top of the page,
+ * and the next click or typed letter then picks a menu item instead.
+ */
+async function showWrite(page: Page, timeout?: number): Promise<void> {
+  const tab = page.getByRole('tab', { name: 'Write', exact: true });
+  await tab.waitFor({ timeout });
+  if ((await tab.getAttribute('aria-selected')) !== 'true') await tab.click({ timeout });
+}
+
 async function startWriting(page: Page): Promise<void> {
   const cta = page.locator('.db-welcome-gateway-cta');
   if (await cta.isVisible().catch(() => false)) await cta.click();
-  await page.getByRole('tab', { name: 'Write', exact: true }).click({ timeout: READY_TIMEOUT });
+  await showWrite(page, READY_TIMEOUT);
   await page.locator('.ProseMirror').first().waitFor({ state: 'visible', timeout: 30_000 });
 }
 
@@ -727,7 +738,7 @@ const SURFACES: Surface[] = [
     prepare: async (page) => {
       const tour = page.getByRole('button', { name: 'Tour the welcome document' });
       if (await tour.isVisible().catch(() => false)) await tour.click();
-      await page.getByRole('tab', { name: 'Write', exact: true }).click();
+      await showWrite(page);
       await page.locator('.ProseMirror').first().waitFor({ state: 'visible', timeout: 30_000 });
     },
     roots: ['[role="toolbar"]', '.squisq-status-bar, footer', 'header'],
@@ -830,7 +841,12 @@ async function caretScenario(browser: Browser): Promise<void> {
             await page.getByRole('textbox', { name: 'New file name' }).fill(`${name}.md`);
             await page.getByRole('textbox', { name: 'New file name' }).press('Enter');
           }
-          await page.getByRole('tab', { name: 'Write', exact: true }).click();
+          // Measure and click the new document's editor, not the outgoing one
+          // (or the welcome screen) still on the page while it opens.
+          await page.waitForFunction((title) => document.title.startsWith(title), name, {
+            timeout: 30_000,
+          });
+          await showWrite(page);
           const editor = page.locator('.ProseMirror').first();
           await editor.waitFor({ state: 'visible' });
           // What a person does: tap/click at the end of the existing text, then type.

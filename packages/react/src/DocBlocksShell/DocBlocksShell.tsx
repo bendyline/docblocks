@@ -281,6 +281,7 @@ import { providerEntryExists, removeProviderEntry, writeProviderText } from './p
 import { usePromptDialog } from '../components/usePromptDialog.js';
 import { useConfirmDialog } from '../components/useConfirmDialog.js';
 import { NewDocumentDialog, type NewDocumentChoice } from '../components/NewDocumentDialog.js';
+import { NewDocumentCaret } from './NewDocumentCaret.js';
 import { EditorErrorBoundary } from './EditorErrorBoundary.js';
 import { localDateStamp } from '../local-date.js';
 import { openExternalUrl } from '../external-url.js';
@@ -1184,6 +1185,10 @@ export function DocBlocksShell({
   // not implement -- calling it there throws and the action dies silently.
   const { prompt: promptForText, promptDialog } = usePromptDialog();
   const [newDocumentDialogOpen, setNewDocumentDialogOpen] = useState(false);
+  // The document the New document dialog just created, until its editor has
+  // the caret on the line beneath its title.
+  const [newDocumentCaretPath, setNewDocumentCaretPath] = useState<string | null>(null);
+  const clearNewDocumentCaret = useCallback(() => setNewDocumentCaretPath(null), []);
 
   // Stand-ins for `window.confirm()` (a question) and `window.alert()` (a
   // message worth stopping for). Transient outcomes use showToast instead.
@@ -3887,6 +3892,7 @@ export function DocBlocksShell({
       notifyWorkspaceChanged(activeWorkspaceId ?? provider.id, created.displayPath);
       rememberNewFileFormat(format);
       adoptSelectedDocument(created);
+      setNewDocumentCaretPath(created.displayPath);
       setMobileShowEditor(true);
       setInitialView('wysiwyg');
       setInitialSharedMode(null);
@@ -6159,6 +6165,9 @@ export function DocBlocksShell({
                               }
                               toolbarSlotRight={
                                 <>
+                                  {newDocumentCaretPath === selectedFile && (
+                                    <NewDocumentCaret onPlaced={clearNewDocumentCaret} />
+                                  )}
                                   {canFind && (
                                     <FindButton
                                       active={findMode}
