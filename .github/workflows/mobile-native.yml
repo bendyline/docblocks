@@ -7,6 +7,12 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  # ffmpeg-static (a root dev-only CLI test fallback) downloads its binary from
+  # GitHub Releases during `npm ci`; anonymous 504s there fail every mobile job.
+  # Mobile never runs ffmpeg, so point it at an existing file to skip the
+  # download — `false`, so any unexpected call fails loudly.
+  FFMPEG_BIN: /usr/bin/false
 jobs:
   ios:
     runs-on: xcode-27
