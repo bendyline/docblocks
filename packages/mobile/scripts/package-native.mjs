@@ -5,6 +5,7 @@ import { fileURLToPath, URL } from 'node:url';
 import path from 'node:path';
 import process from 'node:process';
 import { findJdk21 } from './jdk.mjs';
+import { resolveSwiftPackages } from './swiftpm.mjs';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const mobile = path.join(root, 'packages/mobile');
 const platform = process.argv[2],
@@ -42,9 +43,12 @@ npm(['run', `sync:${platform}`, '-w', 'docblocks-mobile']);
 const artifacts = [];
 if (platform === 'ios') {
   const archive = path.join(output, 'DocBlocks.xcarchive');
+  const project = path.join(mobile, 'ios/App/App.xcodeproj');
+  const derived = path.join(output, 'derived');
+  resolveSwiftPackages(project, derived);
   run('xcodebuild', [
     '-project',
-    path.join(mobile, 'ios/App/App.xcodeproj'),
+    project,
     '-scheme',
     'App',
     '-configuration',
@@ -54,7 +58,7 @@ if (platform === 'ios') {
     '-archivePath',
     archive,
     '-derivedDataPath',
-    path.join(output, 'derived'),
+    derived,
     '-skipPackageUpdates',
     'CODE_SIGNING_ALLOWED=NO',
     `MARKETING_VERSION=${version}`,

@@ -17,6 +17,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { findJdk21 } from './jdk.mjs';
+import { resolveSwiftPackages } from './swiftpm.mjs';
 import {
   ANDROID_APP_ID,
   ICLOUD_CONTAINER,
@@ -248,9 +249,12 @@ function buildIos() {
     }
     writeFileSync(project, configureProject(original.toString('utf8'), settings));
     const archive = path.join(temp, 'DocBlocks.xcarchive');
+    const xcodeProject = path.join(mobile, 'ios/App/App.xcodeproj');
+    const derived = path.join(temp, 'derived');
+    resolveSwiftPackages(xcodeProject, derived);
     run('xcodebuild', [
       '-project',
-      path.join(mobile, 'ios/App/App.xcodeproj'),
+      xcodeProject,
       '-scheme',
       'App',
       '-configuration',
@@ -260,7 +264,7 @@ function buildIos() {
       '-archivePath',
       archive,
       '-derivedDataPath',
-      path.join(temp, 'derived'),
+      derived,
       '-skipPackageUpdates',
       `MARKETING_VERSION=${version}`,
       `CURRENT_PROJECT_VERSION=${buildNumber}`,
