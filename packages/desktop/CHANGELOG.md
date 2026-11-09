@@ -1,3 +1,18 @@
+## docblocks-desktop [2.7.14](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.7.13...docblocks-desktop@2.7.14) (2026-11-09)
+
+### Bug Fixes
+
+* Don't require a build number ([#47](https://github.com/bendyline/docblocks/issues/47)) ([d398095](https://github.com/bendyline/docblocks/commit/d398095a73ed1dc353470686d1f60de912196b36))
+* Fix Windows Store build ([#46](https://github.com/bendyline/docblocks/issues/46)) ([8044435](https://github.com/bendyline/docblocks/commit/8044435744dc8db487635bab176dc850d55158b9))
+* Store work ([#44](https://github.com/bendyline/docblocks/issues/44)) ([cbb7d77](https://github.com/bendyline/docblocks/commit/cbb7d779b013a3bb95809689da24ad19b82342d1))
+* Update check store packages ([#45](https://github.com/bendyline/docblocks/issues/45)) ([2591f79](https://github.com/bendyline/docblocks/commit/2591f7991643bf38734892f7b62729f114b9660c))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.7.14
+* **@bendyline/docblocks-react:** upgraded to 2.7.14
+
 ## docblocks-desktop [2.7.13](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.7.12...docblocks-desktop@2.7.13) (2026-11-05)
 
 ### Bug Fixes
