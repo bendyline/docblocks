@@ -1,3 +1,15 @@
+## @bendyline/docblocks-react [2.7.14](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-react@2.7.13...@bendyline/docblocks-react@2.7.14) (2026-11-09)
+
+### Bug Fixes
+
+* Don't require a build number ([#47](https://github.com/bendyline/docblocks/issues/47)) ([d398095](https://github.com/bendyline/docblocks/commit/d398095a73ed1dc353470686d1f60de912196b36))
+* Fix Windows Store build ([#46](https://github.com/bendyline/docblocks/issues/46)) ([8044435](https://github.com/bendyline/docblocks/commit/8044435744dc8db487635bab176dc850d55158b9))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.7.14
+
 ## @bendyline/docblocks-react [2.7.13](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-react@2.7.12...@bendyline/docblocks-react@2.7.13) (2026-11-05)
 
 ### Bug Fixes
