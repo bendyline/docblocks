@@ -27,6 +27,11 @@ if platform == 'ios':
     config = json.loads((app / 'capacitor.config.json').read_text())
     assert 'GezelRuntimePlugin' in config['packageClassList'], 'Missing native AI plugin'
     assert b'llama_model_load_from_file_impl' in (app / 'App').read_bytes(), 'Missing linked inference engine'
+    # The plugin compiles speech in only when SwiftPM saw the runtime, so a stale package resolve drops it silently.
+    assert 'GezelOfflineSpeechPlugin' in config['packageClassList'], 'Missing offline speech plugin'
+    speech = app / 'Frameworks/GezelSpeech.framework'
+    assert (speech / 'GezelSpeech').is_file() and (speech / 'PrivacyInfo.xcprivacy').is_file(), 'Missing embedded speech runtime'
+    assert info.get('NSMicrophoneUsageDescription'), 'Missing microphone purpose for dictation'
     assert b'DocBlocksAiSmoke' not in (app / 'App').read_bytes(), 'Test runner shipped in release'
 else:
     with zipfile.ZipFile(artifact) as archive:
@@ -42,7 +47,10 @@ else:
         native_prefix = 'base/lib/arm64-v8a/' if artifact.endswith('.aab') else 'lib/arm64-v8a/'
         for library in ['libgezel-llama.so', 'libgezel_llama_jni.so', 'libllama.so']:
             assert native_prefix + library in archive.namelist(), 'Missing packaged inference engine'
+        for library in ['libGezelSpeech.so', 'libonnxruntime.so']:
+            assert native_prefix + library in archive.namelist(), 'Missing packaged speech runtime'
         manifest = archive.read('base/manifest/AndroidManifest.xml' if artifact.endswith('.aab') else 'AndroidManifest.xml')
+        assert b'RECORD_AUDIO' in manifest or 'RECORD_AUDIO'.encode('utf-16le') in manifest, 'Missing microphone permission for dictation'
         # AAPT binary XML and bundle protobuf retain string values in UTF-8 or UTF-16.
         for forbidden in ['MANAGE_EXTERNAL_STORAGE', 'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE', 'com.bendyline.docblocks.mobile.tests']:
             assert forbidden.encode() not in manifest and forbidden.encode('utf-16le') not in manifest, forbidden

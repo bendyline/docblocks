@@ -162,6 +162,10 @@ function loadEditorShell(): Promise<typeof import('./LazyEditorShell.js')> {
 
 const EditorShell = lazy(loadEditorShell);
 const DocumentConflictDialog = lazy(() => import('./DocumentConflictDialog.js'));
+// Reads the editor context, so a static import would pull the editor into the entry.
+const NewDocumentCaret = lazy(() =>
+  import('./NewDocumentCaret.js').then((m) => ({ default: m.NewDocumentCaret })),
+);
 // The git dialogs/status bar only ever render under the Electron host, so
 // they load as a split chunk -- the site never pays for them (the entry
 // bundle budget is enforced by scripts/check-bundle-size.ts).
@@ -281,7 +285,6 @@ import { providerEntryExists, removeProviderEntry, writeProviderText } from './p
 import { usePromptDialog } from '../components/usePromptDialog.js';
 import { useConfirmDialog } from '../components/useConfirmDialog.js';
 import { NewDocumentDialog, type NewDocumentChoice } from '../components/NewDocumentDialog.js';
-import { NewDocumentCaret } from './NewDocumentCaret.js';
 import { EditorErrorBoundary } from './EditorErrorBoundary.js';
 import { localDateStamp } from '../local-date.js';
 import { openExternalUrl } from '../external-url.js';
@@ -6166,7 +6169,9 @@ export function DocBlocksShell({
                               toolbarSlotRight={
                                 <>
                                   {newDocumentCaretPath === selectedFile && (
-                                    <NewDocumentCaret onPlaced={clearNewDocumentCaret} />
+                                    <Suspense fallback={null}>
+                                      <NewDocumentCaret onPlaced={clearNewDocumentCaret} />
+                                    </Suspense>
                                   )}
                                   {canFind && (
                                     <FindButton

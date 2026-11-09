@@ -603,8 +603,10 @@ opt-in off by default, model downloads gesture-only, selected models explicit,
 and every stream terminal exactly once. Gezel's shared `createEmbedding`/`streamText`
 and model manager own lifecycle, catalog, preparation and inference; avoid duplicating
 them in the host adapter. The published `@bendyline/gezel-capacitor` carries the
-native runtimes and bridge sources; `mobile:check` runs its installed-package verifier
-and checks the Gradle lock against its native version.
+native runtimes and bridge sources; `mobile:check` runs its installed-package verifier,
+requires its iOS and Android gezel-speech runtimes from the engines' native release (Gezel
+treats them as optional, and both native builds silently drop speech without them), and
+checks the Gradle lock against its native version.
 Never patch installed SDK files. Device AI tests use synthetic weights only in the
 isolated iOS/Android `.tests` app and require an explicit arm64 device ID.
 `--download` explicitly opts the isolated test app into a real-model check.

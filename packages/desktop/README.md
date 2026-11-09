@@ -60,10 +60,10 @@ agent orchestration, MCP server or complete community catalog. `afterPack`
 checks that the full service did not return and that runtime assets remain.
 
 The desktop pins published releases exactly: `@bendyline/gezel-inference`
-`1.0.8` and `@bendyline/gezel-app-sdk` `1.1.13` at runtime, plus Gezel core
-`1.2.13` as a dev dependency that tsup bundles into main. The inference package
-brings its matching client, catalog and knowledge packages. Inference `1.0.8`
-selects native release `0.1.57`. Mobile runs the same core and App SDK, which
+`1.0.9` and `@bendyline/gezel-app-sdk` `1.1.14` at runtime, plus Gezel core
+`1.2.14` as a dev dependency that tsup bundles into main. The inference package
+brings its matching client, catalog and knowledge packages. Inference `1.0.9`
+selects native release `0.1.62`. Mobile runs the same core and App SDK, which
 its published Capacitor plugin pins exactly.
 
 Kokoro narration uses Gezel core's `planKokoroSpeech` export
@@ -183,7 +183,7 @@ permit changed hashes. Runtime also verifies native locations, symlinks,
 signatures and executable inheritance. Direct macOS builds preserve the upstream
 Developer ID signatures.
 
-The inference pin `1.0.8` selects notarized native release `0.1.57`.
+The inference pin `1.0.9` selects notarized native release `0.1.62`.
 Signed MAS build and runtime qualification remain separate release gates.
 See [the native release handoff](../../docs/desktop-ai-native-release.md).
 
