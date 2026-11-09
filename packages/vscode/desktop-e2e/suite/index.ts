@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
 import * as vscode from 'vscode';
+import { SUITE_STARTED_MARKER } from '../suite-marker.js';
 
 const EXTENSION_ID = 'bendyline.docblocks-vscode';
 
 export async function run(): Promise<void> {
+  // Before any assertion, so run.ts never retries a failure of the suite itself.
+  const marker = process.env[SUITE_STARTED_MARKER];
+  if (marker) writeFileSync(marker, '');
   assert.equal(typeof process.versions.node, 'string', 'desktop extension host must expose Node');
   const extension = vscode.extensions.getExtension(EXTENSION_ID);
   assert.ok(extension, `${EXTENSION_ID} was not installed into the desktop extension host`);
