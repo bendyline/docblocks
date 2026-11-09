@@ -1,3 +1,15 @@
+## docblocks-mobile [1.0.15](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.0.14...docblocks-mobile@1.0.15) (2026-11-09)
+
+### Bug Fixes
+
+* Patch version for interrupted release ([4bacd73](https://github.com/bendyline/docblocks/commit/4bacd73e1933d9a02b0f9880ae9b24e3e2c6f5d4))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.7.14
+* **@bendyline/docblocks-react:** upgraded to 2.7.14
+
 ## docblocks-mobile [1.0.14](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.0.13...docblocks-mobile@1.0.14) (2026-11-09)
 
 ### Bug Fixes
