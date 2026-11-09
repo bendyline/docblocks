@@ -1,6 +1,6 @@
 {
   "name": "@bendyline/docblocks-cli",
-  "version": "2.7.13",
+  "version": "2.7.14",
   "description": "Build, preview, convert, render, inspect, and automate documents",
   "license": "MIT",
   "author": "Bendyline",
@@ -47,7 +47,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bendyline/docblocks": "2.7.13",
+    "@bendyline/docblocks": "2.7.14",
     "@bendyline/squisq": "2.13.13",
     "@bendyline/squisq-cli": "2.9.29",
     "@bendyline/squisq-formats": "2.8.15",
