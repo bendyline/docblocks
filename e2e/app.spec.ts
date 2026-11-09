@@ -710,6 +710,14 @@ test.describe('Welcome gateway', () => {
       'aria-selected',
       'true',
     );
+
+    // The caret waits on an empty line beneath the title: the first keys
+    // typed are the body, not lost and not appended to the heading.
+    const editor = page.locator('.ProseMirror');
+    await expect(editor).toBeFocused();
+    await page.keyboard.type('The first line.');
+    await expect(editor.getByRole('heading', { level: 1 })).toHaveText('first-draft');
+    await expect(editor.locator('p')).toHaveText('The first line.');
   });
 
   test('dismissal persists across reload', async ({ page }) => {

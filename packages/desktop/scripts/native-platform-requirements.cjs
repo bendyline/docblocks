@@ -60,6 +60,42 @@ function machoMinimums(bytes) {
   return versions;
 }
 
+/** Walk a VERNEED chain to the string-table offset of each required version name. */
+function verneedNameOffsets(records) {
+  const offsets = [];
+  let position = 0;
+  for (;;) {
+    const record = range(records, position, 16);
+    const entries = record.readUInt16LE(2);
+    let auxiliary = position + record.readUInt32LE(8);
+    for (let index = 0; index < entries; index++) {
+      const entry = range(records, auxiliary, 16);
+      offsets.push(entry.readUInt32LE(8));
+      const next = entry.readUInt32LE(12);
+      if (index + 1 < entries && next < 16) throw new Error('Invalid ELF version auxiliary chain');
+      auxiliary += next;
+    }
+    const next = record.readUInt32LE(12);
+    if (next === 0) break;
+    if (next < 16) throw new Error('Invalid ELF version requirement chain');
+    position += next;
+  }
+  return offsets;
+}
+
+function versionName(strings, start) {
+  const end = strings.indexOf(0, start);
+  if (end < 0 || start >= strings.length) throw new Error('Invalid ELF version name');
+  return strings.toString('utf8', start, end);
+}
+
+/** Only GLIBC_x.y[.z] counts; GLIBCXX_, GCC_ and library-private versions do not. */
+function glibcVersions(names) {
+  return names
+    .filter((name) => /^GLIBC_\d+\.\d+(?:\.\d+)?$/.test(name))
+    .map((name) => name.slice(6));
+}
+
 /** Read ELF VERNEED, never incidental GLIBC strings or exported VERDEF symbols. */
 function elfGlibcRequirements(bytes) {
   if (bytes.subarray(0, 4).toString('hex') !== '7f454c46') return null;
@@ -85,37 +121,24 @@ function elfGlibcRequirements(bytes) {
     if (!names || names.type !== 3) throw new Error('Invalid ELF version string table');
     const strings = range(bytes, names.offset, names.size);
     const records = range(bytes, section.offset, section.size);
-    let position = 0;
-    for (;;) {
-      const record = range(records, position, 16);
-      const entries = record.readUInt16LE(2);
-      let auxiliary = position + record.readUInt32LE(8);
-      for (let index = 0; index < entries; index++) {
-        const entry = range(records, auxiliary, 16);
-        const start = entry.readUInt32LE(8);
-        const end = strings.indexOf(0, start);
-        if (end < 0 || start >= strings.length) throw new Error('Invalid ELF version name');
-        const name = strings.toString('utf8', start, end);
-        if (/^GLIBC_\d+\.\d+(?:\.\d+)?$/.test(name)) versions.push(name.slice(6));
-        const next = entry.readUInt32LE(12);
-        if (index + 1 < entries && next < 16)
-          throw new Error('Invalid ELF version auxiliary chain');
-        auxiliary += next;
-      }
-      const next = record.readUInt32LE(12);
-      if (next === 0) break;
-      if (next < 16) throw new Error('Invalid ELF version requirement chain');
-      position += next;
-    }
+    versions.push(
+      ...glibcVersions(verneedNameOffsets(records).map((start) => versionName(strings, start))),
+    );
   }
   return versions;
 }
 
-/** Read only load commands / version sections, even for very large GPU libraries. */
-async function binaryMetadata(handle, platform) {
+/** Longest version name read; real ones are short (GLIBC_2.38, GLIBCXX_3.4.32). */
+const VERSION_NAME_LIMIT = 1024;
+
+/**
+ * Read only load commands / version metadata, even for very large GPU libraries.
+ * Returns the declared minimums: macOS versions, or required glibc versions.
+ */
+async function binaryRequirements(handle, platform) {
   const fileSize = (await handle.stat()).size;
   let remaining = 32 * 1024 * 1024;
-  async function read(position, size) {
+  function within(position, size) {
     if (
       !Number.isSafeInteger(position) ||
       !Number.isSafeInteger(size) ||
@@ -124,6 +147,9 @@ async function binaryMetadata(handle, platform) {
       position + size > fileSize
     )
       throw new Error('Truncated or invalid native binary metadata');
+  }
+  async function read(position, size) {
+    within(position, size);
     if (size > remaining) throw new Error('Native metadata exceeds the 32 MiB inspection limit');
     remaining -= size;
     const bytes = Buffer.alloc(size);
@@ -138,7 +164,7 @@ async function binaryMetadata(handle, platform) {
   if (platform === 'darwin') {
     const header = await read(0, 32);
     if (header.readUInt32LE(0) !== 0xfeedfacf) machoMinimums(header);
-    return Buffer.concat([header, await read(32, header.readUInt32LE(20))]);
+    return machoMinimums(Buffer.concat([header, await read(32, header.readUInt32LE(20))]));
   }
   const header = await read(0, 64);
   if (header[4] !== 2 || header[5] !== 1) throw new Error('Expected a 64-bit little-endian ELF');
@@ -146,26 +172,33 @@ async function binaryMetadata(handle, platform) {
   const count = header.readUInt16LE(60);
   if (!count || size < 64) throw new Error('ELF section metadata is missing');
   const table = await read(Number(header.readBigUInt64LE(40)), count * size);
-  const needed = new Set();
-  for (let index = 0; index < count; index++) {
-    if (table.readUInt32LE(index * size + 4) === 0x6ffffffe) {
-      needed.add(index);
-      needed.add(table.readUInt32LE(index * size + 40));
-    }
-  }
-  // Relocate just the version metadata into a bounded buffer for the same parser.
-  header.writeBigUInt64LE(64n, 40);
-  const parts = [header, table];
-  let end = header.length + table.length;
-  for (const index of needed) {
+  const section = (index) => {
     if (index >= count) throw new Error('Invalid ELF version string table');
     const entry = table.subarray(index * size, index * size + 64);
-    const data = await read(Number(entry.readBigUInt64LE(24)), Number(entry.readBigUInt64LE(32)));
-    entry.writeBigUInt64LE(BigInt(end), 24);
-    parts.push(data);
-    end += data.length;
+    return {
+      type: entry.readUInt32LE(4),
+      offset: Number(entry.readBigUInt64LE(24)),
+      size: Number(entry.readBigUInt64LE(32)),
+      link: entry.readUInt32LE(40),
+    };
+  };
+  const names = [];
+  for (let index = 0; index < count; index++) {
+    const verneed = section(index);
+    if (verneed.type !== 0x6ffffffe) continue;
+    const strings = section(verneed.link);
+    if (strings.type !== 3) throw new Error('Invalid ELF version string table');
+    within(strings.offset, strings.size);
+    // The linked table is the whole .dynstr, which a C++ GPU library can make
+    // larger than the entire budget (ROCm's librocroller.so.1: 73 MiB). Read
+    // only the names the requirements point at.
+    for (const start of new Set(verneedNameOffsets(await read(verneed.offset, verneed.size)))) {
+      if (start >= strings.size) throw new Error('Invalid ELF version name');
+      const length = Math.min(strings.size - start, VERSION_NAME_LIMIT);
+      names.push(versionName(await read(strings.offset + start, length), 0));
+    }
   }
-  return Buffer.concat(parts);
+  return glibcVersions(names);
 }
 
 async function verifyNativePlatformRequirements({ directory, platform }) {
@@ -197,8 +230,7 @@ async function verifyNativePlatformRequirements({ directory, platform }) {
                 ].includes(magic)
               : magic === 0x464c457f;
           if (!isBinary) continue;
-          const bytes = await binaryMetadata(handle, platform);
-          versions = platform === 'darwin' ? machoMinimums(bytes) : elfGlibcRequirements(bytes);
+          versions = await binaryRequirements(handle, platform);
         } catch (error) {
           throw new Error(`${path.relative(directory, file)}: ${error.message}`);
         } finally {

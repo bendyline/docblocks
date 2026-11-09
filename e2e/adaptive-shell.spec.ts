@@ -251,11 +251,10 @@ test.describe('adaptive shell on a phone', () => {
     ).toHaveAttribute('aria-selected', 'true');
     await expect(page.locator('.ProseMirror')).toHaveCount(1);
     // By accessible name: the heading's text also carries Squisq's inline
-    // block tag whenever the block is selected, as it is on WebKit here.
+    // block tag whenever the block is selected, as it is once the caret waits
+    // on the line beneath the title.
     await expect(
-      page
-        .locator('.ProseMirror')
-        .getByRole('heading', { level: 1, name: 'first-draft', exact: true }),
+      page.locator('.ProseMirror').getByRole('heading', { level: 1, name: /^first-draft\b/ }),
     ).toBeVisible();
 
     const mounts = await page.evaluate(

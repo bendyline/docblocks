@@ -131,4 +131,32 @@ describe('native payload OS contract', () => {
     const result = await verifyNativePlatformRequirements({ directory, platform: 'linux' });
     expect(result.binaries).to.deep.equal([{ path: 'large-gpu-library.so', minimum: '2.38' }]);
   });
+  // ROCm's librocroller.so.1 carries a 73 MiB .dynstr, which VERNEED links to.
+  it('reads only the required names from a string table larger than the read budget', async () => {
+    const bytes = elf('2.38');
+    bytes.writeBigUInt64LE(BigInt(64 * 1024 * 1024), 128 + 32); // .dynstr size
+    await writeSized(path.join(directory, 'librocroller.so.1'), bytes, 96 * 1024 * 1024);
+    const result = await verifyNativePlatformRequirements({ directory, platform: 'linux' });
+    expect(result.binaries).to.deep.equal([{ path: 'librocroller.so.1', minimum: '2.38' }]);
+  });
+  it('still refuses version metadata that would exceed the read budget', async () => {
+    const bytes = elf('2.38');
+    bytes.writeBigUInt64LE(BigInt(64 * 1024 * 1024), 192 + 32); // VERNEED size
+    await writeSized(path.join(directory, 'malformed.so'), bytes, 96 * 1024 * 1024);
+    await rejects(
+      verifyNativePlatformRequirements({ directory, platform: 'linux' }),
+      /malformed\.so: Native metadata exceeds the 32 MiB inspection limit/,
+    );
+  });
 });
+
+/** Write `bytes`, then extend the file without writing its body. */
+async function writeSized(file: string, bytes: Buffer, length: number): Promise<void> {
+  await writeFile(file, bytes);
+  const handle = await open(file, 'r+');
+  try {
+    await handle.truncate(length);
+  } finally {
+    await handle.close();
+  }
+}

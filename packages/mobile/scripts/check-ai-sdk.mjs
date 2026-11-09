@@ -7,7 +7,8 @@ import path from 'node:path';
 const require = createRequire(new URL('../package.json', import.meta.url));
 const root = path.dirname(require.resolve('@bendyline/gezel-capacitor/package.json'));
 const read = (file) => JSON.parse(readFileSync(file, 'utf8'));
-const { verifyCapacitorPackage } = await import('@bendyline/gezel-capacitor/packaging');
+const { verifyCapacitorPackage, verifySpeech } =
+  await import('@bendyline/gezel-capacitor/packaging');
 const compatibility = await verifyCapacitorPackage(root);
 const mobile = new URL('../', import.meta.url);
 assert.match(
@@ -40,22 +41,34 @@ for (const [name, version] of Object.entries(plugin.dependencies)) {
   assert.equal(read(path.join(installed(name), 'package.json')).version, version);
 }
 
-// The Gradle lock must name exactly the Maven artifacts the installed plugin stages.
-// Gezel's published plugin carries no speech runtime; a locally staged one needs its lock line.
 const native = compatibility.native.android.version;
 assert.equal(compatibility.native.ios.version, native);
-const speechManifest = path.join(root, 'native/speech-android/sdk-manifest.json');
-const speech = existsSync(speechManifest) ? read(speechManifest).packageVersion : undefined;
+// Dictation, narration and knowledge-question embeddings all run on the gezel-speech
+// runtime. Gezel treats it as optional (a plugin without it builds, and speech only
+// reports unavailable on the device), so DocBlocks requires it here, from the same
+// native release as the engines it loads beside.
+for (const target of ['ios', 'android']) {
+  const directory = path.join(root, `native/speech-${target}`);
+  assert.ok(
+    existsSync(path.join(directory, 'sdk-manifest.json')),
+    `${plugin.name} ${plugin.version} carries no ${target} speech runtime`,
+  );
+  assert.equal(
+    (await verifySpeech(directory, target)).packageVersion,
+    native,
+    `The ${target} speech runtime must come from native release ${native}`,
+  );
+}
+
+// The Gradle lock must name exactly the Maven artifacts the installed plugin stages.
 assert.deepEqual(
   readFileSync(new URL('android/app/gradle.lockfile', mobile), 'utf8')
     .split(/\r?\n/)
     .map((line) => line.split('=')[0])
     .filter((coordinate) => coordinate.startsWith('com.bendyline.gezel:')),
-  [
-    `gezel-llama:${native}`,
-    `gezel-runtime:${native}`,
-    ...(speech ? [`gezel-speech:${speech}`] : []),
-  ].map((artifact) => `com.bendyline.gezel:${artifact}`),
+  [`gezel-llama:${native}`, `gezel-runtime:${native}`, `gezel-speech:${native}`].map(
+    (artifact) => `com.bendyline.gezel:${artifact}`,
+  ),
   'The Gradle lock must match the installed Gezel native payload',
 );
 

@@ -15,7 +15,7 @@ import {
   splitFrontmatterBlock,
   svgSourceFromBytes,
 } from '@bendyline/squisq/markdown';
-import type { Doc } from '@bendyline/squisq/schemas';
+import type { Doc, Theme } from '@bendyline/squisq/schemas';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import type {
   DiagramPicture,
@@ -45,11 +45,20 @@ export interface ExportConverterOverrides {
   diagramRenderer?: DiagramRasterizer;
 }
 
-/** The host's diagram renderer, or Squisq's browser one. */
-async function diagramRendererFor(overrides: ExportConverterOverrides): Promise<DiagramRasterizer> {
+/**
+ * The host's diagram renderer, or Squisq's browser one. Given a page's theme,
+ * its pictures take the theme's colors on its background, as Document mode
+ * shows them; without one they are drawn for white paper.
+ */
+async function diagramRendererFor(
+  overrides: ExportConverterOverrides,
+  theme?: Theme,
+): Promise<DiagramRasterizer> {
   if (overrides.diagramRenderer) return overrides.diagramRenderer;
   const module = await import('@bendyline/squisq-react/diagram-pictures');
-  return module.createDiagramPictureRenderer();
+  return module.createDiagramPictureRenderer(
+    theme ? { theme, background: theme.colors.background } : {},
+  );
 }
 
 /**
@@ -426,11 +435,17 @@ async function preparePlainPage(
   doc: MarkdownDocument,
   mediaContainer: ContentContainer | null | undefined,
   overrides: ExportConverterOverrides,
+  themeId: string | undefined,
 ): Promise<{ markdownDoc: MarkdownDocument; images: Map<string, string>; icons?: PlainHtmlIcons }> {
   try {
     const prepare = await loadPlainHtmlPreparation();
+    // The page's theme, resolved as the plain HTML renderer resolves it.
+    const pageThemeId = themeId ?? readFrontmatterThemeId(doc.frontmatter);
+    const theme = pageThemeId
+      ? (await import('@bendyline/squisq/doc')).resolveThemeForDoc(doc, pageThemeId)
+      : undefined;
     return await prepare(doc, {
-      renderDiagram: await diagramRendererFor(overrides),
+      renderDiagram: await diagramRendererFor(overrides, theme),
       container: mediaContainer,
     });
   } catch {
@@ -547,7 +562,12 @@ async function runHtmlExport(
   }
 
   // Plain semantic HTML
-  const page = await preparePlainPage(parseMarkdown(markdown), mediaContainer, converterOverrides);
+  const page = await preparePlainPage(
+    parseMarkdown(markdown),
+    mediaContainer,
+    converterOverrides,
+    themeId,
+  );
   const mdDoc = page.markdownDoc;
   const referencedImages = collectMarkdownImageUrls(mdDoc);
   const localImages = referencedImages.filter((u) => !isExternalUrl(u) && !page.images.has(u));

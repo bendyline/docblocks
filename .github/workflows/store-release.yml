@@ -17,15 +17,18 @@
 #     draft assets for each store, then delete the draft when it is no longer
 #     needed. Nothing is uploaded to a store from CI.
 #   - Versions are NOT stamped with a -build.N prerelease suffix; stores require
-#     a clean x.y.z version. The Mac App Store build takes x.y.z from
-#     packages/desktop/package.json and the explicit `build_number` input as its
-#     CFBundleVersion; mobile builds take x.y.z from packages/mobile/package.json
-#     and `build_number` as the Android versionCode and iOS CFBundleVersion.
-#     App Store Connect and Play reject a build number that is not higher than
-#     every earlier upload. The Microsoft Store reserves the MSIX version's
-#     fourth field, so resubmitting there needs a new desktop version. Never
-#     export BUILD_NUMBER in a desktop job: electron-builder appends it to the
-#     bundle version (2.7.8.42), which App Store Connect rejects.
+#     a clean x.y.z version, which comes from packages/desktop/package.json for
+#     the Mac App Store build and packages/mobile/package.json for mobile. Both
+#     stay the same across store builds until Release & Deploy bumps them, so
+#     the build number cannot come from them: App Store Connect and Play reject
+#     a number they have already seen. It is this workflow's run number, which
+#     only rises, and it becomes the macOS and iOS CFBundleVersion and the
+#     Android versionCode. The optional `build_number` input overrides it when a
+#     store already holds something higher. A rerun of a run keeps its number.
+#     The Microsoft Store reserves the MSIX version's fourth field, so
+#     resubmitting there needs a new desktop version. Never export BUILD_NUMBER
+#     in a desktop job: electron-builder appends it to the bundle version
+#     (2.7.8.42), which App Store Connect rejects.
 #   - Every package is verified before it is attached: desktop packages by
 #     packages/desktop/scripts/check-store-packages.ts, mobile ones by
 #     mobile:store.
@@ -74,7 +77,7 @@ on:
           - android
           - ios
       build_number:
-        description: 'Store build number (macOS and iOS CFBundleVersion, Android versionCode), higher than every earlier upload; required for macos, android and ios'
+        description: 'Optional override. Leave blank to use this run number; set it only if a store already holds a higher build.'
         required: false
         type: string
 
@@ -83,7 +86,7 @@ permissions:
 
 jobs:
   # Fails in seconds, rather than after the quality gate, when a requested
-  # build lacks its signing secrets or a valid mobile build number.
+  # build lacks its signing secrets or the build number override is invalid.
   preflight:
     name: Check Inputs and Signing Secrets
     runs-on: ubuntu-24.04
@@ -92,6 +95,7 @@ jobs:
       macos: ${{ steps.targets.outputs.macos }}
       android: ${{ steps.targets.outputs.android }}
       ios: ${{ steps.targets.outputs.ios }}
+      build_number: ${{ steps.targets.outputs.build_number }}
 
     steps:
       - name: Resolve targets and check signing secrets
@@ -99,7 +103,7 @@ jobs:
         shell: bash
         env:
           TARGET: ${{ inputs.target }}
-          BUILD_NUMBER: ${{ inputs.build_number }}
+          BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
           APPLE_MAS_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_MAS_CERTIFICATE_P12_BASE64 }}
           MAS_PROVISIONING_PROFILE_BASE64: ${{ secrets.MAS_PROVISIONING_PROFILE_BASE64 }}
           ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
@@ -135,9 +139,10 @@ jobs:
               status=1
             fi
           done
-          if [[ " $targets " == *" macos "* || " $targets " == *" android "* || " $targets " == *" ios "* ]] &&
-            ! [[ "$BUILD_NUMBER" =~ ^[1-9][0-9]{0,8}$ ]]; then
-            echo "::error::build_number must be a positive integer of at most 9 digits, higher than every build already uploaded to App Store Connect and Google Play"
+          if [[ "$BUILD_NUMBER" =~ ^[1-9][0-9]{0,8}$ ]]; then
+            echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::build_number must be blank, or a positive integer of at most 9 digits higher than every build already uploaded to that store"
             status=1
           fi
           exit "$status"
@@ -210,7 +215,7 @@ jobs:
             - Target: `${{ inputs.target }}`
             - Desktop version: `${{ steps.versions.outputs.desktop }}`
             - Mobile version: `${{ steps.versions.outputs.mobile }}`
-            - Build number (Mac App Store, App Store, Google Play): `${{ inputs.build_number || 'n/a' }}`
+            - Build number (Mac App Store, App Store, Google Play): `${{ needs.preflight.outputs.build_number }}`
             - Source commit: `${{ github.sha }}`
             - Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
@@ -369,7 +374,7 @@ jobs:
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           UV_THREADPOOL_SIZE: 16
-          MAS_BUILD_NUMBER: ${{ inputs.build_number }}
+          MAS_BUILD_NUMBER: ${{ needs.preflight.outputs.build_number }}
 
       # The installer and app signatures, entitlements, Info.plist and helper
       # set, plus the runtime verifier the shipped app runs over its engines.
@@ -377,7 +382,7 @@ jobs:
         working-directory: packages/desktop
         run: npx --no-install tsx scripts/check-store-packages.ts mas "$MAS_BUILD_NUMBER"
         env:
-          MAS_BUILD_NUMBER: ${{ inputs.build_number }}
+          MAS_BUILD_NUMBER: ${{ needs.preflight.outputs.build_number }}
 
       - name: Clean up
         if: always()
@@ -443,7 +448,7 @@ jobs:
       # jarsigner, and compares every bundled web file against the Vite output.
       - name: Build signed app bundle
         env:
-          BUILD_NUMBER: ${{ inputs.build_number }}
+          BUILD_NUMBER: ${{ needs.preflight.outputs.build_number }}
           ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
           ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
           ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
@@ -501,7 +506,7 @@ jobs:
         env:
           # Vite's mobile bundle exceeds the Xcode runner's default 2 GiB Node heap.
           NODE_OPTIONS: --max-old-space-size=4096
-          BUILD_NUMBER: ${{ inputs.build_number }}
+          BUILD_NUMBER: ${{ needs.preflight.outputs.build_number }}
           IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
           IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}

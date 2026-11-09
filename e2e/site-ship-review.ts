@@ -6,9 +6,10 @@
  *   $env:LIVE_UX_BASE_URL='https://docblocks.com'
  *   npx tsx e2e/site-ship-review.ts reports/site-review
  *
- * Optional SHIP_REVIEW_PHASES=pages,app,sharing,video,mobile,browsers,fidelity,firstvisit;
- * defaults to all eight. `fidelity` reads exports back and times typing in a long
- * document; `firstvisit` measures what a fresh profile downloads before it works offline.
+ * Optional SHIP_REVIEW_PHASES=pages,app,sharing,video,mobile,browsers,fidelity,firstvisit,firsttask;
+ * defaults to all nine. `fidelity` reads exports back and times typing in a long
+ * document; `firstvisit` measures what a fresh profile downloads before it works offline;
+ * `firsttask` creates a document from the welcome screen at a person's pace in both themes.
  * Run the existing ux:crawl as well for the wider shell screenshot inventory. This is an audit,
  * not a release gate: inspect results.json, including failed steps and axe's
  * incomplete checks, and review the screenshots before reaching a verdict.
@@ -32,7 +33,13 @@ const supportedPhases = [
   'browsers',
   'fidelity',
   'firstvisit',
+  'firsttask',
 ];
+/**
+ * How long `firsttask` waits between actions. A person does not type in the
+ * same frame a dialog closes, and keys sent that fast hit the previous caret.
+ */
+const PERSON_PAUSE_MS = 600;
 /**
  * A deployed origin precaches ~36 MB compressed before the service worker
  * claims the page: 81 s and 175 s in two runs on 2026-10-16. The former 30 s
@@ -208,7 +215,9 @@ async function createDocument(
       'true',
     );
   }
-  await page.getByRole('tab', { name: 'Write', exact: true }).click();
+  // Clicking Write while it is selected opens its mode menu over the page.
+  const writeTab = page.getByRole('tab', { name: 'Write', exact: true });
+  if ((await writeTab.getAttribute('aria-selected')) !== 'true') await writeTab.click();
   const editor = page.locator('.ProseMirror');
   await expect(editor).toHaveText(mobile ? name : '');
   if (mobile) {
@@ -979,6 +988,72 @@ try {
       });
     } finally {
       await context.close();
+    }
+  }
+  if (phases.includes('firsttask')) {
+    // A new visitor's first job as they would do it: name a document on the
+    // welcome screen, start typing, then click the empty page and type again.
+    // createDocument() uses the file tree and fill(), which never asks where
+    // focus and the caret land. The dark pass also scans Export, whose hints
+    // only the light theme had been checked against.
+    for (const theme of ['light', 'dark'] as const) {
+      const context = await browser.newContext({
+        viewport: { width: 1440, height: 1000 },
+        colorScheme: theme,
+      });
+      const page = await context.newPage();
+      watch(page);
+      try {
+        await step(`first-task-${theme}`, page, async () => {
+          await page.goto(base);
+          await ready(page);
+          await page.getByRole('button', { name: 'Create a document', exact: true }).click();
+          await page
+            .getByRole('textbox', { name: 'Document name', exact: true })
+            .fill('First task');
+          await page.getByRole('button', { name: 'Create', exact: true }).click();
+          const editor = page.locator('.ProseMirror');
+          await expect(editor.locator('h1')).toHaveText('First task');
+          await page.waitForTimeout(PERSON_PAUSE_MS);
+          const focusedAfterCreate = await editor.evaluate((element) =>
+            element.contains(document.activeElement),
+          );
+          await page.keyboard.type('Typed at once.', { delay: 40 });
+          const box = await editor.boundingBox();
+          if (!box) throw new Error('The editor has no box to click.');
+          // Well below the seeded title: the blank page a person clicks to start.
+          await page.mouse.click(box.x + box.width / 2, box.y + 300);
+          await settleSelection(page);
+          await page.waitForTimeout(PERSON_PAUSE_MS);
+          await page.keyboard.type('Typed after clicking the page.', { delay: 40 });
+          await page.waitForTimeout(PERSON_PAUSE_MS);
+          const blocks = await editor.evaluate((element) =>
+            Array.from(element.children, (child) => ({
+              tag: child.tagName,
+              text: child.textContent ?? '',
+            })),
+          );
+          const typedAtOnceKept = blocks.some((block) => block.text.includes('Typed at once.'));
+          const clickedTextInBody = blocks.some(
+            (block) => block.tag !== 'H1' && block.text.includes('Typed after clicking'),
+          );
+          const detail = { focusedAfterCreate, typedAtOnceKept, clickedTextInBody, blocks };
+          await capture(page, `first-task-${theme}`);
+          if (!focusedAfterCreate || !typedAtOnceKept || !clickedTextInBody) {
+            throw new Error(
+              `First document did not take typing as written: ${JSON.stringify(detail)}`,
+            );
+          }
+          return detail;
+        });
+        await step(`first-task-export-${theme}`, page, async () => {
+          await dismiss(page);
+          await exportDialog(page);
+          return capture(page, `first-task-export-${theme}`);
+        });
+      } finally {
+        await context.close();
+      }
     }
   }
 } finally {

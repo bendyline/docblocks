@@ -162,6 +162,10 @@ function loadEditorShell(): Promise<typeof import('./LazyEditorShell.js')> {
 
 const EditorShell = lazy(loadEditorShell);
 const DocumentConflictDialog = lazy(() => import('./DocumentConflictDialog.js'));
+// Reads the editor context, so a static import would pull the editor into the entry.
+const NewDocumentCaret = lazy(() =>
+  import('./NewDocumentCaret.js').then((m) => ({ default: m.NewDocumentCaret })),
+);
 // The git dialogs/status bar only ever render under the Electron host, so
 // they load as a split chunk -- the site never pays for them (the entry
 // bundle budget is enforced by scripts/check-bundle-size.ts).
@@ -1184,6 +1188,10 @@ export function DocBlocksShell({
   // not implement -- calling it there throws and the action dies silently.
   const { prompt: promptForText, promptDialog } = usePromptDialog();
   const [newDocumentDialogOpen, setNewDocumentDialogOpen] = useState(false);
+  // The document the New document dialog just created, until its editor has
+  // the caret on the line beneath its title.
+  const [newDocumentCaretPath, setNewDocumentCaretPath] = useState<string | null>(null);
+  const clearNewDocumentCaret = useCallback(() => setNewDocumentCaretPath(null), []);
 
   // Stand-ins for `window.confirm()` (a question) and `window.alert()` (a
   // message worth stopping for). Transient outcomes use showToast instead.
@@ -3887,6 +3895,7 @@ export function DocBlocksShell({
       notifyWorkspaceChanged(activeWorkspaceId ?? provider.id, created.displayPath);
       rememberNewFileFormat(format);
       adoptSelectedDocument(created);
+      setNewDocumentCaretPath(created.displayPath);
       setMobileShowEditor(true);
       setInitialView('wysiwyg');
       setInitialSharedMode(null);
@@ -6159,6 +6168,11 @@ export function DocBlocksShell({
                               }
                               toolbarSlotRight={
                                 <>
+                                  {newDocumentCaretPath === selectedFile && (
+                                    <Suspense fallback={null}>
+                                      <NewDocumentCaret onPlaced={clearNewDocumentCaret} />
+                                    </Suspense>
+                                  )}
                                   {canFind && (
                                     <FindButton
                                       active={findMode}

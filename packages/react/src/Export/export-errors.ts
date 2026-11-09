@@ -1,8 +1,8 @@
 /**
  * PDF export stopped before anything was saved because the PDF fonts would
- * replace some of the document's characters (CJK text and most emoji). The
- * user can save it anyway with the replacements, or pick a format that keeps
- * every character.
+ * replace some of the document's characters, those in scripts none of
+ * Squisq's PDF fonts cover. The user can save it anyway with the replacements,
+ * or pick a format that keeps every character.
  *
  * Kept out of `run-export.ts` so the export controls can recognise it without
  * loading the export pipeline.
