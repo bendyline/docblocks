@@ -1,3 +1,9 @@
+## @bendyline/docblocks [2.7.14](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@2.7.13...@bendyline/docblocks@2.7.14) (2026-11-09)
+
+### Bug Fixes
+
+* Don't require a build number ([#47](https://github.com/bendyline/docblocks/issues/47)) ([d398095](https://github.com/bendyline/docblocks/commit/d398095a73ed1dc353470686d1f60de912196b36))
+
 ## @bendyline/docblocks [2.7.13](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@2.7.12...@bendyline/docblocks@2.7.13) (2026-11-05)
 
 ### Bug Fixes
