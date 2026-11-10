@@ -1,11 +1,13 @@
 import type { AiImageModel } from '@bendyline/docblocks/host';
 import { formatModelSize } from '../Speech/format.js';
+import { shownModelLicense } from './model-license.js';
 
 /** What the person should know about a model before downloading it. */
 export function imageModelFacts(model: AiImageModel): string[] {
   const facts: string[] = [];
   if (model.downloadBytes !== null) facts.push(formatModelSize(model.downloadBytes));
-  if (model.license) facts.push(model.license);
+  const license = shownModelLicense(model.license);
+  if (license) facts.push(license);
   if (model.commercialUse === false) facts.push('Not for commercial use');
   if (model.rendersText) facts.push('Draws legible text');
   if (model.hardwareTier === 'workstation') {

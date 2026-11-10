@@ -50,6 +50,8 @@ function fakeSpeech(
     tts?: boolean;
     updateRequired?: boolean;
     sharedStorage?: boolean;
+    /** Overrides the dictation model's license. */
+    license?: string;
   } = {},
 ) {
   const calls: string[] = [];
@@ -72,6 +74,7 @@ function fakeSpeech(
         installed,
         source: installed ? 'app' : null,
         ...(options.sharedStorage ? { sharedStorage: true } : {}),
+        ...(options.license ? { license: options.license } : {}),
         ...(!installed && options.updateRequired ? { updateRequired: true } : {}),
       },
       ...(options.tts === false
@@ -317,6 +320,34 @@ describe('Speech settings', () => {
       expect(fake.calls).to.include('remove whisper-base.en');
     } finally {
       await view.cleanup();
+    }
+  });
+
+  it('leaves MIT and Apache 2.0 unsaid and links any other license', async () => {
+    // BASE is MIT and KOKORO is Apache-2.0.
+    const open = await render(fakeSpeech().api);
+    try {
+      const rows = open.container.querySelectorAll('.db-settings-speech-model');
+      expect(rows.length).to.equal(2);
+      for (const row of Array.from(rows)) {
+        expect(row.querySelector('a')).to.equal(null);
+        expect(row.textContent).not.to.match(/MIT|Apache/);
+        expect(row.textContent).not.to.contain(' · ');
+      }
+    } finally {
+      await open.cleanup();
+    }
+
+    const restricted = await render(fakeSpeech({ license: 'CC BY-NC 4.0', tts: false }).api);
+    try {
+      const link = restricted.container.querySelector<HTMLAnchorElement>(
+        '.db-settings-speech-model a',
+      );
+      expect(link?.textContent).to.equal('CC BY-NC 4.0');
+      expect(link?.href).to.equal(BASE.licenseUrl);
+      expect(restricted.container.textContent).to.contain('141 MB · CC BY-NC 4.0');
+    } finally {
+      await restricted.cleanup();
     }
   });
 

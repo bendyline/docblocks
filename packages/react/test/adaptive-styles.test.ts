@@ -106,6 +106,27 @@ describe('adaptive styles', () => {
     expect(styles).to.not.match(/\.squisq-status-bar \{[^}]*padding-bottom/s);
   });
 
+  it('lifts text-entry dialogs clear of the on-screen keyboard on touch only', () => {
+    // Desktop dialogs stay centered: every rule that re-anchors an overlay for
+    // typing is scoped to a coarse pointer.
+    const rules = styles.match(/[^{}]*\.db-dialog-overlay:has\([^{]*\{[^}]*\}/gs) ?? [];
+    expect(rules, 'text-entry overlay rules missing').to.have.length.greaterThan(0);
+    for (const rule of rules) {
+      expect(rule.trimStart()).to.match(/^(\/\*[\s\S]*?\*\/\s*)?:root\[data-db-pointer='coarse'\]/);
+    }
+    const anchor = rules.find((rule) => rule.includes('align-items: flex-start'));
+    expect(anchor, 'overlay anchor rule missing').to.not.equal(undefined);
+    expect(anchor).to.include('var(--db-keyboard-inset)');
+  });
+
+  it('hands Squisq the keyboard height from <html>, where the hook writes it', () => {
+    // A `.db-shell` declaration would resolve against the shell's own 0px
+    // default rather than the live value on <html>.
+    expect(styles).to.match(
+      /^:root \{\s*--squisq-keyboard-inset: var\(--db-keyboard-inset\);\s*\}/m,
+    );
+  });
+
   it('keeps pinch-zoom available while removing the double-tap delay', () => {
     // `touch-action: none` here would disable pinch-zoom of the document, an
     // accessibility regression. `manipulation` only drops double-tap zoom.

@@ -10,6 +10,7 @@ import { imageAccessSentence, useImageAccess } from '../Ai/ai-image-access.js';
 import { openExternalUrl } from '../external-url.js';
 import { formatModelSize } from '../Speech/format.js';
 import { imageModelFacts, imageModelFits } from './image-model-facts.js';
+import { shownModelLicense } from './model-license.js';
 import { ImageCatalogDialog } from './ImageCatalogDialog.js';
 import { imageModelDownloads, useModelDownload } from './model-downloads.js';
 
@@ -158,7 +159,7 @@ export function AiImageSettings({ images }: AiImageSettingsProps) {
         ? imageModelFacts(item)
         : [
             item.downloadBytes !== null ? formatModelSize(item.downloadBytes) : null,
-            item.license,
+            shownModelLicense(item.license),
             item.commercialUse === false ? 'Not for commercial use' : null,
           ].filter((fact): fact is string => Boolean(fact));
     const licenseUrl = parseExternalHttpUrl(item.licenseUrl);

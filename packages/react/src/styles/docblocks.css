@@ -2416,6 +2416,84 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   padding-top: min(12vh, 96px);
 }
 
+/* On touch, a dialog that takes typing sits in the upper part of the screen.
+   The on-screen keyboard covers about the bottom half of the screen, and iOS
+   raises it over the layout viewport without resizing it, so a centered panel
+   ends up with its field and its actions underneath. The panel is anchored
+   before the keyboard rises, so it doesn't jump when the keyboard opens. The
+   bottom padding keeps it inside what the keyboard leaves visible
+   (useKeyboardInset measures that), and the body scrolls when it no longer
+   fits. "Takes typing" is any field that raises the keyboard. It deliberately
+   isn't `:read-write`, which a field leaves while disabled, so a dialog
+   would drop back to center mid-operation. */
+:root[data-db-pointer='coarse']
+  .db-dialog-overlay:has(
+    input:not(
+      [type='button'],
+      [type='checkbox'],
+      [type='color'],
+      [type='file'],
+      [type='hidden'],
+      [type='image'],
+      [type='radio'],
+      [type='range'],
+      [type='reset'],
+      [type='submit']
+    ),
+    textarea,
+    [contenteditable]:not([contenteditable='false'])
+  ) {
+  align-items: flex-start;
+  padding-top: max(calc(var(--db-safe-top) + 16px), min(12vh, 96px));
+  padding-bottom: calc(max(var(--db-safe-bottom), var(--db-keyboard-inset)) + 16px);
+}
+
+/* Fit the panel to the room that padding leaves rather than to 100dvh, which
+   iOS doesn't shrink for the keyboard. That room also caps the fixed-height
+   panels (sectioned Settings, Add knowledge), while the wide size keeps its
+   own ceiling. */
+:root[data-db-pointer='coarse']
+  .db-dialog-overlay:has(
+    input:not(
+      [type='button'],
+      [type='checkbox'],
+      [type='color'],
+      [type='file'],
+      [type='hidden'],
+      [type='image'],
+      [type='radio'],
+      [type='range'],
+      [type='reset'],
+      [type='submit']
+    ),
+    textarea,
+    [contenteditable]:not([contenteditable='false'])
+  )
+  > .db-dialog {
+  max-height: 100%;
+}
+
+:root[data-db-pointer='coarse']
+  .db-dialog-overlay:has(
+    input:not(
+      [type='button'],
+      [type='checkbox'],
+      [type='color'],
+      [type='file'],
+      [type='hidden'],
+      [type='image'],
+      [type='radio'],
+      [type='range'],
+      [type='reset'],
+      [type='submit']
+    ),
+    textarea,
+    [contenteditable]:not([contenteditable='false'])
+  )
+  > .db-dialog--wide {
+  max-height: min(100%, 660px);
+}
+
 /* Present to assistive technology, absent from the layout. */
 .db-visually-hidden {
   position: absolute;
@@ -4112,6 +4190,14 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
      theme is ready, which reads as a flash. */
   --squisq-editor-background: var(--db-editor-canvas);
   --squisq-editor-foreground: var(--db-text);
+}
+
+/* Squisq's link and document settings dialogs fit themselves above the
+   on-screen keyboard from this. :root only: useKeyboardInset writes the live
+   value on <html>, and resolving it there hands every descendant the measured
+   pixels. */
+:root {
+  --squisq-keyboard-inset: var(--db-keyboard-inset);
 }
 
 /* Match Monaco's built-in vs-dark canvas exactly so replacing the loading

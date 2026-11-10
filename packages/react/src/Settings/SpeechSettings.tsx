@@ -17,6 +17,7 @@ import type {
   SpeechReadiness,
 } from '@bendyline/docblocks/host';
 import { formatModelSize } from '../Speech/format.js';
+import { shownModelLicense } from './model-license.js';
 import type { SpeechFailure, SpeechSettingsSession } from './useSpeechSettings.js';
 
 function readinessSentence(readiness: SpeechReadiness, ready: string): string {
@@ -164,6 +165,7 @@ function SpeechModelRow({
   const { installing } = session;
   const busy = installing?.id === model.id;
   const progress = busy ? installing.progress : null;
+  const license = shownModelLicense(model.license);
   const percent =
     progress && progress.totalBytes
       ? Math.round((progress.receivedBytes / progress.totalBytes) * 100)
@@ -176,10 +178,15 @@ function SpeechModelRow({
           {model.recommended ? ' (recommended)' : ''}
         </span>
         <span className="db-settings-hint">
-          {model.description} {formatModelSize(model.downloadBytes)} ·{' '}
-          <a href={model.licenseUrl} target="_blank" rel="noreferrer">
-            {model.license}
-          </a>
+          {model.description} {formatModelSize(model.downloadBytes)}
+          {license && (
+            <>
+              {' · '}
+              <a href={model.licenseUrl} target="_blank" rel="noreferrer">
+                {license}
+              </a>
+            </>
+          )}
           {model.source === 'shared'
             ? ' · Available from Gezel, no download needed'
             : model.sharedStorage

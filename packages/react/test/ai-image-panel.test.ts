@@ -465,9 +465,9 @@ describe('AiImageSettings', () => {
   }
 
   it('shows installed models, links licenses, and hides models that do not fit from the catalog', async () => {
+    // MIT and Apache 2.0 go without saying; anything else is named.
     expect(imageModelFacts(MING)).to.deep.equal([
       '45.9 GB',
-      'MIT',
       'Draws legible text',
       'Workstation · 96 GB+ memory',
       'This computer has too little memory for this model.',
@@ -482,6 +482,7 @@ describe('AiImageSettings', () => {
       id: 'smaller',
       label: 'Small model',
       state: 'download-required' as const,
+      licenseUrl: 'https://huggingface.co/example/small/blob/main/LICENSE',
     };
     const limited = {
       ...MING,
@@ -489,7 +490,9 @@ describe('AiImageSettings', () => {
       label: 'Over limit',
       fit: { verdict: 'over-limit' as const, reason: 'Raise the limit' },
     };
-    const { images } = fakeImages({ models: [FLUX, MING, smaller, limited] });
+    expect(imageModelFacts({ ...MING, license: 'MIT-Modified' })).to.include('MIT-Modified');
+    const restricted = { ...FLUX, license: 'Krea 2 Community License' };
+    const { images } = fakeImages({ models: [restricted, MING, smaller, limited] });
     const container = document.createElement('div');
     document.body.append(container);
     const root = createRoot(container);
@@ -498,10 +501,14 @@ describe('AiImageSettings', () => {
     const buttons = Array.from(container.querySelectorAll('button'));
     expect(buttons.some((b) => b.textContent === 'Remove')).to.equal(true);
     expect(buttons.some((b) => b.textContent === 'Download')).to.equal(false);
+    expect(container.textContent).to.include('Krea 2 Community License');
     expect(container.querySelector('a')?.href).to.equal(FLUX.licenseUrl);
     await act(async () => buttons.find((b) => b.textContent === 'Add model…')!.click());
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
     expect(dialog.textContent).to.include('Small model');
+    // The Apache 2.0 model in the catalog names no license.
+    expect(dialog.textContent).not.to.include('Apache');
+    expect(dialog.querySelector(`a[href="${smaller.licenseUrl}"]`)).to.equal(null);
     expect(dialog.textContent).not.to.include(MING.label);
     expect(dialog.textContent).not.to.include('Over limit');
     await setField(
@@ -528,7 +535,7 @@ describe('image rendering styles', () => {
     description: 'A soft watercolor.',
     state: 'installed',
     downloadBytes: 100,
-    license: 'MIT',
+    license: 'OpenRAIL++',
     licenseUrl: 'https://huggingface.co/example/style/blob/main/LICENSE',
     commercialUse: true,
     baseModels: [FLUX.id],
