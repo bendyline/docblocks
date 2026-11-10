@@ -208,7 +208,7 @@ jobs:
         with:
           tag_name: store-build-${{ github.run_id }}-${{ github.run_attempt }}
           target_commitish: ${{ github.sha }}
-          name: DocBlocks Store Build ${{ steps.versions.outputs.label }} (run ${{ github.run_number }})
+          name: KEEP IN DRAFT ONLY - DocBlocks Store Build ${{ steps.versions.outputs.label }} (run ${{ github.run_number }})
           body: |
             Private store-submission build for DocBlocks ${{ steps.versions.outputs.label }}.
 
