@@ -69,14 +69,25 @@ async function openFileContextMenu(page: Page, fileName: string): Promise<Locato
  * is a timer that a busy workbench stretches well past 100ms. Click again while
  * the menu stays open: VS Code hides it as it runs the action, so the command
  * is invoked exactly once.
+ *
+ * A hidden menu does not prove the action ran, though. Shortly after startup
+ * the default theme relayouts the workbench (`floating-panels`), which closes
+ * any open menu without running its action; a fast machine reaches the menu
+ * before that relayout. Only the editor tab proves the command ran, so repeat
+ * the whole gesture until one appears. A repeat is harmless: the command
+ * reveals an existing panel for the same document instead of adding another.
  */
 async function openFileInDocBlocks(page: Page, fileName: string) {
-  const openInDocBlocks = await openFileContextMenu(page, fileName);
+  const editorTab = page.locator('.tabs-container .tab').filter({ hasText: fileName });
 
   await expect(async () => {
-    if (await openInDocBlocks.isVisible()) await openInDocBlocks.click();
-    await expect(openInDocBlocks).toBeHidden({ timeout: 2_000 });
-  }).toPass({ timeout: 15_000 });
+    const openInDocBlocks = await openFileContextMenu(page, fileName);
+    await expect(async () => {
+      if (await openInDocBlocks.isVisible()) await openInDocBlocks.click();
+      await expect(openInDocBlocks).toBeHidden({ timeout: 2_000 });
+    }).toPass({ timeout: 15_000 });
+    await expect(editorTab).toBeVisible({ timeout: 10_000 });
+  }).toPass({ timeout: 40_000 });
 
   await expect(page.locator('iframe.webview').last()).toBeVisible({ timeout: 15_000 });
 }
