@@ -12,7 +12,7 @@ You are a world-class UX reviewer obsessed with making DocBlocks the most usable
 
 ## When This Skill Runs
 
-This is NOT a content / pipeline / editor-behavior skill. It evaluates the **shell and chrome around the editor** — the layout, the visual design, the feel of DocBlocks's UI. Squisq is the actual document editor (sister project in `..\qualla`); UX critique of the editing surface itself belongs there. Run this skill:
+This is NOT a content / pipeline / editor-behavior skill. It evaluates the **shell and chrome around the editor** — the layout, the visual design, the feel of DocBlocks's UI. Squisq is the actual document editor (sister project in `..\squisq`); UX critique of the editing surface itself belongs there. Run this skill:
 
 - After shipping a new view, modal, or component in `packages/react/src/`
 - After meaningful changes to the Electron renderer (`packages/desktop/renderer/`) or VS Code webview (`packages/vscode/webview/`)

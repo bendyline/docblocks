@@ -26,7 +26,7 @@ You are not here to bikeshed style preferences or propose theoretical refactors.
 
 ## DocBlocks System Architecture Map
 
-Before reviewing, internalize the full system. DocBlocks ships from a single npm workspaces monorepo into **four delivery surfaces** that share a React component library and a core types/filesystem package, all built on top of the **Squisq** rich-text editor framework (sister project in `..\qualla`).
+Before reviewing, internalize the full system. DocBlocks ships from a single npm workspaces monorepo into **four delivery surfaces** that share a React component library and a core types/filesystem package, all built on top of the **Squisq** rich-text editor framework (sister project in `..\squisq`).
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -88,7 +88,7 @@ Before reviewing, internalize the full system. DocBlocks ships from a single npm
 │ Setup pane (Activity bar webview)│  │                                 │
 └──────────────────────────────────┘  └─────────────────────────────────┘
 
-  External:  Squisq family (sister project @ ..\qualla)
+  External:  Squisq family (sister project @ ..\squisq)
              @bendyline/squisq, squisq-react, squisq-editor-react,
              squisq-formats, squisq-video, squisq-video-react,
              squisq-cli — the actual rich-text editor & format engine.
@@ -117,7 +117,7 @@ These are the load-bearing patterns. There is **no CLAUDE.md** in the repo today
 - **`DocBlocksHostAPI` is the single seam for Electron capabilities.** Renderer code asks for capabilities via `getDocBlocksHost()` and degrades gracefully when `isElectronHost()` returns false (site / vscode webview). Renderer must never `require('electron')` or import `node:*`.
 - **`<DocBlocksShell>` is the canonical editor shell.** Site, desktop renderer, and the VS Code webview should mount it. If a surface needs custom chrome, prefer composing around the shell rather than forking it.
 - **`packages/core` is the only place wire types live.** If a type crosses an IPC, postMessage, or HTTP boundary, it belongs in `core` (probably under `host/types.ts` or a sibling).
-- **Squisq is a dependency, not a fork.** Issues with the editor itself belong upstream in `..\qualla`. Use `npm run link:squisq` for parallel development; never patch squisq from inside DocBlocks.
+- **Squisq is a dependency, not a fork.** Issues with the editor itself belong upstream in `..\squisq`. Use `npm run link:squisq` for parallel development; never patch squisq from inside DocBlocks.
 - **No `console.log` in production code.** ESLint enforces this (`no-console: error`). Use proper logging or surface errors via the host API / VS Code's `OutputChannel` / CLI stderr.
 - **No `any`.** ESLint enforces this (`@typescript-eslint/no-explicit-any: error`). Test files are allowed `any` as a warning.
 - **VS Code webview state lives in the webview.** The extension host owns the document model (`TextDocument`); the webview owns editor UI state. Synchronize via `messages.ts` envelopes — don't smuggle React state through the document text.
@@ -325,7 +325,7 @@ For each, read both locations and diff mentally. Decide intentional vs accidenta
 - **Sourcemap stripping plugin** in `packages/desktop/vite.config.ts` for `@bendyline/squisq-video` — still needed? Still working?
 - **`build:desktop` vs `dist:desktop`**: `dist` runs electron-builder; verify `electron-builder.yml` still references current paths.
 - **VS Code dual builds**: `extension.js` (Node host) + `extension.web.js` (web extension) — does the webview build for both? Is anything Node-only sneaking into the web bundle?
-- **Squisq linking**: `npm run link:squisq` symlinks 7 packages from `..\qualla`. The script should fail loudly if the source paths are missing. Verify graceful behavior.
+- **Squisq linking**: `npm run link:squisq` symlinks 7 packages from `..\squisq`. The script should fail loudly if the source paths are missing. Verify graceful behavior.
 
 ### 3.5 Error Handling & Resilience
 

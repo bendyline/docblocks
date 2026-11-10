@@ -21,9 +21,13 @@ describe('adaptive styles', () => {
   });
 
   it('keeps only the media queries that cannot be attributes', () => {
+    // User and display preferences the browser alone knows; forced-colors is
+    // Windows High Contrast, which repaints the page itself.
     const queries = (styles.match(/@media[^{]*/g) ?? []).map((query) => query.trim());
     for (const query of queries) {
-      expect(query).to.match(/prefers-color-scheme|prefers-reduced-motion|display-mode/);
+      expect(query).to.match(
+        /prefers-color-scheme|prefers-reduced-motion|display-mode|forced-colors/,
+      );
     }
   });
 

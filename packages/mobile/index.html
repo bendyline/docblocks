@@ -10,9 +10,66 @@
     <link rel="stylesheet" href="./fonts/fonts.css" />
     <link rel="icon" type="image/png" href="./favicon.png" />
     <title>DocBlocks</title>
+    <!-- The launch splash continues the native one (Android's splash theme,
+         iOS's LaunchScreen.storyboard): the same brown, the same mark at the
+         same size, so the hand-off is invisible. It paints with the page's
+         first frame and covers the shell until startup settles; src/splash.ts
+         then fades it out. The mark is 183px of a 1024-unit box, the size
+         Android draws its splash icon; --db-viewport-scale (set on iPhone by
+         main.tsx) keeps it the same physical size when the viewport scales. -->
+    <style>
+      #db-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #231f18;
+        transition: opacity 200ms ease-out;
+      }
+      #db-splash svg {
+        width: calc(183px / var(--db-viewport-scale, 1));
+        height: calc(183px / var(--db-viewport-scale, 1));
+      }
+      #db-splash.db-splash--leaving {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #db-splash p {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #db-splash {
+          transition: none;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"><p role="status">Opening DocBlocks…</p></div>
+    <div id="db-splash">
+      <!-- packages/site/design/brand/app-icon-glyph.svg. The viewBox places it
+           as render-brand.mjs does in docblocks_mark.png, the splash icon's
+           source: scaled to 0.62 of the box, centered, 1/64 below center. -->
+      <svg viewBox="-313.65 -339.45 1651.3 1651.3" aria-hidden="true" focusable="false">
+        <path
+          fill="#8c7b57"
+          d="M245.01 1013.76L760.58 1013.76L944.71 829.63L944.71 277.23L861.85 194.37L760.58 93.10L677.72 10.24L162.15 10.24L162.15 930.90ZM465.97 268.02L640.89 268.02L640.89 682.32L567.24 755.98L465.97 755.98Z"
+        />
+        <path
+          fill="#f4f0e6"
+          d="M677.72 10.24L162.15 10.24L162.15 930.90L677.72 930.90L861.85 746.77L861.85 194.37ZM640.89 258.82L640.89 682.32L567.24 755.98L383.11 755.98L383.11 185.17L567.24 185.17Z"
+        />
+      </svg>
+      <p role="status">Opening DocBlocks…</p>
+    </div>
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

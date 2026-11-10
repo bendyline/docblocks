@@ -28,8 +28,13 @@ export const SITE_PRECACHE_MAX_BYTES = 18 * 1024 * 1024;
  * features grow the total a few hundred KiB at a time, and precaching costs
  * only background bandwidth, so the ceiling keeps ~20% headroom and fails
  * only on a major jump such as a new engine binary.
+ *
+ * Raised to 120 MiB at a measured 103.69 MiB, when squisq-formats 2.8.17
+ * embedded PDF fonts for CJK (~13.4 MiB), Hangul (~7.9 MiB), and emoji
+ * (~1.1 MiB). They load only when a PDF export needs those glyphs, and they
+ * are precached so a Japanese, Chinese, or Korean PDF exports offline too.
  */
-export const SITE_PRECACHE_MAX_TOTAL_BYTES = 96 * 1024 * 1024;
+export const SITE_PRECACHE_MAX_TOTAL_BYTES = 120 * 1024 * 1024;
 
 export const SITE_PRECACHE_EXTENSIONS = Object.freeze([
   'html',

@@ -65,6 +65,11 @@ final class WorkspaceRegistry {
     synchronized void choose(String id) throws Exception {
         replace(choice, Storage.object("defaultId", id).toString()); chosen = true; defaultId = id;
     }
+    /** Makes a picked folder the default later on, as when device documents move into it. */
+    synchronized void prefer(String id) throws Exception {
+        for (JSONObject entry : entries) if (entry.getString("id").equals(id)) { choose(id); return; }
+        throw new IllegalArgumentException("Unknown folder.");
+    }
     private JSONObject info(JSONObject entry) throws Exception { return Storage.object("id", entry.getString("id"), "name", entry.getString("name"), "rootPath", "Files / " + entry.getString("name")); }
     synchronized JSONObject add(Uri uri, int flags, Storage storage) throws Exception {
         int modes = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;

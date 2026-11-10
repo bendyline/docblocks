@@ -13,6 +13,12 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- SystemInsets.java pads the WebView clear of the system bars, so
+             the window background shows behind them; before Android 15's
+             enforced edge-to-edge the system draws statusBarColor there. Both
+             match the editor's top bar instead of AppCompat's gray. -->
+        <item name="android:windowBackground">@color/db_system_bars</item>
+        <item name="android:statusBarColor">@color/db_system_bars</item>
     </style>
 
 

@@ -12,8 +12,6 @@
  *   AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET
  *
  * When env vars are not set (local dev), signing is skipped gracefully.
- *
- * Pattern adapted from /Volumes/Bendyline/gh/qualla-internal/app/scripts/sign.js
  */
 
 const { execSync } = require('child_process');

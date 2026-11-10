@@ -331,11 +331,11 @@ test('unsupported PDF text is blocked before download and Word remains available
 }, testInfo) => {
   await openInitializedSite(page);
   await newDocument(page, 'unicode-export');
-  await page.locator('.ProseMirror').fill('日本語のテキスト');
+  await page.locator('.ProseMirror').fill('ሰላም ዓለም');
   await page.getByRole('treeitem', { name: /^Welcome/ }).click();
   await expect(page.locator('.ProseMirror')).toContainText('DocBlocks');
   await page.getByRole('treeitem', { name: /^unicode-export/ }).click();
-  await expect(page.locator('.ProseMirror')).toContainText('日本語のテキスト');
+  await expect(page.locator('.ProseMirror')).toContainText('ሰላም ዓለም');
   // As short as a VS Code webview in a 1280×690 window, so the dialog body scrolls.
   await page.setViewportSize({ width: 1280, height: 600 });
   await page.getByRole('button', { name: 'Export and share' }).click();
@@ -361,5 +361,5 @@ test('unsupported PDF text is blocked before download and Word remains available
   const wordContainer = await zipToContainer(await readFile(wordPath));
   const documentXml = await wordContainer.readFile('word/document.xml');
   expect(documentXml).not.toBeNull();
-  expect(new TextDecoder().decode(documentXml!)).toContain('日本語のテキスト');
+  expect(new TextDecoder().decode(documentXml!)).toContain('ሰላም ዓለም');
 });

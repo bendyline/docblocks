@@ -1610,6 +1610,18 @@
   padding-right: var(--db-safe-right);
 }
 
+/* That reserved strip sits under the status bar and the camera cutout, so it
+   takes the color of the bar directly beneath it — Squisq's view tabs —
+   rather than the page's, and the system bar reads as part of the chrome.
+   Painted only to the inset's height; dark tabs already sit on the page
+   color. The Android app pads the page clear of the bars natively
+   (SystemInsets.java), so there the window background (styles.xml) matches
+   it instead. */
+.db-shell[data-theme='light'] .db-shell-editor-area:has(.squisq-toolbar-view-tabs) {
+  background: linear-gradient(var(--db-bg-subtle), var(--db-bg-subtle)) top / 100%
+    var(--db-safe-top) no-repeat;
+}
+
 [data-db-layout='single-pane'] .db-shell-editor-area {
   /* With the drawer closed, the editor also owns the viewport's left edge. */
   padding-left: var(--db-safe-left);
@@ -1951,32 +1963,11 @@ body.db-resizing-sidebar * {
   margin: auto;
 }
 
+/* Drawn by .db-close-button; this only places it. */
 .db-mobile-first-run-dismiss {
   position: absolute;
-  top: calc(var(--db-safe-top) + 8px);
-  right: calc(var(--db-safe-right) + 8px);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--db-target-min);
-  height: var(--db-target-min);
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--db-text-muted);
-  font-size: 24px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.db-mobile-first-run-dismiss:hover {
-  background: var(--db-bg-hover);
-  color: var(--db-text);
-}
-
-.db-mobile-first-run-dismiss:focus-visible {
-  outline: 2px solid var(--db-focus);
-  outline-offset: 2px;
+  top: calc(var(--db-safe-top) + 12px);
+  right: calc(var(--db-safe-right) + 12px);
 }
 
 .db-mobile-first-run-eyebrow {
@@ -2525,6 +2516,7 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 16px 20px 12px;
   border-bottom: 1px solid var(--db-border);
 }
@@ -2536,20 +2528,78 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   color: var(--db-text);
 }
 
-.db-dialog-close {
-  background: none;
-  border: none;
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
-  color: var(--db-text-muted);
-  padding: 2px 6px;
-  border-radius: 4px;
+/* Close and dismiss buttons: a drawn X on a filled circle — the shape of the
+   iOS sheet close button and Material's tonal icon button — so the control
+   reads as a button rather than a stray glyph. On a coarse pointer the circle
+   grows and an invisible ring pads the hit area out to --db-target-min
+   (44px), the way the platforms draw a smaller mark inside a full target. */
+/* Positioned for the hit ring, at zero specificity so a rule that places the
+   button absolutely wins wherever it sits in this file. */
+:where(.db-close-button) {
+  position: relative;
 }
 
-.db-dialog-close:hover {
-  background: var(--db-bg-hover);
+.db-close-button {
+  --db-close-size: var(--db-target-min);
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--db-close-size);
+  height: var(--db-close-size);
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--db-text) 10%, transparent);
+  color: var(--db-text-secondary);
+  font-size: 16px;
+  line-height: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.db-close-button::after {
+  content: '';
+  position: absolute;
+  inset: min(0px, calc((var(--db-close-size) - var(--db-target-min)) / 2));
+  border-radius: 50%;
+}
+
+.db-close-button:hover {
+  background: color-mix(in srgb, var(--db-text) 16%, transparent);
   color: var(--db-text);
+}
+
+.db-close-button:active {
+  background: color-mix(in srgb, var(--db-text) 24%, transparent);
+  color: var(--db-text);
+}
+
+.db-close-button:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 2px;
+}
+
+[data-db-pointer='coarse'] .db-close-button {
+  --db-close-size: 36px;
+  font-size: 20px;
+}
+
+/* Without forced colors the fill alone marks the circle; with them it is
+   dropped, so draw the edge instead. */
+@media (forced-colors: active) {
+  .db-close-button {
+    border: 1px solid ButtonText;
+  }
+}
+
+/* The circle is taller than the title line; pulling it into the header's
+   padding keeps the header the height it was, and nudges it toward the
+   corner where the platforms put it. */
+.db-dialog-close {
+  margin: -4px -6px -4px 0;
 }
 
 .db-dialog-body {
@@ -6250,33 +6300,16 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 }
 
 .db-welcome-gateway-actions button:focus-visible,
-.db-welcome-gateway-actions a:focus-visible,
-.db-welcome-gateway-dismiss:focus-visible {
+.db-welcome-gateway-actions a:focus-visible {
   outline: 2px solid var(--db-focus);
   outline-offset: 2px;
 }
 
+/* Drawn by .db-close-button; this only places it. */
 .db-welcome-gateway-dismiss {
   position: absolute;
   top: calc(var(--db-safe-top) + 12px);
   right: 12px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--db-text-muted);
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.db-welcome-gateway-dismiss:hover {
-  background: var(--db-bg-hover);
-  color: var(--db-text);
 }
 
 /* One Markdown file becoming a PDF page, a slide and a video frame on a 9 s
@@ -7366,7 +7399,7 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 .db-ai-study-dialog .db-dialog-footer button,
 .db-ai-study-saved button,
 .db-ai-draft-start button,
-.db-ai-review-panel button {
+.db-ai-review-panel button:where(:not(.db-close-button)) {
   min-height: var(--db-target-min);
   padding: 6px 10px;
   border: 1px solid var(--db-input-border);
@@ -7393,7 +7426,7 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 .db-ai-study-dialog .db-dialog-footer button:hover:not(:disabled),
 .db-ai-study-saved button:hover,
 .db-ai-draft-start button:hover,
-.db-ai-review-panel button:hover:not(:disabled) {
+.db-ai-review-panel button:where(:not(.db-close-button)):hover:not(:disabled) {
   border-color: var(--db-accent-hover);
   background: var(--db-bg-hover);
   color: var(--db-text);
@@ -7454,8 +7487,8 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   background: var(--db-bg-raised);
 }
 
-/* As tall as the close button so the title centers on the same line as the
-   ×, while the findings count still stacks underneath. */
+/* As tall as the close button's target so the title centers on the same line
+   as the X, while the findings count still stacks underneath. */
 .db-ai-review-header h2 {
   display: flex;
   align-items: center;
@@ -7471,13 +7504,10 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   font-size: 11px;
 }
 
+/* Drawn by .db-close-button (excluded from the panel's button rules above).
+   The title line is --db-target-min tall; center the smaller circle on it. */
 .db-ai-review-close {
-  width: var(--db-target-min);
-  padding: 0 !important;
-  border-color: transparent !important;
-  background: transparent !important;
-  font-size: 20px !important;
-  line-height: 1 !important;
+  margin-top: calc((var(--db-target-min) - var(--db-close-size)) / 2);
 }
 
 .db-ai-review-actions {
@@ -8500,6 +8530,55 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-git-grant-notice-action:hover {
   color: var(--db-text-secondary);
+}
+
+/* A workspace deleted with the app. Same seat above the footer as the Git
+   notice, but this one is a real risk, so it reads fully (no truncation),
+   carries the warning hue and offers a full-size button. */
+.db-device-storage-notice {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 10px 12px 10px 15px;
+  border-top: 1px solid var(--db-border);
+  border-left: 3px solid var(--db-git-modified);
+  background: var(--db-bg-subtle);
+  color: var(--db-text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.db-device-storage-notice-text {
+  margin: 0;
+}
+
+.db-device-storage-notice-action {
+  min-height: var(--db-target-min);
+  padding: 4px 12px;
+  border: 1px solid var(--db-border-strong);
+  border-radius: 6px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.db-device-storage-notice-action:hover:not(:disabled) {
+  background: var(--db-bg-hover);
+}
+
+.db-device-storage-notice-action:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 2px;
+}
+
+.db-device-storage-notice-action:disabled {
+  cursor: default;
+  opacity: 0.7;
 }
 
 .db-git-grant-remember {

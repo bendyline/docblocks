@@ -43,7 +43,15 @@ function appxManifest(
   architecture: string,
   version = '2.7.8.0',
   minVersion = '10.0.17763.0',
+  capabilities: readonly string[] = ['runFullTrust', 'microphone', 'webcam'],
 ): string {
+  const declared = capabilities
+    .map((name) =>
+      name === 'runFullTrust'
+        ? `  <rescap:Capability Name="${name}"/>`
+        : `  <DeviceCapability Name="${name}"/>`,
+    )
+    .join('\n');
   return `<?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10">
   <Identity Name="BendylineLLC.DocBlocks" ProcessorArchitecture="${architecture}" Publisher="CN=791A4319-B5A9-4402-928A-D644A8E3351D" Version="${version}" />
@@ -55,6 +63,9 @@ function appxManifest(
   <Dependencies>
     <TargetDeviceFamily Name="Windows.Desktop" MinVersion="${minVersion}" MaxVersionTested="${minVersion}" />
   </Dependencies>
+  <Capabilities>
+${declared}
+</Capabilities>
   <Applications>
     <Application Id="DocBlocks" Executable="app\\DocBlocks.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements DisplayName="Something else" />
@@ -231,6 +242,20 @@ describe('store package policy', () => {
       expect(appxManifestViolations('<Package />', APPX)).to.deep.equal([
         'AppxManifest.xml has no Identity element',
       ]);
+    });
+
+    it('requires exactly the full-trust, microphone and webcam capabilities', () => {
+      const manifest = (capabilities: string[]) =>
+        appxManifest('arm64', '2.7.8.0', '10.0.17763.0', capabilities);
+      expect(appxManifestViolations(manifest(['runFullTrust']), APPX)).to.deep.equal([
+        'Capabilities lack microphone, webcam',
+      ]);
+      expect(
+        appxManifestViolations(
+          manifest(['runFullTrust', 'broadFileSystemAccess', 'microphone', 'webcam']),
+          APPX,
+        ),
+      ).to.deep.equal(['Capabilities include unexpected broadFileSystemAccess']);
     });
 
     it('rejects UV anywhere in the package', () => {

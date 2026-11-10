@@ -297,7 +297,9 @@ for each architecture.
 
 The **Release Store Builds** workflow (`.github/workflows/store-release.yml`)
 builds the Mac App Store `.pkg` and x64 and arm64 Microsoft Store packages, with
-the mobile store builds, and attaches them only to a private draft release.
+the mobile store builds, and attaches them only to a private draft release. With
+`publish: testing` (the default), a separate job sends the Mac App Store `.pkg`
+to TestFlight; the Microsoft Store packages are always submitted by hand.
 
 ```bash
 # MAS needs embedded.provisionprofile and the MAS signing identities.
@@ -314,8 +316,10 @@ electron-builder appends it to the version (`2.7.8.42`), which App Store Connect
 rejects. The Microsoft Store reserves the fourth MSIX version field, so a Store
 resubmission needs a new desktop version. `check-store-packages.ts` reads the
 built bytes: each AppX package's identity, architecture, version and minimum
-Windows version against `electron-builder.yml`, that it holds no `uv.exe`, and
-the app's own check over its unpacked Gezel engines; for MAS, the installer and
+Windows version against `electron-builder.yml`, that it declares exactly the
+`runFullTrust`, `microphone` and `webcam` capabilities, that it holds no
+`uv.exe`, and the app's own check over its unpacked Gezel engines; for MAS, the
+installer and
 app signatures against the embedded profile's team, the entitlements,
 `Info.plist` (including the exempt-encryption declaration), the helper set, and
 the app's own runtime verifier over its Gezel engines.

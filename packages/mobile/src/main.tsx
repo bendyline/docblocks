@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core';
+import { dismissSplash } from './splash';
 import './base.css';
 
 /**
@@ -9,6 +10,14 @@ import './base.css';
  * at full width and overflow, as `WKWebView.pageZoom` does. iPad keeps its layout.
  */
 const IPHONE_SCALE = 1.175;
+
+/**
+ * The shell retires the launch splash when its startup settles. Should that
+ * signal never come, the splash still steps aside this long after the app
+ * starts loading — counted from then, not from launch, so Android's first-run
+ * storage question can take as long as the user needs.
+ */
+const SPLASH_FAILSAFE_MS = 10_000;
 
 if (Capacitor.getPlatform() === 'ios' && /\biPhone\b/.test(navigator.userAgent)) {
   document
@@ -27,9 +36,11 @@ async function start() {
   }
   // Browser preview intentionally has no native bridge and uses IndexedDB.
   await import('./App');
+  window.setTimeout(dismissSplash, SPLASH_FAILSAFE_MS);
 }
 
 void start().catch((error: unknown) => {
+  dismissSplash();
   const root = document.getElementById('root')!;
   root.setAttribute('role', 'alert');
   root.textContent = `DocBlocks could not open its storage. ${error instanceof Error ? error.message : 'Please try again.'}`;

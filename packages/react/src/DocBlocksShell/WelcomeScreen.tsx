@@ -1,3 +1,5 @@
+import { CloseIcon } from '../icons.js';
+
 /**
  * The one-line promise every first-run surface leads with. The pre-React
  * shell in `packages/site/index.html` shows the same sentence, so the message
@@ -51,12 +53,12 @@ export function WelcomeScreen({
     <section className="db-welcome-gateway" aria-labelledby="db-welcome-gateway-title">
       <button
         type="button"
-        className="db-welcome-gateway-dismiss"
+        className="db-close-button db-welcome-gateway-dismiss"
         onClick={onDismiss}
         aria-label="Dismiss welcome"
         title="Dismiss"
       >
-        &times;
+        <CloseIcon />
       </button>
       <div className="db-welcome-gateway-body">
         <div className="db-welcome-gateway-copy">
@@ -115,12 +117,12 @@ export function CompactWelcomeScreen({
     <section className="db-mobile-first-run" aria-labelledby="db-mobile-first-run-title">
       <button
         type="button"
-        className="db-mobile-first-run-dismiss"
+        className="db-close-button db-mobile-first-run-dismiss"
         onClick={onDismiss}
         aria-label="Dismiss welcome"
         title="Dismiss"
       >
-        &times;
+        <CloseIcon />
       </button>
       <div className="db-mobile-first-run-body">
         <p className="db-mobile-first-run-eyebrow">Local-first Markdown editor</p>

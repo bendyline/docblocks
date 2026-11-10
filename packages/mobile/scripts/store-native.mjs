@@ -340,7 +340,7 @@ try {
       process.env.GITHUB_STEP_SUMMARY,
       `### ${platform} ${version} (build ${buildNumber})\n\n` +
         artifacts.map((item) => `- \`${item.file}\` — sha256 \`${item.sha256}\``).join('\n') +
-        '\n\nAttached to the private draft release. Nothing was uploaded to a store.\n',
+        '\n\nAttached to the private draft release. This step uploads nothing to a store.\n',
     );
   process.stdout.write(`Verified signed ${platform} store artifacts: ${output}\n`);
 } finally {

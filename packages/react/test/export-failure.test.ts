@@ -433,7 +433,7 @@ describe('PDF characters its fonts cannot draw', () => {
       root.render(
         createElement(
           EditorProvider,
-          { initialMarkdown: '# Notes\n\n日本語のテキスト\n' },
+          { initialMarkdown: '# Notes\n\nሰላም ዓለም\n' },
           createElement(ExportToolbarControls, {
             selectedFile: '/notes/draft.md',
             trigger: 'button',

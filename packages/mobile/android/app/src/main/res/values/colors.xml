@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The editor's top bar (Squisq's view tabs) in the light theme, so the
+         status bar and camera cutout read as part of that bar. Shows wherever
+         Android pads the WebView instead of letting it draw under the bars.
+         Keep in step with packages/react/src/styles/docblocks.css. -->
+    <color name="db_system_bars">#F3EEDE</color>
+</resources>

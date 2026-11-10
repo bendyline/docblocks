@@ -51,6 +51,12 @@ export interface ElectronWorkspaceInfo {
    * never default. Hosts that cannot tell omit it.
    */
   isDefault?: boolean;
+  /**
+   * True when the platform deletes this workspace's files along with the app
+   * (Android's private "On this device" storage). The shell warns while it is
+   * open and offers to move its documents into a folder that outlives the app.
+   */
+  deletedWithApp?: boolean;
 }
 
 /** Workspace-management operations exposed to the renderer. */
@@ -74,6 +80,11 @@ export interface DocBlocksHostWorkspacesAPI {
   register(workspaceId: string): Promise<void>;
   /** Remove a workspace from the trusted whitelist. */
   unregister(id: string): Promise<void>;
+  /**
+   * Make a listed workspace the one the host opens by default from now on.
+   * Hosts whose default is fixed omit it.
+   */
+  setDefault?(id: string): Promise<void>;
 }
 
 /** Shell operations — reveal in Finder/Explorer, open external URLs. */

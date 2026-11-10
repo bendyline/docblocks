@@ -35,12 +35,6 @@ const ICONS = [
     1024,
     1,
   ],
-  [
-    'app-icon.svg',
-    'packages/mobile/ios/App/App/Assets.xcassets/Splash.imageset/DocBlocks.png',
-    1024,
-    0.5,
-  ],
   // Android insets this foreground by 18% per side; at 0.62 the D sits a
   // little under half the icon's height, inside the adaptive-icon safe zone.
   [
@@ -49,6 +43,16 @@ const ICONS = [
     1024,
     0.62,
     // Move the tightly cropped glyph after scaling it into its padded canvas.
+    iconOffsetY,
+  ],
+  // iOS's launch screen draws the same mark as Android's splash icon, on the
+  // same brown; packages/mobile/index.html carries it on as an inline SVG at
+  // these proportions.
+  [
+    'app-icon-glyph.svg',
+    'packages/mobile/ios/App/App/Assets.xcassets/Splash.imageset/DocBlocksMark.png',
+    1024,
+    0.62,
     iconOffsetY,
   ],
   // Source art for packages/desktop/scripts/generate-icons.py.

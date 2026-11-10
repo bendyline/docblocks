@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The editor's top bar in the dark theme (the page color, db-bg). -->
+    <color name="db_system_bars">#1A1812</color>
+</resources>

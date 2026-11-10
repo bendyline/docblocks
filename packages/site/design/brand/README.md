@@ -7,18 +7,18 @@ icon is a single **D** in the same lettering on the espresso plate.
 Everything here is generated, so a change to the letterforms or colors is a
 parameter change, not hand-editing of paths or pixels.
 
-| File                    | What it is                                                                 |
-| ----------------------- | -------------------------------------------------------------------------- |
-| `hull_lettering.py`     | The letterforms, the extruded shade, and the SVG writers                   |
-| `make_brand.py`         | Writes every SVG below, the shipped wordmarks, and `og-paper.png`          |
-| `render-brand.mjs`      | Rasterizes the PNG icons and renders the OG card and DMG background        |
-| `icon-layout.json`      | Shared optical positioning for app icons across platforms                  |
-| `app-icon.svg`          | The D on a rounded espresso plate (favicon, PWA, VS Code, iOS splash)      |
-| `app-icon-square.svg`   | Full-bleed plate for platforms that mask it themselves (iOS, apple-touch)  |
-| `app-icon-maskable.svg` | Full-bleed plate with the D inside the maskable safe zone                  |
-| `app-icon-glyph.svg`    | The D alone, transparent; `.png` is the source for the desktop icon script |
-| `docblk.svg`            | The `DOC B.LK` lockup for docb.lk — the period is part of the address      |
-| `og-paper.png`          | The OG card's paper, with the old wordmark removed from `../ogbase.png`    |
+| File                    | What it is                                                                             |
+| ----------------------- | -------------------------------------------------------------------------------------- |
+| `hull_lettering.py`     | The letterforms, the extruded shade, and the SVG writers                               |
+| `make_brand.py`         | Writes every SVG below, the shipped wordmarks, and `og-paper.png`                      |
+| `render-brand.mjs`      | Rasterizes the PNG icons and renders the OG card and DMG background                    |
+| `icon-layout.json`      | Shared optical positioning for app icons across platforms                              |
+| `app-icon.svg`          | The D on a rounded espresso plate (favicon, PWA, VS Code)                              |
+| `app-icon-square.svg`   | Full-bleed plate for platforms that mask it themselves (iOS, apple-touch)              |
+| `app-icon-maskable.svg` | Full-bleed plate with the D inside the maskable safe zone                              |
+| `app-icon-glyph.svg`    | The D alone, transparent: the mobile splash mark; `.png` feeds the desktop icon script |
+| `docblk.svg`            | The `DOC B.LK` lockup for docb.lk — the period is part of the address                  |
+| `og-paper.png`          | The OG card's paper, with the old wordmark removed from `../ogbase.png`                |
 
 The shipped wordmarks are written straight to their surfaces:
 `public/_res/siteimages/docblocks.svg` and `docblocks-dark.svg` for the site,

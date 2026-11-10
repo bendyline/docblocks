@@ -1,4 +1,5 @@
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Capacitor } from '@capacitor/core';
+import { native } from './native';
 import { installMobileAi } from './ai';
 import { installMobileSpeech } from './speech';
 import { routeExternalLinks } from './external-links';
@@ -15,7 +16,6 @@ import {
   parseMobileBootstrap,
   parseMobileOpenRequests,
   parseMobilePickedFolder,
-  type MobileFsRequest,
 } from '@bendyline/docblocks/host/mobile';
 import {
   parseOpenExternalUrl,
@@ -24,21 +24,6 @@ import {
   type HostPrepareCloseResult,
   type OpenRequest,
 } from '@bendyline/docblocks/host';
-
-interface MobilePlugin {
-  bootstrap(): Promise<unknown>;
-  exportFile(options: { request: MobileExportRequest }): Promise<unknown>;
-  request(options: { request: MobileFsRequest }): Promise<unknown>;
-  openExternal(options: { url: string }): Promise<void>;
-  writeText(options: { text: string }): Promise<void>;
-  backUnhandled(): Promise<void>;
-  takeOpenRequests(): Promise<unknown>;
-  pickFolder(): Promise<unknown>;
-  forgetFolder(options: { workspaceId: string }): Promise<void>;
-  /** Android only: the one-time choice between a shared folder and device storage. */
-  chooseStorage(): Promise<unknown>;
-}
-const native = registerPlugin<MobilePlugin>('DocBlocksMobile');
 
 export async function installMobileHost(): Promise<void> {
   if (Capacitor.getPlatform() === 'android') await native.chooseStorage();
@@ -90,6 +75,11 @@ export async function installMobileHost(): Promise<void> {
           throw new Error('Workspace permission is unavailable.');
       },
       unregister: (id) => native.forgetFolder({ workspaceId: id }),
+      // Android's default is a choice the user can revisit: moving device
+      // documents into a folder makes that folder the default.
+      ...(Capacitor.getPlatform() === 'android'
+        ? { setDefault: (id: string) => native.setDefaultFolder({ workspaceId: id }) }
+        : {}),
     },
     shell: { openExternal },
     clipboard: { writeText: (text) => native.writeText({ text }) },

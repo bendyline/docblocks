@@ -8,10 +8,12 @@ public class MainActivity extends BridgeActivity {
     }
     @Override protected void onNewIntent(android.content.Intent intent) { super.onNewIntent(intent); receive(intent); if (!incoming.isEmpty()) getBridge().eval("window.dispatchEvent(new Event('docblocksIncoming'))", null); }
     @Override public void onCreate(Bundle savedInstanceState) {
+        LaunchSplash.install(this);
         registerPlugin(DocBlocksMobilePlugin.class);
         super.onCreate(savedInstanceState);
         receive(getIntent());
         BridgeBoundary.install(getBridge());
+        SystemInsets.install(this);
         // Android paints a stretched gray play button under any <video> with no poster
         // and no decoded frame yet; a transparent default lets the page show through.
         getBridge().getWebView().setWebChromeClient(new com.getcapacitor.BridgeWebChromeClient(getBridge()) {

@@ -197,6 +197,33 @@ async function requirePrivateStoreReleaseWorkflow(relativePath: string): Promise
       throw new Error(`${relativePath}: ${jobName} must not export BUILD_NUMBER`);
     }
   }
+
+  // Store uploads read the verified package back from the draft. They neither
+  // check out nor install anything, so store credentials never meet build code.
+  for (const [uploader, builder] of [
+    ['upload-mas', 'build-mas'],
+    ['upload-aab', 'build-aab'],
+    ['upload-ipa', 'build-ipa'],
+  ] as const) {
+    const job = parsed.jobs[uploader];
+    if (!isRecord(job) || !Array.isArray(job.steps)) {
+      throw new Error(`${relativePath}: ${uploader} is missing`);
+    }
+    const needs = Array.isArray(job.needs) ? job.needs : [job.needs];
+    if (!needs.includes('preflight') || !needs.includes(builder)) {
+      throw new Error(`${relativePath}: ${uploader} must wait for preflight and ${builder}`);
+    }
+    if (
+      job.steps.some(
+        (step) =>
+          isRecord(step) &&
+          ((typeof step.uses === 'string' && step.uses.startsWith('actions/checkout@')) ||
+            (typeof step.run === 'string' && /\b(npm|npx)\b/u.test(step.run))),
+      )
+    ) {
+      throw new Error(`${relativePath}: ${uploader} must not check out or build the repository`);
+    }
+  }
 }
 
 function requireScript(manifest: PackageManifest, name: string, fragment: string): void {

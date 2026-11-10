@@ -12,7 +12,7 @@ import { showWriteView } from './helpers/toolbar.js';
  * Each test scans a specific UI state (initial shell, app menu open, dialog
  * open, etc.) and asserts that no WCAG 2.0/2.1 A or AA violations remain.
  *
- * Editor internals (Squisq, Monaco) are owned upstream in qualla-internal —
+ * Editor internals (Squisq, Monaco) are owned upstream —
  * we scope axe scans away from them with `.exclude(...)` so failures here
  * are actionable inside this repo. Issues inside the editor itself should
  * be filed against squisq.
