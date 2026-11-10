@@ -38,6 +38,10 @@ export class FakeEmitter<T> {
   public get listenerCount(): number {
     return this.listeners.size;
   }
+
+  public dispose(): void {
+    this.listeners.clear();
+  }
 }
 
 export class FakeUri {
@@ -361,6 +365,7 @@ function createVscodeStub(): VscodeStub {
     WorkspaceEdit: FakeWorkspaceEdit,
     FileSystemError: FakeFileSystemError,
     FileType: { Unknown: 0, File: 1, Directory: 2, SymbolicLink: 64 },
+    EventEmitter: FakeEmitter,
     Disposable: class FakeDisposable {
       public constructor(private readonly callOnDispose?: () => void) {}
 
@@ -497,6 +502,25 @@ function createVscodeStub(): VscodeStub {
       onDidSaveTextDocument: stub.onDidSaveTextDocumentEmitter.event,
       onDidCloseTextDocument: stub.onDidCloseTextDocumentEmitter.event,
       onDidChangeConfiguration: stub.onDidChangeConfigurationEmitter.event,
+      onDidChangeWorkspaceFolders: new FakeEmitter<unknown>().event,
+      onDidGrantWorkspaceTrust: new FakeEmitter<void>().event,
+      isTrusted: true,
+      /** A watcher that never reports anything, like one that missed an event. */
+      createFileSystemWatcher: () => {
+        const created = new FakeEmitter<FakeUri>();
+        const changed = new FakeEmitter<FakeUri>();
+        const deleted = new FakeEmitter<FakeUri>();
+        return {
+          onDidCreate: created.event,
+          onDidChange: changed.event,
+          onDidDelete: deleted.event,
+          dispose: (): void => {
+            created.dispose();
+            changed.dispose();
+            deleted.dispose();
+          },
+        };
+      },
     },
   };
 

@@ -16,6 +16,7 @@ import {
   isWorkspaceSettingsWritable,
   LOADING_WORKSPACE_SETTINGS,
   readWorkspaceSettings,
+  resolveCatalogOutputs,
   saveWorkspaceSettingsPatch,
   UNAVAILABLE_WORKSPACE_SETTINGS,
   WORKSPACE_SETTINGS_PATH,
@@ -39,6 +40,8 @@ interface FolderEntry {
   stopStatus: (() => void) | null;
   lastLoggedMessage: string | null;
   generation: number;
+  /** The newest settings read, settled once its settings are applied. */
+  reloading: Promise<void> | null;
 }
 
 let activeService: WorkspaceSettingsService | null = null;
@@ -103,6 +106,15 @@ export function relativeWorkspacePath(
 
 function isWritableFolder(folder: vscode.WorkspaceFolder): boolean {
   return vscode.workspace.fs.isWritableFileSystem(folder.uri.scheme) !== false;
+}
+
+/** True when the settings switch on a catalog output, as the scheduler judges it. */
+function hasCatalogEnabled(state: WorkspaceSettingsState): boolean {
+  try {
+    return resolveCatalogOutputs(state.settings) !== null;
+  } catch {
+    return false;
+  }
 }
 
 function isDirtyInEditor(uri: vscode.Uri): boolean {
@@ -191,15 +203,26 @@ export class WorkspaceSettingsService implements vscode.Disposable {
       throw new Error(status.message ?? 'The catalog could not be updated.');
   }
 
-  /** Regenerate every folder's catalog (the `docblocks.refreshWorkspaceOutputs` command). */
+  /**
+   * Regenerate every folder's catalog (the `docblocks.refreshWorkspaceOutputs` command).
+   *
+   * Settings are re-read from disk first. The watcher can miss
+   * `.docblocks/workspace.json` appearing — a cold Linux watcher, a file
+   * written into a folder it has not attached to yet, `files.watcherExclude` —
+   * and this command is the user's way to recover from that. Only folders with
+   * a catalog enabled count as refreshed: a scheduler exists for every
+   * writable folder, and a disabled one regenerates nothing.
+   */
   public async regenerateAll(): Promise<{
     refreshed: number;
     failed: Array<{ folder: string; message: string }>;
   }> {
     let refreshed = 0;
     const failed: Array<{ folder: string; message: string }> = [];
-    for (const entry of this.folders.values()) {
-      if (!entry.scheduler) continue;
+    const entries = [...this.folders.values()];
+    await Promise.all(entries.map((entry) => this.reload(entry)));
+    for (const entry of entries) {
+      if (!entry.scheduler || !hasCatalogEnabled(entry.settings)) continue;
       const status = await entry.scheduler.regenerate({ force: true });
       refreshed += 1;
       if (status.state === 'error') {
@@ -242,6 +265,7 @@ export class WorkspaceSettingsService implements vscode.Disposable {
       stopStatus: null,
       lastLoggedMessage: null,
       generation: 0,
+      reloading: null,
     };
     this.folders.set(key, entry);
     return entry;
@@ -256,11 +280,22 @@ export class WorkspaceSettingsService implements vscode.Disposable {
     this.folders.delete(key);
   }
 
-  private async reload(entry: FolderEntry): Promise<void> {
+  /**
+   * Re-read the folder's settings. Settles once the newest read has been
+   * applied, so a caller that awaits it never sees settings older than its own
+   * read — even when a watcher event starts another read meanwhile.
+   */
+  private reload(entry: FolderEntry): Promise<void> {
     const generation = ++entry.generation;
-    const settings = await readWorkspaceSettings(entry.io);
-    if (generation !== entry.generation || !this.folders.has(entry.folder.uri.toString())) return;
-    this.apply(entry, settings);
+    const reloading = (async (): Promise<void> => {
+      const settings = await readWorkspaceSettings(entry.io);
+      if (this.folders.get(entry.folder.uri.toString()) !== entry) return;
+      // Superseded: the newer read carries the latest settings.
+      if (generation !== entry.generation) return entry.reloading ?? undefined;
+      this.apply(entry, settings);
+    })();
+    entry.reloading = reloading;
+    return reloading;
   }
 
   private apply(entry: FolderEntry, settings: WorkspaceSettingsState): void {
