@@ -102,11 +102,16 @@ assert.ok(
   assets.every((name) => !name.includes('ffmpeg-core')),
   'GPL FFmpeg engine must not enter the mobile payload.',
 );
-for (const name of assets.filter((name) => name.endsWith('.js')))
-  assert.ok(
-    statSync(path.join(mobile, 'dist/assets', name)).size < 8_000_000,
-    `Oversized mobile chunk: ${name}`,
-  );
+// Code chunks stay under 8 MB. Squisq's embedded PDF fonts (CJK ~13.4 MiB,
+// Hangul ~7.9 MiB since squisq-formats 2.8.17) are base64 font bytes, not
+// code: each loads only when a PDF export needs its glyphs, so they get their
+// own ceiling.
+const pdfFontData = /FontData\.generated-[^/]+\.js$/;
+for (const name of assets.filter((name) => name.endsWith('.js'))) {
+  const size = statSync(path.join(mobile, 'dist/assets', name)).size;
+  const limit = pdfFontData.test(name) ? 16_000_000 : 8_000_000;
+  assert.ok(size < limit, `Oversized mobile chunk: ${name} (${size} bytes, limit ${limit})`);
+}
 process.stdout.write(
   'Mobile native configuration, offline assets, fonts, notices and bundle limits passed.\n',
 );
