@@ -7853,6 +7853,12 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   font-size: 11px;
 }
 
+/* The panel draws Report output as a full button, which wraps below the
+   disclaimer; give it room so it doesn't touch the text above. */
+.db-ai-review-disclaimer .db-ai-report-button {
+  margin-top: 8px;
+}
+
 /* AI diagrams: the Illustrate panel cards and the Insert diagram dialog. */
 .db-ai-illustrate-kind {
   border-color: var(--db-accent);

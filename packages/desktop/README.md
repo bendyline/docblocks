@@ -325,6 +325,39 @@ Python for MLX, which never runs on Windows, and installs code at runtime.
 `stage-gezel-native.cjs` removes it and `main/ai/gezel-windows-native.ts` drops
 it from the pins Gezel verifies against. Change both together.
 
+### Windows update feeds
+
+Each release publishes three NSIS installers and one updater manifest for each:
+
+| Manifest               | Installer                                        | Read by                                                               |
+| ---------------------- | ------------------------------------------------ | --------------------------------------------------------------------- |
+| `latest-win-x64.yml`   | `DocBlocks-<version>-win-x64.exe`                | x64 installs after 2.7.14                                             |
+| `latest-win-arm64.yml` | `DocBlocks-<version>-win-arm64.exe`              | arm64 installs after 2.7.14, and x64 installs emulated on ARM64       |
+| `latest.yml`           | `DocBlocks-<version>-win.exe` (both in one file) | 2.7.14 and earlier; later versions when their own manifest is missing |
+
+An update therefore downloads only the build it installs, about a third of the
+combined installer on arm64.
+
+- electron-builder lists all three installers in one `latest.yml`. The release
+  workflow step "Prepare Windows updater manifest" runs
+  `scripts/prepare-windows-updater-manifest.ts`, which checks each installer's
+  size, SHA-512 and blockmap against that entry and then writes the three
+  manifests. The manifest names come from `main/updater-feed.ts` and a test
+  pins them: installed apps ask every later release for them.
+- Never stop publishing `latest.yml` or the combined installer. Versions up to
+  2.7.14 read nothing else, and it is what a later version falls back to.
+- `WindowsUpdater` (`main/updater-windows.ts`) selects the feed. An x64 build
+  emulated on an ARM64 machine follows the arm64 feed, as the combined installer
+  always installed the native build there.
+- electron-updater builds each update from the installer that was last run,
+  which it keeps in `%LOCALAPPDATA%\docblocks-desktop-updater`, and trusts that
+  file to be the one its blockmap describes. Before a differential download
+  `WindowsUpdater` compares the two sizes (`main/updater-differential.ts`) and
+  downloads the installer whole when they differ. Without that check the update
+  downloads a differential, fails its SHA-512, and downloads everything again.
+  That happened to every install whose last installer was a per-architecture
+  one while the feed named only the combined installer.
+
 ### Intel Macs
 
 DocBlocks 2.7.1, published 2026-10-15, was the final version for Intel Macs

@@ -13,6 +13,12 @@ export interface EvalExpectation {
   readonly maxWords: number;
   readonly maxWordsPerSection: number;
   readonly minVisualTemplates: number;
+  /**
+   * Sections the linked Squisq should draw as a picture (a chart, key numbers,
+   * a process, cards…), with or without an annotation. Reported, never
+   * required: it shows whether authoring guidance yields drawn slides.
+   */
+  readonly minDrawnSections?: number;
   readonly requiredPhrases: readonly string[];
 }
 

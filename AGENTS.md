@@ -329,6 +329,21 @@ lists it. Gezel never downloads
 weights implicitly; the Settings **Add model** gesture may request a catalog
 model and shows progress while Gezel installs it.
 
+**AI slide wording is Squisq's protocol; DocBlocks only makes the calls.**
+"Suggest with AI" in the presentation designer
+(`packages/react/src/Presentation/presentation-ai.ts`) asks the model to
+storyboard a deck's layouts and then word each slide. The prompts, the reply
+schemas, and every gate on a reply (the fields, the plan's limits, grounding in
+the passage, whether a drawn shape is one the passage states) live in
+`presentationAuthor` in `@bendyline/squisq/transform`, shared with other
+products that word decks. Do not restate a layout's rules, an item count, or a
+check here: change it in Squisq, where the guide, the reader and the templates
+are held to one spec (`conceptSpecs.ts`). The designer's layout names and help
+are Squisq's too (`PRESENTATION_LAYOUT_LABELS`, `presentationLayoutNeeds`).
+`npm run eval:ai-presentations` measures the pipeline against a real model
+(not part of `npm run all`): reply shape, acceptance, whether passages with a
+shape are drawn with it, and faithfulness.
+
 **AI diagrams are compiled, never written by the model.** "Illustrate
 document" and "Insert diagram" (`packages/react/src/Ai/AiDiagrams.tsx`) ask
 the model for a small JSON spec per diagram (`illustrate-prompts.ts`) and

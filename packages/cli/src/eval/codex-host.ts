@@ -287,6 +287,7 @@ Deterministic observations:
 - All headings, including subordinate headings within a slide: ${String(deterministic.metrics.headingCount)} (diagnostic only; do not compare this count with the slide target)
 - Sections over ${testCase.expectation.maxWordsPerSection} words: ${String(deterministic.metrics.denseSectionCount)}
 - Non-content Squisq template annotations: ${String(deterministic.metrics.visualTemplateCount)} (minimum ${testCase.expectation.minVisualTemplates})
+- Sections Squisq draws as a picture, annotated or not (charts, key numbers, processes, cards): ${String(deterministic.metrics.drawnSectionCount)}
 - Deterministic acceptance: ${deterministic.passed ? 'pass' : 'fail'}
 
 Target format: ${testCase.targetFormat}

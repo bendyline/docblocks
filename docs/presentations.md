@@ -32,22 +32,32 @@ it. They share that passage's narration interval; they do not add spoken filler
 or extend the take. Layout preferences apply where the source has enough
 material for that layout.
 
-The summary layouts are Title, Section divider, Key idea, Big statement (only the
-headline, when it is 60 characters or fewer), Quote from the text (one sentence of
-the section, word for word), Key number (a prominent figure such as 40% or $3
-million), Definition, List, Comparison, Steps diagram, Cards, Process, Cycle,
-Layers, and Image. The automatic planner never picks the divider, big statement,
-quote, key number, definition, or layers on its own; they come from a section
-preference or an AI suggestion, and an AI quote or figure must appear in the
-passage.
+The summary layouts are Title, Section break, Statement, Big statement (only the
+headline, when it is 60 characters or fewer), Quote (one sentence of the section,
+word for word), Key number (a prominent figure such as 40% or $3 million),
+Definition, Points, Comparison, Steps, Picture, and the layouts that draw: Cards,
+Process, Cycle, Layers, Key numbers, Pyramid, Funnel, Hub, Venn and Matrix. Squisq
+names them and says what each needs (`PRESENTATION_LAYOUT_LABELS`,
+`presentationLayoutNeeds`), so a layout Squisq adds appears in the designer with
+its help text and no DocBlocks change. The automatic planner picks a title, cards,
+a statement, steps, a cycle, a comparison, a key number, a big statement or a
+picture; the section break, quote, definition and the other drawings come from a
+section preference or an AI suggestion, and an AI quote or figure must appear in
+the passage.
 
-Cards, Process, Cycle and Layers draw a slide's points instead of listing them:
-parallel ideas as cards side by side, ordered stages as numbered steps joined by
-arrows, a repeating sequence as stages on a ring, and nested parts (a core and the
-layers around it) as concentric rings, innermost first, each called out. A point
-written `Label: detail` sets its label in bold. A process whose stages each open
-with a date, in order, is drawn as a timeline. A comparison of two points sets
-them as two panels with a "vs" mark between them. Automatic slides with several
+The drawing layouts show a slide's points instead of listing them: parallel ideas
+as cards side by side, ordered stages as numbered steps joined by arrows, a
+repeating sequence as stages on a ring, nested parts (a core and the layers around
+it) as concentric rings, innermost first, several figures as key numbers that
+count up, a hierarchy as a pyramid, stages that narrow as a funnel, ideas around
+the one thing they share as a hub, two things and what they share as a Venn
+diagram, and four ideas on two axes as a matrix. A point written `Label: detail`
+sets its label in bold, and a key number is written `Figure: what it measures`. A
+process whose stages each open with a date, in order, is drawn as a timeline. A
+comparison of two points sets them as two panels with a "vs" mark between them. A
+section a little longer than one slide stays on one slide rather than leaving a
+one-sentence remainder, so a cycle keeps the sentence that closes it and a matrix
+its fourth panel. Automatic slides with several
 points become cards (a sentence that defines its subject, such as "Antibodies are
 proteins…", is labelled by that subject); a passage whose sentences open "First…
 Then… Finally…" becomes a process, kept on one slide, or a cycle when it says the
@@ -60,9 +70,8 @@ Each card or stage appears as the narration reaches the sentence it summarizes
 (the first as the headline settles); in a slideshow or the recorder, Next reveals
 them in turn. With the theme's motion profile, each one assembles as it arrives:
 arrows and timeline track draw on, numbered badges and rings pop, cards lift and
-words rise, and a key number counts up. These layouts need a Squisq release that
-includes them; until then the designer offers only the layouts the installed
-Squisq supports.
+words rise, and a key number counts up. The designer offers the layouts the
+installed Squisq supports.
 
 A section can instead be shown **As authored**, labeled with the block type it
 renders with, such as **As authored (Bar Chart)**. That section becomes one slide
@@ -125,6 +134,34 @@ slide is being suggested, and **Stop** keeps everything suggested so far. On a
 slide that carries a feature, AI is asked for at most two short points. Only
 accepted AI results are stored; failed suggestions get one repair attempt, then
 retain the automatic version. AI never runs automatically while typing.
+
+What the model is asked and how its reply is read are Squisq's (`presentationAuthor`
+in `@bendyline/squisq/transform`), shared with every product that words a deck;
+DocBlocks only makes the calls. A reply is held to its passage:
+
+- A point in words the passage does not use, a number it does not state, or one
+  end of a range shown as a key number refuses the suggestion. The repair request
+  quotes the reason, and stops asking for a planned layout the passage could not
+  fill.
+- A layout that asserts a relationship the passage does not state is not refused.
+  Its wording is kept and it is drawn as cards or a process: a cycle needs the
+  passage to say it comes round again, a pyramid a hierarchy, a funnel stages that
+  narrow, a Venn diagram something shared, a matrix its two axes.
+- The reverse also holds. When the model plays safe with cards or a process and
+  the section itself states a shape (a section called "The water cycle" that says
+  the cycle repeats), the slide gets that drawing.
+- What a small model gets nearly right is repaired: a key number written as a
+  sentence has its figure moved to the front, dated points are led by their dates
+  so they draw as a timeline, and a matrix whose points say where they stand
+  ("low effort, high impact") gets its axes named and each point in its panel.
+- A passage that addresses the model ("ignore all previous instructions") is not
+  sent; its automatic slide stands.
+
+`npm run eval:ai-presentations` runs this pipeline against a real model over
+`packages/react/test/fixtures/ai-presentations` and reports reply shape,
+acceptance, whether passages with a shape were drawn with it, and faithfulness.
+It needs an OpenAI-compatible endpoint (see the header of
+`scripts/eval-ai-presentations.ts`).
 
 Saved wording is tied to its exact source passage (the whole section for a manual
 opening override). If “The sky is pink” changes to “The sky is blue,” the old AI or

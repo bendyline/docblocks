@@ -1,8 +1,42 @@
+import { flattenBlocks, markdownToDoc } from '@bendyline/squisq/doc';
+import { parseMarkdown } from '@bendyline/squisq/markdown';
+import { CONCEPT_TEMPLATES } from '@bendyline/squisq/transform';
 import type { EvalCase, EvalCheck, StaticJudgeResult } from './types.js';
 
 const PLACEHOLDER_PATTERN = /\b(?:todo|tbd|lorem ipsum|insert (?:text|chart|image)|placeholder)\b/i;
 const HEADING_PATTERN = /^(#{1,6})\s+(.+)$/gm;
 const TEMPLATE_PATTERN = /\{\[([A-Za-z0-9_-]+)/g;
+
+/** Templates that show a section's words as written rather than drawing them. */
+const PLAIN_TEMPLATES: ReadonlySet<string> = new Set([
+  'sectionHeader',
+  'content',
+  'title',
+  'list',
+  'bigText',
+]);
+
+/**
+ * The templates the linked Squisq gives each section, annotated or not.
+ * convert_document draws a list, a table or a figure as a picture without an
+ * annotation, so counting `{[…]}` alone misses most of what a deck shows.
+ */
+export function drawnTemplates(markdown: string): { drawn: string[]; lists: string[] } {
+  try {
+    const doc = markdownToDoc(parseMarkdown(markdown), { generateCoverBlock: false });
+    const drawn = flattenBlocks(doc.blocks)
+      .map((block) => block.template ?? '')
+      .filter((template) => template && !PLAIN_TEMPLATES.has(template));
+    return {
+      drawn,
+      lists: drawn.filter((template) =>
+        (CONCEPT_TEMPLATES as readonly string[]).includes(template),
+      ),
+    };
+  } catch {
+    return { drawn: [], lists: [] };
+  }
+}
 
 export function judgeMarkdown(markdown: string, testCase: EvalCase): StaticJudgeResult {
   const words = countWords(markdown);
@@ -10,6 +44,8 @@ export function judgeMarkdown(markdown: string, testCase: EvalCase): StaticJudge
   const headings = [...markdown.matchAll(HEADING_PATTERN)];
   const templates = [...markdown.matchAll(TEMPLATE_PATTERN)].map((match) => match[1]);
   const visualTemplates = templates.filter((template) => template !== 'content');
+  const pictures = drawnTemplates(markdown);
+  const minDrawn = testCase.expectation.minDrawnSections ?? 0;
   const denseSections = sections.filter(
     (section) => countWords(section.body) > testCase.expectation.maxWordsPerSection,
   );
@@ -50,6 +86,15 @@ export function judgeMarkdown(markdown: string, testCase: EvalCase): StaticJudge
       expected: testCase.expectation.minVisualTemplates,
     },
     {
+      // Informative, never a gate: a deck can be right with few pictures.
+      id: 'drawn-sections',
+      passed: pictures.drawn.length >= minDrawn,
+      required: false,
+      message: `${pictures.drawn.length} sections are drawn as a picture (${pictures.lists.length} of them lists drawn as cards, a process, key numbers…)`,
+      observed: pictures.drawn.length,
+      expected: minDrawn,
+    },
+    {
       id: 'no-placeholders',
       passed: !PLACEHOLDER_PATTERN.test(markdown),
       required: true,
@@ -75,6 +120,8 @@ export function judgeMarkdown(markdown: string, testCase: EvalCase): StaticJudge
     sectionCount: sections.length,
     templateAnnotationCount: templates.length,
     visualTemplateCount: visualTemplates.length,
+    drawnSectionCount: pictures.drawn.length,
+    drawnListCount: pictures.lists.length,
     denseSectionCount: denseSections.length,
   });
 }

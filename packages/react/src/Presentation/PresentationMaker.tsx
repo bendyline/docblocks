@@ -25,6 +25,7 @@ import {
   flattenRenderableBlocks,
   getPinnedBlockMeta,
   previewBlockTemplate,
+  PRESENTATION_LAYOUT_LABELS,
 } from '@bendyline/squisq/doc';
 import { parseMarkdown, setFrontmatterValues } from '@bendyline/squisq/markdown';
 import { VIEWPORT_PRESETS, type Doc } from '@bendyline/squisq/schemas';
@@ -40,12 +41,13 @@ import {
   PRESENTATION_KEY,
   PRESENTATION_LAYOUTS,
   AUTHORED_PRESENTATION_LAYOUT,
+  presentationBeatExtras,
+  presentationLayoutNeeds,
   presentationPassageKey,
   type PresentationHints,
   type PresentationBlockHint,
   type PresentationBeat,
   type PresentationBeatLayout,
-  type PresentationLayout,
 } from '@bendyline/squisq/transform';
 import type { DocBlocksHostAiAPI } from '@bendyline/docblocks/host';
 import { Dialog } from '../components/Dialog.js';
@@ -53,52 +55,25 @@ import { useAiStatus, unavailableSentence } from '../Ai/ai-status.js';
 import { AiReportButton } from '../Ai/AiOutputReport.js';
 import { refinePresentationPlan } from './presentation-ai.js';
 
-// Keyed by layout name rather than Squisq's union, so the designer lists the
-// layouts the installed Squisq offers (`PRESENTATION_LAYOUTS`) on either side
-// of a release that adds some.
-const LABELS: Record<PresentationLayout, string> & Record<string, string | undefined> = {
-  title: 'Title',
-  divider: 'Section divider',
-  statement: 'Key idea',
-  emphasis: 'Big statement',
-  quote: 'Quote from the text',
-  stat: 'Key number',
-  definition: 'Definition',
-  list: 'List',
-  comparison: 'Comparison',
-  steps: 'Steps diagram',
-  image: 'Image',
-  cards: 'Cards',
-  process: 'Process',
-  cycle: 'Cycle',
-  layers: 'Layers',
-};
-/** What a chosen layout shows, and which slides it can apply to. */
-const LAYOUT_HELP: Record<PresentationBeatLayout, string> & Record<string, string | undefined> = {
-  cards:
-    'The highlights side by side as cards, each “Label: detail” with its label in bold. Used on slides with at least two.',
-  process:
-    'The highlights as numbered stages joined by arrows, revealed as the narration reaches them. Used on slides with at least two.',
-  cycle:
-    'The highlights as stages on a ring, the last leading back to the first. Used on slides with at least three.',
-  layers:
-    'The highlights as nested parts, innermost first, drawn as concentric rings with each part called out. Used on slides with at least three.',
-  authored:
-    'Shows this section as written, as one slide for its whole narration. To change its block type, use the block picker in the editor.',
-  title: 'A large headline with one supporting line.',
-  divider: 'A section break that shows only the headline.',
-  statement: 'One idea, with its highlights underneath.',
-  emphasis:
-    'Only the headline, very large. Used on slides whose headline is 60 characters or fewer.',
-  quote:
-    'One sentence from this section, word for word, set large. Used on slides with a sentence of 110 characters or fewer.',
-  stat: 'A prominent number from the text, such as 40% or $3 million. Used on slides that state one.',
-  definition: 'The headline as a term, with the highlights as its definition.',
-  list: 'The highlights as a bulleted list. Used on slides with at least two.',
-  comparison: 'Two highlights side by side. Used on slides with exactly two.',
-  steps: 'The highlights as connected steps. Used on slides with at least two.',
-  image: 'The section’s picture, with the headline as its caption.',
-};
+/** What a layout is called in the designer. Squisq names its own layouts
+ * (`PRESENTATION_LAYOUT_LABELS`), so one it adds is named here without a change. */
+function summaryLayoutLabel(layout: string): string {
+  return (
+    (PRESENTATION_LAYOUT_LABELS as Record<string, { label: string } | undefined>)[layout]?.label ??
+    layout
+  );
+}
+/** What a chosen layout shows, and which slides it can apply to: Squisq's
+ * description of the layout, then what a slide needs for it to apply. */
+function layoutHelp(layout: PresentationBeatLayout): string {
+  if (layout === AUTHORED_PRESENTATION_LAYOUT)
+    return 'Shows this section as written, as one slide for its whole narration. To change its block type, use the block picker in the editor.';
+  const described = (
+    PRESENTATION_LAYOUT_LABELS as Record<string, { description: string } | undefined>
+  )[layout]?.description;
+  const needs = presentationLayoutNeeds(layout, { points: 'highlights' });
+  return [described, needs ? `Used on slides with ${needs}.` : ''].filter(Boolean).join(' ');
+}
 type Sections = ReturnType<typeof presentationSections>;
 /** Where a suggestion run stands; `active` is the slide a request is open for. */
 interface SuggestionProgress {
@@ -125,7 +100,14 @@ function withSuggestion(
     ...(existing ?? { blockId: parent.blockId }),
     ai: [
       ...(existing?.ai ?? []).filter((entry) => entry.source !== source),
-      { source, layout: item.layout, headline: item.headline, points: [...item.points] },
+      {
+        source,
+        layout: item.layout,
+        headline: item.headline,
+        points: [...item.points],
+        // A hub's centre and a matrix's axes are part of the suggestion.
+        ...presentationBeatExtras(item.layout, item),
+      },
     ].slice(-80),
   };
   return {
@@ -338,7 +320,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
   const layoutLabel = (layout: PresentationBeatLayout, blockId: string | undefined) =>
     layout === AUTHORED_PRESENTATION_LAYOUT
       ? (authoredLabels.get(blockId ?? '') ?? 'As authored')
-      : (LABELS[layout] ?? layout);
+      : summaryLayoutLabel(layout);
   // Layout changes can split or merge slides. Follow the source passage rather
   // than a slide number, which could now belong to a different section.
   const selectedIndex = Math.max(
@@ -709,7 +691,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
                       (layout) => layout !== 'image' || beat.imageSrc,
                     ).map((layout) => (
                       <option key={layout} value={layout}>
-                        {LABELS[layout] ?? layout}
+                        {summaryLayoutLabel(layout)}
                       </option>
                     ))}
                   </optgroup>
@@ -737,7 +719,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
             </div>
             {hint?.layout && (
               <p id={layoutHelpId} className="db-presentation-layout-help">
-                {LAYOUT_HELP[hint.layout]}
+                {layoutHelp(hint.layout)}
               </p>
             )}
             <section className="db-presentation-source" aria-labelledby={originalTextId}>

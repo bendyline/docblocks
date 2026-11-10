@@ -501,6 +501,21 @@ async function requireDesktopReleasePackaging(relativePath: string): Promise<voi
         ': build-windows must normalize updater metadata after signing and before upload',
     );
   }
+  // Installed apps ask each release for their architecture's manifest. 2.7.14
+  // and earlier read only latest.yml, and a release without it strands them.
+  const windowsUploadStep = windowsJob.steps[windowsUploadStepIndex];
+  for (const manifest of ['latest.yml', 'latest-win-x64.yml', 'latest-win-arm64.yml']) {
+    if (
+      !isRecord(windowsUploadStep) ||
+      !isRecord(windowsUploadStep.with) ||
+      typeof windowsUploadStep.with.path !== 'string' ||
+      !windowsUploadStep.with.path.includes(`/${manifest}`)
+    ) {
+      throw new Error(
+        `${relativePath}: build-windows must upload the ${manifest} updater manifest`,
+      );
+    }
+  }
   const linuxJob = parsed.jobs['build-linux'];
   if (!isRecord(linuxJob) || !Array.isArray(linuxJob.steps)) {
     throw new Error(`${relativePath}: build-linux has no steps`);

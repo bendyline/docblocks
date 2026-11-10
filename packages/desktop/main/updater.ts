@@ -5,14 +5,15 @@
  * electron-builder.yml) downloads differential updates from
  * bendyline/docblocks releases and applies them on quit. In dev or when
  * running from an unsigned build, the updater disables itself
- * gracefully.
+ * gracefully. Windows runs WindowsUpdater (updater-windows.ts), which follows
+ * the feed for the machine's architecture.
  *
  * The renderer sees status events via `docblocksHost.updater.onStatus`
  * and can call `quitAndInstall` once a `'downloaded'` status arrives.
  */
 
 import { app, BrowserWindow, dialog } from 'electron';
-import pkg, { type UpdateInfo } from 'electron-updater';
+import pkg, { type AppUpdater, type UpdateInfo } from 'electron-updater';
 import { access, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type {
@@ -22,6 +23,7 @@ import type {
 } from '@bendyline/docblocks/host';
 import { registerTrustedIpcHandler } from './ipc-authority.js';
 import { INTEL_MAC_FINAL_NOTICE, isUnsupportedIntelMac } from './intel-mac-final.js';
+import { windowsUpdateChannel } from './updater-feed.js';
 import { createUpdaterLog } from './updater-log.js';
 import {
   classifyUpdateCheck,
@@ -31,11 +33,22 @@ import {
   type UpdaterActivity,
 } from './updater-result.js';
 import { verifyWindowsUpdateSignature } from './updater-signature.js';
+import { WindowsUpdater } from './updater-windows.js';
 
-const { autoUpdater, NsisUpdater } = pkg;
+const { NsisUpdater } = pkg;
 
+let updater: AppUpdater | undefined;
 let updateDownloaded = false;
 let updaterActivity: UpdaterActivity = 'idle';
+
+/** electron-updater's updater for the platform; on Windows, the one that follows this architecture's feed. */
+function getUpdater(): AppUpdater {
+  updater ??=
+    process.platform === 'win32'
+      ? new WindowsUpdater(windowsUpdateChannel(process.arch, app.runningUnderARM64Translation))
+      : pkg.autoUpdater;
+  return updater;
+}
 
 /**
  * True in store-distributed builds (Mac App Store / Microsoft Store), where
@@ -101,6 +114,7 @@ export function initAutoUpdater(): void {
   // GitHub updater run in either case.
   if (isStoreBuild() || isFinalIntelMacBuild()) return;
 
+  const autoUpdater = getUpdater();
   // The renderer only ever sees generic failure copy; the raw detail lands here.
   const log = createUpdaterLog(app.getPath('logs'));
   autoUpdater.logger = log;
@@ -187,7 +201,7 @@ export function registerUpdaterIpc(
       }
       updaterActivity = 'checking';
       try {
-        const res = await autoUpdater.checkForUpdates();
+        const res = await getUpdater().checkForUpdates();
         return classifyUpdateCheck(app.getVersion(), res?.updateInfo.version);
       } catch (error: unknown) {
         const result = failedUpdateCheck(error);
@@ -211,7 +225,7 @@ export function registerUpdaterIpc(
     if (!(await prepareForInstall())) return 'cancelled';
     // Must fire on the next tick so the IPC round-trip completes before
     // the process exits; otherwise the renderer gets a connection error.
-    setImmediate(() => autoUpdater.quitAndInstall());
+    setImmediate(() => getUpdater().quitAndInstall());
     return 'installing';
   });
 }

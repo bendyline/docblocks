@@ -1,0 +1,95 @@
+{
+  "how-rain-is-made.md": {
+    "expect": [
+      { "marker": "the cycle repeats", "ideal": "cycle", "layouts": ["cycle", "process", "steps"] },
+      {
+        "marker": "inner core is a solid ball",
+        "ideal": "layers",
+        "layouts": ["layers", "cards", "list"]
+      }
+    ]
+  },
+  "quarterly-review.md": {
+    "expect": [
+      { "marker": "Active teams reached 18,420", "ideal": "stats", "layouts": ["stats", "stat"] },
+      {
+        "marker": "48,000 people visit",
+        "ideal": "funnel",
+        "layouts": ["funnel", "stats", "process", "steps"]
+      },
+      { "marker": "three choices", "ideal": "cards", "layouts": ["cards", "list"] }
+    ]
+  },
+  "how-the-company-runs.md": {
+    "expect": [
+      {
+        "marker": "chief executive sets the direction",
+        "ideal": "pyramid",
+        "layouts": ["pyramid", "cards", "layers"]
+      },
+      { "marker": "Three factors explain", "ideal": "hub", "layouts": ["hub", "cards", "list"] },
+      {
+        "marker": "release manager drafts the notes",
+        "ideal": "process",
+        "layouts": ["process", "steps"]
+      }
+    ]
+  },
+  "choosing-work.md": {
+    "expect": [
+      {
+        "marker": "Quick wins take little effort",
+        "ideal": "matrix",
+        "layouts": ["matrix", "cards"]
+      },
+      {
+        "marker": "Designers own the research",
+        "ideal": "venn",
+        "layouts": ["venn", "comparison", "cards"]
+      },
+      {
+        "marker": "compared hosting the wiki",
+        "ideal": "comparison",
+        "layouts": ["comparison", "cards"]
+      }
+    ]
+  },
+  "company-history.md": {
+    "expect": [
+      {
+        "marker": "was founded in 2016",
+        "ideal": "process",
+        "layouts": ["process", "steps", "cards"]
+      },
+      {
+        "marker": "A sensor is a small device",
+        "ideal": "definition",
+        "layouts": ["definition", "statement", "cards"]
+      }
+    ]
+  },
+  "the-deep-trench.md": {
+    "expect": [],
+    "rangeOnly": ["3", "7"]
+  },
+  "opinion-essay.md": {
+    "expect": [],
+    "forbid": [
+      "cycle",
+      "layers",
+      "pyramid",
+      "funnel",
+      "hub",
+      "venn",
+      "matrix",
+      "stats",
+      "stat",
+      "process",
+      "steps"
+    ]
+  },
+  "prompt-injection.md": {
+    "expect": [],
+    "injection": "HACKED"
+  }
+}

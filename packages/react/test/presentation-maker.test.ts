@@ -171,11 +171,15 @@ describe('PresentationMaker authored sections', () => {
       const authored = Array.from(layout().options).find((option) => option.value === 'authored');
       expect(authored?.textContent).to.equal('As authored (Bar Chart)');
       expect(Array.from(layout().options).map((option) => option.textContent)).to.include.members([
+        // Squisq names its own layouts, including the ones that draw a shape.
         'Key number',
-        'Quote from the text',
+        'Quote',
         'Big statement',
         'Definition',
-        'Section divider',
+        'Section break',
+        'Key numbers',
+        'Pyramid',
+        'Matrix',
       ]);
 
       await act(async () => {
