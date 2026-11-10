@@ -101,6 +101,15 @@ corrects the former all-heading count and manual-annotation requirement. Retain
 old reports, but do not treat aggregate deltas across this rubric change as a
 paired measure of CLI improvement.
 
+What a deck draws is measured separately from what it annotates. The static judge
+runs the authored Markdown through the linked Squisq and reports
+`drawnSectionCount` (sections drawn as a picture, annotated or not: a chart, key
+numbers, a process, cards) and `drawnListCount` (the ones that are lists drawn as
+a concept template). The `drawn-sections` check compares the first with a case's
+optional `minDrawnSections`; it is never required, so it moves the score without
+failing a run. Use it to see whether a change to authoring guidance yields drawn
+slides.
+
 The LLM judge is a noisy measurement, not ground truth. Pin the model, keep the
 suite and profile fixed, compare paired cases, and rerun material conclusions. The
 judge receives authoritative deterministic word, section, density, and template

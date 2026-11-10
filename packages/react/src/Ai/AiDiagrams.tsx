@@ -23,6 +23,7 @@ import { LinearDocView } from '@bendyline/squisq-react/page';
 import type { DocBlocksHostAiAPI } from '@bendyline/docblocks/host';
 
 import { Dialog } from '../components/Dialog.js';
+import { CloseIcon } from '../icons.js';
 import { AiReportButton } from './AiOutputReport.js';
 import { AiKnowledgeIndicator } from './AiKnowledgeIndicator.js';
 import { useAiKnowledge } from './ai-knowledge.js';
@@ -1184,11 +1185,11 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
         </div>
         <button
           type="button"
-          className="db-ai-review-close"
+          className="db-close-button db-ai-review-close"
           onClick={onClose}
           aria-label="Close AI illustrations"
         >
-          ×
+          <CloseIcon />
         </button>
       </div>
 

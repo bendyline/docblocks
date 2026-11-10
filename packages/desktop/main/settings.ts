@@ -11,9 +11,6 @@
  *
  * Call flushSettings() from the main process's `before-quit` handler to
  * guarantee pending updates are committed before the app exits.
- *
- * Pattern adapted from
- * /Volumes/Bendyline/gh/qualla-internal/app/src/main/UserDataStore.ts
  */
 
 import { app } from 'electron';

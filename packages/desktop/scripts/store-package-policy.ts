@@ -18,6 +18,13 @@ export const MAS_NATIVE_HELPERS: readonly string[] = ['gezel-apple-fm', 'gezel-l
 /** Every Microsoft Store submission carries one package per architecture. */
 export const MSIX_ARCHITECTURES: readonly string[] = ['x64', 'arm64'];
 
+/**
+ * runFullTrust runs the Win32 app. Dictation and media recording need the
+ * microphone and camera, which Windows grants a packaged app only per
+ * declared capability. Anything else would need a Store justification.
+ */
+export const MSIX_CAPABILITIES: readonly string[] = ['runFullTrust', 'microphone', 'webcam'];
+
 /** Hardened-runtime exceptions; App Review rejects them in a sandboxed app. */
 const HARDENED_RUNTIME_EXCEPTIONS: readonly string[] = [
   'com.apple.security.cs.allow-jit',
@@ -176,6 +183,7 @@ function decodeXml(value: string): string {
  * The package identity Partner Center matches against the app reservation.
  * The Store reserves the fourth version field, so it must be zero. MinVersion
  * decides which PCs the Store offers the app to, which the listing also states.
+ * The capabilities must be exactly MSIX_CAPABILITIES.
  */
 export function appxManifestViolations(manifest: string, expected: AppxExpectation): string[] {
   const identity = /<Identity\b([^>]*)>/u.exec(manifest)?.[1];
@@ -202,6 +210,15 @@ export function appxManifestViolations(manifest: string, expected: AppxExpectati
   for (const [label, actual, wanted] of checks)
     if (actual !== wanted)
       violations.push(`${label} is ${actual ?? 'missing'}, expected ${wanted}`);
+  const capabilities = /<Capabilities>([\s\S]*?)<\/Capabilities>/u.exec(manifest)?.[1] ?? '';
+  const declared = [
+    ...capabilities.matchAll(/<(?:\w+:)?(?:Device)?Capability\b[^>]*\bName="([^"]*)"/gu),
+  ].map(([, name]) => name);
+  const missing = MSIX_CAPABILITIES.filter((name) => !declared.includes(name));
+  const unexpected = declared.filter((name) => !MSIX_CAPABILITIES.includes(name));
+  if (missing.length > 0) violations.push(`Capabilities lack ${missing.join(', ')}`);
+  if (unexpected.length > 0)
+    violations.push(`Capabilities include unexpected ${unexpected.join(', ')}`);
   return violations;
 }
 

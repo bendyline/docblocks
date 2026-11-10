@@ -197,6 +197,33 @@ async function requirePrivateStoreReleaseWorkflow(relativePath: string): Promise
       throw new Error(`${relativePath}: ${jobName} must not export BUILD_NUMBER`);
     }
   }
+
+  // Store uploads read the verified package back from the draft. They neither
+  // check out nor install anything, so store credentials never meet build code.
+  for (const [uploader, builder] of [
+    ['upload-mas', 'build-mas'],
+    ['upload-aab', 'build-aab'],
+    ['upload-ipa', 'build-ipa'],
+  ] as const) {
+    const job = parsed.jobs[uploader];
+    if (!isRecord(job) || !Array.isArray(job.steps)) {
+      throw new Error(`${relativePath}: ${uploader} is missing`);
+    }
+    const needs = Array.isArray(job.needs) ? job.needs : [job.needs];
+    if (!needs.includes('preflight') || !needs.includes(builder)) {
+      throw new Error(`${relativePath}: ${uploader} must wait for preflight and ${builder}`);
+    }
+    if (
+      job.steps.some(
+        (step) =>
+          isRecord(step) &&
+          ((typeof step.uses === 'string' && step.uses.startsWith('actions/checkout@')) ||
+            (typeof step.run === 'string' && /\b(npm|npx)\b/u.test(step.run))),
+      )
+    ) {
+      throw new Error(`${relativePath}: ${uploader} must not check out or build the repository`);
+    }
+  }
 }
 
 function requireScript(manifest: PackageManifest, name: string, fragment: string): void {
@@ -500,6 +527,21 @@ async function requireDesktopReleasePackaging(relativePath: string): Promise<voi
       relativePath +
         ': build-windows must normalize updater metadata after signing and before upload',
     );
+  }
+  // Installed apps ask each release for their architecture's manifest. 2.7.14
+  // and earlier read only latest.yml, and a release without it strands them.
+  const windowsUploadStep = windowsJob.steps[windowsUploadStepIndex];
+  for (const manifest of ['latest.yml', 'latest-win-x64.yml', 'latest-win-arm64.yml']) {
+    if (
+      !isRecord(windowsUploadStep) ||
+      !isRecord(windowsUploadStep.with) ||
+      typeof windowsUploadStep.with.path !== 'string' ||
+      !windowsUploadStep.with.path.includes(`/${manifest}`)
+    ) {
+      throw new Error(
+        `${relativePath}: build-windows must upload the ${manifest} updater manifest`,
+      );
+    }
   }
   const linuxJob = parsed.jobs['build-linux'];
   if (!isRecord(linuxJob) || !Array.isArray(linuxJob.steps)) {

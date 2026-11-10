@@ -224,7 +224,7 @@
   "scripts": {
     "build": "tsup && npm run build:webview",
     "build:webview": "tsx ../../scripts/vite-build.ts --config webview/vite.config.ts",
-    "package:vsix": "npm run build && npm run check:package-contents && vsce package --no-dependencies",
+    "package:vsix": "npm run build && npm run check:package-contents && vsce package --no-dependencies --baseContentUrl https://github.com/bendyline/docblocks/blob/HEAD/packages/vscode --baseImagesUrl https://github.com/bendyline/docblocks/raw/HEAD/packages/vscode",
     "check:package-contents": "tsx ../../scripts/check-vscode-package-contents.ts",
     "typecheck": "npm run typecheck:extension && npm run typecheck:webview && npm run typecheck:web-e2e && npm run typecheck:desktop-e2e",
     "typecheck:extension": "tsc --noEmit -p tsconfig.json",
@@ -238,10 +238,10 @@
   "dependencies": {
     "@bendyline/docblocks": "*",
     "@bendyline/docblocks-react": "*",
-    "@bendyline/squisq": "2.13.13",
-    "@bendyline/squisq-editor-react": "2.13.20",
-    "@bendyline/squisq-formats": "2.8.15",
-    "@bendyline/squisq-react": "2.12.25",
+    "@bendyline/squisq": "2.13.15",
+    "@bendyline/squisq-editor-react": "2.13.22",
+    "@bendyline/squisq-formats": "2.8.17",
+    "@bendyline/squisq-react": "2.12.27",
     "@ironcalc/wasm": "0.8.4",
     "harper.js": "2.7.0",
     "jsonc-parser": "3.3.1"

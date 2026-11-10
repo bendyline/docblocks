@@ -45,7 +45,7 @@ public class DocBlocksMobilePlugin extends Plugin {
         if (call.getData().length() != 0 || storage == null || registry == null || exportStaging == null) { call.reject("Device storage could not be opened."); return; }
         try {
             String version = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0).versionName;
-            org.json.JSONArray workspaces = registry.list(Storage.object("id", "local", "name", "On this device", "rootPath", "On this device / DocBlocks"));
+            org.json.JSONArray workspaces = registry.list(Storage.object("id", "local", "name", "On this device", "rootPath", "On this device / DocBlocks", "deletedWithApp", true));
             call.resolve(JSObject.fromJSONObject(Storage.object("env", Storage.object("surface", "capacitor", "surfaceLabel", "Android", "platform", "android", "appVersion", version, "isDev", false), "workspaces", workspaces, "folderPicker", true, "capabilities", Storage.capabilities())));
         } catch (Exception e) { call.reject("Device storage could not be opened."); }
     }
@@ -79,42 +79,47 @@ public class DocBlocksMobilePlugin extends Plugin {
         }
         return true;
     }
-    /** Opens at shared Documents, where a DocBlocks folder outlives the app and is visible to other apps and sync tools. */
+    /** Opens in shared Documents/DocBlocks (see SuggestedFolder), which outlives the app and is visible to other apps and sync tools. */
     private static Intent folderPicker() {
         return new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
-            .putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, android.provider.DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:Documents"));
+            .putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, SuggestedFolder.initialUri());
     }
+    /** Whether the picker now open is offering a Documents/DocBlocks it created, to take back if the user picks nothing. */
+    private boolean preparedFolder;
     @PluginMethod public void pickFolder(PluginCall call) {
         if (call.getData().length() != 0 || pickingFolder || exportToken != null) { call.reject("Close the current picker first."); return; }
         pickingFolder = true;
-        getActivity().runOnUiThread(() -> { try { startActivityForResult(call, folderPicker(), "folderResult"); } catch (Exception e) { pickingFolder = false; call.reject("The folder picker could not be opened."); } });
+        preparedFolder = SuggestedFolder.prepare();
+        getActivity().runOnUiThread(() -> { try { startActivityForResult(call, folderPicker(), "folderResult"); } catch (Exception e) { pickingFolder = false; SuggestedFolder.discardIfEmpty(preparedFolder); preparedFolder = false; call.reject("The folder picker could not be opened."); } });
     }
-    /** First launch only, like desktop's first-run dialog: a picked folder becomes the default workspace. */
+    /**
+     * First launch only: the folder picker opens straight in Documents/DocBlocks, so keeping
+     * documents where they outlive the app is "Use this folder", then "Allow". Backing out keeps
+     * them on the device, where the app warns until a folder is chosen. Android grants lasting
+     * access to a shared folder only through this picker, so it cannot be skipped.
+     */
     @PluginMethod public void chooseStorage(PluginCall call) {
         if (call.getData().length() != 0 || registry == null) { call.reject("Device storage could not be opened."); return; }
         if (registry.decided()) { call.resolve(); return; }
         if (pickingFolder || exportToken != null) { call.reject("Close the current picker first."); return; }
         pickingFolder = true;
+        // The picker opens over index.html's splash, not the native one it would sit behind.
+        LaunchSplash.release();
+        preparedFolder = SuggestedFolder.prepare();
         getActivity().runOnUiThread(() -> {
             try {
-                androidx.appcompat.app.AlertDialog dialog = new androidx.appcompat.app.AlertDialog.Builder(getActivity())
-                    .setTitle("Where should DocBlocks keep your documents?")
-                    .setMessage("Choose folder… opens your Documents folder. Pick or create a DocBlocks folder there. Other apps and sync tools can see it, and it stays if you reinstall DocBlocks.\n\nOn this device only keeps documents inside the app. They are removed if you uninstall it.\n\nYou can open other folders later from the workspace menu.")
-                    .setPositiveButton("Choose folder…", (shown, which) -> {
-                        try { startActivityForResult(call, folderPicker(), "storageResult"); }
-                        catch (Exception e) { settleStorage(call, null, 0); }
-                    })
-                    .setNegativeButton("On this device only", (shown, which) -> settleStorage(call, null, 0))
-                    .setOnCancelListener((shown) -> settleStorage(call, null, 0))
-                    .create();
-                dialog.setCanceledOnTouchOutside(false); dialog.show();
+                android.widget.Toast.makeText(getContext(), "Tap “Use this folder” to keep your documents here.", android.widget.Toast.LENGTH_LONG).show();
+                startActivityForResult(call, folderPicker(), "storageResult");
             } catch (Exception e) { settleStorage(call, null, 0); }
         });
     }
     @ActivityCallback private void storageResult(PluginCall call, ActivityResult result) {
-        if (call == null) { pickingFolder = false; return; }
         Intent data = result.getData();
-        settleStorage(call, result.getResultCode() == Activity.RESULT_OK && data != null ? data.getData() : null, data == null ? 0 : data.getFlags());
+        Uri picked = result.getResultCode() == Activity.RESULT_OK && data != null ? data.getData() : null;
+        if (picked == null) SuggestedFolder.discardIfEmpty(preparedFolder);
+        preparedFolder = false;
+        if (call == null) { pickingFolder = false; return; }
+        settleStorage(call, picked, data == null ? 0 : data.getFlags());
     }
     /** Every outcome records the decision, so a cancelled or failed choice never prompts again and falls back to device storage. */
     private void settleStorage(PluginCall call, Uri folder, int flags) {
@@ -130,12 +135,36 @@ public class DocBlocksMobilePlugin extends Plugin {
         });
     }
     @ActivityCallback private void folderResult(PluginCall call, ActivityResult result) {
-        pickingFolder = false; if (call == null) return;
-        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) { call.resolve(new JSObject().put("workspace", org.json.JSONObject.NULL)); return; }
+        pickingFolder = false;
+        boolean cancelled = result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null;
+        if (cancelled) SuggestedFolder.discardIfEmpty(preparedFolder);
+        preparedFolder = false;
+        if (call == null) return;
+        if (cancelled) { call.resolve(new JSObject().put("workspace", org.json.JSONObject.NULL)); return; }
         submit(call, () -> {
             try { call.resolve(new JSObject().put("workspace", registry.add(result.getData().getData(), result.getData().getFlags(), storage))); }
             catch (Exception e) { call.reject("The folder could not be opened.", e); }
         });
+    }
+    /** Makes a picked folder the default, as after device documents move into it. */
+    @PluginMethod public void setDefaultFolder(PluginCall call) {
+        String id = call.getString("workspaceId");
+        if (call.getData().length() != 1 || id == null || !id.matches("[a-fA-F0-9-]{36}") || registry == null) { call.reject("That folder cannot become the default."); return; }
+        submit(call, () -> {
+            try { registry.prefer(id); call.resolve(); }
+            catch (Exception e) { call.reject("The default folder could not be changed.", e); }
+        });
+    }
+    /** Whether the native launch splash still covers the page (see LaunchSplash). */
+    @PluginMethod public void splashHeld(PluginCall call) {
+        if (call.getData().length() != 0) { call.reject("Unexpected arguments."); return; }
+        call.resolve(new JSObject().put("held", LaunchSplash.isHeld()));
+    }
+    /** The page's startup has settled, or given up: let the native launch splash go. */
+    @PluginMethod public void releaseSplash(PluginCall call) {
+        if (call.getData().length() != 0) { call.reject("Unexpected arguments."); return; }
+        LaunchSplash.release();
+        call.resolve();
     }
     @PluginMethod public void forgetFolder(PluginCall call) {
         String id = call.getString("workspaceId");

@@ -23,6 +23,7 @@ import {
   Search,
   Settings2,
   TriangleAlert,
+  X,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -31,8 +32,16 @@ const ICON_SIZE = '1.15em';
 /** 1.75 on the 24px grid renders as a ~1px line at the shell's 13–16px sizes. */
 const STROKE_WIDTH = 1.75;
 
-function ShellIcon({ icon: Icon, size = ICON_SIZE }: { icon: LucideIcon; size?: string | number }) {
-  return <Icon size={size} strokeWidth={STROKE_WIDTH} aria-hidden="true" focusable="false" />;
+function ShellIcon({
+  icon: Icon,
+  size = ICON_SIZE,
+  strokeWidth = STROKE_WIDTH,
+}: {
+  icon: LucideIcon;
+  size?: string | number;
+  strokeWidth?: number;
+}) {
+  return <Icon size={size} strokeWidth={strokeWidth} aria-hidden="true" focusable="false" />;
 }
 
 export function NewFileIcon() {
@@ -101,4 +110,14 @@ export function FilesIcon() {
 
 export function BackupIcon() {
   return <ShellIcon icon={Download} />;
+}
+
+/**
+ * The X inside every `.db-close-button`. A drawn glyph rather than the `×`
+ * character, which sat low and off-center in the UI font. Sized at exactly
+ * 1em so the button's `font-size` sets it, and a step heavier than the shell's
+ * outlines, as the platform close marks are.
+ */
+export function CloseIcon() {
+  return <ShellIcon icon={X} size="1em" strokeWidth={2.25} />;
 }

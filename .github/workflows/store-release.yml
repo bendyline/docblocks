@@ -15,7 +15,15 @@
 #     workflow artifacts here: in a public repository those are directly
 #     downloadable from the workflow run. Maintainers download the private
 #     draft assets for each store, then delete the draft when it is no longer
-#     needed. Nothing is uploaded to a store from CI.
+#     needed.
+#   - With `publish: testing` (the default), separate upload jobs send the Mac
+#     App Store and iOS builds to TestFlight and the Android bundle to Play
+#     internal testing, reading them back from the draft. Nothing reaches
+#     users or App Review from CI, and the Microsoft Store packages are always
+#     submitted by hand. The upload jobs hold the store credentials, so the
+#     build jobs' npm, Gradle, CocoaPods and electron-builder code never sees
+#     them, and a failed upload can be retried with "Re-run failed jobs"
+#     without rebuilding: a rerun keeps preflight's draft tag and build number.
 #   - Versions are NOT stamped with a -build.N prerelease suffix; stores require
 #     a clean x.y.z version, which comes from packages/desktop/package.json for
 #     the Mac App Store build and packages/mobile/package.json for mobile. Both
@@ -55,7 +63,21 @@
 #                     Secrets: IOS_DISTRIBUTION_CERTIFICATE_BASE64,
 #                     IOS_DISTRIBUTION_CERTIFICATE_PASSWORD,
 #                     IOS_PROVISIONING_PROFILE_BASE64.
-#   Store each file secret as single-line base64 (`base64 -i FILE`).
+#   Store uploads (publish: testing only):
+#     App Store Connect: a Team Key with App Manager access, which covers macOS
+#                     and iOS. Secrets: APP_STORE_CONNECT_API_KEY_ID (10
+#                     characters), APP_STORE_CONNECT_API_ISSUER_ID (UUID),
+#                     APP_STORE_CONNECT_API_KEY_BASE64 (the .p8 file). The
+#                     com.bendyline.docblocks app record must list both
+#                     platforms.
+#     Google Play:    a service account with "Release apps to testing tracks"
+#                     on the DocBlocks app. Secret:
+#                     GOOGLE_PLAY_SERVICE_ACCOUNT_JSON (the JSON key file as
+#                     plain text, not base64). Play's API cannot create the
+#                     first release: upload the first .aab to Internal testing
+#                     by hand.
+#   Store each file secret as single-line base64 (`base64 -i FILE`) unless
+#   noted otherwise.
 ##
 
 name: Release Store Builds
@@ -80,15 +102,28 @@ on:
         description: 'Optional override. Leave blank to use this run number; set it only if a store already holds a higher build.'
         required: false
         type: string
+      publish:
+        description: 'testing: also send macOS and iOS to TestFlight and Android to Play internal testing. Windows is never uploaded.'
+        required: true
+        default: 'testing'
+        type: choice
+        options:
+          - testing
+          - none
 
 permissions:
   contents: read
 
+env:
+  FASTLANE_VERSION: '2.241.1'
+  RUBY_VERSION: '3.4'
+
 jobs:
   # Fails in seconds, rather than after the quality gate, when a requested
-  # build lacks its signing secrets or the build number override is invalid.
+  # build lacks its signing or upload secrets, or the build number override is
+  # invalid.
   preflight:
-    name: Check Inputs and Signing Secrets
+    name: Check Inputs and Secrets
     runs-on: ubuntu-24.04
     outputs:
       windows: ${{ steps.targets.outputs.windows }}
@@ -96,13 +131,20 @@ jobs:
       android: ${{ steps.targets.outputs.android }}
       ios: ${{ steps.targets.outputs.ios }}
       build_number: ${{ steps.targets.outputs.build_number }}
+      publish: ${{ steps.targets.outputs.publish }}
+      # Every job attaches to, or reads from, this one draft. "Re-run failed
+      # jobs" keeps a successful preflight's outputs, so a rerun builder or
+      # uploader finds the draft the first attempt created; "Re-run all jobs"
+      # starts a new draft.
+      draft_tag: ${{ steps.targets.outputs.draft_tag }}
 
     steps:
-      - name: Resolve targets and check signing secrets
+      - name: Resolve targets and check secrets
         id: targets
         shell: bash
         env:
           TARGET: ${{ inputs.target }}
+          PUBLISH: ${{ inputs.publish }}
           BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
           APPLE_MAS_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_MAS_CERTIFICATE_P12_BASE64 }}
           MAS_PROVISIONING_PROFILE_BASE64: ${{ secrets.MAS_PROVISIONING_PROFILE_BASE64 }}
@@ -113,6 +155,10 @@ jobs:
           IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
           IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           case "$TARGET" in
             all) targets='windows macos android ios' ;;
@@ -121,6 +167,8 @@ jobs:
             *) targets="$TARGET" ;;
           esac
           required=()
+          app_store_upload=false
+          play_upload=false
           for target in windows macos android ios; do
             selected=false
             [[ " $targets " == *" $target "* ]] && selected=true
@@ -131,7 +179,19 @@ jobs:
               android) required+=(ANDROID_UPLOAD_KEYSTORE_BASE64 ANDROID_UPLOAD_KEYSTORE_PASSWORD ANDROID_UPLOAD_KEY_ALIAS ANDROID_UPLOAD_KEY_PASSWORD) ;;
               ios) required+=(IOS_DISTRIBUTION_CERTIFICATE_BASE64 IOS_DISTRIBUTION_CERTIFICATE_PASSWORD IOS_PROVISIONING_PROFILE_BASE64) ;;
             esac
+            if [ "$PUBLISH" = testing ]; then
+              case "$target" in
+                macos|ios) app_store_upload=true ;;
+                android) play_upload=true ;;
+              esac
+            fi
           done
+          if [ "$app_store_upload" = true ]; then
+            required+=(APP_STORE_CONNECT_API_KEY_ID APP_STORE_CONNECT_API_ISSUER_ID APP_STORE_CONNECT_API_KEY_BASE64)
+          fi
+          if [ "$play_upload" = true ]; then
+            required+=(GOOGLE_PLAY_SERVICE_ACCOUNT_JSON)
+          fi
           status=0
           for name in "${required[@]}"; do
             if [ -z "${!name}" ]; then
@@ -139,6 +199,30 @@ jobs:
               status=1
             fi
           done
+          # Catch a pasted wrong file now rather than after an hour of building.
+          # Messages name a secret, never its value.
+          if [ "$app_store_upload" = true ]; then
+            if [ -n "$APP_STORE_CONNECT_API_KEY_ID" ] && ! [[ "$APP_STORE_CONNECT_API_KEY_ID" =~ ^[A-Z0-9]{10}$ ]]; then
+              echo "::error::APP_STORE_CONNECT_API_KEY_ID must be the key's 10-character Key ID"
+              status=1
+            fi
+            if [ -n "$APP_STORE_CONNECT_API_ISSUER_ID" ] && ! [[ "$APP_STORE_CONNECT_API_ISSUER_ID" =~ ^[0-9a-fA-F-]{36}$ ]]; then
+              echo "::error::APP_STORE_CONNECT_API_ISSUER_ID must be the Issuer ID, a UUID"
+              status=1
+            fi
+            if [ -n "$APP_STORE_CONNECT_API_KEY_BASE64" ] &&
+              [ "$(printf '%s' "$APP_STORE_CONNECT_API_KEY_BASE64" | tr -d '[:space:]' | base64 --decode 2>/dev/null | head -c 27)" != '-----BEGIN PRIVATE KEY-----' ]; then
+              echo "::error::APP_STORE_CONNECT_API_KEY_BASE64 must be the base64 of the downloaded .p8 file"
+              status=1
+            fi
+          fi
+          if [ "$play_upload" = true ] && [ -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ] &&
+            ! python3 -c 'import json, os; a = json.loads(os.environ["GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"]); assert isinstance(a, dict) and a.get("client_email") and a.get("private_key")' 2>/dev/null; then
+            echo "::error::GOOGLE_PLAY_SERVICE_ACCOUNT_JSON must be the service account's JSON key file, as plain text"
+            status=1
+          fi
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+          echo "draft_tag=store-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
           if [[ "$BUILD_NUMBER" =~ ^[1-9][0-9]{0,8}$ ]]; then
             echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
           else
@@ -201,14 +285,15 @@ jobs:
             echo "label=desktop v$desktop / mobile v$mobile" >> "$GITHUB_OUTPUT"
           fi
 
-      # A unique, previously unpublished tag keeps reruns isolated. GitHub does
-      # not publish the release or its tag while the release remains a draft.
+      # A unique, previously unpublished tag per run attempt (see preflight's
+      # draft_tag). GitHub does not publish the release or its tag while the
+      # release remains a draft.
       - name: Create unpublished store-build draft
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          tag_name: store-build-${{ github.run_id }}-${{ github.run_attempt }}
+          tag_name: ${{ needs.preflight.outputs.draft_tag }}
           target_commitish: ${{ github.sha }}
-          name: DocBlocks Store Build ${{ steps.versions.outputs.label }} (run ${{ github.run_number }})
+          name: KEEP IN DRAFT ONLY - DocBlocks Store Build ${{ steps.versions.outputs.label }} (run ${{ github.run_number }})
           body: |
             Private store-submission build for DocBlocks ${{ steps.versions.outputs.label }}.
 
@@ -216,6 +301,7 @@ jobs:
             - Desktop version: `${{ steps.versions.outputs.desktop }}`
             - Mobile version: `${{ steps.versions.outputs.mobile }}`
             - Build number (Mac App Store, App Store, Google Play): `${{ needs.preflight.outputs.build_number }}`
+            - Sent to testers (TestFlight, Play internal testing): `${{ needs.preflight.outputs.publish }}`
             - Source commit: `${{ github.sha }}`
             - Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
@@ -288,7 +374,7 @@ jobs:
       - name: Attach MSIX to private draft release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          tag_name: store-build-${{ github.run_id }}-${{ github.run_attempt }}
+          tag_name: ${{ needs.preflight.outputs.draft_tag }}
           draft: true
           files: packages/desktop/dist/artifacts/*.{appx,msix}
           fail_on_unmatched_files: true
@@ -401,7 +487,7 @@ jobs:
       - name: Attach MAS package to private draft release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          tag_name: store-build-${{ github.run_id }}-${{ github.run_attempt }}
+          tag_name: ${{ needs.preflight.outputs.draft_tag }}
           draft: true
           files: packages/desktop/dist/artifacts/**/*.pkg
           fail_on_unmatched_files: true
@@ -458,7 +544,7 @@ jobs:
       - name: Attach app bundle to private draft release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          tag_name: store-build-${{ github.run_id }}-${{ github.run_attempt }}
+          tag_name: ${{ needs.preflight.outputs.draft_tag }}
           draft: true
           files: reports/mobile-store/*/docblocks-android-*
           fail_on_unmatched_files: true
@@ -515,7 +601,171 @@ jobs:
       - name: Attach IPA and symbols to private draft release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          tag_name: store-build-${{ github.run_id }}-${{ github.run_attempt }}
+          tag_name: ${{ needs.preflight.outputs.draft_tag }}
           draft: true
           files: reports/mobile-store/*/docblocks-ios-*
           fail_on_unmatched_files: true
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Store uploads (publish: testing). Each reads its verified package back from
+  # the private draft, so the store credentials never meet the build jobs, and
+  # "Re-run failed jobs" retries an upload without rebuilding. Nothing here
+  # reaches users or review: TestFlight builds go to testers once Apple has
+  # processed them, and Play internal testing is limited to its tester list.
+  #
+  # contents: write is needed only because GitHub lists draft releases to
+  # tokens with push access. The token is passed to the download step alone,
+  # and no job checks out the repository, so later steps cannot use it.
+  # ──────────────────────────────────────────────────────────────────────────
+  upload-mas:
+    name: Upload Mac App Store Build to TestFlight
+    needs: [preflight, build-mas]
+    if: ${{ needs.preflight.outputs.publish == 'testing' }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download MAS package from private draft
+        id: download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRAFT_TAG: ${{ needs.preflight.outputs.draft_tag }}
+        run: |
+          gh release download "$DRAFT_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern '*.pkg' --dir "$RUNNER_TEMP/store"
+          shopt -s nullglob
+          files=("$RUNNER_TEMP"/store/*.pkg)
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "::error::Expected one .pkg on $DRAFT_TAG, found ${#files[@]}"
+            exit 1
+          fi
+          echo "file=${files[0]}" >> "$GITHUB_OUTPUT"
+
+      # altool reads AuthKey_<id>.p8 from API_PRIVATE_KEYS_DIR. It returns when
+      # Apple accepts the upload, before processing ends; Apple emails any
+      # processing problem, so a green job does not prove testers have it.
+      - name: Upload to TestFlight
+        env:
+          API_PRIVATE_KEYS_DIR: ${{ runner.temp }}/app-store-connect
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          PACKAGE: ${{ steps.download.outputs.file }}
+        run: |
+          mkdir -p -m 700 "$API_PRIVATE_KEYS_DIR"
+          (umask 077; printf '%s' "$APP_STORE_CONNECT_API_KEY_BASE64" | tr -d '[:space:]' | base64 --decode \
+            > "$API_PRIVATE_KEYS_DIR/AuthKey_$APP_STORE_CONNECT_API_KEY_ID.p8")
+          xcrun altool --upload-app -f "$PACKAGE" -t macos \
+            --apiKey "$APP_STORE_CONNECT_API_KEY_ID" --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"
+          echo "Uploaded \`$(basename "$PACKAGE")\` to **TestFlight (macOS)**. Apple emails any processing errors." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove temporary key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/app-store-connect"
+
+  upload-aab:
+    name: Upload Android Bundle to Play Internal Testing
+    needs: [preflight, build-aab]
+    if: ${{ needs.preflight.outputs.publish == 'testing' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download app bundle from private draft
+        id: download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRAFT_TAG: ${{ needs.preflight.outputs.draft_tag }}
+        run: |
+          gh release download "$DRAFT_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'docblocks-android-*.aab' --dir "$RUNNER_TEMP/store"
+          shopt -s nullglob
+          files=("$RUNNER_TEMP"/store/*.aab)
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "::error::Expected one .aab on $DRAFT_TAG, found ${#files[@]}"
+            exit 1
+          fi
+          echo "file=${files[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@e1bd6146574da5e0795075b5319b300edb30c5b0 # v1.333.0
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+
+      - name: Install fastlane
+        run: gem install fastlane --version "$FASTLANE_VERSION" --no-document
+
+      # fastlane's resumable upload retries in chunks, and --timeout also covers
+      # Play's processing before it responds. Play's API cannot make an app's
+      # first release: until one is rolled out to Internal testing by hand, this
+      # fails with "Package not found" or "Only releases with status draft may
+      # be created on draft app".
+      - name: Upload to Play internal testing
+        env:
+          SUPPLY_JSON_KEY_DATA: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          FASTLANE_OPT_OUT_USAGE: '1'
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          BUNDLE: ${{ steps.download.outputs.file }}
+        run: |
+          fastlane supply \
+            --package_name com.bendyline.docblocks \
+            --aab "$BUNDLE" \
+            --track internal \
+            --timeout 1800 \
+            --skip_upload_apk true \
+            --skip_upload_metadata true \
+            --skip_upload_changelogs true \
+            --skip_upload_images true \
+            --skip_upload_screenshots true
+          echo "Uploaded \`$(basename "$BUNDLE")\` to **Play internal testing**." >> "$GITHUB_STEP_SUMMARY"
+
+  upload-ipa:
+    name: Upload iOS Build to TestFlight
+    needs: [preflight, build-ipa]
+    if: ${{ needs.preflight.outputs.publish == 'testing' }}
+    # Uploading needs only altool, so the standard image serves; the IPA was
+    # built and signed on the Xcode 27 runner.
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download IPA from private draft
+        id: download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRAFT_TAG: ${{ needs.preflight.outputs.draft_tag }}
+        run: |
+          gh release download "$DRAFT_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'docblocks-ios-*.ipa' --dir "$RUNNER_TEMP/store"
+          shopt -s nullglob
+          files=("$RUNNER_TEMP"/store/*.ipa)
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "::error::Expected one .ipa on $DRAFT_TAG, found ${#files[@]}"
+            exit 1
+          fi
+          echo "file=${files[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to TestFlight
+        env:
+          API_PRIVATE_KEYS_DIR: ${{ runner.temp }}/app-store-connect
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          PACKAGE: ${{ steps.download.outputs.file }}
+        run: |
+          mkdir -p -m 700 "$API_PRIVATE_KEYS_DIR"
+          (umask 077; printf '%s' "$APP_STORE_CONNECT_API_KEY_BASE64" | tr -d '[:space:]' | base64 --decode \
+            > "$API_PRIVATE_KEYS_DIR/AuthKey_$APP_STORE_CONNECT_API_KEY_ID.p8")
+          xcrun altool --upload-app -f "$PACKAGE" -t ios \
+            --apiKey "$APP_STORE_CONNECT_API_KEY_ID" --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"
+          echo "Uploaded \`$(basename "$PACKAGE")\` to **TestFlight (iOS)**. Apple emails any processing errors." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove temporary key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/app-store-connect"

@@ -538,6 +538,28 @@ export interface TemplateContentProfile {
   readonly hasAsciiDiagram: boolean;
   readonly hasTimeline: boolean;
   readonly hasTree: boolean;
+  /**
+   * What the block's list is a picture of, when its body is one list; null
+   * otherwise. It is the linked Squisq classifier's reading of the heading
+   * and the items, so it says what convert_document will draw.
+   */
+  readonly listShape: TemplateListShape | null;
+}
+
+/** The relationship among a list's items, and the template that draws it. */
+export interface TemplateListShape {
+  /** The relationship: sequence, timeline, figures, cycle, hierarchy, plain… */
+  readonly shape: string;
+  /** The template that draws it; `list` for a plain list. */
+  readonly templateId: string;
+  /**
+   * `strong`: the author's own words or structure say so, and automatic
+   * template selection applies it. `weak`: plausible; only an annotation on
+   * the heading applies it.
+   */
+  readonly confidence: 'strong' | 'weak';
+  /** What the reading rests on. */
+  readonly reason: string;
 }
 
 export interface TemplateRecommendation {

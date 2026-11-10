@@ -1,4 +1,5 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
+import { installFakeSpeechHost, scaleText } from './helpers/fake-speech-host.js';
 import { expect, test } from './helpers/test.js';
 
 /**
@@ -64,5 +65,59 @@ test.describe('Settings sections on touch devices', () => {
     });
     expect(layout.insideViewport).toBe(true);
     expect(layout.scrollsSideways).toBe(false);
+  });
+});
+
+/** What in the open section reaches past the panel's padded content edge. */
+async function sectionOverflow(dialog: Locator): Promise<string[]> {
+  return dialog.evaluate((element) => {
+    const panel = element.querySelector<HTMLElement>('.db-settings-panel:not([hidden])');
+    if (!panel) return ['no open section'];
+    const style = getComputedStyle(panel);
+    const edge = panel.getBoundingClientRect().right - parseFloat(style.paddingRight);
+    const found = [...panel.querySelectorAll<HTMLElement>('*')]
+      .filter((node) => {
+        const rect = node.getBoundingClientRect();
+        return rect.width > 0 && rect.right > edge + 0.5;
+      })
+      .map((node) => `${node.tagName.toLowerCase()}.${String(node.className).split(' ')[0]}`);
+    if (panel.scrollWidth > panel.clientWidth) found.unshift('panel scrolls sideways');
+    return found;
+  });
+}
+
+test.describe('Settings sections on a narrow phone', () => {
+  test.skip(({ isMobile }) => isMobile !== true, 'touch-emulating projects only');
+
+  // A 360px phone with Android's larger system text pushed the narration
+  // model's download row, and the whole section with it, off the dialog.
+  test('fit every section, downloads included, at a large text size', async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
+    await installFakeSpeechHost(page);
+    await page.setViewportSize({ width: 360, height: 760 });
+    const dialog = await openSettings(page);
+    const picker = dialog.getByRole('combobox', { name: 'Settings section' });
+    const sections = await picker.locator('option').allTextContents();
+    expect(sections).toEqual(expect.arrayContaining(['Dictation', 'Narration']));
+
+    for (const scale of [1, 1.3]) {
+      for (const section of sections) {
+        await picker.selectOption({ label: section });
+        // Scales whatever the section newly rendered; each element only once.
+        if (scale !== 1) await scaleText(page, scale);
+        expect(await sectionOverflow(dialog), `${section} at ${scale}x text`).toEqual([]);
+      }
+    }
+
+    await picker.selectOption({ label: 'Narration' });
+    await dialog
+      .getByRole('button', { name: /^Download/ })
+      .first()
+      .click();
+    await expect(dialog.locator('progress')).toBeVisible();
+    await scaleText(page, 1.3);
+    expect(await sectionOverflow(dialog), 'Narration downloading').toEqual([]);
   });
 });

@@ -38,6 +38,8 @@ Include a clear opening thesis, a compact scorecard, insights rather than repeat
       maxWordsPerSection: 95,
       // Layouts may be chosen by autoTemplates; annotation count is not visual quality.
       minVisualTemplates: 0,
+      // What is: the slides Squisq draws from this Markdown, annotated or not.
+      minDrawnSections: 2,
       requiredPhrases: ['18,420', '71%', '$3.8M', '49%', '23%', '31%', 'permissions'],
     },
   },
@@ -64,6 +66,8 @@ Cover: a plain-language definition, an opening scenario, a four-question risk sc
       maxWordsPerSection: 90,
       // Layouts may be chosen by autoTemplates; annotation count is not visual quality.
       minVisualTemplates: 0,
+      // What is: the slides Squisq draws from this Markdown, annotated or not.
+      minDrawnSections: 2,
       requiredPhrases: ['accountable', 'confidential', 'escalat', 'four', 'one-week'],
     },
   },

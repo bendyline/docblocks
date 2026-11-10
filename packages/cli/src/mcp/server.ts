@@ -11,6 +11,7 @@ import { ArtifactStore, type ArtifactStoreOptions } from './artifact-store.js';
 import { McpFileAuthority, type McpFileAuthorityOptions } from './authority.js';
 import { registerDiscoveryTools } from './discovery-tools.js';
 import { PICTURE_INSTRUCTION_GUIDANCE } from './picture-guidance.js';
+import { SHAPE_INSTRUCTION_GUIDANCE } from './shape-guidance.js';
 import { registerAuthoringPrompts } from './prompts.js';
 import {
   MOTION_SELECTION_GUIDANCE,
@@ -251,6 +252,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
         STYLE_SELECTION_GUIDANCE,
         TRANSFORM_SELECTION_GUIDANCE,
         MOTION_SELECTION_GUIDANCE,
+        SHAPE_INSTRUCTION_GUIDANCE,
         PICTURE_INSTRUCTION_GUIDANCE,
         'Use a bundle source when assets must travel with the document. Use create_document_bundle only when one complete draft will be reused by two or more inspect, preview, or convert calls.',
         'Use inspect_document or preview_document only when the user asks for document analysis or visual evidence.',

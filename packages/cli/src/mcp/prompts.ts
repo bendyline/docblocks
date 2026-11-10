@@ -3,6 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { MCP_DASHBOARD_RESOLUTION_IDS, MCP_DASHBOARD_STYLE_IDS } from './conversion-service.js';
 import { PRESENTATION_PICTURE_HINT, documentPictureHint } from './picture-guidance.js';
+import { shapeSelectionGuidance } from './shape-guidance.js';
 import {
   MOTION_SELECTION_GUIDANCE,
   STYLE_SELECTION_GUIDANCE,
@@ -68,7 +69,13 @@ export function registerAuthoringPrompts(server: McpServer): void {
           role: 'user' as const,
           content: {
             type: 'text' as const,
-            text: presentationPrompt(args.topic, args.style, args.theme, args.template),
+            text: presentationPrompt(
+              args.topic,
+              args.style,
+              args.theme,
+              args.template,
+              await shapeSelectionGuidance(),
+            ),
           },
         },
       ],
@@ -179,6 +186,7 @@ function presentationPrompt(
   style: string | undefined,
   theme: string | undefined,
   template: string | undefined,
+  shapeHint: string,
 ): string {
   const templateHint = template
     ? ` Use the requested \`${template}\` annotation where appropriate.`
@@ -199,7 +207,7 @@ function presentationPrompt(
 
 1. For durable output, call list_roots before drafting. If no returned root is write-enabled, stop and explain that the MCP server must restart with --allow-write; do not use a shell or CLI converter.
 2. ${selectionHint} ${MOTION_SELECTION_GUIDANCE} Call get_authoring_context only when the linked theme and Summarize descriptions would materially improve the choice.
-3. Author plain Markdown. One level-one heading (\`#\`) creates each deliberate slide boundary; headings alone create the boundaries, so do not add \`---\` between them unless a visible horizontal rule is intended. Unstructured text is also accepted. Squisq annotations are optional layout hints.${templateHint} ${PRESENTATION_PICTURE_HINT}
+3. Author plain Markdown. One level-one heading (\`#\`) creates each deliberate slide boundary; headings alone create the boundaries, so do not add \`---\` between them unless a visible horizontal rule is intended. Unstructured text is also accepted. Squisq annotations are optional layout hints.${templateHint} ${shapeHint} ${PRESENTATION_PICTURE_HINT}
 4. Pass the Markdown directly to convert_document with a pptx target${themeHint}${styleHint}. Use a bundle source only when assets must travel with the document. No validation, inspection, or preview is required.
 5. Use inspect_document or preview_document only when the user explicitly asks for document analysis or visual evidence.
 6. Call save_artifact only when a durable file is required.`;

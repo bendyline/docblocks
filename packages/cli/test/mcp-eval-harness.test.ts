@@ -12,7 +12,7 @@ import {
   extractTraceMarkdown,
   judgePrompt,
 } from '../src/eval/codex-host.js';
-import { judgeMarkdown } from '../src/eval/markdown-judge.js';
+import { drawnTemplates, judgeMarkdown } from '../src/eval/markdown-judge.js';
 import { compareEvalRuns } from '../src/eval/report.js';
 import { combinedScore, scoreLlmJudge } from '../src/eval/runner.js';
 import type { EvalCase, EvalRunResult } from '../src/eval/types.js';
@@ -52,6 +52,31 @@ describe('MCP content eval harness', () => {
     );
     expect(result.passed).to.equal(true);
     expect(result.metrics.visualTemplateCount).to.equal(1);
+  });
+
+  it('counts the sections Squisq draws, annotated or not', () => {
+    const drawn = drawnTemplates(
+      [
+        '# The quarter in numbers',
+        '',
+        '- 18,420: active teams',
+        '- 71%: weekly retained teams',
+        '',
+        '# How a release ships',
+        '',
+        '1. Draft the notes',
+        '2. Tag the build',
+        '3. Roll out',
+        '',
+        '# What it means',
+        '',
+        'A paragraph of plain prose.',
+      ].join('\n'),
+    );
+    // Key numbers and a process, with no annotation in the Markdown.
+    expect(drawn.lists).to.deep.equal(['stats', 'process']);
+    expect(drawn.drawn).to.have.length(2);
+    expect(drawnTemplates('# Only prose\n\nNothing to draw here.').drawn).to.deep.equal([]);
   });
 
   it('extracts the exact final conversion Markdown and usage from Codex JSONL', () => {

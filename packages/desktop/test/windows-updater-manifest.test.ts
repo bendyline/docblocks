@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -9,10 +10,28 @@ import { prepareWindowsUpdaterManifest } from '../scripts/prepare-windows-update
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
+const INSTALLERS = {
+  arm64: { name: 'DocBlocks-2.1.3-win-arm64.exe', bytes: Buffer.from('arm64 installer') },
+  x64: { name: 'DocBlocks-2.1.3-win-x64.exe', bytes: Buffer.from('x64 installer') },
+  combined: {
+    name: 'DocBlocks-2.1.3-win.exe',
+    bytes: Buffer.from('combined x64 and arm64 installer'),
+  },
+} as const;
+
+type InstallerKey = keyof typeof INSTALLERS;
+
+interface FixtureOptions {
+  readonly unlisted?: InstallerKey;
+  readonly invalidSha?: InstallerKey;
+  readonly omitBlockMap?: InstallerKey;
+  readonly emptyBlockMap?: InstallerKey;
+  readonly blockMapSize?: number;
+}
+
 interface Fixture {
+  readonly directory: string;
   readonly manifestPath: string;
-  readonly universalName: string;
-  readonly universalSha512: string;
 }
 
 const temporaryDirectories: string[] = [];
@@ -25,45 +44,33 @@ function sha512(value: Buffer): string {
   return createHash('sha512').update(value).digest('base64');
 }
 
-async function createFixture(options?: {
-  readonly omitUniversal?: boolean;
-  readonly invalidSha?: boolean;
-  readonly omitBlockMap?: boolean;
-  readonly emptyBlockMap?: boolean;
-  readonly blockMapSize?: number;
-}): Promise<Fixture> {
+function entryFor(key: InstallerKey): UnknownRecord {
+  const installer = INSTALLERS[key];
+  return { url: installer.name, sha512: sha512(installer.bytes), size: installer.bytes.length };
+}
+
+/** The artifacts folder as electron-builder leaves it: three installers listed in one latest.yml. */
+async function createFixture(options: FixtureOptions = {}): Promise<Fixture> {
   const directory = await mkdtemp(path.join(tmpdir(), 'docblocks-windows-updater-'));
   temporaryDirectories.push(directory);
-  const universalName = 'DocBlocks-2.1.3-win.exe';
-  const universal = Buffer.from('combined x64 and arm64 installer');
-  const blockMap = Buffer.from('combined blockmap');
-  await writeFile(path.join(directory, universalName), universal);
-  if (!options?.omitBlockMap) {
-    await writeFile(
-      path.join(directory, universalName + '.blockmap'),
-      options?.emptyBlockMap ? Buffer.alloc(0) : blockMap,
-    );
-  }
 
-  const universalSha512 = sha512(universal);
-  const files: UnknownRecord[] = [
-    {
-      url: 'DocBlocks-2.1.3-win-arm64.exe',
-      sha512: sha512(Buffer.from('arm64')),
-      size: 5,
-    },
-    {
-      url: 'DocBlocks-2.1.3-win-x64.exe',
-      sha512: sha512(Buffer.from('x64')),
-      size: 3,
-    },
-  ];
-  if (!options?.omitUniversal) {
+  const files: UnknownRecord[] = [];
+  for (const key of Object.keys(INSTALLERS) as InstallerKey[]) {
+    const installer = INSTALLERS[key];
+    await writeFile(path.join(directory, installer.name), installer.bytes);
+    if (options.omitBlockMap !== key) {
+      await writeFile(
+        path.join(directory, installer.name + '.blockmap'),
+        options.emptyBlockMap === key ? Buffer.alloc(0) : Buffer.from(key + ' blockmap'),
+      );
+    }
+    if (options.unlisted === key) continue;
     files.push({
-      url: universalName,
-      sha512: options?.invalidSha ? sha512(Buffer.from('wrong')) : universalSha512,
-      size: universal.length,
-      ...(options?.blockMapSize === undefined ? {} : { blockMapSize: options.blockMapSize }),
+      ...entryFor(key),
+      ...(options.invalidSha === key ? { sha512: sha512(Buffer.from('wrong')) } : {}),
+      ...(key === 'combined' && options.blockMapSize !== undefined
+        ? { blockMapSize: options.blockMapSize }
+        : {}),
     });
   }
 
@@ -73,13 +80,19 @@ async function createFixture(options?: {
     yaml.dump({
       version: '2.1.3',
       files,
-      path: 'DocBlocks-2.1.3-win-arm64.exe',
+      path: files[0]?.url,
       sha512: files[0]?.sha512,
       releaseDate: '2026-07-17T00:00:00.000Z',
     }),
     'utf8',
   );
-  return { manifestPath, universalName, universalSha512 };
+  return { directory, manifestPath };
+}
+
+async function readManifest(directory: string, name: string): Promise<UnknownRecord> {
+  const parsed: unknown = yaml.load(await readFile(path.join(directory, name), 'utf8'));
+  if (!isRecord(parsed)) throw new Error('Expected ' + name + ' to hold an updater manifest.');
+  return parsed;
 }
 
 async function expectFailure(promise: Promise<unknown>, message: string): Promise<void> {
@@ -102,42 +115,69 @@ afterEach(async () => {
 });
 
 describe('Windows updater manifest preparation', () => {
-  it('selects only the combined installer and keeps manual architecture assets out of metadata', async () => {
+  it('names only the combined installer in latest.yml, for clients that read nothing else', async () => {
     const fixture = await createFixture();
 
-    const selected = await prepareWindowsUpdaterManifest(fixture.manifestPath);
-    const parsed: unknown = yaml.load(await readFile(fixture.manifestPath, 'utf8'));
+    await prepareWindowsUpdaterManifest(fixture.manifestPath);
+    const manifest = await readManifest(fixture.directory, 'latest.yml');
 
-    expect(selected).to.equal(fixture.universalName);
-    expect(isRecord(parsed)).to.equal(true);
-    if (!isRecord(parsed)) throw new Error('Expected normalized updater manifest object.');
-    expect(parsed.files).to.deep.equal([
-      {
-        url: fixture.universalName,
-        sha512: fixture.universalSha512,
-        size: Buffer.byteLength('combined x64 and arm64 installer'),
-      },
+    expect(manifest.files).to.deep.equal([entryFor('combined')]);
+    expect(manifest.path).to.equal(INSTALLERS.combined.name);
+    expect(manifest.sha512).to.equal(sha512(INSTALLERS.combined.bytes));
+    expect(manifest.version).to.equal('2.1.3');
+  });
+
+  it('writes one manifest per architecture, each naming only that installer', async () => {
+    const fixture = await createFixture();
+
+    const feeds = await prepareWindowsUpdaterManifest(fixture.manifestPath);
+
+    expect(feeds).to.deep.equal([
+      { manifest: 'latest-win-x64.yml', installer: INSTALLERS.x64.name },
+      { manifest: 'latest-win-arm64.yml', installer: INSTALLERS.arm64.name },
+      { manifest: 'latest.yml', installer: INSTALLERS.combined.name },
     ]);
-    expect(parsed.path).to.equal(fixture.universalName);
-    expect(parsed.sha512).to.equal(fixture.universalSha512);
-    expect(parsed.version).to.equal('2.1.3');
+    for (const key of ['x64', 'arm64'] as const) {
+      const manifest = await readManifest(fixture.directory, 'latest-win-' + key + '.yml');
+      expect(manifest.files).to.deep.equal([entryFor(key)]);
+      expect(manifest.path).to.equal(INSTALLERS[key].name);
+      expect(manifest.sha512).to.equal(sha512(INSTALLERS[key].bytes));
+      expect(manifest.version).to.equal('2.1.3');
+      expect(manifest.releaseDate).to.equal('2026-07-17T00:00:00.000Z');
+    }
   });
 
   it('fails when electron-builder does not produce one combined installer', async () => {
-    const fixture = await createFixture({ omitUniversal: true });
+    const fixture = await createFixture({ unlisted: 'combined' });
     await expectFailure(
       prepareWindowsUpdaterManifest(fixture.manifestPath),
       'exactly one combined *-win.exe installer',
     );
   });
 
+  it('fails when an architecture has no installer to name', async () => {
+    const fixture = await createFixture({ unlisted: 'arm64' });
+    await expectFailure(
+      prepareWindowsUpdaterManifest(fixture.manifestPath),
+      'exactly one *-win-arm64.exe installer',
+    );
+  });
+
   it('fails when the combined installer blockmap is missing', async () => {
-    const fixture = await createFixture({ omitBlockMap: true });
+    const fixture = await createFixture({ omitBlockMap: 'combined' });
     await expectFailure(prepareWindowsUpdaterManifest(fixture.manifestPath), 'blockmap is missing');
   });
 
+  it('fails when an architecture installer blockmap is missing', async () => {
+    const fixture = await createFixture({ omitBlockMap: 'x64' });
+    await expectFailure(
+      prepareWindowsUpdaterManifest(fixture.manifestPath),
+      INSTALLERS.x64.name + ' blockmap is missing',
+    );
+  });
+
   it('fails when the combined installer blockmap is empty', async () => {
-    const fixture = await createFixture({ emptyBlockMap: true });
+    const fixture = await createFixture({ emptyBlockMap: 'combined' });
     await expectFailure(
       prepareWindowsUpdaterManifest(fixture.manifestPath),
       'blockmap must be a non-empty file',
@@ -153,10 +193,24 @@ describe('Windows updater manifest preparation', () => {
   });
 
   it('fails before publishing metadata whose combined-installer hash is stale', async () => {
-    const fixture = await createFixture({ invalidSha: true });
+    const fixture = await createFixture({ invalidSha: 'combined' });
+    await expectFailure(
+      prepareWindowsUpdaterManifest(fixture.manifestPath),
+      INSTALLERS.combined.name + ' SHA-512 does not match',
+    );
+  });
+
+  it('writes nothing when any installer fails verification', async () => {
+    const fixture = await createFixture({ invalidSha: 'combined' });
+    const original = await readFile(fixture.manifestPath, 'utf8');
+
     await expectFailure(
       prepareWindowsUpdaterManifest(fixture.manifestPath),
       'SHA-512 does not match',
     );
+
+    expect(await readFile(fixture.manifestPath, 'utf8')).to.equal(original);
+    expect(existsSync(path.join(fixture.directory, 'latest-win-x64.yml'))).to.equal(false);
+    expect(existsSync(path.join(fixture.directory, 'latest-win-arm64.yml'))).to.equal(false);
   });
 });

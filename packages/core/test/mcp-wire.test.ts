@@ -116,6 +116,12 @@ function templateProfileValue() {
     hasAsciiDiagram: false,
     hasTimeline: false,
     hasTree: false,
+    listShape: {
+      shape: 'sequence',
+      templateId: 'process',
+      confidence: 'strong' as const,
+      reason: 'a numbered list',
+    },
   };
 }
 

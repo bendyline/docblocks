@@ -46,6 +46,46 @@ describe('MCP linked template recommendations', () => {
     ).to.equal(true);
   });
 
+  it('says what a list-only section is a picture of, reading its heading too', async () => {
+    // Squisq classifies a list-only body. The wire carries that reading as its
+    // own bounded shape, never the upstream object, so a field Squisq adds
+    // later cannot fail output validation.
+    const source = {
+      kind: 'markdown',
+      name: 'list-only.md',
+      markdown:
+        '# The water cycle\n\n- Evaporation: the sun lifts water from the sea\n- Condensation: vapour cools into cloud\n- Precipitation: rain and snow fall',
+    };
+    const recommended = await callTool(harness.client, 'recommend_templates', { source });
+    expect(recommended.isError, recommended.text).to.equal(false);
+    const [entry] = recommended.structuredContent?.recommendations as Array<{
+      profile: Record<string, unknown>;
+      recommendedTemplateIds: string[];
+    }>;
+    expect(entry?.profile.hasList).to.equal(true);
+    // "The water cycle" over its stages is a cycle; without the heading the
+    // same list would only be cards, and convert_document would disagree.
+    expect(entry?.profile.listShape).to.deep.include({
+      shape: 'cycle',
+      templateId: 'cycle',
+      confidence: 'strong',
+    });
+    expect(entry?.recommendedTemplateIds).to.include.members(['list', 'cards', 'cycle']);
+    const prose = await callTool(harness.client, 'recommend_templates', {
+      source: { kind: 'markdown', name: 'prose.md', markdown: '# Overview\n\nJust a paragraph.' },
+    });
+    const [plain] = prose.structuredContent?.recommendations as Array<{
+      profile: Record<string, unknown>;
+    }>;
+    expect(plain?.profile.listShape).to.equal(null);
+
+    const context = await callTool(harness.client, 'get_authoring_context', {
+      targetFormat: 'pptx',
+      source,
+    });
+    expect(context.isError, context.text).to.equal(false);
+  });
+
   it('returns optional focused authoring details without imposing a writing workflow', async () => {
     const result = await callTool(harness.client, 'get_authoring_context', {
       targetFormat: 'pptx',
@@ -135,8 +175,14 @@ describe('MCP linked template recommendations', () => {
     expect(result.text).to.include('data-driven (Data-Driven): Aggressively highlights statistics');
     expect(result.text).to.include('intentionally focused');
     expect(result.text).to.include('docblocks://authoring-guide');
-    expect(result.text.length).to.be.lessThan(6_000);
-    expect(JSON.stringify(payload).length).to.be.lessThan(12_000);
+    // The rule for drawn lists is the one addition a deck author most needs;
+    // the context stays focused around it.
+    expect(result.text).to.include('one list of 2–6 short items is drawn as a picture');
+    expect(payload.workflow.some((step) => step.includes('a numbered list → steps'))).to.equal(
+      true,
+    );
+    expect(result.text.length).to.be.lessThan(7_000);
+    expect(JSON.stringify(payload).length).to.be.lessThan(13_000);
   });
 
   it('keeps editable PowerPoint as the default even for visual-polish discovery', async () => {

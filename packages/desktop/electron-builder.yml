@@ -156,6 +156,13 @@ appx:
   # Windows 10 1809, the floor the Store listing states. electron-builder uses
   # it for MaxVersionTested too while that stays unset.
   minVersion: 10.0.17763.0
+  # Dictation and media recording use the microphone and camera. Declaring them
+  # lists DocBlocks under Windows Settings > Privacy & security > Microphone and
+  # Camera, where people grant or revoke access. electron-builder always adds
+  # runFullTrust; check-store-packages.ts requires exactly these three.
+  capabilities:
+    - microphone
+    - webcam
 
 # macOS configuration
 # Signing uses the "Developer ID Application" certificate from the keychain.

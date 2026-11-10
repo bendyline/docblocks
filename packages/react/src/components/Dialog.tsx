@@ -13,6 +13,7 @@
  */
 
 import { registerDialogCloser, isTopmostDialog } from './dialog-stack.js';
+import { CloseIcon } from '../icons.js';
 import React, { useCallback, useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -163,11 +164,11 @@ export function Dialog({
             <button
               ref={closeButtonRef}
               type="button"
-              className="db-dialog-close"
+              className="db-close-button db-dialog-close"
               onClick={onClose}
               aria-label="Close"
             >
-              &times;
+              <CloseIcon />
             </button>
           </div>
         )}

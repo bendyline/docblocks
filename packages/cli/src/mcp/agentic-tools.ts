@@ -1,6 +1,7 @@
 import { ResourceTemplate, type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { TemplateAuthoringMetadata } from '@bendyline/squisq/doc';
+import type { BlockContentProfile } from '@bendyline/squisq/recommend';
 import {
   MCP_WIRE_LIMITS,
   parseComparisonResult,
@@ -14,6 +15,7 @@ import {
   type ConversionFidelity,
   type ConversionResult,
   type DocumentSource,
+  type TemplateContentProfile,
 } from '@bendyline/docblocks/mcp';
 import { ArtifactStore } from './artifact-store.js';
 import { McpFileAuthority } from './authority.js';
@@ -57,6 +59,11 @@ import {
   authoringGuidePictures,
   pictureExportGuidance,
 } from './picture-guidance.js';
+import {
+  authoringGuideShapes,
+  shapeAnnotationExample,
+  shapeSelectionGuidance,
+} from './shape-guidance.js';
 import {
   MOTION_SELECTION_GUIDANCE,
   STYLE_SELECTION_GUIDANCE,
@@ -725,18 +732,20 @@ function registerAuthoringGuideResource(server: McpServer): void {
       annotations: { audience: ['assistant'], priority: 1 },
     },
     async () => {
-      const [templates, schemaModule, transformModule, pictures] = await Promise.all([
+      const [templates, schemaModule, transformModule, pictures, drawnLists] = await Promise.all([
         authoringTemplateCatalog(),
         import('@bendyline/squisq/schemas'),
         import('@bendyline/squisq/transform'),
         authoringGuidePictures(),
+        authoringGuideShapes(),
       ]);
       const guide = {
-        version: 11,
+        version: 12,
         workflow: [
           'plain text and ordinary Markdown can be passed directly to convert_document without a preflight or template annotations',
           'for deliberate PPTX slide boundaries, use one level-one Markdown heading per slide; headings alone create the boundaries, so do not add --- between them unless a visible horizontal rule is intended',
           'convert_document chooses compatible templates automatically; Squisq annotations on headings are optional layout hints that take precedence',
+          'a section whose body is one short list is drawn as a picture of how its items relate; drawnLists.guide says what decides the picture and drawnLists.templates gives a worked slide for each',
           STYLE_SELECTION_GUIDANCE,
           TRANSFORM_SELECTION_GUIDANCE,
           MOTION_SELECTION_GUIDANCE,
@@ -750,6 +759,7 @@ function registerAuthoringGuideResource(server: McpServer): void {
         standaloneWarning:
           'A standalone annotation creates an additional heading-less block. Bind the annotation to a heading unless that extra block is deliberate.',
         pictures,
+        drawnLists,
         fidelity: {
           semantic: 'Prioritize meaning and portability.',
           'editable-native': 'Produce editable native structures with target-specific diagnostics.',
@@ -829,6 +839,10 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
             ? await targetTemplateAnnotationHandling(normalizedTarget)
             : null;
           const pictureExport = pictureExportGuidance(normalizedTarget);
+          // A target that draws templates draws lists as pictures; one that
+          // flattens annotations to semantic content keeps them lists.
+          const shapeGuidance =
+            annotationHandling === 'ignored' ? null : await shapeSelectionGuidance();
           // When the linked exporter flattens annotations to semantic content,
           // the visual-template catalog is inert weight for this target: scope
           // it to the loss-averse defaults instead of shipping 26 full schemas.
@@ -839,21 +853,7 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
           let recommendations: Array<{
             blockId: string;
             title: string | null;
-            profile: {
-              hasImage: boolean;
-              imageCount: number;
-              hasVideo: boolean;
-              hasBlockquote: boolean;
-              hasList: boolean;
-              hasTable: boolean;
-              hasDate: boolean;
-              hasNumberHighlight: boolean;
-              wordCount: number;
-              hasCompoundBody: boolean;
-              hasAsciiDiagram: boolean;
-              hasTimeline: boolean;
-              hasTree: boolean;
-            };
+            profile: TemplateContentProfile;
             recommendedTemplateIds: string[];
           }> = [];
           let totalBlocks: number | null = null;
@@ -871,7 +871,9 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
             const blocks = flattenBlocks(prepared.doc.blocks);
             const limit = maxBlocks ?? 50;
             recommendations = blocks.slice(0, limit).map((block) => {
-              const profile = recommendModule.profileBlockContents(block.contents ?? []);
+              const profile = recommendModule.profileBlockContents(block.contents ?? [], {
+                heading: block.title,
+              });
               const visual = recommendModule.recommendTemplatesForBlock(
                 profile,
                 candidateTemplates.map((template) => template.id),
@@ -883,13 +885,7 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
               return {
                 blockId: toWireIdentifier(block.id, 'block'),
                 title: boundNullableWireText(block.title, MCP_WIRE_LIMITS.labelCharacters),
-                profile: {
-                  ...profile,
-                  hasCompoundBody: profile.hasCompoundBody ?? false,
-                  hasAsciiDiagram: profile.hasAsciiDiagram ?? false,
-                  hasTimeline: profile.hasTimeline ?? false,
-                  hasTree: profile.hasTree ?? false,
-                },
+                profile: wireContentProfile(profile),
                 recommendedTemplateIds: recommendedTemplateIds
                   .slice(0, 256)
                   .map((id) => requireWireIdentifier(id, 'recommended template id')),
@@ -921,6 +917,7 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
               annotationHandling === 'ignored'
                 ? 'This target flattens template annotations to semantic content, so annotations are unnecessary for the exported file.'
                 : 'Explicit valid annotations override automatic layout choices; invalid or unnecessary annotations should be omitted rather than repaired through a separate workflow.',
+              ...(shapeGuidance ? [shapeGuidance] : []),
               PICTURE_SELECTION_GUIDANCE,
               ...(pictureExport ? [pictureExport] : []),
               'Pass Markdown directly to convert_document. Use a bundle source for assets, or create_document_bundle only when one draft will be reused by two or more inspect, preview, or convert calls.',
@@ -1065,17 +1062,15 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
           const blocks = flattenBlocks(prepared.doc.blocks);
           const limit = maxBlocks ?? 50;
           const recommendations = blocks.slice(0, limit).map((block) => {
-            const profile = recommendModule.profileBlockContents(block.contents ?? []);
+            // The heading says as much about a list as its items do ("The water
+            // cycle"), and automatic selection reads it; so must a recommendation.
+            const profile = recommendModule.profileBlockContents(block.contents ?? [], {
+              heading: block.title,
+            });
             return {
               blockId: toWireIdentifier(block.id, 'block'),
               title: boundNullableWireText(block.title, MCP_WIRE_LIMITS.labelCharacters),
-              profile: {
-                ...profile,
-                hasCompoundBody: profile.hasCompoundBody ?? false,
-                hasAsciiDiagram: profile.hasAsciiDiagram ?? false,
-                hasTimeline: profile.hasTimeline ?? false,
-                hasTree: profile.hasTree ?? false,
-              },
+              profile: wireContentProfile(profile),
               recommendedTemplateIds: recommendModule
                 .recommendTemplatesForBlock(profile, candidates)
                 .recommended.slice(0, 256)
@@ -1480,6 +1475,39 @@ function rootDiscoveryText(
   return `${catalog}\n\nNo returned root is write-enabled. Durable file output is unavailable: restart the server with --allow-write <directory>. Do not fall back to a shell or CLI converter.`;
 }
 
+/**
+ * The wire profile, copied field by field. The wire schema is strict and
+ * Squisq's profile grows between releases (`listShape` most recently), so
+ * spreading it fails output validation as soon as an upstream field appears.
+ */
+function wireContentProfile(profile: BlockContentProfile): TemplateContentProfile {
+  return {
+    hasImage: profile.hasImage,
+    imageCount: profile.imageCount,
+    hasVideo: profile.hasVideo,
+    hasBlockquote: profile.hasBlockquote,
+    hasList: profile.hasList,
+    hasTable: profile.hasTable,
+    hasDate: profile.hasDate,
+    hasNumberHighlight: profile.hasNumberHighlight,
+    wordCount: profile.wordCount,
+    hasCompoundBody: profile.hasCompoundBody ?? false,
+    hasAsciiDiagram: profile.hasAsciiDiagram ?? false,
+    hasTimeline: profile.hasTimeline ?? false,
+    hasTree: profile.hasTree ?? false,
+    // What a list-only body is a picture of: the reading automatic template
+    // selection acts on, so an agent can see what will be drawn and why.
+    listShape: profile.listShape
+      ? {
+          shape: toWireIdentifier(profile.listShape.shape, 'shape'),
+          templateId: toWireIdentifier(profile.listShape.template, 'template'),
+          confidence: profile.listShape.confidence,
+          reason: boundWireText(profile.listShape.reason),
+        }
+      : null,
+  };
+}
+
 type AuthoringTemplateCatalog = Awaited<ReturnType<typeof authoringTemplateCatalog>>;
 
 function focusedAuthoringTemplates(
@@ -1597,39 +1625,45 @@ async function authoringTemplateCatalog() {
     TEMPLATE_METADATA,
   } = await import('@bendyline/squisq/doc');
   const authoring = TEMPLATE_AUTHORING_METADATA as Record<string, TemplateAuthoringMetadata>;
-  return getAvailableTemplates()
-    .slice(0, MCP_WIRE_LIMITS.arrayEntries)
-    .map((id) => {
-      const metadata = TEMPLATE_METADATA[id];
-      const behavior = authoring[id];
-      if (!behavior) throw new Error(`Template "${id}" has no authoring metadata`);
-      const inputs = (TEMPLATE_INPUT_DESCRIPTORS[id] ?? [])
-        .slice(0, MCP_WIRE_LIMITS.arrayEntries)
-        .map((input) => ({
-          key: requireWireIdentifier(input.key, 'template input key'),
-          description: boundWireText(input.description),
-          type: boundWireText(input.coerce ?? 'string', MCP_WIRE_LIMITS.labelCharacters, 'string'),
-          required: input.required ?? false,
-          values: boundWireTextArray(
-            input.values ?? [],
-            MCP_WIRE_LIMITS.arrayEntries,
-            MCP_WIRE_LIMITS.labelCharacters,
-          ),
-          valueHint: boundNullableWireText(input.valueHint, MCP_WIRE_LIMITS.labelCharacters),
-        }));
-      const required = inputs
-        .filter((input) => input.required)
-        .map((input) => `${input.key}="…"`)
-        .join(' ');
-      return {
-        id: requireWireIdentifier(id, 'template id'),
-        label: boundWireText(metadata?.label ?? id, MCP_WIRE_LIMITS.labelCharacters, id),
-        description: boundWireText(metadata?.description ?? ''),
-        inputs,
-        ...behavior,
-        annotationExample: boundWireText(`# Heading {[${id}${required ? ` ${required}` : ''}]}`),
-      };
-    });
+  const ids = getAvailableTemplates().slice(0, MCP_WIRE_LIMITS.arrayEntries);
+  // A template that draws a list takes its ideas from the body, so its
+  // example is the heading with the list it draws.
+  const slides = new Map(
+    await Promise.all(ids.map(async (id) => [id, await shapeAnnotationExample(id)] as const)),
+  );
+  return ids.map((id) => {
+    const metadata = TEMPLATE_METADATA[id];
+    const behavior = authoring[id];
+    if (!behavior) throw new Error(`Template "${id}" has no authoring metadata`);
+    const inputs = (TEMPLATE_INPUT_DESCRIPTORS[id] ?? [])
+      .slice(0, MCP_WIRE_LIMITS.arrayEntries)
+      .map((input) => ({
+        key: requireWireIdentifier(input.key, 'template input key'),
+        description: boundWireText(input.description),
+        type: boundWireText(input.coerce ?? 'string', MCP_WIRE_LIMITS.labelCharacters, 'string'),
+        required: input.required ?? false,
+        values: boundWireTextArray(
+          input.values ?? [],
+          MCP_WIRE_LIMITS.arrayEntries,
+          MCP_WIRE_LIMITS.labelCharacters,
+        ),
+        valueHint: boundNullableWireText(input.valueHint, MCP_WIRE_LIMITS.labelCharacters),
+      }));
+    const required = inputs
+      .filter((input) => input.required)
+      .map((input) => `${input.key}="…"`)
+      .join(' ');
+    return {
+      id: requireWireIdentifier(id, 'template id'),
+      label: boundWireText(metadata?.label ?? id, MCP_WIRE_LIMITS.labelCharacters, id),
+      description: boundWireText(metadata?.description ?? ''),
+      inputs,
+      ...behavior,
+      annotationExample: boundWireText(
+        slides.get(id) ?? `# Heading {[${id}${required ? ` ${required}` : ''}]}`,
+      ),
+    };
+  });
 }
 
 /**

@@ -4,7 +4,6 @@
     <dependencies>
         <deployment identifier="iOS"/>
         <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="17105"/>
-        <capability name="System colors in document resources" minToolsVersion="11.0"/>
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
     </dependencies>
     <scenes>
@@ -14,10 +13,10 @@
                 <viewController id="01J-lp-oVM" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="snD-IY-ifK">
                         <rect key="frame" x="0" y="0" width="375" height="667"/>
-                        <color key="backgroundColor" systemColor="systemBackgroundColor"/>
+                        <color key="backgroundColor" red="0.13725490196078433" green="0.12156862745098039" blue="0.094117647058823528" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <subviews><imageView contentMode="scaleAspectFit" image="Splash" translatesAutoresizingMaskIntoConstraints="NO" id="db-launch-icon">
-                            <rect key="frame" x="127.5" y="273.5" width="120" height="120"/>
-                            <constraints><constraint firstAttribute="width" constant="120" id="db-icon-width"/><constraint firstAttribute="height" constant="120" id="db-icon-height"/></constraints>
+                            <rect key="frame" x="96" y="242" width="183" height="183"/>
+                            <constraints><constraint firstAttribute="width" constant="183" id="db-icon-width"/><constraint firstAttribute="height" constant="183" id="db-icon-height"/></constraints>
                         </imageView></subviews>
                         <constraints><constraint firstItem="db-launch-icon" firstAttribute="centerX" secondItem="snD-IY-ifK" secondAttribute="centerX" id="db-icon-x"/><constraint firstItem="db-launch-icon" firstAttribute="centerY" secondItem="snD-IY-ifK" secondAttribute="centerY" id="db-icon-y"/></constraints>
                     </view>
@@ -28,9 +27,6 @@
         </scene>
     </scenes>
     <resources>
-        <image name="Splash" width="1366" height="1366"/>
-        <systemColor name="systemBackgroundColor">
-            <color white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-        </systemColor>
+        <image name="Splash" width="1024" height="1024"/>
     </resources>
 </document>

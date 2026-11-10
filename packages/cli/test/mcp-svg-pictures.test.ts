@@ -249,7 +249,7 @@ describe('MCP SVG picture inspection and guidance', function () {
         check: string;
       };
     };
-    expect(guide.version).to.equal(11);
+    expect(guide.version).to.equal(12);
     expect(guide.workflow.some((step) => step.includes('pictures.choose'))).to.equal(true);
     const { pictures } = guide;
     const choose = pictures.choose.join('\n');

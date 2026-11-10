@@ -21,6 +21,7 @@ import type {
   DocBlocksHostAiAPI,
 } from '@bendyline/docblocks/host';
 import { imageModelFits } from '../Settings/image-model-facts.js';
+import { CloseIcon } from '../icons.js';
 import { AI_IMAGE_ASPECTS } from '@bendyline/docblocks/host';
 import {
   imageAccessSentence,
@@ -265,11 +266,11 @@ export function AiImagePanel({ ai, onClose }: AiImagePanelProps) {
         </div>
         <button
           type="button"
-          className="db-ai-review-close"
+          className="db-close-button db-ai-review-close"
           onClick={onClose}
           aria-label="Close Generate image"
         >
-          ×
+          <CloseIcon />
         </button>
       </div>
 

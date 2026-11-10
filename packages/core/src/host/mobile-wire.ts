@@ -303,7 +303,12 @@ export function createMobileFileSystemBridge(
 }
 
 const workspace = z
-  .object({ id, name: z.string().min(1).max(1024), rootPath: z.string().min(1).max(4096) })
+  .object({
+    id,
+    name: z.string().min(1).max(1024),
+    rootPath: z.string().min(1).max(4096),
+    deletedWithApp: z.boolean().optional(),
+  })
   .strict();
 export function parseMobileBootstrap(value: unknown) {
   return z

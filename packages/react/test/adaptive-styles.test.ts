@@ -21,9 +21,13 @@ describe('adaptive styles', () => {
   });
 
   it('keeps only the media queries that cannot be attributes', () => {
+    // User and display preferences the browser alone knows; forced-colors is
+    // Windows High Contrast, which repaints the page itself.
     const queries = (styles.match(/@media[^{]*/g) ?? []).map((query) => query.trim());
     for (const query of queries) {
-      expect(query).to.match(/prefers-color-scheme|prefers-reduced-motion|display-mode/);
+      expect(query).to.match(
+        /prefers-color-scheme|prefers-reduced-motion|display-mode|forced-colors/,
+      );
     }
   });
 
@@ -104,6 +108,27 @@ describe('adaptive styles', () => {
       /\.db-shell-editor-area \{[^}]*var\(--db-safe-bottom\) \+ var\(--db-keyboard-inset\)/s,
     );
     expect(styles).to.not.match(/\.squisq-status-bar \{[^}]*padding-bottom/s);
+  });
+
+  it('lifts text-entry dialogs clear of the on-screen keyboard on touch only', () => {
+    // Desktop dialogs stay centered: every rule that re-anchors an overlay for
+    // typing is scoped to a coarse pointer.
+    const rules = styles.match(/[^{}]*\.db-dialog-overlay:has\([^{]*\{[^}]*\}/gs) ?? [];
+    expect(rules, 'text-entry overlay rules missing').to.have.length.greaterThan(0);
+    for (const rule of rules) {
+      expect(rule.trimStart()).to.match(/^(\/\*[\s\S]*?\*\/\s*)?:root\[data-db-pointer='coarse'\]/);
+    }
+    const anchor = rules.find((rule) => rule.includes('align-items: flex-start'));
+    expect(anchor, 'overlay anchor rule missing').to.not.equal(undefined);
+    expect(anchor).to.include('var(--db-keyboard-inset)');
+  });
+
+  it('hands Squisq the keyboard height from <html>, where the hook writes it', () => {
+    // A `.db-shell` declaration would resolve against the shell's own 0px
+    // default rather than the live value on <html>.
+    expect(styles).to.match(
+      /^:root \{\s*--squisq-keyboard-inset: var\(--db-keyboard-inset\);\s*\}/m,
+    );
   });
 
   it('keeps pinch-zoom available while removing the double-tap delay', () => {

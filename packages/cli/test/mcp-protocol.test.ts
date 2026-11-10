@@ -432,8 +432,33 @@ describe('MCP protocol surface', function () {
       standaloneWarning?: unknown;
       workflow?: unknown[];
       templates?: Array<{ id?: unknown; bodyPolicy?: unknown; annotationExample?: unknown }>;
+      drawnLists?: {
+        guide?: string[];
+        templates?: Array<{ id?: string; items?: string; example?: string }>;
+        check?: string;
+      };
     };
-    expect(authoringPayload.version).to.equal(11);
+    expect(authoringPayload.version).to.equal(12);
+    // What makes a list a picture, and a worked slide for each drawing.
+    expect(authoringPayload.drawnLists?.guide?.[0]).to.include('one list of 2–6 short items');
+    expect(authoringPayload.drawnLists?.templates?.map((entry) => entry.id)).to.include.members([
+      'cards',
+      'process',
+      'cycle',
+      'stats',
+      'funnel',
+      'matrix',
+    ]);
+    const matrixShape = authoringPayload.drawnLists?.templates?.find(
+      (entry) => entry.id === 'matrix',
+    );
+    expect(matrixShape?.items).to.equal('exactly 4');
+    expect(matrixShape?.example).to.match(/^# .*\{\[matrix xAxis="Effort" yAxis="Impact"\]\}/u);
+    expect(authoringPayload.drawnLists?.check).to.include('template-shape-unmet');
+    // A template that draws a list is exemplified by the slide, not a bare heading.
+    expect(
+      String(authoringPayload.templates?.find((entry) => entry.id === 'venn')?.annotationExample),
+    ).to.include('- Both: accessibility and testing');
     expect(authoringPayload.markdownAnnotation).to.equal('# Heading {[templateId key="value"]}');
     expect(authoringPayload.standaloneWarning).to.include('heading-less block');
     expect(

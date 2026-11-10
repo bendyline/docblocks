@@ -29,12 +29,14 @@ describe('export warnings', function () {
   // The first export loads the PDF converter cold.
   this.timeout(30_000);
 
-  it('refuses a lossy Japanese PDF before saving anything', async () => {
+  // Ethiopic is a script Squisq's PDF fonts do not cover. Japanese stopped
+  // serving here when squisq-formats 2.8.17 embedded CJK fonts.
+  it('refuses a lossy Amharic PDF before saving anything', async () => {
     const saved: Blob[] = [];
     let failure: unknown;
     try {
       await runExport(
-        '# Notes\n\n日本語のテキスト\n',
+        '# Notes\n\nሰላም ዓለም\n',
         '/notes.md',
         { ...DEFAULT_OPTIONS, format: 'pdf' },
         null,
@@ -57,7 +59,7 @@ describe('export warnings', function () {
   it('saves the PDF with replacements when the user asks, and says what was replaced', async () => {
     const saved: Blob[] = [];
     const result = await runExport(
-      '# Notes\n\n日本語のテキスト\n',
+      '# Notes\n\nሰላም ዓለም\n',
       '/notes.md',
       { ...DEFAULT_OPTIONS, format: 'pdf' },
       null,

@@ -2,10 +2,10 @@
  * Windows update signature check.
  *
  * electron-updater verifies a downloaded NSIS update by running
- * Get-AuthenticodeSignature under a fixed 20 s timeout. The Windows feed
- * publishes the combined x64 + arm64 installer (about 1.3 GB), and Windows can
- * take longer than that to verify a file it has only just written — one
- * machine measured 24 s. The timeout discarded every completed download and
+ * Get-AuthenticodeSignature under a fixed 20 s timeout. The Windows feeds
+ * publish installers of up to 1.4 GB (the combined x64 + arm64 one), and
+ * Windows can take longer than that to verify a file it has only just written —
+ * one machine measured 24 s. The timeout discarded every completed download and
  * surfaced as a generic update failure on each launch.
  *
  * This makes the same check — Authenticode status plus electron-updater's

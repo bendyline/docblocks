@@ -2,8 +2,9 @@
  * WorkspaceSettingsButton — gear icon dropdown for workspace actions.
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import { WorkspaceIcon } from '../icons.js';
+import { fitWithinClippingAncestor } from '../components/fitWithinClip.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
 
 export interface WorkspaceSettingsButtonProps {
@@ -34,6 +35,12 @@ export function WorkspaceSettingsButton({
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [closeMenu, isOpen]);
+
+  // The menu hangs from the button's right edge, which on a phone's drawer
+  // sits mid-row; keep it inside the sidebar rather than clipped by it.
+  useLayoutEffect(() => {
+    if (isOpen && menuRef.current) fitWithinClippingAncestor(menuRef.current);
+  }, [isOpen, menuRef]);
 
   const handleAction = useCallback(
     (action: () => void) => {

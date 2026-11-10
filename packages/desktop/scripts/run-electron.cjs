@@ -9,8 +9,6 @@
  * instead of as the GUI app, the BrowserWindow never opens, and the
  * developer spends an hour wondering what's wrong. We strip the variable
  * before spawning.
- *
- * Pattern: /Volumes/Bendyline/gh/qualla-internal/app/scripts/run-electron.js
  */
 
 const { spawn } = require('child_process');

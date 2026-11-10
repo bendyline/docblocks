@@ -26,6 +26,7 @@ import type {
 } from '@bendyline/docblocks/host';
 
 import { Dialog } from '../components/Dialog.js';
+import { CloseIcon } from '../icons.js';
 import { useConfirmDialog } from '../components/useConfirmDialog.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
 import { unavailableSentence, useAiStatus } from './ai-status.js';
@@ -1185,11 +1186,11 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
         </div>
         <button
           type="button"
-          className="db-ai-review-close"
+          className="db-close-button db-ai-review-close"
           onClick={onClose}
           aria-label="Close AI review"
         >
-          ×
+          <CloseIcon />
         </button>
       </div>
 

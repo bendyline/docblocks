@@ -297,7 +297,9 @@ for each architecture.
 
 The **Release Store Builds** workflow (`.github/workflows/store-release.yml`)
 builds the Mac App Store `.pkg` and x64 and arm64 Microsoft Store packages, with
-the mobile store builds, and attaches them only to a private draft release.
+the mobile store builds, and attaches them only to a private draft release. With
+`publish: testing` (the default), a separate job sends the Mac App Store `.pkg`
+to TestFlight; the Microsoft Store packages are always submitted by hand.
 
 ```bash
 # MAS needs embedded.provisionprofile and the MAS signing identities.
@@ -314,8 +316,10 @@ electron-builder appends it to the version (`2.7.8.42`), which App Store Connect
 rejects. The Microsoft Store reserves the fourth MSIX version field, so a Store
 resubmission needs a new desktop version. `check-store-packages.ts` reads the
 built bytes: each AppX package's identity, architecture, version and minimum
-Windows version against `electron-builder.yml`, that it holds no `uv.exe`, and
-the app's own check over its unpacked Gezel engines; for MAS, the installer and
+Windows version against `electron-builder.yml`, that it declares exactly the
+`runFullTrust`, `microphone` and `webcam` capabilities, that it holds no
+`uv.exe`, and the app's own check over its unpacked Gezel engines; for MAS, the
+installer and
 app signatures against the embedded profile's team, the entitlements,
 `Info.plist` (including the exempt-encryption declaration), the helper set, and
 the app's own runtime verifier over its Gezel engines.
@@ -324,6 +328,39 @@ Windows builds, Store and direct alike, leave out `uv.exe`. It only provisions
 Python for MLX, which never runs on Windows, and installs code at runtime.
 `stage-gezel-native.cjs` removes it and `main/ai/gezel-windows-native.ts` drops
 it from the pins Gezel verifies against. Change both together.
+
+### Windows update feeds
+
+Each release publishes three NSIS installers and one updater manifest for each:
+
+| Manifest               | Installer                                        | Read by                                                               |
+| ---------------------- | ------------------------------------------------ | --------------------------------------------------------------------- |
+| `latest-win-x64.yml`   | `DocBlocks-<version>-win-x64.exe`                | x64 installs after 2.7.14                                             |
+| `latest-win-arm64.yml` | `DocBlocks-<version>-win-arm64.exe`              | arm64 installs after 2.7.14, and x64 installs emulated on ARM64       |
+| `latest.yml`           | `DocBlocks-<version>-win.exe` (both in one file) | 2.7.14 and earlier; later versions when their own manifest is missing |
+
+An update therefore downloads only the build it installs, about a third of the
+combined installer on arm64.
+
+- electron-builder lists all three installers in one `latest.yml`. The release
+  workflow step "Prepare Windows updater manifest" runs
+  `scripts/prepare-windows-updater-manifest.ts`, which checks each installer's
+  size, SHA-512 and blockmap against that entry and then writes the three
+  manifests. The manifest names come from `main/updater-feed.ts` and a test
+  pins them: installed apps ask every later release for them.
+- Never stop publishing `latest.yml` or the combined installer. Versions up to
+  2.7.14 read nothing else, and it is what a later version falls back to.
+- `WindowsUpdater` (`main/updater-windows.ts`) selects the feed. An x64 build
+  emulated on an ARM64 machine follows the arm64 feed, as the combined installer
+  always installed the native build there.
+- electron-updater builds each update from the installer that was last run,
+  which it keeps in `%LOCALAPPDATA%\docblocks-desktop-updater`, and trusts that
+  file to be the one its blockmap describes. Before a differential download
+  `WindowsUpdater` compares the two sizes (`main/updater-differential.ts`) and
+  downloads the installer whole when they differ. Without that check the update
+  downloads a differential, fails its SHA-512, and downloads everything again.
+  That happened to every install whose last installer was a per-architecture
+  one while the feed named only the combined installer.
 
 ### Intel Macs
 

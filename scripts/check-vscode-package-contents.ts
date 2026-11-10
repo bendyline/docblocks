@@ -1,7 +1,7 @@
 /** Validate the exact file list that VSCE would place in the extension package. */
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -78,6 +78,197 @@ export function findForbiddenVsixPaths(
     if (rule) violations.push({ path: filePath, reason: rule.reason });
   }
   return violations;
+}
+
+/**
+ * Where `vsce package` must point the readme's relative links.
+ *
+ * vsce rewrites every relative link and image in README.md to an absolute URL,
+ * because the readme becomes the Marketplace page and the Details tab, where a
+ * relative path cannot load. It derives that base from `repository.url` alone
+ * and ignores `repository.directory`, so for this monorepo its guess is the
+ * repository root, where none of the files exist. 2.7.14 shipped its three
+ * Marketplace screenshots that way, all 404. `package:vsix` therefore passes
+ * both bases explicitly, and these must match the manifest's own repository.
+ */
+export interface VsixReadmeBaseUrls {
+  readonly content: string;
+  readonly images: string;
+}
+
+export function expectedVsixReadmeBaseUrls(repository: unknown): VsixReadmeBaseUrls {
+  if (
+    typeof repository !== 'object' ||
+    repository === null ||
+    !('url' in repository) ||
+    typeof repository.url !== 'string' ||
+    !('directory' in repository) ||
+    typeof repository.directory !== 'string'
+  ) {
+    throw new Error(
+      'packages/vscode/package.json needs repository.url and repository.directory to place readme links.',
+    );
+  }
+  const match = /^(?:git\+)?https:\/\/github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/u.exec(
+    repository.url,
+  );
+  if (!match) throw new Error(`repository.url must be a GitHub HTTPS URL: ${repository.url}`);
+  const directory = path.posix
+    .normalize(repository.directory.replaceAll('\\', '/'))
+    .replace(/^\.\/|\/+$/gu, '');
+  if (!directory || directory === '.' || directory.startsWith('..') || directory.startsWith('/')) {
+    throw new Error(`repository.directory must be a folder inside the repository: ${directory}`);
+  }
+  const repositoryUrl = `https://github.com/${match[1]}`;
+  return {
+    content: `${repositoryUrl}/blob/HEAD/${directory}`,
+    images: `${repositoryUrl}/raw/HEAD/${directory}`,
+  };
+}
+
+/** The base URLs a script's `vsce package` command passes, if any. */
+export function vscePackageBaseUrls(script: string): {
+  readonly packageCommand: boolean;
+  readonly content?: string;
+  readonly images?: string;
+} {
+  const command = script
+    .split('&&')
+    .map((part) => part.trim())
+    .find((part) => /^vsce\s+package(?:\s|$)/u.test(part));
+  if (!command) return { packageCommand: false };
+  const option = (name: string) => {
+    const value = new RegExp(`(?:^|\\s)--${name}(?:=|\\s+)(\\S+)`, 'u').exec(command)?.[1];
+    return value?.replace(/^(["'])(.*)\1$/u, '$2');
+  };
+  const content = option('baseContentUrl');
+  const images = option('baseImagesUrl');
+  return {
+    packageCommand: true,
+    ...(content ? { content } : {}),
+    ...(images ? { images } : {}),
+  };
+}
+
+export interface ReadmeLinkTarget {
+  readonly target: string;
+  readonly image: boolean;
+}
+
+/**
+ * The relative link and image targets vsce rewrites, found the way vsce 3.x
+ * finds them: Markdown links and images (including an image nested in a link's
+ * text), and `<img>`/`<video>` sources. Absolute URLs, anchors and `mailto:`
+ * are left alone, by vsce and here.
+ */
+export function relativeReadmeTargets(markdown: string): readonly ReadmeLinkTarget[] {
+  const found: ReadmeLinkTarget[] = [];
+  const isRelative = (link: string) =>
+    !/^\w+:\/\//u.test(link) && !link.startsWith('#') && !/^mailto:/iu.test(link);
+  const visit = (text: string) => {
+    for (const match of text.matchAll(/(!?)\[([^\][]*|!\[[^\][]*\]\([^)]+\))\]\(([^)]+)\)/gu)) {
+      const [, bang, title, link] = match;
+      if (title?.includes('](')) visit(title);
+      if (link && isRelative(link)) found.push({ target: link, image: bang === '!' });
+    }
+  };
+  visit(markdown);
+  for (const match of markdown.matchAll(/<(?:img|video)[^>]+src=["']([/.\w\s#-]+)['"][^>]*>/gu)) {
+    const link = match[1];
+    if (link && isRelative(link) && !link.startsWith('data:')) {
+      found.push({ target: link, image: true });
+    }
+  }
+  return found;
+}
+
+/** The package-relative file a readme target names, or null if it leaves the package. */
+function readmeTargetPath(target: string): string | null {
+  const withoutTitle = target.trim().split(/\s+/u, 1)[0] ?? '';
+  const withoutFragment = withoutTitle.split(/[?#]/u, 1)[0] ?? '';
+  let decoded: string;
+  try {
+    decoded = decodeURI(withoutFragment);
+  } catch {
+    return null;
+  }
+  const normalized = path.posix.normalize(decoded.replace(/^\/+/u, ''));
+  if (!normalized || normalized === '.' || normalized === '..' || normalized.startsWith('../')) {
+    return null;
+  }
+  return normalized;
+}
+
+export function findVsixReadmeLinkProblems(input: {
+  readonly readme: string;
+  readonly packageScript: string | undefined;
+  readonly expected: VsixReadmeBaseUrls;
+  readonly fileExists: (packageRelativePath: string) => boolean;
+}): readonly string[] {
+  const problems: string[] = [];
+  const passed = vscePackageBaseUrls(input.packageScript ?? '');
+  if (!passed.packageCommand) {
+    problems.push('package:vsix does not run `vsce package`.');
+  } else {
+    for (const [flag, key] of [
+      ['--baseContentUrl', 'content'],
+      ['--baseImagesUrl', 'images'],
+    ] as const) {
+      if (passed[key] !== input.expected[key]) {
+        problems.push(
+          `package:vsix must pass ${flag} ${input.expected[key]} (found ${passed[key] ?? 'none'}); ` +
+            'vsce ignores repository.directory, so its own guess points at the repository root.',
+        );
+      }
+    }
+  }
+  for (const { target, image } of relativeReadmeTargets(input.readme)) {
+    const file = readmeTargetPath(target);
+    if (file === null) {
+      problems.push(`README.md ${image ? 'image' : 'link'} ${target} leaves packages/vscode.`);
+    } else if (!input.fileExists(file)) {
+      problems.push(
+        `README.md ${image ? 'image' : 'link'} ${target} is not a file in packages/vscode.`,
+      );
+    }
+  }
+  return problems;
+}
+
+async function checkVsixReadmeLinks(): Promise<number> {
+  const manifest: unknown = JSON.parse(
+    await readFile(path.join(vscodePackageRoot, 'package.json'), 'utf8'),
+  );
+  if (typeof manifest !== 'object' || manifest === null) {
+    throw new Error('packages/vscode/package.json is not an object.');
+  }
+  const scripts = 'scripts' in manifest ? manifest.scripts : undefined;
+  const packageScript =
+    typeof scripts === 'object' &&
+    scripts !== null &&
+    'package:vsix' in scripts &&
+    typeof scripts['package:vsix'] === 'string'
+      ? scripts['package:vsix']
+      : undefined;
+  const readme = await readFile(path.join(vscodePackageRoot, 'README.md'), 'utf8');
+  const problems = findVsixReadmeLinkProblems({
+    readme,
+    packageScript,
+    expected: expectedVsixReadmeBaseUrls(
+      'repository' in manifest ? manifest.repository : undefined,
+    ),
+    fileExists: (file) => {
+      try {
+        return statSync(path.join(vscodePackageRoot, ...file.split('/'))).isFile();
+      } catch {
+        return false;
+      }
+    },
+  });
+  if (problems.length > 0) {
+    throw new Error('VSIX readme links would break:\n  ' + problems.join('\n  '));
+  }
+  return relativeReadmeTargets(readme).length;
 }
 
 function resolveVsceCli(): string {
@@ -218,10 +409,14 @@ export async function checkVsixPackageContents(): Promise<void> {
     );
   }
 
+  const readmeLinks = await checkVsixReadmeLinks();
+
   process.stdout.write(
     'VSIX package contents: ' +
       files.length +
-      ' files; no internal/test paths or dangling source maps.\n',
+      ' files; no internal/test paths or dangling source maps; ' +
+      readmeLinks +
+      ' relative readme links resolve under packages/vscode.\n',
   );
 }
 

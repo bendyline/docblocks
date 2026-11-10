@@ -27,6 +27,7 @@ import type {
   RecommendTemplatesResult,
   RootGrantSummary,
   TemplateContentProfile,
+  TemplateListShape,
   TemplateInputSummary,
   TemplateRecommendation,
   TemplateSummary,
@@ -743,6 +744,15 @@ export const authoringTemplateSummarySchema = templateSummarySchema
   })
   .strict() satisfies z.ZodType<AuthoringTemplateSummary>;
 
+export const templateListShapeSchema = z
+  .object({
+    shape: idSchema,
+    templateId: idSchema,
+    confidence: z.enum(['strong', 'weak']),
+    reason: boundedString,
+  })
+  .strict() satisfies z.ZodType<TemplateListShape>;
+
 export const templateContentProfileSchema = z
   .object({
     hasImage: z.boolean(),
@@ -758,6 +768,7 @@ export const templateContentProfileSchema = z
     hasAsciiDiagram: z.boolean(),
     hasTimeline: z.boolean(),
     hasTree: z.boolean(),
+    listShape: templateListShapeSchema.nullable(),
   })
   .strict() satisfies z.ZodType<TemplateContentProfile>;
 

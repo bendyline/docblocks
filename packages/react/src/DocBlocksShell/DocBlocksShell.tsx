@@ -44,6 +44,7 @@ import type {
   FileSystemProvider,
   FileSystemEntry,
   FileSystemEntryMoveOptions,
+  FileSystemSnapshotEntry,
   MemoryFileSystemProvider,
 } from '@bendyline/docblocks/filesystem';
 import {
@@ -358,7 +359,12 @@ import {
   relocateRecentDocuments,
 } from '../WorkspaceIndex/recent-documents.js';
 import { WorkspaceAuthorityBarrier } from './workspace-authority-barrier.js';
-import { copyTransientWorkspaceContents } from './transient-workspace-move.js';
+import {
+  copyTransientWorkspaceContents,
+  copyWorkspaceContents,
+  removeCopiedEntries,
+} from './transient-workspace-move.js';
+import { DeviceStorageNotice } from './DeviceStorageNotice.js';
 import {
   createDocumentRelativeMediaReader,
   createMediaContainer,
@@ -607,6 +613,14 @@ export interface DocBlocksShellProps {
    * hosts). Shown to the user once as a passive notice.
    */
   offlineReady?: boolean;
+  /**
+   * Called once, when startup has settled: the last document (or the route
+   * in the URL) has been restored, the default workspace opened, or an error
+   * shown in their place. Before then the shell can pass through placeholder
+   * states — an empty workspace, a sidebar still loading — so a host holding
+   * a splash screen over the shell drops it here.
+   */
+  onStartupSettled?: () => void;
 }
 
 function useOsTheme(): 'light' | 'dark' {
@@ -985,6 +999,7 @@ export function DocBlocksShell({
   allowPresentationWindow = true,
   allowPresentationFullscreen = true,
   offlineReady = false,
+  onStartupSettled,
 }: DocBlocksShellProps) {
   const osTheme = useOsTheme();
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
@@ -2551,6 +2566,15 @@ export function DocBlocksShell({
       ?.focus({ preventScroll: true });
   }, [focusAfterWelcome, welcomeScreenShown]);
 
+  // Workspaces the host deletes along with the app (Android's on-device
+  // storage), as it listed them at launch. A host fact, never persisted.
+  const [deletedWithAppIds, setDeletedWithAppIds] = useState<ReadonlySet<string>>(() => new Set());
+
+  // Startup reports once per shell, however many times the effect below runs.
+  const startupSettledRef = useRef(onStartupSettled);
+  startupSettledRef.current = onStartupSettled;
+  const startupSettledReported = useRef(false);
+
   // Initialise workspace on mount -- restore from hash or last-used
   useEffect(() => {
     const requestId = ++navigationRequestRef.current;
@@ -2584,6 +2608,15 @@ export function DocBlocksShell({
           workspaceIdRemap = reconciliation.idRemap;
           for (const workspace of hostWorkspaces) {
             if (workspace.isDefault === true) defaultHostWorkspaceIds.add(workspace.id);
+          }
+          if (isCurrent()) {
+            setDeletedWithAppIds(
+              new Set(
+                hostWorkspaces
+                  .filter((workspace) => workspace.deletedWithApp === true)
+                  .map((workspace) => workspace.id),
+              ),
+            );
           }
         } catch {
           workspaceAuthorityBarrier.markReady();
@@ -2789,13 +2822,22 @@ export function DocBlocksShell({
       } finally {
         if (!adopted) await getFileSystemProviderV2(fsProvider)?.dispose();
       }
-    })().catch(() => {
-      if (isCurrent()) {
-        setWorkspaceStartupError(
-          'DocBlocks could not initialize your workspace. Restart the app or open the folder again.',
-        );
-      }
-    });
+    })()
+      .catch(() => {
+        if (isCurrent()) {
+          setWorkspaceStartupError(
+            'DocBlocks could not initialize your workspace. Restart the app or open the folder again.',
+          );
+        }
+      })
+      .finally(() => {
+        // A run cancelled by unmount (or StrictMode's rehearsal) settles early
+        // and proves nothing. One superseded by the user's own navigation does
+        // count: the shell is already in their hands.
+        if (cancelled || startupSettledReported.current) return;
+        startupSettledReported.current = true;
+        startupSettledRef.current?.();
+      });
 
     return () => {
       cancelled = true;
@@ -3788,6 +3830,122 @@ export function DocBlocksShell({
       // User cancelled or API not supported
     }
   }, [adoptSelectedDocument, pushHash, transitionAwayFromDocument]);
+
+  // A workspace the host deletes along with the app (Android's on-device
+  // storage) offers to move its documents into a folder that outlives it.
+  const [movingToFolder, setMovingToFolder] = useState(false);
+  const handleMoveToFolder = useCallback(async () => {
+    const workspaces = maybeGetDocBlocksHost()?.workspaces;
+    if (!workspaces?.pickFolder || !provider || !activeWorkspaceId) return;
+    if (!deletedWithAppIds.has(activeWorkspaceId)) return;
+    const source = provider;
+    const sourceWorkspaceId = activeWorkspaceId;
+    const file = selectedFile;
+    // The shell releases the active provider the moment the folder takes over,
+    // and the originals are removed after that; hold it open until then.
+    const sourceV2 = getFileSystemProviderV2(source);
+    const releaseSource = sourceV2 ? retainFileSystemProvider(sourceV2) : () => undefined;
+    setMovingToFolder(true);
+    let destinationProvider: FileSystemProvider | null = null;
+    let adopted = false;
+    try {
+      const info = await workspaces.pickFolder();
+      if (!info) return;
+      const requestId = ++navigationRequestRef.current;
+      const descriptor: WorkspaceDescriptor = {
+        id: info.id,
+        name: info.name,
+        type: 'host-native',
+        rootPath: info.rootPath,
+        lastOpened: new Date().toISOString(),
+      };
+      await saveWorkspace(descriptor);
+      destinationProvider = await createHostFileSystemProvider(info.id, info.name, info.rootPath);
+      const destination = destinationProvider;
+
+      // The open document is flushed first and reopened from its new home in
+      // the same step, so no edit lands in the copy left behind.
+      let copied: readonly FileSystemSnapshotEntry[] = [];
+      if (file) {
+        const moved = await documentSession.transitionWithLoad(async () => {
+          if (requestId !== navigationRequestRef.current) return null;
+          copied = await copyWorkspaceContents(source, destination);
+          const content = await readProviderText(destination, file);
+          if (content === null) throw new Error('The open document did not reach the folder.');
+          return { target: createDocumentTarget(destination, descriptor.id, file), content };
+        });
+        if (!moved) throw new Error('The move was interrupted by another navigation request.');
+      } else {
+        copied = await copyWorkspaceContents(source, destination);
+        if (!(await transitionAwayFromDocument(requestId))) {
+          throw new Error('The move was interrupted by another navigation request.');
+        }
+      }
+
+      adopted = true;
+      setProvider(destination);
+      setActiveWorkspaceId(descriptor.id);
+      setActiveWorkspaceDescriptor(descriptor);
+      if (file) adoptRegularDocument(file);
+      else adoptSelectedDocument(null);
+      setPinnedDocuments((current) =>
+        movePinnedDocumentsToWorkspace(current, sourceWorkspaceId, {
+          workspaceId: descriptor.id,
+          workspaceName: descriptor.name,
+        }),
+      );
+      setSelectedFolder(null);
+      setFolderEntries([]);
+      setExplorerKey((key) => key + 1);
+      pushHash(descriptor.id, file);
+      if (file) {
+        saveLastState({
+          workspaceId: descriptor.id,
+          filePath: file,
+          view: loadLastState()?.view ?? 'wysiwyg',
+        });
+      }
+      void touchWorkspace(descriptor.id).catch(() => undefined);
+      // Launch in the folder from now on, wherever the host keeps that choice.
+      await workspaces.setDefault?.(descriptor.id).catch(() => undefined);
+
+      const kept = await removeCopiedEntries(source, copied).catch(() => copied.length);
+      setDescriptorRefreshKey((key) => key + 1);
+      showToast(
+        'success',
+        kept === 0
+          ? `Your documents are now in ${descriptor.name}.`
+          : `Your documents are now in ${descriptor.name}. Some copies changed during the move and also stayed on this device.`,
+      );
+    } catch (error: unknown) {
+      if (destinationProvider && !adopted) {
+        await getFileSystemProviderV2(destinationProvider)
+          ?.dispose()
+          .catch(() => undefined);
+      }
+      await acknowledge({
+        title: 'Your documents were not moved',
+        message:
+          `They are still on this device. ${error instanceof Error ? error.message : ''}`.trim(),
+      });
+    } finally {
+      releaseSource();
+      setMovingToFolder(false);
+    }
+  }, [
+    acknowledge,
+    activeWorkspaceId,
+    adoptRegularDocument,
+    adoptSelectedDocument,
+    createDocumentTarget,
+    deletedWithAppIds,
+    documentSession,
+    provider,
+    pushHash,
+    selectedFile,
+    showToast,
+    transitionAwayFromDocument,
+  ]);
 
   // A clone finished: the host already registered + persisted the folder,
   // so opening it mirrors the pickFolder success path exactly.
@@ -5939,6 +6097,14 @@ export function DocBlocksShell({
                 <GitGrantNotice />
               </Suspense>
             )}
+            {activeWorkspaceId !== null &&
+              deletedWithAppIds.has(activeWorkspaceId) &&
+              hostSupports('workspaceFolderPicker') && (
+                <DeviceStorageNotice
+                  onMove={() => void handleMoveToFolder()}
+                  moving={movingToFolder}
+                />
+              )}
             <div className="db-shell-sidebar-footer">
               {/* Site links belong to the browser build; the apps reach Docs
                   from the app menu. Every surface keeps Report issue: Google

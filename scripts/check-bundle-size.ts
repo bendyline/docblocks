@@ -11,6 +11,8 @@ interface BundleSurface {
   aggregateBudget?: {
     directory: string;
     extensions: readonly string[];
+    /** Files left out of the total by name, such as font data shipped as JS. */
+    excludedFiles?: RegExp;
     budgetBytes: number;
   };
   /**
@@ -127,6 +129,11 @@ const surfaces: BundleSurface[] = [
     aggregateBudget: {
       directory: 'packages/vscode/dist/webview',
       extensions: ['.js', '.css'],
+      // Squisq's PDF export embeds its fonts as lazily imported JS modules
+      // (`cjkFontData.generated-*.js` and siblings, ~26 MB as of
+      // squisq-formats 2.8.17). They are font payload, so they are excluded
+      // like the webview's font files.
+      excludedFiles: /FontData\.generated-[^/]*\.js$/,
       // Mermaid's diagram families are separate deferred chunks, but the
       // aggregate gate still accounts for their complete shipped footprint.
       // Deliberately loose (~18% over the 42.5 MB measured in October 2026):
@@ -156,15 +163,20 @@ async function findAssetByPrefix(assetsDir: string, prefix: string): Promise<str
 async function sumFilesWithExtensions(
   directory: string,
   extensions: readonly string[],
+  excluded?: RegExp,
 ): Promise<number> {
   const entries = await readdir(directory, { withFileTypes: true });
   const sizes = await Promise.all(
     entries.map(async (entry) => {
       const entryPath = path.join(directory, entry.name);
       if (entry.isDirectory()) {
-        return sumFilesWithExtensions(entryPath, extensions);
+        return sumFilesWithExtensions(entryPath, extensions, excluded);
       }
-      if (!entry.isFile() || !extensions.includes(path.extname(entry.name))) {
+      if (
+        !entry.isFile() ||
+        !extensions.includes(path.extname(entry.name)) ||
+        excluded?.test(entry.name)
+      ) {
         return 0;
       }
       return (await stat(entryPath)).size;
@@ -264,6 +276,7 @@ async function assertSurface(surface: BundleSurface): Promise<string[]> {
     const aggregateSize = await sumFilesWithExtensions(
       surface.aggregateBudget.directory,
       surface.aggregateBudget.extensions,
+      surface.aggregateBudget.excludedFiles,
     );
     if (aggregateSize > surface.aggregateBudget.budgetBytes) {
       throw new Error(

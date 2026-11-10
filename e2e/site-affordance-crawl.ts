@@ -20,6 +20,13 @@
  *
  * Optional AFFORDANCE_SURFACES=desktop-slideshow,desktop-write,... and
  * AFFORDANCE_SCENARIOS=slides,caret,shortcuts,links (both default to all).
+ * AFFORDANCE_PHONE_WIDTH=360 narrows the phone surfaces (default 390), and
+ * AFFORDANCE_FAKE_SPEECH=1 gives the site a speech engine like the apps', so
+ * the microphone, narration and their Settings sections are crawled too.
+ *
+ * Every action also records layout overflow: the page scrolling sideways,
+ * anything cut off by an ancestor that clips, and any container that scrolls
+ * sideways. The contact sheet flags them.
  *
  * Output: NNN-*.png, actions.json, and index.html — a contact sheet that puts
  * every screenshot beside the action that produced it. Like the other drivers
@@ -34,6 +41,7 @@ import {
   type Page,
 } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { installFakeSpeechHost } from './helpers/fake-speech-host.js';
 import path from 'node:path';
 
 const BASE_URL = (process.env.LIVE_UX_BASE_URL ?? 'http://127.0.0.1:5240').replace(/\/$/, '');
@@ -63,6 +71,73 @@ const SCENARIO_FILTER = listFilter('AFFORDANCE_SCENARIOS');
  * ends in a corrupted document also says which action corrupted it.
  */
 const DOC_TRACE = process.env.AFFORDANCE_DOC_TRACE === '1';
+const PHONE_WIDTH = Number(process.env.AFFORDANCE_PHONE_WIDTH ?? 390);
+const FAKE_SPEECH = process.env.AFFORDANCE_FAKE_SPEECH === '1';
+
+/**
+ * Layout overflow on screen now, outermost offender first: the page scrolling
+ * sideways, an element cut off by the nearest ancestor that clips it (or past
+ * the viewport when nothing does), and containers that scroll sideways. The
+ * document, Monaco, canvases, the timeline track and hidden chrome are left
+ * out; their content scrolls or clips on purpose. A string for the same reason as the outline
+ * script below. Squisq's toolbar tolerates a 2px overhang, so this does too.
+ */
+const OVERFLOW_SCRIPT = `(() => {
+  const slack = 2.5;
+  const viewport = document.documentElement.clientWidth;
+  const found = [];
+  const reported = [];
+  const describe = (node) => {
+    const raw = typeof node.className === 'string' ? node.className : '';
+    const first = raw.trim().split(/\\s+/)[0];
+    const label = node.getAttribute('aria-label');
+    return node.tagName.toLowerCase() + (first ? '.' + first : '') +
+      (label ? '[' + label.slice(0, 40) + ']' : '');
+  };
+  const ignored = (node) =>
+    node.closest('.monaco-editor, .ProseMirror, svg, canvas, [inert], [aria-hidden="true"], .db-visually-hidden, .squisq-scene-root, .squisq-timeline-scroll');
+  const shown = (node, rect) => {
+    if (rect.width < 1 || rect.height < 1) return false;
+    const style = getComputedStyle(node);
+    return style.visibility !== 'hidden' && style.opacity !== '0';
+  };
+  const overflowX = document.documentElement.scrollWidth - viewport;
+  if (overflowX > slack) found.push('page scrolls sideways by ' + overflowX + 'px');
+  for (const node of document.body.querySelectorAll('*')) {
+    if (ignored(node) || reported.some((outer) => outer.contains(node))) continue;
+    const rect = node.getBoundingClientRect();
+    if (!shown(node, rect)) continue;
+    let clip = node.parentElement;
+    while (clip && clip !== document.body && getComputedStyle(clip).overflowX === 'visible') {
+      clip = clip.parentElement;
+    }
+    if (clip && clip !== document.body) {
+      const mode = getComputedStyle(clip).overflowX;
+      const box = clip.getBoundingClientRect();
+      const past = Math.max(rect.right - box.right, box.left - rect.left);
+      if ((mode === 'hidden' || mode === 'clip') && past > slack) {
+        found.push(describe(node) + ' cut off by ' + describe(clip) + ' (' + Math.round(past) + 'px)');
+        reported.push(node);
+      }
+    } else {
+      const past = Math.max(rect.right - viewport, -rect.left);
+      if (past > slack) {
+        found.push(describe(node) + ' past the viewport (' + Math.round(past) + 'px)');
+        reported.push(node);
+      }
+    }
+  }
+  for (const node of document.body.querySelectorAll('*')) {
+    if (ignored(node)) continue;
+    const mode = getComputedStyle(node).overflowX;
+    if (mode !== 'auto' && mode !== 'scroll') continue;
+    const extra = node.scrollWidth - node.clientWidth;
+    if (node.clientWidth > 0 && extra > slack) {
+      found.push(describe(node) + ' scrolls sideways by ' + extra + 'px');
+    }
+  }
+  return found.slice(0, 25);
+})()`;
 
 /**
  * One line per top-level node with its direct children, read from Tiptap's
@@ -135,6 +210,8 @@ interface ActionRecord {
   ms: number;
   /** Document outline after the action (AFFORDANCE_DOC_TRACE=1). */
   docAfter?: string[] | null;
+  /** Layout overflow on screen after the action (see OVERFLOW_SCRIPT). */
+  overflow?: string[];
 }
 
 interface ScenarioRecord {
@@ -296,6 +373,7 @@ async function openContext(
     locale: 'en-US',
     permissions: ['clipboard-read', 'clipboard-write'],
   });
+  if (FAKE_SPEECH) await installFakeSpeechHost(context);
   const page = await context.newPage();
   wire(context, page);
   return { context, page };
@@ -471,6 +549,7 @@ async function record(
     entry.opened = await visibleOverlays(page);
     entry.screenshot = `${String(++shotCounter).padStart(3, '0')}-${slug(`${surface}-${actionPath.join('-')}`)}.png`;
     await writeFile(path.join(OUT_DIR, entry.screenshot), after);
+    entry.overflow = await overflowFindings(page);
     entry.verdict = verdictFor(
       { url: urlBefore },
       { url: entry.urlAfter, opened: entry.opened, changed: !before.equals(after) },
@@ -494,6 +573,10 @@ async function record(
   return entry;
 }
 
+async function overflowFindings(page: Page): Promise<string[]> {
+  return ((await page.evaluate(OVERFLOW_SCRIPT).catch(() => null)) as string[] | null) ?? [];
+}
+
 async function menuItemLabels(page: Page): Promise<string[]> {
   return page
     .locator(
@@ -509,6 +592,23 @@ async function menuItemLabels(page: Page): Promise<string[]> {
         )
         .filter(Boolean),
     );
+}
+
+/** Whether the visible menu item at `index` is disabled (nothing to click). */
+async function menuItemDisabled(page: Page, index: number): Promise<boolean> {
+  const items = page.locator(
+    `:is(${OVERLAY_SELECTOR}) :is([role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"])`,
+  );
+  const visible: Locator[] = [];
+  for (const item of await items.all()) {
+    if (await item.isVisible().catch(() => false)) visible.push(item);
+  }
+  const target = visible[index];
+  if (!target) return false;
+  return target.evaluate(
+    (element) =>
+      element.getAttribute('aria-disabled') === 'true' || element.hasAttribute('disabled'),
+  );
 }
 
 /**
@@ -561,6 +661,7 @@ async function crawlSurface(browser: Browser, surface: Surface): Promise<void> {
       events: emptyEvents(),
       verdict: 'no-visible-effect',
       ms: 0,
+      overflow: await overflowFindings(page),
     });
     const controls = await stampControls(page, surface.roots, attribute);
     say(`  ${controls.length} controls`);
@@ -620,12 +721,34 @@ async function crawlSurface(browser: Browser, surface: Surface): Promise<void> {
       if (items.length === 0) continue;
       result.menuItems = items;
       await persist();
+      // A disabled item (Read aloud before any voice is downloaded) has
+      // nothing to click; record it as such rather than as a timeout.
+      const disabledItems: boolean[] = [];
+      for (let index = 0; index < items.length; index++) {
+        disabledItems.push(await menuItemDisabled(page, index));
+      }
       const indexed = items.map((label, index) => ({ label, index }));
       const ordered = [
         ...indexed.filter((item) => !DESTRUCTIVE.test(item.label)),
         ...indexed.filter((item) => DESTRUCTIVE.test(item.label)),
       ].slice(0, MAX_MENU_ITEMS);
       for (const { label: item, index } of ordered) {
+        if (disabledItems[index]) {
+          actions.push({
+            id: actions.length + 1,
+            surface: surface.name,
+            path: [control.label, item],
+            screenshot: null,
+            urlBefore: page.url(),
+            urlAfter: page.url(),
+            opened: [],
+            disabled: true,
+            events: emptyEvents(),
+            verdict: 'no-visible-effect',
+            ms: 0,
+          });
+          continue;
+        }
         const destructive = DESTRUCTIVE.test(item);
         if (destructive) await reset(true);
         else if (!(await dismiss(page)) || page.url() !== homeUrl) await reset();
@@ -733,7 +856,7 @@ const SURFACES: Surface[] = [
   },
   {
     name: 'phone-write',
-    viewport: { width: 390, height: 844 },
+    viewport: { width: PHONE_WIDTH, height: 844 },
     mobile: true,
     prepare: async (page) => {
       const tour = page.getByRole('button', { name: 'Tour the welcome document' });
@@ -745,7 +868,7 @@ const SURFACES: Surface[] = [
   },
   {
     name: 'phone-files',
-    viewport: { width: 390, height: 844 },
+    viewport: { width: PHONE_WIDTH, height: 844 },
     mobile: true,
     prepare: async (page) => {
       const tour = page.getByRole('button', { name: 'Tour the welcome document' });
@@ -1005,6 +1128,7 @@ async function writeIndex(): Promise<void> {
           ? `native: ${action.events.nativeDialogs.join(' | ')}`
           : '',
         action.disabled ? 'disabled' : '',
+        action.overflow?.length ? `overflow: ${action.overflow.join('; ')}` : '',
         action.error ?? '',
       ]
         .filter(Boolean)
@@ -1045,7 +1169,9 @@ figure img,.grid img{width:100%}figure.error{border-color:#c00}figure.no-visible
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}.grid a{font-size:11px;color:#555}
 </style><h1>Affordance crawl — ${escapeHtml(BASE_URL)}</h1><p>${actions.length} actions, ${
       actions.filter((a) => a.verdict === 'error').length
-    } errors, ${actions.filter((a) => a.verdict === 'no-visible-effect').length} with no visible effect; ${surfaceFailures.length} aborted surfaces.</p>${surfaceFailures.map((failure) => `<section><h2>${escapeHtml(failure.name)} — aborted</h2><pre>${escapeHtml(failure.error)}</pre></section>`).join('')}${scenarioRows}<h2>Actions</h2>${rows}`,
+    } errors, ${actions.filter((a) => a.verdict === 'no-visible-effect').length} with no visible effect, ${
+      actions.filter((a) => a.overflow?.length).length
+    } with layout overflow; ${surfaceFailures.length} aborted surfaces.</p>${surfaceFailures.map((failure) => `<section><h2>${escapeHtml(failure.name)} — aborted</h2><pre>${escapeHtml(failure.error)}</pre></section>`).join('')}${scenarioRows}<h2>Actions</h2>${rows}`,
   );
 }
 

@@ -431,7 +431,9 @@ player" placeholder.
 Diagnostics are stable records with code, severity, stage, optional format and
 location, occurrence count, remediation, and retryability. A result publishes at
 most 500 entries; overflow is aggregated by severity so reports remain bounded.
-`standalone-template-block` identifies annotations that accidentally created an
+`template-shape-unmet` identifies an annotated block whose items its template
+cannot draw, such as `{[matrix]}` over three items; Squisq draws it as cards (or a
+process, or a list) and the diagnostic says why. `standalone-template-block` identifies annotations that accidentally created an
 extra heading-less block. `template-body-not-rendered` identifies body prose assigned
 to a template whose renderer ignores it, and `rendered-content-omitted` is an error
 when a complete-body template does not materialize all of its body text.
@@ -517,6 +519,36 @@ changing `autoTemplates` alone does not resolve that case. Preview the exported
 media as well as the source, and do not infer full content survival from the first
 frame. Short before/after bullets are usually more readable than dense tables at
 video dimensions.
+
+### Drawn lists
+
+`convert_document` draws a list as a picture of how its items relate when the
+heading and the items say so, with no annotation: a numbered list as steps,
+`Label: detail` items as cards, `Figure: what it measures` items as key numbers
+that count up, dated items as a timeline, and a cycle, layers, a pyramid, a
+funnel, a hub, a Venn diagram or a matrix when the heading names it. Only a list
+that is the whole body of its section is drawn; a paragraph beside it keeps the
+section as written. The rule, each cue, and a worked example per drawing are the
+linked Squisq's (`markdownShapeGuide`), where a test holds every example to the
+classifier that applies it. DocBlocks only decides where to say it:
+
+- one sentence in the server instructions, and the one-paragraph rule in the
+  `create-presentation` prompt and in a `get_authoring_context` workflow entry
+  (left out for a target that keeps lists as lists, such as DOCX);
+- the `drawnLists` section of `docblocks://authoring-guide`: the full guide, and
+  for each drawing its item count, its item order, and a whole-slide example;
+- `describe_template`, whose `annotationExample` for a template that draws a list
+  is the heading with the list it draws, since the list is its input.
+
+`recommend_templates` and `get_authoring_context` profile each block with its
+heading, as conversion does, and return `profile.listShape` for a list-only block:
+the relationship (`sequence`, `cycle`, `figures`, `hierarchy`…), the template that
+draws it, and whether the reading is `strong` (conversion applies it) or `weak`
+(only an annotation does). The wire profile is built field by field, so a field a
+later Squisq adds to its own profile cannot fail output validation.
+
+`inspect_document` reports `template-shape-unmet` when an annotated block asks for
+a drawing its items cannot make.
 
 ### Pictures
 

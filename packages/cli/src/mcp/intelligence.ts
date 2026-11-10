@@ -797,6 +797,17 @@ async function themeSummary(
   };
 }
 
+/**
+ * What to do about a Squisq document diagnostic, where there is one answer.
+ * `template-shape-unmet`: a concept template that cannot draw its own picture
+ * draws cards (or a process, or a list) instead, which is right for a reader
+ * and silent for an author.
+ */
+const DOC_DIAGNOSTIC_REMEDIATIONS: Readonly<Record<string, string>> = {
+  'template-shape-unmet':
+    'Give the block the items its template takes (describe_template returns a worked slide), or remove the annotation so the list is drawn as what it is.',
+};
+
 function mapDocDiagnostic(diagnostic: DocDiagnostic, format: string): McpDiagnostic {
   return {
     code: diagnostic.code,
@@ -805,7 +816,7 @@ function mapDocDiagnostic(diagnostic: DocDiagnostic, format: string): McpDiagnos
     format,
     count: 1,
     message: diagnostic.message,
-    remediation: null,
+    remediation: DOC_DIAGNOSTIC_REMEDIATIONS[diagnostic.code] ?? null,
     retryable: false,
     location: diagnostic.blockId
       ? {

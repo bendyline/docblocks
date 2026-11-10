@@ -16,15 +16,15 @@ This notice and `THIRD_PARTY_COMPONENTS.json` are included in the PWA precache.
 
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
-| @bendyline/squisq | 2.13.13 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq | 2.13.15 | MIT | https://github.com/bendyline/squisq |
 | @bendyline/squisq-calc | 2.11.2 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-editor-react | 2.13.20 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-formats | 2.8.15 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-editor-react | 2.13.22 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-formats | 2.8.17 | MIT | https://github.com/bendyline/squisq |
 | @bendyline/squisq-graph | 2.13.1 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-grid-react | 2.11.42 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-react | 2.12.25 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-video | 2.4.19 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-video-react | 2.5.26 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-grid-react | 2.11.44 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-react | 2.12.27 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-video | 2.4.21 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-video-react | 2.5.28 | MIT | https://github.com/bendyline/squisq |
 | @braintree/sanitize-url | 7.1.2 | MIT | https://github.com/braintree/sanitize-url |
 | @ffmpeg/ffmpeg | 0.12.15 | MIT | https://github.com/ffmpegwasm/ffmpeg.wasm |
 | @iconify/utils | 3.1.7 | MIT | https://github.com/iconify/iconify |
@@ -263,7 +263,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-calc@2.11.2, @bendyline/squisq-editor-react@2.13.20, @bendyline/squisq-formats@2.8.15, @bendyline/squisq-graph@2.13.1, @bendyline/squisq-grid-react@2.11.42, @bendyline/squisq-react@2.12.25, @bendyline/squisq-video-react@2.5.26, @bendyline/squisq-video@2.4.19, @bendyline/squisq@2.13.13
+Components: @bendyline/squisq-calc@2.11.2, @bendyline/squisq-editor-react@2.13.22, @bendyline/squisq-formats@2.8.17, @bendyline/squisq-graph@2.13.1, @bendyline/squisq-grid-react@2.11.44, @bendyline/squisq-react@2.12.27, @bendyline/squisq-video-react@2.5.28, @bendyline/squisq-video@2.4.21, @bendyline/squisq@2.13.15
 Source files: node_modules/@bendyline/squisq-calc/LICENSE, node_modules/@bendyline/squisq-editor-react/LICENSE, node_modules/@bendyline/squisq-formats/LICENSE, node_modules/@bendyline/squisq-graph/LICENSE, node_modules/@bendyline/squisq-grid-react/LICENSE, node_modules/@bendyline/squisq-react/LICENSE, node_modules/@bendyline/squisq-video-react/LICENSE, node_modules/@bendyline/squisq-video/LICENSE, node_modules/@bendyline/squisq/LICENSE
 ==============================================================================
 MIT License
@@ -323,7 +323,7 @@ repository license, the pinned upstream copy is vendored and identified below.
 COMPONENTS
 
 ==============================================================================
-Components: @bendyline/squisq-editor-react@2.13.20
+Components: @bendyline/squisq-editor-react@2.13.22
 Source files: node_modules/@bendyline/squisq-editor-react/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-editor-react
@@ -372,7 +372,7 @@ Exact third-party license texts for the bundled adapter, loader, state helper,
 and Font Awesome assets are shipped in THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq-editor-react@2.13.20, @tiptap/core@2.27.3, @tiptap/extension-blockquote@2.27.3, @tiptap/extension-bold@2.27.3, @tiptap/extension-bullet-list@2.27.3, @tiptap/extension-code-block@2.27.3, @tiptap/extension-code@2.27.3, @tiptap/extension-document@2.27.3, @tiptap/extension-dropcursor@2.27.3, @tiptap/extension-gapcursor@2.27.3, @tiptap/extension-hard-break@2.27.3, @tiptap/extension-heading@2.27.3, @tiptap/extension-history@2.27.3, @tiptap/extension-horizontal-rule@2.27.3, @tiptap/extension-image@2.27.3, @tiptap/extension-italic@2.27.3, @tiptap/extension-link@2.27.3, @tiptap/extension-list-item@2.27.3, @tiptap/extension-mention@2.27.3, @tiptap/extension-ordered-list@2.27.3, @tiptap/extension-paragraph@2.27.3, @tiptap/extension-placeholder@2.27.3, @tiptap/extension-strike@2.27.3, @tiptap/extension-table-cell@2.27.3, @tiptap/extension-table-header@2.27.3, @tiptap/extension-table-row@2.27.3, @tiptap/extension-table@2.27.3, @tiptap/extension-task-item@2.27.3, @tiptap/extension-task-list@2.27.3, @tiptap/extension-text@2.27.3, @tiptap/react@2.27.3, @tiptap/starter-kit@2.27.3, @tiptap/suggestion@2.27.3
+Components: @bendyline/squisq-editor-react@2.13.22, @tiptap/core@2.27.3, @tiptap/extension-blockquote@2.27.3, @tiptap/extension-bold@2.27.3, @tiptap/extension-bullet-list@2.27.3, @tiptap/extension-code-block@2.27.3, @tiptap/extension-code@2.27.3, @tiptap/extension-document@2.27.3, @tiptap/extension-dropcursor@2.27.3, @tiptap/extension-gapcursor@2.27.3, @tiptap/extension-hard-break@2.27.3, @tiptap/extension-heading@2.27.3, @tiptap/extension-history@2.27.3, @tiptap/extension-horizontal-rule@2.27.3, @tiptap/extension-image@2.27.3, @tiptap/extension-italic@2.27.3, @tiptap/extension-link@2.27.3, @tiptap/extension-list-item@2.27.3, @tiptap/extension-mention@2.27.3, @tiptap/extension-ordered-list@2.27.3, @tiptap/extension-paragraph@2.27.3, @tiptap/extension-placeholder@2.27.3, @tiptap/extension-strike@2.27.3, @tiptap/extension-table-cell@2.27.3, @tiptap/extension-table-header@2.27.3, @tiptap/extension-table-row@2.27.3, @tiptap/extension-table@2.27.3, @tiptap/extension-task-item@2.27.3, @tiptap/extension-task-list@2.27.3, @tiptap/extension-text@2.27.3, @tiptap/react@2.27.3, @tiptap/starter-kit@2.27.3, @tiptap/suggestion@2.27.3
 Source files: node_modules/@bendyline/squisq-editor-react/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-editor-react
@@ -3699,7 +3699,7 @@ copy of the Program in return for a fee.
                      END OF TERMS AND CONDITIONS
 
 ==============================================================================
-Components: @bendyline/squisq-formats@2.8.15
+Components: @bendyline/squisq-formats@2.8.17
 Source files: node_modules/@bendyline/squisq-formats/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-formats
@@ -3725,7 +3725,7 @@ texts for these dependencies are included in their respective npm
 distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-formats@2.8.15
+Components: @bendyline/squisq-formats@2.8.17
 Source files: node_modules/@bendyline/squisq-formats/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-formats
@@ -3735,8 +3735,377 @@ and notice files are reproduced verbatim. When an npm tarball omits its
 repository license, the pinned upstream copy is vendored and identified below.
 
 COMPONENTS
+- @expo-google-fonts/noto-emoji@0.4.8 (MIT AND OFL-1.1); files: LICENSE, LICENSE_FONT
+- @expo-google-fonts/noto-sans-kr@0.4.4 (MIT AND OFL-1.1); files: LICENSE, LICENSE_FONT
+- @expo-google-fonts/noto-sans-sc@0.4.4 (MIT AND OFL-1.1); files: LICENSE, LICENSE_FONT
 - @fortawesome/fontawesome-free@7.3.1 ((CC-BY-4.0 AND OFL-1.1 AND MIT)); files: LICENSE.txt
 - dejavu-fonts-ttf@2.37.3 (SEE LICENSE IN README.md AND LICENSE); files: LICENSE
+
+==============================================================================
+@expo-google-fonts/noto-emoji@0.4.8 - LICENSE
+==============================================================================
+MIT License
+
+Copyright (c) 2020 Expo
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+@expo-google-fonts/noto-emoji@0.4.8 - LICENSE_FONT
+==============================================================================
+Copyright 2013 Google LLC
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+https://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+==============================================================================
+@expo-google-fonts/noto-sans-kr@0.4.4 - LICENSE
+==============================================================================
+MIT License
+
+Copyright (c) 2020 Expo
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+@expo-google-fonts/noto-sans-kr@0.4.4 - LICENSE_FONT
+==============================================================================
+Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+https://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+==============================================================================
+@expo-google-fonts/noto-sans-sc@0.4.4 - LICENSE
+==============================================================================
+MIT License
+
+Copyright (c) 2020 Expo
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+@expo-google-fonts/noto-sans-sc@0.4.4 - LICENSE_FONT
+==============================================================================
+Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+https://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
 
 ==============================================================================
 @fortawesome/fontawesome-free@7.3.1 - LICENSE.txt
@@ -4129,7 +4498,7 @@ repository license, the pinned upstream copy is vendored and identified below.
 COMPONENTS
 
 ==============================================================================
-Components: @bendyline/squisq-grid-react@2.11.42
+Components: @bendyline/squisq-grid-react@2.11.44
 Source files: node_modules/@bendyline/squisq-grid-react/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-grid-react
@@ -4150,7 +4519,7 @@ Copyright and complete license texts for these dependencies are included in
 their respective npm distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-grid-react@2.11.42
+Components: @bendyline/squisq-grid-react@2.11.44
 Source files: node_modules/@bendyline/squisq-grid-react/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-grid-react
@@ -4162,7 +4531,7 @@ repository license, the pinned upstream copy is vendored and identified below.
 COMPONENTS
 
 ==============================================================================
-Components: @bendyline/squisq-react@2.12.25
+Components: @bendyline/squisq-react@2.12.27
 Source files: node_modules/@bendyline/squisq-react/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-react
@@ -4187,7 +4556,7 @@ third-party license texts for the complete standalone bundle graph are shipped
 in THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq-react@2.12.25
+Components: @bendyline/squisq-react@2.12.27
 Source files: node_modules/@bendyline/squisq-react/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-react
@@ -8844,7 +9213,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-video-react@2.5.26
+Components: @bendyline/squisq-video-react@2.5.28
 Source files: node_modules/@bendyline/squisq-video-react/COPYING.GPL-2.0.txt
 ==============================================================================
                     GNU GENERAL PUBLIC LICENSE
@@ -9187,7 +9556,7 @@ library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.
 
 ==============================================================================
-Components: @bendyline/squisq-video-react@2.5.26
+Components: @bendyline/squisq-video-react@2.5.28
 Source files: node_modules/@bendyline/squisq-video-react/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-video-react
@@ -9243,7 +9612,7 @@ at the version listed above and from https://github.com/Vanilagy/mediabunny.
 The complete MPL-2.0 text is shipped in THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq-video-react@2.5.26, @ffmpeg/ffmpeg@0.12.15
+Components: @bendyline/squisq-video-react@2.5.28, @ffmpeg/ffmpeg@0.12.15
 Source files: node_modules/@bendyline/squisq-video-react/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-video-react
@@ -9685,7 +10054,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-video@2.4.19
+Components: @bendyline/squisq-video@2.4.21
 Source files: node_modules/@bendyline/squisq-video/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-video
@@ -9710,7 +10079,7 @@ Copyright and complete license texts for the listed dependencies are included
 in their respective npm distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-video@2.4.19
+Components: @bendyline/squisq-video@2.4.21
 Source files: node_modules/@bendyline/squisq-video/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-video
@@ -9722,7 +10091,7 @@ repository license, the pinned upstream copy is vendored and identified below.
 COMPONENTS
 
 ==============================================================================
-Components: @bendyline/squisq@2.13.13
+Components: @bendyline/squisq@2.13.15
 Source files: node_modules/@bendyline/squisq/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq
@@ -9753,7 +10122,7 @@ third-party license texts for bundled code and data are shipped in
 THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq@2.13.13
+Components: @bendyline/squisq@2.13.15
 Source files: node_modules/@bendyline/squisq/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq

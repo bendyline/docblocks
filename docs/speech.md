@@ -198,6 +198,13 @@ whisper's ggml 0.15.1 libraries share install names with llama-server's ggml
 0.24.0 once `prepare-mas-gezel.cjs` flattens them into `Contents/Frameworks`.
 Until then the MAS payload omits whisper and dictation reports unavailable.
 
+## Microsoft Store
+
+The MSIX declares the `microphone` and `webcam` device capabilities beside
+`runFullTrust` (`appx.capabilities` in `electron-builder.yml`), so Windows lists
+DocBlocks under Settings > Privacy & security > Microphone and Camera.
+`check-store-packages.ts` rejects a package without them.
+
 ## Testing
 
 - Unit: `packages/core/test/speech-wire-policy.test.ts`,
