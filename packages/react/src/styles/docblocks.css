@@ -2730,6 +2730,10 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 }
 
 .db-settings-fieldset {
+  /* A fieldset's default minimum is its content's min-content width, so one
+     wide row (a model with its download progress, at Android's larger text)
+     pushed the whole section past a phone-width panel. */
+  min-width: 0;
   border: none;
   margin: 0;
   padding: 0;
@@ -3317,8 +3321,13 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   list-style: none;
 }
 
+/* The action (Download, progress, Remove) sits beside the model's text while
+   the text keeps about 12em, and wraps below it on a phone or at a large text
+   size rather than squeezing the text into a narrow column. Em-based, so the
+   point it wraps tracks the system text size. */
 .db-settings-speech-model {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -3330,6 +3339,7 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 
 .db-settings-speech-model-text {
   display: grid;
+  flex: 1 1 12em;
   gap: 2px;
   min-width: 0;
 }
@@ -3348,7 +3358,9 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   text-underline-offset: 0.15em;
 }
 
+/* Wrapped below the text, progress takes the row's full width. */
 .db-settings-speech-model .db-settings-ai-download-progress {
+  flex: 1 1 140px;
   min-width: 140px;
   margin-top: 0;
 }

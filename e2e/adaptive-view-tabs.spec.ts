@@ -54,7 +54,9 @@ test.describe('Editor view tabs on touch devices', () => {
       await page.setViewportSize({ width, height: device.height });
       await expect(source.locator('.squisq-toolbar-view-tab-icon')).toBeVisible();
       await expect(source.locator('.squisq-toolbar-view-tab-label--long')).toBeHidden();
-      await expect(slideshow).toHaveText('Slides');
+      await expect(slideshow.locator('.squisq-toolbar-view-tab-label--short')).toHaveText('Slides');
+      await expect(slideshow.locator('.squisq-toolbar-view-tab-label--short')).toBeVisible();
+      await expect(slideshow.locator('.squisq-toolbar-view-tab-label--long')).toBeHidden();
       // Android scales every font to the system text size and leaves padding
       // alone; scaling the tabs' font sizes reproduces that here.
       for (const scale of [1, 1.15, 1.3]) {
@@ -76,8 +78,8 @@ test.describe('Editor view tabs on touch devices', () => {
     const source = page.getByRole('tab', { name: 'Source', exact: true });
     await expect(source.locator('.squisq-toolbar-view-tab-label--long')).toBeVisible();
     await expect(source.locator('.squisq-toolbar-view-tab-icon')).toBeHidden();
-    await expect(page.getByRole('tab', { name: 'Slideshow', exact: true })).toHaveText(
-      'Slideshow',
-    );
+    const slideshow = page.getByRole('tab', { name: 'Slideshow', exact: true });
+    await expect(slideshow.locator('.squisq-toolbar-view-tab-label--long')).toBeVisible();
+    await expect(slideshow.locator('.squisq-toolbar-view-tab-label--short')).toBeHidden();
   });
 });
