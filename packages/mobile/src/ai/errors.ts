@@ -9,6 +9,12 @@ export class MobileAiError extends Error {
 }
 export function aiError(value: unknown): AiError {
   if (value instanceof MobileAiError) return { code: value.code, message: value.message };
+  // Native busy text names a conversation even when a model change is the cause.
+  if (nativeBusy(value))
+    return { code: 'rate-limited', message: 'On-device AI is busy. Try again in a moment.' };
+  // Gezel words this for any app; DocBlocks keeps the partial draft, so say what to do next.
+  if (memoryStop(value))
+    return { code: 'provider-unavailable', message: MEMORY_STOP_MESSAGE, detail: value.message };
   const message =
     value instanceof Error
       ? value.message.length <= 2000
@@ -19,7 +25,6 @@ export function aiError(value: unknown): AiError {
     disabled: 'inference-disabled',
     suspended: 'cancelled',
     aborted: 'cancelled',
-    busy: 'rate-limited',
     timeout: 'timeout',
     model_download_failed: 'model-download-failed',
     download_paused: 'cancelled',
@@ -35,6 +40,22 @@ function sdkCode(value: unknown): string {
   return value && typeof value === 'object' && 'code' in value && typeof value.code === 'string'
     ? value.code
     : '';
+}
+/** Native refused to admit the call while another conversation or model change holds it. */
+export function nativeBusy(error: unknown): boolean {
+  return sdkCode(error).toLowerCase() === 'busy';
+}
+const MEMORY_STOP_MESSAGE =
+  'This device needed its memory back, so the AI stopped before finishing. Try again, or choose a smaller model in Settings → AI assistance if this keeps happening.';
+/**
+ * The runtime stopped a reply because the device ran out of memory. Gezel
+ * runtimes since this fix say "ran low on memory"; older ones said "is low on
+ * memory" and stopped on every memory warning. An admission refusal ("not
+ * enough available memory … it needs about 2.1 GB") already names its numbers
+ * and a next step, so it keeps its own words.
+ */
+function memoryStop(value: unknown): value is Error {
+  return value instanceof Error && /\b(?:ran|is) low on memory\b/i.test(value.message);
 }
 // Gezel's own deterministic download failures; resuming repeats them, and a
 // failed checksum discards the saved bytes. OS network errors vary by platform

@@ -493,6 +493,32 @@ describe('AiDraftDialog', () => {
     ).to.equal(false);
   });
 
+  for (const ending of ['error', 'cancelled'] as const) {
+    it(`returns to the prompt when a request ends with ${ending} before any text`, async () => {
+      await render('compose');
+      await type(prompt(), 'A story about ponies');
+      await click('Generate');
+      await act(async () =>
+        fake.requests[0].emit(
+          ending === 'error'
+            ? {
+                kind: 'error',
+                error: { code: 'rate-limited', message: 'On-device AI is busy. Try again.' },
+              }
+            : completion('', 'cancelled'),
+        ),
+      );
+      expect(document.querySelector('.db-ai-draft-output')).to.equal(null);
+      expect(prompt().value).to.equal('A story about ponies');
+      expect(document.querySelector('.db-ai-error')?.textContent ?? null).to.equal(
+        ending === 'error' ? 'On-device AI is busy. Try again.' : null,
+      );
+      expect(document.querySelector('.db-ai-note')).to.equal(null);
+      await click('Generate');
+      expect(fake.requests).to.have.length(2);
+    });
+  }
+
   for (const mode of ['compose', 'rewrite'] as const) {
     it(`uses the ${mode} placeholder when the prompt is blank and initially shows only Generate`, async () => {
       await render(mode);
@@ -535,6 +561,38 @@ describe('AiDraftDialog', () => {
       expect(closed).to.equal(1);
     });
   }
+
+  it('removes document text a model copied into new content, and says so', async () => {
+    await render('compose', { text: '# Twit\n\nThis is fun' });
+    await click('Generate');
+    await finish('# Twit\n\nThis is fun\n\nOnce upon a time.');
+    expect(output().value).to.equal('Once upon a time.');
+    expect(document.querySelector('.db-ai-note')?.textContent).to.equal(
+      'Removed text the model copied from your document.',
+    );
+    await click('Insert');
+    expect(applied).to.deep.equal(['Once upon a time.']);
+  });
+
+  it('says when a model only repeated the document, and inserts nothing', async () => {
+    await render('compose', { text: '# Twit\n\nThis is fun' });
+    await click('Generate');
+    await finish('## Twit\n\nThis is fun');
+    expect(output().value).to.equal('');
+    expect(document.querySelector('.db-ai-note')?.textContent).to.contain(
+      'The model only repeated text already in your document.',
+    );
+    expect(button('Insert').disabled).to.equal(true);
+    expect(button('Regenerate').disabled).to.equal(false);
+  });
+
+  it('never removes text from a rewrite that matches its selection', async () => {
+    await render('rewrite', { text: 'First line.\n\nSecond line.' });
+    await click('Generate');
+    await finish('First line.\n\nSecond line.');
+    expect(output().value).to.equal('First line.\n\nSecond line.');
+    expect(document.querySelector('.db-ai-note')).to.equal(null);
+  });
 
   it('preserves edits on cancellation and replaces them only after confirmation', async () => {
     await render();

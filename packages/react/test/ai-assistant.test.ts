@@ -47,6 +47,25 @@ describe('AI editor assistant', () => {
     );
   });
 
+  it('shows Add content the document before its instructions and asks for new text only', () => {
+    const compose = buildDraftRequest({
+      mode: 'compose',
+      instructions: 'Add an introduction.',
+      documentSource: '# Twit\n\nThis is fun',
+      selectedText: '',
+    });
+    const user = compose.messages[1]?.content ?? '';
+    // Shown the document last, small models returned it with their text added.
+    expect(user.indexOf('</document>')).to.be.lessThan(
+      user.indexOf('Instructions:\nAdd an introduction.'),
+    );
+    expect(user).to.match(/Do not repeat the document or its title\.$/u);
+    expect(compose.messages[0]?.content).to.contain('reply with new text only');
+    // Naming the title to avoid made Apple's model copy it in every try.
+    const body = compose.messages.map((message) => message.content).join('\n');
+    expect(body.split('Twit')).to.have.length(2);
+  });
+
   it('holds drafts to the factual-writing rule: no specific detail from memory', () => {
     const compose = buildDraftRequest({
       mode: 'compose',
@@ -191,6 +210,35 @@ describe('AI editor assistant', () => {
     } finally {
       mock.timers.reset();
     }
+  });
+
+  it('removes a stray wrapper tag line and an HTML comment around the whole reply', () => {
+    // Apple's on-device model closed fenced drafts with a lone </markdown>.
+    expect(
+      sanitizeGeneratedMarkdown(
+        '```markdown\n## Ponies\n\nThe meadow shimmered.\n</markdown>\n```',
+      ),
+    ).to.equal('## Ponies\n\nThe meadow shimmered.');
+    expect(sanitizeGeneratedMarkdown('<markdown>\n## Ponies\n\nBody.')).to.equal(
+      '## Ponies\n\nBody.',
+    );
+    expect(sanitizeGeneratedMarkdown('<markdown>## Ponies</markdown>')).to.equal('## Ponies');
+    // It also once returned a whole story as a comment, which inserts invisibly.
+    expect(sanitizeGeneratedMarkdown('<!-- The meadows shimmered under a pale dawn. -->')).to.equal(
+      'The meadows shimmered under a pale dawn.',
+    );
+    expect(sanitizeGeneratedMarkdown('```markdown\n<!--\n## Ponies\n\nBody.\n-->\n```')).to.equal(
+      '## Ponies\n\nBody.',
+    );
+    // Comments that do not surround everything, or in a document that uses
+    // them, are the author's content.
+    const two = '<!-- a -->\n\nVisible.\n\n<!-- b -->';
+    expect(sanitizeGeneratedMarkdown(two)).to.equal(two);
+    const note = '<!-- Reviewer: check the dates. -->';
+    expect(sanitizeGeneratedMarkdown(note, `# Notes\n\n<!-- TODO -->\n\nBody.`)).to.equal(note);
+    // A tag inside the text is content too.
+    const inline = 'Wrap it in a <markdown> element.\n\nThen close it.';
+    expect(sanitizeGeneratedMarkdown(inline)).to.equal(inline);
   });
 
   it('removes prompt tags a model echoes around its whole reply', () => {

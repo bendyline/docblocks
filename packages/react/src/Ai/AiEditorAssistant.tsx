@@ -37,6 +37,7 @@ import { factCheckRequest, factsNeedReview, useAiKnowledge, useFactCheck } from 
 import { citationsToFootnotes, stripCitationMarkers } from './knowledge-citations.js';
 import { AiReportButton } from './AiOutputReport.js';
 import { draftCapacityNotice } from './draft-capacity.js';
+import { withoutDocumentEcho } from './draft-echo.js';
 import {
   AI_INSTRUCTION_CHARACTERS,
   AI_REVIEW_DOCUMENT_CHARACTERS,
@@ -520,6 +521,17 @@ export function AiDraftDialog({
           return;
         }
         setRunning(false);
+        // Nothing arrived: return to the prompt instead of an empty draft.
+        const nothing =
+          !prefix &&
+          !generatedDraftRef.current.trim() &&
+          (event.kind === 'error' || !event.completion.text.trim());
+        if (nothing && (event.kind === 'error' || event.completion.finishReason === 'cancelled')) {
+          generatedDraftRef.current = '';
+          setDraft(null);
+          if (event.kind === 'error') setError(event.error.message);
+          return;
+        }
         if (event.kind === 'error') {
           setError(event.error.message);
           setIncomplete(Boolean(generatedDraftRef.current.trim()));
@@ -529,12 +541,26 @@ export function AiDraftDialog({
         const finished = event.completion.finishReason === 'stop' && !emptyContinuation;
         // Keep whitespace at the join: the preceding response may end mid-word
         // or mid-table. Never trim a continuation independently of its draft.
-        generatedDraftRef.current =
+        const reply =
           prefix || !finished
             ? prefix + event.completion.text
             : sanitizeGeneratedMarkdown(event.completion.text, documentSource);
+        // New content is inserted into the document it was written from, so
+        // document text the model copied into it would appear twice.
+        const echo =
+          mode === 'compose' && !prefix
+            ? withoutDocumentEcho(reply, documentSource, { trailing: finished })
+            : null;
+        generatedDraftRef.current = echo?.text ?? reply;
         setDraft(generatedDraftRef.current);
         setIncomplete(!finished && Boolean(generatedDraftRef.current.trim()));
+        if (echo?.removed) {
+          setFinishNote(
+            echo.text.trim()
+              ? 'Removed text the model copied from your document.'
+              : 'The model only repeated text already in your document. Regenerate, or make the instructions more specific.',
+          );
+        }
         if (event.completion.finishReason === 'cancelled') {
           setFinishNote('Generation stopped. The draft may be incomplete.');
         }
@@ -553,7 +579,7 @@ export function AiDraftDialog({
       });
       handleRef.current = handle;
     },
-    [knowledgeAi, resetKnowledge, documentSource],
+    [knowledgeAi, resetKnowledge, documentSource, mode],
   );
 
   const generate = useCallback(async () => {

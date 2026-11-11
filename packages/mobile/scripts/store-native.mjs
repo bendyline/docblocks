@@ -21,6 +21,7 @@ import { resolveSwiftPackages } from './swiftpm.mjs';
 import {
   ANDROID_APP_ID,
   ICLOUD_CONTAINER,
+  INCREASED_MEMORY_LIMIT,
   IOS_APP_ID,
   configureProject,
   decodeSecret,
@@ -192,6 +193,8 @@ function verifyIpa(ipa, settings) {
     )?.includes(ICLOUD_CONTAINER)
   )
     throw new Error(`The IPA is not signed for iCloud Documents in ${ICLOUD_CONTAINER}.`);
+  if (plistValue(entitlements, INCREASED_MEMORY_LIMIT.replaceAll('.', '\\.')) !== 'true')
+    throw new Error('The IPA is not signed for Increased Memory Limit.');
   verifyPayload(extracted);
 }
 function buildIos() {

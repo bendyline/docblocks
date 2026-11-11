@@ -42,6 +42,11 @@ assert.match(
   read('ios/App/App/App.entitlements'),
   /<key>com\.apple\.developer\.ubiquity-container-identifiers<\/key>\s*<array>\s*<string>iCloud\.com\.bendyline\.docblocks<\/string>/,
 );
+// On-device models need the larger per-app memory allowance (store-signing.mjs).
+assert.match(
+  read('ios/App/App/App.entitlements'),
+  /<key>com\.apple\.developer\.kernel\.increased-memory-limit<\/key>\s*<true\/>/,
+);
 assert.equal(
   read('ios/App/App.xcodeproj/project.pbxproj').match(
     /CODE_SIGN_ENTITLEMENTS = App\/App\.entitlements;/g,
