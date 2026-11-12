@@ -1,3 +1,9 @@
+## @bendyline/docblocks [2.7.15](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@2.7.14...@bendyline/docblocks@2.7.15) (2026-11-10)
+
+### Bug Fixes
+
+* Better more diverse block types, mobile work ([#49](https://github.com/bendyline/docblocks/issues/49)) ([53baa00](https://github.com/bendyline/docblocks/commit/53baa003fc2736dd379c67047b66ddd7589aa42f))
+
 ## @bendyline/docblocks [2.7.14](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@2.7.13...@bendyline/docblocks@2.7.14) (2026-11-09)
 
 ### Bug Fixes
