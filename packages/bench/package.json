@@ -36,9 +36,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bendyline/docblocks": "2.7.14",
-    "@bendyline/docblocks-react": "2.7.14",
-    "@bendyline/gezel": "1.2.14",
+    "@bendyline/docblocks": "2.7.15",
+    "@bendyline/docblocks-react": "2.7.15",
+    "@bendyline/gezel": "1.3.0",
     "@bendyline/squisq": "2.13.15",
     "@bendyline/squisq-editor-react": "2.13.22",
     "@happy-dom/global-registrator": "20.9.0"

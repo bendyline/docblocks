@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  catalogFloorBytes,
   connectEmbeddingRuntime,
   mobileCatalog,
   type GezelRuntimePlugin,
@@ -317,7 +318,9 @@ describe('mobile AI through the Gezel App SDK', () => {
     const f = fixture();
     f.models.models = [];
     f.providers[0].availability = 'unavailable';
-    f.models.memoryBudgetBytes = catalog[0].approxSizeBytes + 512 * 1024 ** 2;
+    // Room for the smallest model as Gezel sizes a load (weights, KV cache and
+    // runtime overhead), and too little for the next one.
+    f.models.memoryBudgetBytes = catalogFloorBytes(catalog[0].approxSizeBytes) + 64 * 1024 ** 2;
     await f.ai.setPreferences({ enabled: true });
     const result = await f.ai.availableModels!();
     assert.ok(result.ok, JSON.stringify(result));
