@@ -1,3 +1,14 @@
+## @bendyline/docblocks-react [2.7.16](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-react@2.7.15...@bendyline/docblocks-react@2.7.16) (2026-11-12)
+
+### Bug Fixes
+
+* Test stability ([#51](https://github.com/bendyline/docblocks/issues/51)) ([99fded1](https://github.com/bendyline/docblocks/commit/99fded162fe2092503252cac43783da5b808d479))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.7.16
+
 ## @bendyline/docblocks-react [2.7.15](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-react@2.7.14...@bendyline/docblocks-react@2.7.15) (2026-11-10)
 
 ### Bug Fixes
