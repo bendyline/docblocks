@@ -5,6 +5,7 @@ import path from 'node:path';
 import { expect } from 'chai';
 import {
   ICLOUD_CONTAINER,
+  INCREASED_MEMORY_LIMIT,
   IOS_APP_ID,
   STORE_SECRETS,
   configureProject,
@@ -36,6 +37,7 @@ function storeProfile(overrides: Record<string, unknown> = {}) {
       'application-identifier': `TEAM123456.${IOS_APP_ID}`,
       'com.apple.developer.team-identifier': 'TEAM123456',
       'com.apple.developer.ubiquity-container-identifiers': [ICLOUD_CONTAINER],
+      [INCREASED_MEMORY_LIMIT]: true,
       'get-task-allow': false,
     },
     provisionedDevices: undefined,
@@ -127,6 +129,10 @@ describe('mobile store signing', () => {
           },
         },
         /iCloud Documents/u,
+      ],
+      [
+        { entitlements: { ...entitlements, [INCREASED_MEMORY_LIMIT]: undefined } },
+        /Increased Memory Limit/u,
       ],
     ] as const) {
       expect(() => profileSettings(storeProfile(overrides), identities)).to.throw(reason);

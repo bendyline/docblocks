@@ -1,0 +1,40 @@
+{
+  "note": "Design graphics: the chat model writes a JSON brief (title, layout, labels, numbers, style) from a passage, and DocBlocks compiles the image model's prompt from it. Passages come from the ai-diagrams corpus; the marker finds the passage.",
+  "cases": [
+    {
+      "id": "survey-numbers",
+      "document": "survey-results.md",
+      "marker": "1,250 customers",
+      "title": "What customers told us",
+      "prompt": "A clean infographic of the survey's key numbers."
+    },
+    {
+      "id": "signup-funnel",
+      "document": "signup-funnel.md",
+      "marker": "48,000 people visited",
+      "title": "From visitor to customer",
+      "prompt": "A funnel graphic of the signup steps and how many people reach each."
+    },
+    {
+      "id": "company-milestones",
+      "document": "company-history.md",
+      "marker": "was founded in 2016",
+      "title": "Our story",
+      "prompt": "A timeline graphic of the company's milestones."
+    },
+    {
+      "id": "release-steps",
+      "document": "release-process.md",
+      "marker": "release manager drafts the notes",
+      "title": "How a release ships",
+      "prompt": "A step-by-step process graphic of the release."
+    },
+    {
+      "id": "product-parts",
+      "document": "product-structure.md",
+      "marker": "consists of three main parts",
+      "title": "How the product fits together",
+      "prompt": "A simple graphic of the product's three main parts."
+    }
+  ]
+}

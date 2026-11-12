@@ -487,6 +487,41 @@ describe('AI model download wire values', () => {
     ).to.not.equal(null);
   });
 
+  it('carries a measured docbench result, bounded, on downloads and installed models', () => {
+    const docbench = {
+      score: 79.4,
+      band: 2,
+      version: '0.2.1',
+      families: { review: 70.6, writing: 90 },
+    };
+    expect(parseAiModelDownloadInfoList([{ ...rated, docbench }])).to.deep.equal([
+      { ...rated, docbench },
+    ]);
+    const installed = { id: 'm', label: 'M', local: true, contextWindow: null, isDefault: true };
+    expect(parseAiModelInfoList([{ ...installed, docbench }])).to.deep.equal([
+      { ...installed, docbench },
+    ]);
+    for (const bad of [
+      { ...docbench, score: 101 },
+      { ...docbench, band: 0 },
+      { ...docbench, band: 1.5 },
+      { ...docbench, version: '' },
+      { ...docbench, families: { review: -1 } },
+      { ...docbench, families: [] },
+      { ...docbench, extra: true },
+      { score: 70, band: 1, version: '0.2.1' },
+      {
+        ...docbench,
+        families: Object.fromEntries(
+          Array.from({ length: AI_WIRE_LIMITS.docbenchFamilies + 1 }, (_, i) => [`f${i}`, 50]),
+        ),
+      },
+    ]) {
+      expect(parseAiModelDownloadInfoList([{ ...rated, docbench: bad }])).to.equal(null);
+      expect(parseAiModelInfoList([{ ...installed, docbench: bad }])).to.equal(null);
+    }
+  });
+
   it('rejects unknown states, unsafe sizes, and extra event keys', () => {
     expect(parseAiModelDownloadInfoList([{ ...model, state: 'ready' }])).to.equal(null);
     expect(

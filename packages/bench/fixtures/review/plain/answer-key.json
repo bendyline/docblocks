@@ -1,0 +1,150 @@
+{
+  "style": "plain",
+  "note": "Seeded departures from the US Federal Plain Language Guidelines the plain brief names: \"shall\" for a requirement, legalese, sentences over 45 words, undefined abbreviations, needless passive voice, abstract nouns, third-person \"applicants\" or \"employees\" instead of \"you\", a dense paragraph that should be a list, and a main point buried at the end. The rest of each document already addresses the reader as \"you\" in short sentences.",
+  "cases": {
+    "parking-permit-notice.md": [
+      {
+        "id": "pursuant-to",
+        "quote": "Pursuant to Ordinance 2024-17",
+        "issue": "Legalese (\"Pursuant to\"); use \"Under\".",
+        "level": "low"
+      },
+      {
+        "id": "long-sentence",
+        "quote": "at three public meetings last year the council heard from many residents",
+        "issue": "A 52-word sentence; split it into two or three short ones.",
+        "level": "medium"
+      },
+      {
+        "id": "passive-managed",
+        "quote": "The zone will be managed by the Department of Transportation and Mobility.",
+        "issue": "Passive voice; \"The Department of Transportation and Mobility will manage the zone.\"",
+        "level": "medium"
+      },
+      {
+        "id": "shall",
+        "quote": "you shall live at an address",
+        "issue": "Uses \"shall\" for a requirement; use \"must\".",
+        "level": "low"
+      },
+      {
+        "id": "applicants",
+        "quote": "Applicants are advised that each permit is tied to a single vehicle",
+        "issue": "Speaks about \"applicants\" in the third person (and in the passive); address the reader as \"you\".",
+        "level": "medium"
+      },
+      {
+        "id": "undefined-por",
+        "quote": "the approved POR list",
+        "issue": "The abbreviation \"POR\" is never defined.",
+        "level": "low"
+      },
+      {
+        "id": "dense-steps",
+        "quote": "To apply, complete the online form at ashgrove.example/parking.",
+        "issue": "A dense paragraph packs the steps, documents, fee and timing together; break it into a numbered list.",
+        "level": "high"
+      },
+      {
+        "id": "buried-main-point",
+        "quote": "Most important of all: enforcement starts on 1 April.",
+        "issue": "The main point (residents need a permit from 1 April and must apply by 1 March) is buried at the end under \"Other information\"; put it first.",
+        "level": "high"
+      }
+    ],
+    "travel-expense-memo.md": [
+      {
+        "id": "undefined-pta",
+        "quote": "the PTA for approval",
+        "issue": "The abbreviation \"PTA\" is never defined.",
+        "level": "low"
+      },
+      {
+        "id": "abstract-nouns",
+        "quote": "Mileage reimbursement for the utilization of a personal vehicle will be effectuated at the rate of 70 cents per mile.",
+        "issue": "Abstract nouns and legalese (\"utilization\", \"effectuated\"); \"If you drive your own car, we pay you 70 cents a mile.\"",
+        "level": "medium"
+      },
+      {
+        "id": "shall",
+        "quote": "You shall file each claim",
+        "issue": "Uses \"shall\" for a requirement; use \"must\".",
+        "level": "low"
+      },
+      {
+        "id": "heretofore",
+        "quote": "Claims for trips taken heretofore",
+        "issue": "Legalese (\"heretofore\"); say \"before 1 July\".",
+        "level": "low"
+      },
+      {
+        "id": "employees",
+        "quote": "Employees traveling overnight must book lodging",
+        "issue": "Speaks about \"employees\" in the third person; address the reader as \"you\" (\"If you stay overnight, book your hotel...\").",
+        "level": "medium"
+      },
+      {
+        "id": "dense-receipts",
+        "quote": "You need a receipt for every expense over $25.",
+        "issue": "A dense paragraph of six separate receipt rules; break it into a list.",
+        "level": "high"
+      },
+      {
+        "id": "long-sentence",
+        "quote": "attach the cancellation notice together with a short note from your manager",
+        "issue": "The cancelled-trips paragraph is one 57-word sentence; split it into short sentences or steps.",
+        "level": "medium"
+      },
+      {
+        "id": "passive-payments",
+        "quote": "Payments will be made by the Finance Office within ten business days of approval",
+        "issue": "Passive voice; \"We will pay you within ten business days of approval.\"",
+        "level": "medium"
+      }
+    ],
+    "tax-assessment-letter.md": [
+      {
+        "id": "legalese-herein",
+        "quote": "the results for the subject property are set forth herein",
+        "issue": "Legalese (\"subject property\", \"set forth herein\"); \"here are the results for your home\".",
+        "level": "low"
+      },
+      {
+        "id": "long-sentence",
+        "quote": "Home values in Owensford rose steadily over the last four years",
+        "issue": "A 53-word sentence; split it into short ones.",
+        "level": "medium"
+      },
+      {
+        "id": "undefined-av",
+        "quote": "The new AV takes effect",
+        "issue": "The abbreviation \"AV\" is never defined.",
+        "level": "low"
+      },
+      {
+        "id": "property-owner",
+        "quote": "The property owner may request an informal review",
+        "issue": "Speaks about \"the property owner\" in the third person; address the reader as \"you\".",
+        "level": "medium"
+      },
+      {
+        "id": "shall",
+        "quote": "you shall file a formal appeal",
+        "issue": "Uses \"shall\" for a requirement; use \"must\".",
+        "level": "low"
+      },
+      {
+        "id": "passive-exemptions",
+        "quote": "may be claimed on Form PX-2, which can be obtained at our office or downloaded from our website",
+        "issue": "Passive voice; \"You can claim these exemptions on Form PX-2, which you can get at our office or download from our website.\"",
+        "level": "medium"
+      },
+      {
+        "id": "buried-main-point",
+        "quote": "the assessed value of your home has gone up from $312,000 to $368,000",
+        "issue": "The main point of the letter, the new assessed value, is buried in the last paragraph under \"Other information\"; put it first.",
+        "level": "high"
+      }
+    ]
+  }
+}

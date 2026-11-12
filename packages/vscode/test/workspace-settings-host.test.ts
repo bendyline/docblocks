@@ -19,6 +19,7 @@ import {
   uninstallVscodeStub,
   FakeFileSystemError,
   FakeUri,
+  type VscodeStub,
 } from './helpers/vscodeStub.js';
 
 /**
@@ -333,5 +334,58 @@ describe('workspace settings watcher paths', () => {
     expect(relativeWorkspacePath({ path: '/ws' }, { path: '/ws/Notes.md' })).to.equal('Notes.md');
     expect(relativeWorkspacePath({ path: '/ws' }, { path: '/ws-two/notes.md' })).to.equal(null);
     expect(relativeWorkspacePath({ path: '/ws' }, { path: '/WS/notes.md' })).to.equal(null);
+  });
+});
+
+describe('workspace settings service', () => {
+  type ServiceModule = typeof import('../src/workspaceSettingsService.js');
+  type Workspace = { fs: unknown; isTrusted: boolean };
+  let stub: VscodeStub;
+  let saved: Workspace;
+  let service: InstanceType<ServiceModule['WorkspaceSettingsService']> | null = null;
+
+  beforeEach(() => {
+    stub = installVscodeStub();
+    const workspace = stub.module.workspace as Workspace;
+    // Other suites replace these on the shared stub; set and restore our own.
+    saved = { fs: workspace.fs, isTrusted: workspace.isTrusted };
+  });
+
+  afterEach(() => {
+    service?.dispose();
+    service = null;
+    Object.assign(stub.module.workspace as Workspace, saved);
+  });
+
+  it('refreshes a catalog whose settings the watcher never reported', async () => {
+    const { fs, files } = fakeFs();
+    files.set('/ws/notes/a.md', new TextEncoder().encode('# A\n'));
+    Object.assign(stub.module.workspace as Workspace, {
+      fs: { ...fs, isWritableFileSystem: () => true },
+      isTrusted: true,
+    });
+    stub.workspaceFolders.push({ uri: new FakeUri('/ws'), name: 'ws', index: 0 });
+    const { WorkspaceSettingsService } =
+      (await import('../src/workspaceSettingsService.js')) as ServiceModule;
+    const log: string[] = [];
+    service = new WorkspaceSettingsService({
+      appendLine: (line: string) => log.push(line),
+    } as never);
+
+    expect(await service.regenerateAll()).to.deep.equal({ refreshed: 0, failed: [] });
+
+    // Enabled behind the service's back: the stub's watchers never fire.
+    files.set(
+      '/ws/.docblocks/workspace.json',
+      new TextEncoder().encode('{ "version": 1, "catalog": { "json": { "enabled": true } } }\n'),
+    );
+    expect(await service.regenerateAll(), log.join('\n')).to.deep.equal({
+      refreshed: 1,
+      failed: [],
+    });
+    const catalog = JSON.parse(textOf(files.get('/ws/catalog.json'))!);
+    expect(catalog.documents.map((document: { path: string }) => document.path)).to.deep.equal([
+      'notes/a.md',
+    ]);
   });
 });

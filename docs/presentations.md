@@ -158,7 +158,7 @@ DocBlocks only makes the calls. A reply is held to its passage:
   sent; its automatic slide stands.
 
 `npm run eval:ai-presentations` runs this pipeline against a real model over
-`packages/react/test/fixtures/ai-presentations` and reports reply shape,
+`packages/bench/fixtures/ai-presentations` and reports reply shape,
 acceptance, whether passages with a shape were drawn with it, and faithfulness.
 It needs an OpenAI-compatible endpoint (see the header of
 `scripts/eval-ai-presentations.ts`).

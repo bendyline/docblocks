@@ -755,12 +755,17 @@ test('AI rewrite shows prefill and token activity, and Stop works before text ar
       await expect(dialog.getByRole('textbox', { name: 'AI draft' })).toHaveValue('');
       await dialog.screenshot({ path: testInfo.outputPath('rewrite-prefill.png') });
       await dialog.getByRole('button', { name: 'Stop' }).click();
-      await expect(dialog.getByText('Generation stopped.')).toBeVisible();
+      // Stopped before any text: the dialog returns to the prompt, not to an empty draft.
+      const generateAgain = dialog.getByRole('button', { name: 'Generate', exact: true });
+      await expect(generateAgain).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'Stop' })).toHaveCount(0);
+      await expect(dialog.getByRole('textbox', { name: 'AI draft' })).toHaveCount(0);
+      await expect(dialog.getByText('Generation stopped.')).toHaveCount(0);
       await expect.poll(() => fake.abandonedStreams).toBe(1);
       expect(readDocument(file)).toBe(DOCUMENT);
       expect(fake.chats[0].streamOptions).toEqual({ include_usage: true, include_progress: true });
 
-      await dialog.getByRole('button', { name: 'Regenerate' }).click();
+      await generateAgain.click();
       await expect(dialog.getByRole('status')).toContainText('Thinking');
       await expect(dialog.locator('.db-ai-generation-status')).toContainText(
         '32 tokens generated · 16.0 tokens/s',

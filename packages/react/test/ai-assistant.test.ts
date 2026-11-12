@@ -47,6 +47,25 @@ describe('AI editor assistant', () => {
     );
   });
 
+  it('shows Add content the document before its instructions and asks for new text only', () => {
+    const compose = buildDraftRequest({
+      mode: 'compose',
+      instructions: 'Add an introduction.',
+      documentSource: '# Twit\n\nThis is fun',
+      selectedText: '',
+    });
+    const user = compose.messages[1]?.content ?? '';
+    // Shown the document last, small models returned it with their text added.
+    expect(user.indexOf('</document>')).to.be.lessThan(
+      user.indexOf('Instructions:\nAdd an introduction.'),
+    );
+    expect(user).to.match(/Do not repeat the document or its title\.$/u);
+    expect(compose.messages[0]?.content).to.contain('reply with new text only');
+    // Naming the title to avoid made Apple's model copy it in every try.
+    const body = compose.messages.map((message) => message.content).join('\n');
+    expect(body.split('Twit')).to.have.length(2);
+  });
+
   it('holds drafts to the factual-writing rule: no specific detail from memory', () => {
     const compose = buildDraftRequest({
       mode: 'compose',
@@ -193,6 +212,35 @@ describe('AI editor assistant', () => {
     }
   });
 
+  it('removes a stray wrapper tag line and an HTML comment around the whole reply', () => {
+    // Apple's on-device model closed fenced drafts with a lone </markdown>.
+    expect(
+      sanitizeGeneratedMarkdown(
+        '```markdown\n## Ponies\n\nThe meadow shimmered.\n</markdown>\n```',
+      ),
+    ).to.equal('## Ponies\n\nThe meadow shimmered.');
+    expect(sanitizeGeneratedMarkdown('<markdown>\n## Ponies\n\nBody.')).to.equal(
+      '## Ponies\n\nBody.',
+    );
+    expect(sanitizeGeneratedMarkdown('<markdown>## Ponies</markdown>')).to.equal('## Ponies');
+    // It also once returned a whole story as a comment, which inserts invisibly.
+    expect(sanitizeGeneratedMarkdown('<!-- The meadows shimmered under a pale dawn. -->')).to.equal(
+      'The meadows shimmered under a pale dawn.',
+    );
+    expect(sanitizeGeneratedMarkdown('```markdown\n<!--\n## Ponies\n\nBody.\n-->\n```')).to.equal(
+      '## Ponies\n\nBody.',
+    );
+    // Comments that do not surround everything, or in a document that uses
+    // them, are the author's content.
+    const two = '<!-- a -->\n\nVisible.\n\n<!-- b -->';
+    expect(sanitizeGeneratedMarkdown(two)).to.equal(two);
+    const note = '<!-- Reviewer: check the dates. -->';
+    expect(sanitizeGeneratedMarkdown(note, `# Notes\n\n<!-- TODO -->\n\nBody.`)).to.equal(note);
+    // A tag inside the text is content too.
+    const inline = 'Wrap it in a <markdown> element.\n\nThen close it.';
+    expect(sanitizeGeneratedMarkdown(inline)).to.equal(inline);
+  });
+
   it('removes prompt tags a model echoes around its whole reply', () => {
     // Qwen 3.5 0.8B returned a rewrite inside the prompt's <selection> tags,
     // and Replace wrote them into the document.
@@ -212,7 +260,7 @@ describe('AI editor assistant', () => {
     expect(sanitizeGeneratedMarkdown(two)).to.equal(two);
   });
 
-  it('parses only exact review findings', () => {
+  it('parses only well-formed review findings', () => {
     const response = JSON.stringify([
       {
         quote: 'very unique',
@@ -223,21 +271,107 @@ describe('AI editor assistant', () => {
         rationale: null,
       },
     ]);
-    expect(parseAiReviewResponse(response)).to.deep.equal([
-      {
-        id: 'ai-review-1',
-        originalText: 'very unique',
-        replacement: 'distinctive',
-        category: 'Clarity',
-        severity: 'suggestion',
-        message: 'Use a more precise phrase.',
-        rationale: null,
-      },
-    ]);
+    expect(parseAiReviewResponse(response)).to.deep.equal({
+      findings: [
+        {
+          id: 'ai-review-1',
+          originalText: 'very unique',
+          replacement: 'distinctive',
+          category: 'Clarity',
+          severity: 'suggestion',
+          message: 'Use a more precise phrase.',
+          rationale: null,
+        },
+      ],
+      dropped: 0,
+    });
+    // A reply whose only finding is malformed has nothing to show.
     expect(parseAiReviewResponse(response.replace('"rationale":null', '"extra":true'))).to.equal(
       null,
     );
     expect(parseAiReviewResponse('not json')).to.equal(null);
+    expect(parseAiReviewResponse('[]')).to.deep.equal({ findings: [], dropped: 0 });
+  });
+
+  it('reads a missing or empty rationale or replacement as none', () => {
+    // Apple's on-device model, asked for `"rationale": null`, leaves the key
+    // out; this is the shape of its reply that failed a whole review part.
+    const response = JSON.stringify([
+      {
+        quote: 'first passage',
+        replacement: 'clearer first passage',
+        category: 'summary',
+        severity: 'info',
+        message: 'Say it plainly.',
+        rationale: 'The phrasing could be clearer.',
+      },
+      {
+        quote: 'second passage',
+        replacement: 'clearer second passage',
+        category: 'comparison',
+        severity: 'info',
+        message: 'Align the order and values.',
+      },
+      { quote: 'third passage', category: 'clarity', severity: 'warning', message: 'Check it.' },
+      {
+        quote: 'fourth passage',
+        replacement: null,
+        category: 'clarity',
+        severity: 'info',
+        message: 'Consider it.',
+        rationale: '  ',
+      },
+    ]);
+    const parsed = parseAiReviewResponse(response);
+    expect(parsed?.dropped).to.equal(0);
+    expect(
+      parsed?.findings.map(({ originalText, replacement, rationale }) => ({
+        originalText,
+        replacement,
+        rationale,
+      })),
+    ).to.deep.equal([
+      {
+        originalText: 'first passage',
+        replacement: 'clearer first passage',
+        rationale: 'The phrasing could be clearer.',
+      },
+      { originalText: 'second passage', replacement: 'clearer second passage', rationale: null },
+      { originalText: 'third passage', replacement: null, rationale: null },
+      { originalText: 'fourth passage', replacement: null, rationale: null },
+    ]);
+    // An empty replacement still deletes the passage.
+    const deletion = JSON.parse(response) as Record<string, unknown>[];
+    deletion[0] = { ...deletion[0], replacement: '' };
+    expect(parseAiReviewResponse(JSON.stringify(deletion))?.findings[0]?.replacement).to.equal('');
+  });
+
+  it('leaves out a malformed finding and keeps the rest of the reply', () => {
+    const good = (quote: string) => ({
+      quote,
+      replacement: null,
+      category: 'Clarity',
+      severity: 'info',
+      message: 'Consider it.',
+      rationale: null,
+    });
+    const response = JSON.stringify([
+      good('first'),
+      { ...good('wrong severity'), severity: 'high' },
+      { ...good('extra key'), line: 4 },
+      { ...good('no message'), message: undefined },
+      { ...good('long rationale'), rationale: 'x'.repeat(1_001) },
+      { ...good('numeric replacement'), replacement: 3 },
+      'not an object',
+      good('second'),
+    ]);
+    const parsed = parseAiReviewResponse(response);
+    expect(parsed?.dropped).to.equal(6);
+    // The kept findings are numbered as they are listed.
+    expect(parsed?.findings.map(({ id, originalText }) => [id, originalText])).to.deep.equal([
+      ['ai-review-1', 'first'],
+      ['ai-review-2', 'second'],
+    ]);
   });
 
   it('keeps every finding however many there are', () => {
@@ -249,9 +383,9 @@ describe('AI editor assistant', () => {
       message: `Finding ${index}.`,
       rationale: null,
     }));
-    expect(parseAiReviewResponse(JSON.stringify(many))).to.have.length(30);
+    expect(parseAiReviewResponse(JSON.stringify(many))?.findings).to.have.length(30);
     const cutOff = `${JSON.stringify(many).slice(0, -1)}, {"quote": "unfin`;
-    expect(parseTruncatedAiReviewResponse(cutOff)).to.have.length(30);
+    expect(parseTruncatedAiReviewResponse(cutOff)?.findings).to.have.length(30);
   });
 
   it('keeps the findings a cut-off review finished and drops the unfinished one', () => {
@@ -268,15 +402,41 @@ describe('AI editor assistant', () => {
     const cutOff = `${complete.slice(0, -1)}, {"quote": "third", "replacement": "unfin`;
 
     expect(parseAiReviewResponse(cutOff)).to.equal(null);
+    expect(parseTruncatedAiReviewResponse(cutOff)).to.deep.equal({
+      findings: [
+        {
+          id: 'ai-review-1',
+          originalText: 'a {brace} and a "quote" ] here',
+          replacement: 'clearer',
+          category: 'Clarity',
+          severity: 'suggestion',
+          message: 'Say it plainly.',
+          rationale: null,
+        },
+        {
+          id: 'ai-review-2',
+          originalText: 'second',
+          replacement: 'clearer',
+          category: 'Clarity',
+          severity: 'warning',
+          message: 'Say it plainly.',
+          rationale: null,
+        },
+      ],
+      // The unfinished finding is the cut, not a malformed one.
+      dropped: 0,
+    });
+    expect(parseTruncatedAiReviewResponse(complete)?.findings).to.have.length(2);
+    expect(parseTruncatedAiReviewResponse('```json\n[{"quote": "cut')).to.deep.equal({
+      findings: [],
+      dropped: 0,
+    });
+    // A finished finding with the wrong shape is left out; alone, it leaves nothing to show.
+    const malformed = JSON.stringify({ ...first, extra: true });
+    expect(parseTruncatedAiReviewResponse(`[${malformed}, {"quo`)).to.equal(null);
     expect(
-      parseTruncatedAiReviewResponse(cutOff)?.map((finding) => finding.originalText),
-    ).to.deep.equal(['a {brace} and a "quote" ] here', 'second']);
-    expect(parseTruncatedAiReviewResponse(complete)).to.have.length(2);
-    expect(parseTruncatedAiReviewResponse('```json\n[{"quote": "cut')).to.deep.equal([]);
-    // A finished finding with the wrong shape still rejects the review.
-    expect(
-      parseTruncatedAiReviewResponse(`[${JSON.stringify({ ...first, extra: true })}, {"quo`),
-    ).to.equal(null);
+      parseTruncatedAiReviewResponse(`[${malformed}, ${JSON.stringify(second)}, {"quo`),
+    ).to.deep.include({ dropped: 1 });
     expect(parseTruncatedAiReviewResponse('no array here')).to.equal(null);
     expect(aiReviewReplyWasCutOff(cutOff)).to.equal(true);
     expect(aiReviewReplyWasCutOff(complete)).to.equal(false);
@@ -294,12 +454,58 @@ describe('AI editor assistant', () => {
       message: 'Tighten this phrase.',
       rationale: null,
     };
-    expect(findUniqueExcerpt('A wordy phrase here.', finding.originalText)).to.equal(2);
+    expect(findUniqueExcerpt('A wordy phrase here.', finding.originalText)).to.deep.equal({
+      start: 2,
+      end: 14,
+    });
     expect(applyAiReviewFinding('A wordy phrase here.', finding)).to.equal('A clear phrase here.');
     expect(applyAiReviewFinding('wordy phrase and wordy phrase', finding)).to.equal(null);
     expect(applyAiReviewFinding('The document changed.', finding)).to.equal(null);
     expect(
       applyAiReviewFinding('A wordy phrase here.', { ...finding, replacement: null }),
     ).to.equal(null);
+  });
+
+  it('applies a finding whose quote differs from the document only in spacing and line breaks', () => {
+    // A hard-wrapped list item: models often drop the continuation indent, or join the lines.
+    const source =
+      '- **On small models, giving the goal beats walking it\n' +
+      '  through the steps.** Pooled over every round.\n';
+    const finding: AiReviewFinding = {
+      id: 'finding-1',
+      originalText: 'giving the goal beats walking it\nthrough the steps.',
+      replacement: 'the goal alone beats a walkthrough.',
+      category: 'Clarity',
+      severity: 'suggestion',
+      message: 'Tighten this sentence.',
+      rationale: null,
+    };
+    const expected =
+      '- **On small models, the goal alone beats a walkthrough.** Pooled over every round.\n';
+    expect(applyAiReviewFinding(source, finding)).to.equal(expected);
+    expect(
+      applyAiReviewFinding(source, {
+        ...finding,
+        originalText: 'giving the goal beats walking it through the steps.',
+      }),
+    ).to.equal(expected);
+  });
+
+  it('prefers an exact copy over one that differs only in spacing', () => {
+    const source = 'A wordy\n  phrase here, and a wordy phrase there.';
+    expect(findUniqueExcerpt(source, 'wordy phrase')).to.deep.equal({ start: 29, end: 41 });
+    // With no exact copy, two that differ in spacing are as ambiguous as two exact ones.
+    expect(findUniqueExcerpt('A wordy\nphrase and a wordy  phrase.', 'wordy phrase')).to.equal(
+      null,
+    );
+  });
+
+  it('never matches a quote across a paragraph break it does not have', () => {
+    const source = 'The first paragraph ends here.\n\nThe second one starts here.';
+    expect(findUniqueExcerpt(source, 'ends here. The second')).to.equal(null);
+    expect(findUniqueExcerpt(source, 'ends here.\n\nThe second')).to.deep.equal({
+      start: 20,
+      end: 42,
+    });
   });
 });

@@ -2,7 +2,7 @@
  * Evaluate AI slide suggestions against a real model.
  *
  * Runs the pipeline the presentation designer uses ("Suggest with AI") over a
- * small corpus of documents (packages/react/test/fixtures/ai-presentations):
+ * small corpus of documents (packages/bench/fixtures/ai-presentations):
  * Squisq plans the deck from the prose, the model storyboards it and words
  * each slide, and every reply passes the same gates as in the app. Per model
  * the report gives:
@@ -52,7 +52,7 @@ if (typeof (globalThis as { window?: unknown }).window === 'undefined') {
 }
 
 const root = path.resolve(import.meta.dirname, '..');
-const corpusDir = path.join(root, 'packages/react/test/fixtures/ai-presentations');
+const corpusDir = path.join(root, 'packages/bench/fixtures/ai-presentations');
 
 interface GoldEntry {
   /** Passages with a relationship worth drawing, and the layouts that show it. */

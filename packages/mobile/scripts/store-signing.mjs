@@ -10,6 +10,10 @@ export const IOS_APP_ID = 'com.bendyline.docblocks';
 export const ANDROID_APP_ID = 'com.bendyline.docblocks';
 // Product-wide, so the Mac App Store build can later share iCloud Drive › DocBlocks.
 export const ICLOUD_CONTAINER = 'iCloud.com.bendyline.docblocks';
+// Raises the per-app memory allowance on devices that support it, so an
+// on-device model fits beside the editor; the Gezel runtime reads the larger
+// allowance itself. App.entitlements claims it, so the profile must grant it.
+export const INCREASED_MEMORY_LIMIT = 'com.apple.developer.kernel.increased-memory-limit';
 export const STORE_SECRETS = {
   // ANDROID_UPLOAD_KEYSTORE_PATH may replace the base64 secret on a local machine.
   android: [
@@ -73,6 +77,10 @@ export function profileSettings(profile, identities, now = new Date()) {
   ensure(
     entitlements['com.apple.developer.ubiquity-container-identifiers']?.includes(ICLOUD_CONTAINER),
     `The provisioning profile must grant iCloud Documents for ${ICLOUD_CONTAINER}; enable it on the App ID and regenerate the profile.`,
+  );
+  ensure(
+    entitlements[INCREASED_MEMORY_LIMIT] === true,
+    'The provisioning profile must grant Increased Memory Limit; enable it on the App ID and regenerate the profile.',
   );
   // Xcode matches PROVISIONING_PROFILE_SPECIFIER against the UUID
   // case-sensitively, and Apple issues lowercase UUIDs: pass it through verbatim.

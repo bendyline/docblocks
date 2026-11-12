@@ -1,0 +1,151 @@
+{
+  "style": "concise",
+  "note": "Seeded wordiness the concise brief names: throat-clearing openings, filler and empty qualifiers, redundant pairs, wordy phrases, nouns made from verbs, needless passive voice, and repeated points. The rest of each document is kept tight so extra findings are easy to judge; pool-closure-notice-strong.md is a decoy written in already tight prose.",
+  "cases": {
+    "office-move-update.md": [
+      {
+        "id": "throat-clearing",
+        "quote": "I just wanted to take a quick moment to reach out to all of you",
+        "issue": "A throat-clearing opening paragraph that says nothing; cut it and start with the moving date.",
+        "level": "medium"
+      },
+      {
+        "id": "passive-decided",
+        "quote": "It has been decided by the partners that we will move",
+        "issue": "Needless passive voice; \"The partners have decided we will move\" or simply \"We move\" says it in fewer words.",
+        "level": "medium"
+      },
+      {
+        "id": "in-order-to",
+        "quote": "In order to keep disruption to a minimum",
+        "issue": "Wordy phrase: \"In order to\" can be \"To\" (and \"keep disruption to a minimum\" can be \"minimize disruption\").",
+        "level": "low"
+      },
+      {
+        "id": "each-and-every",
+        "quote": "each and every crate",
+        "issue": "Redundant pair: \"each and every\" means \"every\".",
+        "level": "low"
+      },
+      {
+        "id": "really-very",
+        "quote": "really very bright",
+        "issue": "Empty qualifiers (\"really very\"); \"bright\" or \"very bright\" is enough.",
+        "level": "low"
+      },
+      {
+        "id": "due-to-the-fact",
+        "quote": "Due to the fact that the lease",
+        "issue": "Wordy phrase: \"Due to the fact that\" can be \"Because\".",
+        "level": "low"
+      },
+      {
+        "id": "nominalization",
+        "quote": "We will make a final decision on the seating plan once the partners have given consideration to the feedback from the survey.",
+        "issue": "Nouns made from verbs (\"make a final decision\", \"given consideration to\"); \"We will settle the seating plan once the partners have considered the survey feedback.\"",
+        "level": "medium"
+      },
+      {
+        "id": "repeated-reminder",
+        "quote": "To sum up and remind everyone once again",
+        "issue": "The closing section repeats the dates, times and to-do list already given above; cut it or reduce it to one line.",
+        "level": "high"
+      }
+    ],
+    "volunteer-portal-howto.md": [
+      {
+        "id": "basically",
+        "quote": "Basically, this guide is for new volunteers",
+        "issue": "Filler opening word (\"Basically\").",
+        "level": "low"
+      },
+      {
+        "id": "at-this-point-in-time",
+        "quote": "At this point in time, the portal",
+        "issue": "Wordy phrase: \"At this point in time\" can be cut or replaced with \"now\".",
+        "level": "low"
+      },
+      {
+        "id": "absolutely-essential",
+        "quote": "Text alerts are absolutely essential for volunteers.",
+        "issue": "Empty intensifier: \"absolutely essential\" means \"essential\".",
+        "level": "low"
+      },
+      {
+        "id": "text-not-email",
+        "quote": "Shift changes are sent by text message and are not sent by email.",
+        "issue": "Wordy and repetitive; \"Shift changes go out by text, not email.\"",
+        "level": "medium"
+      },
+      {
+        "id": "free-and-available",
+        "quote": "free and available",
+        "issue": "Redundant pair: \"free\" and \"available\" mean the same here.",
+        "level": "low"
+      },
+      {
+        "id": "nominalization",
+        "quote": "carries out a review of everyone's availability every Monday and makes an assignment of shifts by Wednesday",
+        "issue": "Nouns made from verbs (\"carries out a review of\", \"makes an assignment of\"); \"reviews everyone's availability every Monday and assigns shifts by Wednesday\".",
+        "level": "medium"
+      },
+      {
+        "id": "passive-agreement",
+        "quote": "The agreement is required to be read and signed by all volunteers before their first shift.",
+        "issue": "Needless passive voice; \"Read and sign the agreement before your first shift.\"",
+        "level": "medium"
+      },
+      {
+        "id": "repeated-personal",
+        "quote": "Note that it is important to remember that your account is personal.",
+        "issue": "The paragraph opens with throat-clearing and then says the account is personal a second time; it can be one short sentence.",
+        "level": "high"
+      }
+    ],
+    "support-quarterly-report.md": [
+      {
+        "id": "large-number",
+        "quote": "a large number of questions",
+        "issue": "Wordy phrase: \"a large number of\" can be \"many\".",
+        "level": "low"
+      },
+      {
+        "id": "our-belief",
+        "quote": "It is our belief that",
+        "issue": "Noun made from a verb; \"We believe\" is shorter.",
+        "level": "low"
+      },
+      {
+        "id": "end-result",
+        "quote": "The end result was",
+        "issue": "Redundant pair: \"end result\" means \"result\".",
+        "level": "low"
+      },
+      {
+        "id": "passive-survey",
+        "quote": "Satisfaction was measured by a short survey that was sent after each ticket was closed, and the average score was found to be 4.3 out of 5.",
+        "issue": "A chain of needless passives; \"Customers rated us 4.3 out of 5 on the survey sent after each closed ticket.\"",
+        "level": "medium"
+      },
+      {
+        "id": "filler-sentence",
+        "quote": "At the end of the day, what we really need to do going forward is basically make sure that weekend coverage gets improved.",
+        "issue": "A sentence of filler (\"At the end of the day\", \"really\", \"going forward\", \"basically\"); \"We need better weekend coverage.\"",
+        "level": "medium"
+      },
+      {
+        "id": "conduct-analysis",
+        "quote": "conduct an analysis of whether",
+        "issue": "Noun made from a verb; \"study whether\" or \"test whether\".",
+        "level": "medium"
+      },
+      {
+        "id": "repeated-summary",
+        "quote": "In summary, to go over the main points of this report once more",
+        "issue": "The closing summary repeats the overview at the top of this short report point for point; cut it.",
+        "level": "high"
+      }
+    ],
+    "pool-closure-notice-strong.md": []
+  }
+}

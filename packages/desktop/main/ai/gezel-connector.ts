@@ -9,7 +9,7 @@ import type {
   ModelProgress,
 } from '@bendyline/gezel-app-sdk/host';
 import type { AiKnowledgeAction, AiProgress } from '@bendyline/docblocks/host';
-import { parseAiChatProgress } from '@bendyline/docblocks/host';
+import { buildChatCompletionBody, parseAiChatProgress } from '@bendyline/docblocks/host';
 import { AiHostError } from './ai-errors.js';
 import type { ProviderImages } from './ai-image-service.js';
 import type {
@@ -126,33 +126,12 @@ async function streamFrom(
         citations: request.knowledgeCitations === true,
       })
     : { messages: [...request.messages], knowledge: null };
-  const { messages } = context;
-  // Preserve the evaluated writing policy until effective output budgets have their own A/B gate.
-  const localEngine = /^(?:mlx|llama-cpp|ollama|ds4):/u.test(request.model);
-  const maxTokens =
-    request.maxTokens ??
-    (request.purpose === 'write' && localEngine ? request.contextWindow : undefined);
+  // The body is shared with the docbench task pack, so a benchmark sends what this sends.
   const opened = app.chat(
     {
-      model: request.model,
-      messages,
+      ...buildChatCompletionBody({ ...request, messages: context.messages }),
       stream: true,
       stream_options: { include_usage: true, include_progress: true },
-      ...(request.purpose === 'write' ? {} : { reasoning_effort: 'none' }),
-      ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
-      ...(maxTokens == null ? {} : { max_tokens: maxTokens }),
-      ...(request.responseFormat
-        ? {
-            response_format: {
-              type: 'json_schema' as const,
-              json_schema: {
-                name: request.responseFormat.name,
-                schema: request.responseFormat.schema,
-                strict: true,
-              },
-            },
-          }
-        : {}),
     },
     { signal },
   );

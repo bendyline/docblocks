@@ -33,7 +33,7 @@ import type { AiChatRequest } from '@bendyline/docblocks/host';
 import { buildDraftRequest } from '../packages/react/src/Ai/ai-assistant.js';
 
 const root = path.resolve(import.meta.dirname, '..');
-const fixtures = path.join(root, 'packages/react/test/fixtures/ai-diagrams');
+const fixtures = path.join(root, 'packages/bench/fixtures/ai-diagrams');
 
 type Arm = 'thinking-off' | 'model-default';
 const ARMS: readonly Arm[] = ['thinking-off', 'model-default'];

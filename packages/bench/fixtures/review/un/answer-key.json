@@ -1,0 +1,174 @@
+{
+  "style": "un",
+  "note": "Seeded departures from the United Nations Editorial Manual the un brief names: US spellings (program, center, labor), numbers and number formats, US-style dates and times, decades and centuries, country names, an abbreviation used before its full name, lower-case \"member states\" and \"secretary-general\", gender-exclusive language, and informal or non-neutral tone. The rest of each document follows UN style (\"per cent\", \"21 April 2004\", \"12.30 p.m.\", \"Member States\"), so it gives a precise reviewer things not to flag.",
+  "cases": {
+    "coastal-resilience-report.md": [
+      {
+        "id": "abbreviation-first",
+        "quote": "Contributions to the CRF reached",
+        "issue": "The abbreviation \"CRF\" is used before the full name \"Coastal Resilience Fund (CRF)\", which only appears in the next sentence; give the full name at first use.",
+        "level": "medium"
+      },
+      {
+        "id": "date-format",
+        "quote": "March 14, 2025",
+        "issue": "Date in US format; UN style is \"14 March 2025\".",
+        "level": "low"
+      },
+      {
+        "id": "number-under-ten",
+        "quote": "5 delegations",
+        "issue": "A number under 10 in figures; spell it out (\"five delegations\").",
+        "level": "low"
+      },
+      {
+        "id": "decade",
+        "quote": "the 90's",
+        "issue": "Decade written as \"the 90's\"; UN style is \"the 1990s\".",
+        "level": "low"
+      },
+      {
+        "id": "programme-spelling",
+        "quote": "training program for",
+        "issue": "US spelling \"program\"; UN style is \"programme\".",
+        "level": "low"
+      },
+      {
+        "id": "informal-sentence",
+        "quote": "The new early-warning system has been a real game-changer for island communities.",
+        "issue": "Informal, promotional wording (\"a real game-changer\"); state the effect in formal, neutral terms.",
+        "level": "medium"
+      },
+      {
+        "id": "gendered-fisherman",
+        "quote": "Each fisherman and his family",
+        "issue": "Gender-exclusive language; use \"Each fishing household\" or \"fishers and their families\".",
+        "level": "medium"
+      },
+      {
+        "id": "member-states-caps",
+        "quote": "Several member states requested",
+        "issue": "\"Member States\" must be capitalized.",
+        "level": "low"
+      },
+      {
+        "id": "non-neutral-paragraph",
+        "quote": "Frankly, the results so far have been pretty disappointing.",
+        "issue": "The whole paragraph is informal and accusatory (\"talk a big game\", \"put their money where their mouth is\"); rewrite it in a formal, neutral tone.",
+        "level": "high"
+      }
+    ],
+    "meeting-information-note.md": [
+      {
+        "id": "abbreviation-first",
+        "quote": "The third session of the IWG",
+        "issue": "The abbreviation \"IWG\" is used before the full name, which only appears in the next sentence; give the full name at first use.",
+        "level": "medium"
+      },
+      {
+        "id": "sentence-start-number",
+        "quote": "15 Member States have confirmed their participation.",
+        "issue": "A sentence starts with a figure; spell it out (\"Fifteen Member States\").",
+        "level": "low"
+      },
+      {
+        "id": "labour-spelling",
+        "quote": "labor ministries",
+        "issue": "US spelling \"labor\"; UN style is \"labour\".",
+        "level": "low"
+      },
+      {
+        "id": "centre-spelling",
+        "quote": "registration center",
+        "issue": "US spelling \"center\"; UN style is \"centre\".",
+        "level": "low"
+      },
+      {
+        "id": "time-format",
+        "quote": "1:30 PM",
+        "issue": "Time in US format; UN style is \"1.30 p.m.\".",
+        "level": "low"
+      },
+      {
+        "id": "informal-tone",
+        "quote": "Please don't be late — nobody likes sitting around waiting for stragglers.",
+        "issue": "Informal tone and a contraction; ask for punctual attendance in formal, neutral terms.",
+        "level": "medium"
+      },
+      {
+        "id": "gendered-paragraph",
+        "quote": "Each head of delegation should ensure that his credentials",
+        "issue": "The paragraph assumes every delegate is a man (\"his\", \"he\", \"their wives\"); rewrite it in gender-inclusive language (\"their credentials\", \"spouses\").",
+        "level": "high"
+      },
+      {
+        "id": "country-name",
+        "quote": "the Government of South Korea",
+        "issue": "Not the official UN country name; use \"the Republic of Korea\".",
+        "level": "low"
+      },
+      {
+        "id": "thousands-separator",
+        "quote": "$1245000",
+        "issue": "No thousands separators; write \"$1,245,000\".",
+        "level": "low"
+      }
+    ],
+    "session-summary.md": [
+      {
+        "id": "chairman",
+        "quote": "the chairman of the Committee",
+        "issue": "Gendered title; UN style uses \"Chair\".",
+        "level": "low"
+      },
+      {
+        "id": "century",
+        "quote": "the 20th century",
+        "issue": "Century in figures; UN style is \"the twentieth century\".",
+        "level": "low"
+      },
+      {
+        "id": "abbreviation-first",
+        "quote": "The Committee reviewed the WSDP",
+        "issue": "The abbreviation \"WSDP\" is used before the full name, which only appears in the next sentence; give the full name at first use.",
+        "level": "medium"
+      },
+      {
+        "id": "per-cent",
+        "quote": "12 percent",
+        "issue": "\"percent\" is inconsistent with \"per cent\" in the same sentence; UN style uses \"per cent\" consistently.",
+        "level": "low"
+      },
+      {
+        "id": "country-name",
+        "quote": "The representative of Turkey",
+        "issue": "Not the official UN country name; use \"Türkiye\".",
+        "level": "low"
+      },
+      {
+        "id": "leading-zero",
+        "quote": "stood at .85",
+        "issue": "A decimal without a leading zero; write \"0.85\".",
+        "level": "low"
+      },
+      {
+        "id": "gendered-farmer",
+        "quote": "every farmer must be able to feed his family and his workers",
+        "issue": "Gender-exclusive language; recast in the plural (\"all farmers must be able to feed their families and workers\").",
+        "level": "medium"
+      },
+      {
+        "id": "secretary-general-caps",
+        "quote": "the secretary-general called",
+        "issue": "\"Secretary-General\" must be capitalized.",
+        "level": "low"
+      },
+      {
+        "id": "non-neutral-paragraph",
+        "quote": "In what can only be called a stunning triumph",
+        "issue": "The paragraph is promotional and hyperbolic (\"smashed every expectation\", \"truly historic\", \"forever\"); rewrite it as a neutral account of what the Committee decided.",
+        "level": "high"
+      }
+    ]
+  }
+}

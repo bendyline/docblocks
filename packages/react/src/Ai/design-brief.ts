@@ -25,7 +25,7 @@ import { extractJson } from './ai-json.js';
 import type { CompiledDiagram, GeneratedPicture } from './diagram-compile.js';
 import { contentTokens, extractNumbers } from './diagram-grounding.js';
 import { cleanLabel, clip } from './diagram-sanitize.js';
-import { chatOnce } from './illustrate-pipeline.js';
+import { chatOnce } from './chat-once.js';
 import { REALIZE_PASSAGE_CHARACTERS, buildRepairRequest } from './illustrate-prompts.js';
 import type { PictureOutcome } from './illustration.js';
 import { imageAltText, imageMarkdown } from './insert-generated-image.js';

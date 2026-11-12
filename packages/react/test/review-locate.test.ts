@@ -22,6 +22,28 @@ describe('locating a review excerpt', () => {
     expect(text(current, location)).to.equal(QUOTE);
   });
 
+  it('finds a quote of hard-wrapped text whose continuation indent the model dropped', () => {
+    const current =
+      'Results:\n\n- **Giving the model the goal beats walking it\n  through the steps.** Pooled.\n';
+    const location = locateReviewExcerpt(
+      current,
+      current,
+      'Giving the model the goal beats walking it\nthrough the steps.',
+    );
+    expect(location?.exact).to.equal(true);
+    expect(text(current, location)).to.equal(
+      'Giving the model the goal beats walking it\n  through the steps.',
+    );
+  });
+
+  it('follows edited text by what surrounded it when the quote differs in spacing', () => {
+    const reviewed = 'Opening line.\n\n- First part of the item\n  second part.\n\nClosing line.';
+    const current = reviewed.replace('First part', 'Revised part');
+    const location = locateReviewExcerpt(current, reviewed, 'First part of the item\nsecond part.');
+    expect(location?.exact).to.equal(false);
+    expect(text(current, location)).to.equal('Revised part of the item\n  second part.');
+  });
+
   it('picks the copy of a repeated quote nearest where the reviewed one was', () => {
     const reviewed =
       'Opening line of the page.\n\nSame words.\n\nMiddle of the page.\n\nSame words.';

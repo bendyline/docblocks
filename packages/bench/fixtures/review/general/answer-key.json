@@ -1,0 +1,212 @@
+{
+  "style": "general",
+  "note": "Moderate-quality documents: readable and plausible, each with obvious problems at three depths. Low: mechanical (typos, agreement, doubled words, comma splices). Medium: sentence-level (wordiness, passive voice that hides who acts, inconsistent terms, ambiguous pronouns, unsupported superlatives). High: document-level (contradictions between sections, a buried main point or request, a missing prerequisite or definition, steps out of order). A review that only fixes typos finds the lows and misses what matters.",
+  "cases": {
+    "team-status-update.md": [
+      {
+        "id": "agreement",
+        "quote": "two of them still needs manual restarts",
+        "issue": "Subject-verb agreement: \"two of them still need\".",
+        "level": "low"
+      },
+      {
+        "id": "doubled-word",
+        "quote": "Ravi finished the the load tests",
+        "issue": "Doubled word: \"the the\".",
+        "level": "low"
+      },
+      {
+        "id": "typo-receive",
+        "quote": "We recieve the new hardware quote on Thursday.",
+        "issue": "Misspelling (\"recieve\"); it is also in the present tense for a future event.",
+        "level": "low"
+      },
+      {
+        "id": "wordy",
+        "quote": "At this point in time, due to the fact that the index is very large",
+        "issue": "Wordy, filler-heavy sentence that says only that the large index will take long to copy.",
+        "level": "medium"
+      },
+      {
+        "id": "passive-owner",
+        "quote": "It will be decided later who handles the rollback.",
+        "issue": "Passive and vague: the biggest risk has no owner or decision date.",
+        "level": "medium"
+      },
+      {
+        "id": "inconsistent-term",
+        "quote": "Kim will finish the alert pipeline move by Wednesday.",
+        "issue": "\"Alert pipeline\" appears to mean the \"notification queue\" named earlier; the two names for one thing confuse the reader.",
+        "level": "medium"
+      },
+      {
+        "id": "date-contradiction",
+        "quote": "We are still on track to finish the migration by Friday, May 16.",
+        "issue": "Contradicts the next-steps section, which plans the cutover for Monday, May 19.",
+        "level": "high"
+      },
+      {
+        "id": "buried-ask",
+        "quote": "we need a decision from the leadership team by Tuesday",
+        "issue": "The one request that needs action from readers, with a deadline, is buried in the last paragraph; it belongs at the top.",
+        "level": "high"
+      }
+    ],
+    "printer-setup-guide.md": [
+      {
+        "id": "comma-splice",
+        "quote": "Your laptop will search the network, this can take up to a minute.",
+        "issue": "Comma splice: two sentences joined by a comma.",
+        "level": "low"
+      },
+      {
+        "id": "your-youre",
+        "quote": "make sure your connected to the office Wi-Fi",
+        "issue": "\"your\" should be \"you're\".",
+        "level": "low"
+      },
+      {
+        "id": "youre-your",
+        "quote": "restart you're laptop",
+        "issue": "\"you're\" should be \"your\".",
+        "level": "low"
+      },
+      {
+        "id": "jargon",
+        "quote": "the duplex functionality of the device may be constrained in certain circumstances, such as when utilizing heavier paper stock",
+        "issue": "Jargon and wordiness for a simple point: two-sided printing may not work with heavy paper.",
+        "level": "medium"
+      },
+      {
+        "id": "passive-how",
+        "quote": "If a job gets stuck, it should be cancelled from the queue.",
+        "issue": "Passive and unhelpful in a how-to: it does not say who cancels it or where the queue is.",
+        "level": "medium"
+      },
+      {
+        "id": "missing-prerequisite",
+        "quote": "You need your staff login and about ten minutes.",
+        "issue": "The prerequisites leave out the printer PIN from onboarding (needed in step 4) and the driver from the IT portal.",
+        "level": "high"
+      },
+      {
+        "id": "step-order",
+        "quote": "Install the driver package from the IT portal.",
+        "issue": "This step is last but must come before step 3: the guide itself says Heron will not appear until the driver is installed.",
+        "level": "high"
+      },
+      {
+        "id": "contact-contradiction",
+        "quote": "contact IT directly at extension 4401",
+        "issue": "Contradicts the troubleshooting section, which sends printer problems to the help desk at extension 4410.",
+        "level": "high"
+      }
+    ],
+    "remote-work-policy.md": [
+      {
+        "id": "there-their",
+        "quote": "for there first 90 days",
+        "issue": "\"there\" should be \"their\".",
+        "level": "low"
+      },
+      {
+        "id": "you-your",
+        "quote": "agreed with you manager",
+        "issue": "\"you\" should be \"your\".",
+        "level": "low"
+      },
+      {
+        "id": "typo-monitor",
+        "quote": "a moniter",
+        "issue": "Misspelling: \"monitor\".",
+        "level": "low"
+      },
+      {
+        "id": "run-on-channels",
+        "quote": "Requests are submitted through the HR portal or by email or by talking to your manager or in the weekly team meeting.",
+        "issue": "A run-on list of four channels leaves the actual process unclear; a policy should name one way to request.",
+        "level": "medium"
+      },
+      {
+        "id": "vague-requirement",
+        "quote": "which must be reliable",
+        "issue": "A requirement with no standard: \"reliable\" is not defined.",
+        "level": "medium"
+      },
+      {
+        "id": "hedged-passive",
+        "quote": "It is expected that cameras will be turned on in meetings, where possible, unless there are reasons not to.",
+        "issue": "Passive and hedged until it says nothing: is turning cameras on required or not?",
+        "level": "medium"
+      },
+      {
+        "id": "scope-contradiction",
+        "quote": "It applies to all full-time employees.",
+        "issue": "Contradicts the later section that grants remote days to part-time staff.",
+        "level": "high"
+      },
+      {
+        "id": "undefined-core-hours",
+        "quote": "Remote staff must be reachable during core hours.",
+        "issue": "\"Core hours\" is the central requirement and is never defined.",
+        "level": "high"
+      },
+      {
+        "id": "probation-contradiction",
+        "quote": "at the end of their six-month probation",
+        "issue": "Contradicts the eligibility section's 90-day probation.",
+        "level": "high"
+      }
+    ],
+    "feature-announcement.md": [
+      {
+        "id": "youre-your",
+        "quote": "invite you're teammates by email",
+        "issue": "\"you're\" should be \"your\".",
+        "level": "low"
+      },
+      {
+        "id": "doubled-word",
+        "quote": "can can upgrade",
+        "issue": "Doubled word: \"can can\".",
+        "level": "low"
+      },
+      {
+        "id": "inconsistent-spelling",
+        "quote": "organise tasks into boards",
+        "issue": "British \"organise\" here, American \"organize\" later in the post.",
+        "level": "low"
+      },
+      {
+        "id": "unsupported-superlative",
+        "quote": "the most requested feature in Plover's history",
+        "issue": "An unsupported superlative claim.",
+        "level": "medium"
+      },
+      {
+        "id": "filler-really",
+        "quote": "we really wanted to make something that would really help",
+        "issue": "Filler: \"really\" three times in one sentence, saying nothing specific.",
+        "level": "medium"
+      },
+      {
+        "id": "ambiguous-pronouns",
+        "quote": "It will make it easier for them to manage it.",
+        "issue": "Ambiguous pronouns: \"it\", \"them\" and \"it\" have no clear referents.",
+        "level": "medium"
+      },
+      {
+        "id": "buried-lede",
+        "quote": "With Shared Boards, everyone on a team can see, edit and comment on the same board in real time",
+        "issue": "What the feature actually does arrives only in the fourth paragraph, after history and filler; it should lead.",
+        "level": "high"
+      },
+      {
+        "id": "availability-contradiction",
+        "quote": "Shared Boards is available on the Team plan, and it's free for everyone during the beta.",
+        "issue": "Contradictory availability: Team plan only, or free for everyone? The pricing section implies Starter users must upgrade.",
+        "level": "high"
+      }
+    ]
+  }
+}

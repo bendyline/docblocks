@@ -18,13 +18,13 @@ AI models, speech models, and voices are not part of this distribution. They are
 
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
-| @bendyline/gezel | 1.2.14 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-app-sdk | 1.1.14 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-catalog | 1.2.14 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-client | 1.2.14 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-inference | 1.0.9 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-knowledge | 1.2.10 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezk | 1.0.6 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel | 1.3.0 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-app-sdk | 1.2.0 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-catalog | 1.3.0 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-client | 1.3.0 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-inference | 1.1.0 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-knowledge | 1.2.11 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezk | 1.0.7 | MIT | https://github.com/bendyline/gezel |
 | @bendyline/squisq | 2.13.15 | MIT | https://github.com/bendyline/squisq |
 | @bendyline/squisq-calc | 2.11.2 | MIT | https://github.com/bendyline/squisq |
 | @bendyline/squisq-editor-react | 2.13.22 | MIT | https://github.com/bendyline/squisq |
@@ -314,8 +314,8 @@ The following locked packages declare a license identifier but publish no packag
 | onnxruntime-node | 1.30.0 | MIT | https://www.npmjs.com/package/onnxruntime-node |
 
 ==============================================================================
-Components: @bendyline/gezel-app-sdk@1.1.14, @bendyline/gezel-catalog@1.2.14, @bendyline/gezel-client@1.2.14, @bendyline/gezel-inference@1.0.9, @bendyline/gezel-knowledge@1.2.10, @bendyline/gezel@1.2.14, @bendyline/gezk@1.0.6
-Source files: node_modules/@bendyline/gezel-app-sdk/LICENSE, node_modules/@bendyline/gezel-catalog/LICENSE, node_modules/@bendyline/gezel-client/LICENSE, node_modules/@bendyline/gezel-inference/LICENSE, node_modules/@bendyline/gezel-knowledge/LICENSE, node_modules/@bendyline/gezel/LICENSE, node_modules/@bendyline/gezk/LICENSE
+Components: @bendyline/gezel-app-sdk@1.2.0, @bendyline/gezel-catalog@1.3.0, @bendyline/gezel-client@1.3.0, @bendyline/gezel-inference@1.1.0, @bendyline/gezel-knowledge@1.2.11, @bendyline/gezel@1.3.0, @bendyline/gezk@1.0.7
+Source files: node_modules/@bendyline/gezel-app-sdk/LICENSE, node_modules/@bendyline/gezel-catalog/LICENSE, node_modules/@bendyline/gezel-client/LICENSE, node_modules/@bendyline/gezel/LICENSE, node_modules/@bendyline/gezk/LICENSE, packages/desktop/node_modules/@bendyline/gezel-inference/LICENSE, packages/desktop/node_modules/@bendyline/gezel-inference/node_modules/@bendyline/gezel-knowledge/LICENSE
 ==============================================================================
 MIT License
 
@@ -474,56 +474,6 @@ Source files: node_modules/@bendyline/gezel-client/node_modules/undici/LICENSE
 MIT License
 
 Copyright (c) Matteo Collina and Undici contributors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-==============================================================================
-Components: buffer-crc32@1.0.0
-Source files: node_modules/@bendyline/gezel-knowledge/node_modules/buffer-crc32/LICENSE
-==============================================================================
-The MIT License
-
-Copyright (c) 2013-2024 Brian J. Brennan
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to use,
-copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
-Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
-INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
-PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
-FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-==============================================================================
-Components: yauzl@3.4.0, yazl@3.3.1
-Source files: node_modules/@bendyline/gezel-knowledge/node_modules/yazl/LICENSE, node_modules/yauzl/LICENSE
-==============================================================================
-The MIT License (MIT)
-
-Copyright (c) 2014 Josh Wolfe
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -15601,6 +15551,56 @@ INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
 OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
 TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
+
+==============================================================================
+Components: yauzl@3.4.0, yazl@3.3.1
+Source files: node_modules/yauzl/LICENSE, packages/desktop/node_modules/yazl/LICENSE
+==============================================================================
+The MIT License (MIT)
+
+Copyright (c) 2014 Josh Wolfe
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+Components: buffer-crc32@1.0.0
+Source files: packages/desktop/node_modules/buffer-crc32/LICENSE
+==============================================================================
+The MIT License
+
+Copyright (c) 2013-2024 Brian J. Brennan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
 Components: @ironcalc/wasm@0.8.4

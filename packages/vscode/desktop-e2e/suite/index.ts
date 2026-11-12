@@ -62,6 +62,10 @@ export async function run(): Promise<void> {
 /**
  * Catalog entries carry a SHA-256 of each document, and VS Code 1.85's Node 18
  * extension host has no Web Crypto: the catalog must still be written.
+ *
+ * Generation is triggered by the refresh command, not the settings watcher: on
+ * a cold Linux runner the watcher can miss `.docblocks/workspace.json` being
+ * created moments after the window opens, and the catalog never appears.
  */
 async function checkWorkspaceCatalog(workspace: vscode.WorkspaceFolder): Promise<void> {
   const settingsFolder = vscode.Uri.joinPath(workspace.uri, '.docblocks');
@@ -72,12 +76,13 @@ async function checkWorkspaceCatalog(workspace: vscode.WorkspaceFolder): Promise
     new TextEncoder().encode(`${JSON.stringify(settings, null, 2)}\n`),
   );
   try {
+    // Re-reads the settings from disk and resolves once the catalog is written.
+    await vscode.commands.executeCommand('docblocks.refreshWorkspaceOutputs');
     const catalog = (await waitForJson(catalogUri, 'the workspace catalog was never written')) as {
       documents: Array<{ path: string; contentHash?: string }>;
     };
     const entry = catalog.documents.find((document) => document.path === 'test-doc.md');
     assert.match(entry?.contentHash ?? '', /^[0-9a-f]{64}$/u);
-    await vscode.commands.executeCommand('docblocks.refreshWorkspaceOutputs');
   } finally {
     await vscode.workspace.fs.delete(settingsFolder, { recursive: true, useTrash: false });
     await Promise.resolve(vscode.workspace.fs.delete(catalogUri, { useTrash: false })).catch(

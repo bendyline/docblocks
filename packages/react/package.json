@@ -42,6 +42,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./ai": {
+      "types": "./dist/ai/index.d.ts",
+      "import": "./dist/ai/index.js",
+      "default": "./dist/ai/index.js"
+    },
     "./export": {
       "types": "./dist/export/index.d.ts",
       "import": "./dist/export/index.js",

@@ -177,6 +177,65 @@ describe('desktop AI model listing', () => {
     expect(parseAiModelDownloadInfoList(downloadable)).to.deep.equal(downloadable);
   });
 
+  it('ranks by measured document quality when Gezel sends it, and carries the score', () => {
+    const fits = { tier: 'fits', label: 'fits in VRAM', detail: 'Runs fully on the GPU.' };
+    const download = (id: string, extra: Record<string, unknown> = {}) => ({
+      id: `llama-cpp:${id}`,
+      name: id,
+      owned_by: 'llama-cpp',
+      availability: 'download-required' as const,
+      fit: fits,
+      ...extra,
+    });
+    const entries = [
+      // Gezel's general pick, which DocBlocks' own ranking overrides.
+      download('agentic', {
+        recommendation: { score: 100, recommended: true },
+        docbench_recommendation: { score: 60, recommended: false },
+      }),
+      download('writer', {
+        recommendation: { score: 80, recommended: false },
+        docbench_recommendation: { score: 100, recommended: true },
+        docbench: { score: 81.2, band: 1, version: '0.2.1', families: { review: 72 } },
+      }),
+      // A malformed result is dropped rather than trusted.
+      download('odd', {
+        recommendation: { score: 70, recommended: false },
+        docbench: { score: 'great', band: 1, version: '0.2.1' },
+      }),
+      // A result without family scores still crosses.
+      download('bare', { docbench: { score: 50, band: 3, version: '0.2.1' } }),
+    ];
+    const downloadable = toAiModelDownloadList(entries);
+    expect(downloadable.map((model) => model.label)).to.deep.equal([
+      'writer',
+      'odd',
+      'agentic',
+      'bare',
+    ]);
+    expect(downloadable[0]).to.include({ score: 100, recommended: true });
+    expect(downloadable[0]?.docbench).to.deep.equal({
+      score: 81.2,
+      band: 1,
+      version: '0.2.1',
+      families: { review: 72 },
+    });
+    expect(downloadable[1]?.docbench).to.equal(undefined);
+    expect(downloadable[3]?.docbench?.families).to.deep.equal({});
+    expect(parseAiModelDownloadInfoList(downloadable)).to.deep.equal(downloadable);
+
+    const installed = toAiModelList([
+      {
+        id: 'llama-cpp:writer',
+        owned_by: 'llama-cpp',
+        locality: 'on-device',
+        docbench: { score: 81.2, band: 1, version: '0.2.1', families: {} },
+      },
+    ]);
+    expect(installed[0]?.docbench?.score).to.equal(81.2);
+    expect(parseAiModelInfoList(installed)).to.deep.equal(installed);
+  });
+
   it('keeps the provider order when it rates nothing', () => {
     const entries = ['b', 'a', 'c'].map((id) => ({
       id: `llama-cpp:${id}`,

@@ -1,0 +1,159 @@
+{
+  "style": "resume",
+  "note": "Seeded defects, each one a practice the product's resume brief names. Defects are deliberately obvious: the difficulty is finding them all without flagging sound text, not spotting subtle ones. A finding counts as matching an issue when it points at the quoted passage (or overlaps it) and names the same problem.",
+  "cases": {
+    "junior-developer.md": [
+      {
+        "id": "objective",
+        "quote": "To obtain a challenging position in a fast-paced company where I can grow my skills.",
+        "issue": "A dated objective statement; replace it with a summary or remove it."
+      },
+      {
+        "id": "cliche-summary",
+        "quote": "Hard-working team player with a passion for technology.",
+        "issue": "A generic summary made of cliches (\"hard-working\", \"team player\")."
+      },
+      {
+        "id": "duty",
+        "quote": "Responsible for maintaining the internal reporting dashboard.",
+        "issue": "Lists a duty (\"Responsible for\") instead of an accomplishment; lead with an action verb."
+      },
+      {
+        "id": "first-person",
+        "quote": "I built a caching layer for the customer API.",
+        "issue": "Uses a first-person pronoun (\"I\")."
+      },
+      {
+        "id": "quantify",
+        "quote": "Improved page load time on the analytics site.",
+        "issue": "A result with no measurable outcome; say by how much."
+      },
+      {
+        "id": "past-role-tense",
+        "quote": "Answer customer tickets about installation and licensing.",
+        "issue": "Present tense in a past role; earlier roles take the past tense."
+      },
+      {
+        "id": "date-format",
+        "quote": "06/2021 - 12/2022",
+        "issue": "Date format differs from the other entry (\"Jan 2023 – Present\")."
+      },
+      {
+        "id": "personal-details",
+        "quote": "Age: 24. Marital status: single.",
+        "issue": "Personal details such as age and marital status do not belong on a resume."
+      },
+      {
+        "id": "references",
+        "quote": "References available upon request.",
+        "issue": "\"References available upon request\" is dated and unneeded."
+      }
+    ],
+    "marketing-manager.md": [
+      {
+        "id": "generic-summary",
+        "quote": "Experienced professional seeking new opportunities.",
+        "issue": "A generic summary that says nothing specific about the candidate."
+      },
+      {
+        "id": "order",
+        "quote": "### Marketing Coordinator, Lakeshore Foods",
+        "issue": "Entries are not in reverse-chronological order: the 2014–2018 role is listed before the current one."
+      },
+      {
+        "id": "duty",
+        "quote": "Duties included managing the company's social media accounts.",
+        "issue": "Lists duties instead of accomplishments."
+      },
+      {
+        "id": "weak-verb",
+        "quote": "Helped with the launch of the spring product line.",
+        "issue": "Weak verb (\"Helped with\"); lead with a strong action verb and the candidate's own contribution."
+      },
+      {
+        "id": "quantify",
+        "quote": "Grew the newsletter audience",
+        "issue": "A result with no measurable outcome; say by how much."
+      },
+      {
+        "id": "punctuation",
+        "quote": "Grew the newsletter audience",
+        "issue": "Inconsistent punctuation: this bullet has no closing period while the others do."
+      },
+      {
+        "id": "long-bullet",
+        "quote": "Oversee a quarterly budget and report results to the executive team",
+        "issue": "A bullet far longer than two lines; split or tighten it."
+      },
+      {
+        "id": "date-format",
+        "quote": "March 2018 – Present",
+        "issue": "Date formats differ between entries (\"2014 – 2018\" and \"March 2018 – Present\")."
+      },
+      {
+        "id": "vague-skills",
+        "quote": "Excellent communication skills. Detail-oriented. Strategic thinker.",
+        "issue": "Vague, unsupported claims and cliches in place of concrete skills."
+      }
+    ],
+    "registered-nurse.md": [
+      {
+        "id": "objective",
+        "quote": "Seeking a nursing position that will allow me to use my skills and experience.",
+        "issue": "A dated, generic objective statement."
+      },
+      {
+        "id": "current-role-tense",
+        "quote": "Coordinated staffing for a 28-bed medical-surgical unit.",
+        "issue": "Past tense in the current role; the current role takes the present tense."
+      },
+      {
+        "id": "first-person",
+        "quote": "My role was to train new graduate nurses on unit procedures.",
+        "issue": "First-person pronoun and a duty phrasing (\"My role was to\")."
+      },
+      {
+        "id": "quantify",
+        "quote": "Reduced medication errors on the unit.",
+        "issue": "A result with no measurable outcome; say by how much."
+      },
+      {
+        "id": "duty",
+        "quote": "Responsible for patient intake on night shifts.",
+        "issue": "Lists a duty (\"Responsible for\") instead of an accomplishment."
+      },
+      {
+        "id": "date-format",
+        "quote": "2019–2021",
+        "issue": "Date formats differ between entries (\"March 2021 – now\" and \"2019–2021\")."
+      },
+      {
+        "id": "cliches",
+        "quote": "Go-getter. Detail-oriented. Works well under pressure.",
+        "issue": "Cliches in place of concrete strengths."
+      },
+      {
+        "id": "references",
+        "quote": "References available upon request.",
+        "issue": "\"References available upon request\" is dated and unneeded."
+      }
+    ],
+    "data-analyst-strong.md": [
+      {
+        "id": "duty",
+        "quote": "Responsible for the data team's documentation.",
+        "issue": "Lists a duty (\"Responsible for\") instead of an accomplishment."
+      },
+      {
+        "id": "quantify",
+        "quote": "Improved the accuracy of the inventory reports.",
+        "issue": "A result with no measurable outcome; say by how much."
+      },
+      {
+        "id": "cliche",
+        "quote": "Strong team player.",
+        "issue": "A cliche (\"team player\") among concrete skills."
+      }
+    ]
+  }
+}

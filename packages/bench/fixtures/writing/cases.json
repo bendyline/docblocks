@@ -1,0 +1,151 @@
+{
+  "note": "Content generation as the AI draft dialog does it. Compose drafts new Markdown 'at the cursor'; the product never tells the model where the cursor is, so append and insert cases name the place in the instructions, as a person would. Rewrite sends only the selection. 'expect' lists what deterministic checks can verify; the judge reads the rest. Every fact a case needs is in its instructions or document, so anything else specific is invented.",
+  "compose": [
+    {
+      "id": "volunteer-guide",
+      "instructions": "Write a one-page welcome guide for new volunteers at the Fernhill Community Garden. Cover what to bring, what happens on the first day, and three safety rules. Use headings and a short checklist.",
+      "expect": { "minWords": 150, "maxWords": 700, "structure": ["heading", "list"] }
+    },
+    {
+      "id": "hours-announcement",
+      "instructions": "Write a short announcement for the Larkspur Library website: starting March 1, weekend hours change to Saturday 9 a.m. to 6 p.m. and Sunday noon to 5 p.m. The children's story hour moves from Saturday at 10 a.m. to Sunday at 1 p.m.",
+      "expect": {
+        "maxWords": 250,
+        "mustInclude": ["March 1", "Saturday", "Sunday", "story hour", "noon"]
+      }
+    },
+    {
+      "id": "kickoff-agenda",
+      "instructions": "Draft an agenda for a 45-minute kickoff meeting for the Q3 website redesign. Give each item a time allocation, make the times add up to 45 minutes, and include a table with the owner of each item (use placeholder roles such as Project lead or Design lead, not names).",
+      "expect": { "maxWords": 400, "structure": ["table"], "mustInclude": ["45"] }
+    },
+    {
+      "id": "product-description",
+      "instructions": "Write a product description for the Tidewell insulated water bottle: 750 ml, keeps drinks cold for 24 hours and hot for 12, stainless steel body, dishwasher-safe lid. About 120 words, in prose with no bullet points.",
+      "expect": {
+        "minWords": 70,
+        "maxWords": 200,
+        "noList": true,
+        "mustInclude": ["750 ml", "24 hours", "12", "dishwasher"]
+      }
+    },
+    {
+      "id": "backup-explainer",
+      "instructions": "Explain to a non-technical manager what a database backup is and why we regularly test restoring from it. Three short paragraphs, no jargon.",
+      "expect": { "minWords": 80, "maxWords": 350, "noList": true }
+    }
+  ],
+  "append": [
+    {
+      "id": "trip-recommendations",
+      "document": "trip-report.md",
+      "instructions": "Add a short Recommendations section at the end with three recommendations for our team, based only on what this report says.",
+      "expect": { "maxWords": 250, "structure": ["heading", "list"] }
+    },
+    {
+      "id": "faq-two-more",
+      "document": "onboarding-faq.md",
+      "instructions": "Add two more questions and answers at the end, in the same format: one about parking (free in the north lot, no permit needed) and one about building access (badges are issued at reception on your first morning).",
+      "expect": {
+        "maxWords": 160,
+        "structure": ["heading"],
+        "mustInclude": ["north lot", "reception"]
+      }
+    },
+    {
+      "id": "proposal-conclusion",
+      "document": "project-proposal.md",
+      "instructions": "Add a Conclusion section that summarizes the proposal in a few sentences and asks the leadership team to approve the budget by June 30.",
+      "expect": { "maxWords": 200, "structure": ["heading"], "mustInclude": ["June 30"] }
+    },
+    {
+      "id": "recipe-variations",
+      "document": "recipe.md",
+      "instructions": "Add a Variations section with two ways to change this soup.",
+      "expect": { "maxWords": 200, "structure": ["heading"] }
+    }
+  ],
+  "insert": [
+    {
+      "id": "proposal-risks",
+      "document": "project-proposal.md",
+      "after": "In phase two (September), we would add international orders.",
+      "instructions": "Add a Risks section that goes between the Timeline and Budget sections, covering the two risks the proposal mentions elsewhere and what we would do about each.",
+      "expect": { "maxWords": 220, "structure": ["heading"] }
+    },
+    {
+      "id": "trip-accessibility",
+      "document": "trip-report.md",
+      "after": "where moderated sessions had taken them two weeks.",
+      "instructions": "In the Sessions I attended section, after the paragraph about the research methods track, add one paragraph about the accessibility workshop on the second afternoon, which covered alt text and color contrast.",
+      "expect": { "maxWords": 140, "noList": true, "mustInclude": ["alt text", "contrast"] }
+    },
+    {
+      "id": "style-dates",
+      "document": "style-guide.md",
+      "after": "- Write times as 9:30 a.m., not 9.30am or 09:30.",
+      "instructions": "Add one bullet to the end of the Numbers and dates list: write dates as 3 March 2026, with no comma and no ordinal.",
+      "expect": { "maxWords": 40, "structure": ["list"], "mustInclude": ["3 March 2026"] }
+    },
+    {
+      "id": "faq-equipment",
+      "document": "onboarding-faq.md",
+      "after": "IT will help you sign in.",
+      "instructions": "Right after the laptop question, add a question and answer about extra equipment: monitors and keyboards are requested through the IT portal and arrive within three working days.",
+      "expect": {
+        "maxWords": 90,
+        "structure": ["heading"],
+        "mustInclude": ["IT portal", "three working days"]
+      }
+    }
+  ],
+  "rewrite": [
+    {
+      "id": "shorten",
+      "selection": "At this point in time, we would like to take this opportunity to let all of our valued customers know that, due to the fact that our warehouse is moving to a new location, all orders that are placed between the dates of June 3 and June 7 will be shipped out a little bit later than they normally would be, by approximately two additional business days.",
+      "instructions": "Make this about half as long without losing any facts.",
+      "expect": { "maxRatio": 0.7, "keepNumbers": true, "mustInclude": ["June 3", "June 7", "two"] }
+    },
+    {
+      "id": "formal",
+      "selection": "Hey! Quick heads up - the server upgrade is gonna happen Saturday night from 10pm to 2am, so the app will be down for a bit. Sorry for the hassle, we'll ping you when it's back.",
+      "instructions": "Rewrite this as a formal notice to business clients.",
+      "expect": {
+        "minRatio": 0.6,
+        "maxRatio": 2.2,
+        "keepNumbers": true,
+        "mustInclude": ["Saturday"]
+      }
+    },
+    {
+      "id": "fix-grammar",
+      "selection": "Our team have finished the first draft of the report, and its now ready for review. Please send you're comments by Friday so we can include them in the final version, which are due on March 14.",
+      "instructions": "Fix the grammar and spelling only. Do not change anything else.",
+      "expect": {
+        "minRatio": 0.85,
+        "maxRatio": 1.15,
+        "keepNumbers": true,
+        "mustExclude": ["you're comments", "its now"],
+        "minOverlap": 0.8
+      }
+    },
+    {
+      "id": "bullets-to-prose",
+      "selection": "- Doors open at 6 p.m.\n- Dinner is served at 7 p.m.\n- Awards start at 8 p.m.\n- Parking is free after 5 p.m. in the Elm Street garage",
+      "instructions": "Turn these bullets into one short paragraph.",
+      "expect": { "noList": true, "keepNumbers": true, "mustInclude": ["Elm Street"] }
+    },
+    {
+      "id": "simplify",
+      "selection": "The application leverages end-to-end encryption, whereby message payloads are encrypted on the originating device utilizing the recipient's public key, thereby precluding decryption by intermediary infrastructure, including our own servers, at any point during transit or storage.",
+      "instructions": "Rewrite this for a general audience with no technical background.",
+      "expect": { "maxRatio": 1.6 }
+    },
+    {
+      "id": "friendlier",
+      "selection": "Residents are reminded that bins must be placed at the curb by 7 a.m. on Tuesdays. Bins placed out late will not be collected. Overfilled bins will not be emptied. Repeated violations will result in a fine of $50.",
+      "instructions": "Make this friendlier, but keep every rule, the deadline and the fine.",
+      "expect": { "keepNumbers": true, "mustInclude": ["Tuesday", "$50"] }
+    }
+  ]
+}

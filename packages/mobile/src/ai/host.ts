@@ -20,7 +20,7 @@ import {
   type EmbeddingConnection,
   type ModelDescriptor,
 } from '@bendyline/gezel-app-sdk/browser';
-import { modelChoices } from './models';
+import { downloadChoices, modelChoices } from './models';
 import {
   aiError,
   checkCancelled,
@@ -28,6 +28,7 @@ import {
   failure,
   interruptedDownload,
   MobileAiError,
+  nativeBusy,
   notify,
 } from './errors';
 
@@ -38,6 +39,8 @@ export interface MobileAiOptions {
   requestTimeoutMs?: number;
   /** Waits before each retry of an interrupted download that saved no new bytes. */
   downloadRetryDelaysMs?: readonly number[];
+  /** Waits before each retry of a call native refused while a model change held it. */
+  busyRetryDelaysMs?: readonly number[];
 }
 const defaults: AiPreferences = { enabled: false, model: null, reviewMode: 'explicit' };
 const provider = { name: 'Gezel', version: '0.1.0', mode: 'hosted' as const };
@@ -47,7 +50,32 @@ const excludedProviders = new Set(['android-mlkit']);
 // About a minute of trying while the network is gone; long enough to ride out
 // a Wi-Fi to cellular handoff or a brief dead zone.
 const downloadRetryDelaysMs = [2_000, 5_000, 10_000, 20_000, 30_000];
+// Starting or resuming a download holds native admission while it checks the
+// saved bytes, which can take a while for a multi-gigabyte model.
+const busyRetryDelaysMs = [500, 1_000, 2_000, 4_000, 8_000, 15_000];
+const tookTooLong = () =>
+  new MobileAiError(
+    'timeout',
+    'The on-device model took too long. Try a shorter selection or a smaller model.',
+  );
 const offered = (id: string) => !excludedProviders.has(id.split(':')[0]);
+/** Resolves once `promise` settles or `signal` aborts; the caller checks which. */
+function settledOrAborted(promise: Promise<void>, signal: AbortSignal) {
+  return new Promise<void>((resolve) => {
+    if (signal.aborted) return resolve();
+    const done = () => {
+      signal.removeEventListener('abort', done);
+      resolve();
+    };
+    signal.addEventListener('abort', done, { once: true });
+    void promise.then(done);
+  });
+}
+async function pause(ms: number, signal: AbortSignal) {
+  // abortableDelay throws synchronously once aborted, and rejects with the bare abort reason.
+  checkCancelled(signal);
+  await abortableDelay(ms, signal).catch(() => checkCancelled(signal));
+}
 /** Catalog names label a request's sources; reading them once per interval keeps chats quick. */
 const CATALOG_NAMES_MS = 30_000;
 
@@ -61,7 +89,15 @@ export function createMobileAi(options: MobileAiOptions) {
   let descriptors: ModelDescriptor[] = [];
   let choices: AiModelInfo[] = [];
   let suspended = false;
-  let operation: AbortController | undefined;
+  // Native Gezel runs one conversation at a time and admits a download only
+  // between conversations, but a download under way never blocks a conversation.
+  let chat: { controller: AbortController; finished: Promise<void>; finish(): void } | undefined;
+  let install: AbortController | undefined;
+  // Every chat and download, including chats still waiting their turn.
+  const operations = new Set<AbortController>();
+  const abortAll = () => {
+    for (const controller of operations) controller.abort();
+  };
   let catalogs: { at: number; names: Map<string, string>; enabled: boolean } | undefined;
   const rememberCatalogs = (list: readonly { id: string; name: string; enabled: boolean }[]) =>
     (catalogs = {
@@ -93,7 +129,7 @@ export function createMobileAi(options: MobileAiOptions) {
         kind: 'ready',
         provider,
         model: choices.find((model) => model.isDefault) ?? null,
-        activeRequests: operation ? 1 : 0,
+        activeRequests: chat ? 1 : 0,
       });
   };
   async function refresh() {
@@ -113,13 +149,36 @@ export function createMobileAi(options: MobileAiOptions) {
       return failure(error);
     }
   }
-  const reserve = (controller: AbortController) => {
-    if (operation)
-      throw new MobileAiError('rate-limited', 'Finish the current AI operation first.');
-    operation = controller;
+  /** Waits out running conversations, calling `waiting` before each wait. */
+  async function afterChats(signal: AbortSignal, waiting: () => void) {
+    while (chat && !signal.aborted) {
+      waiting();
+      await settledOrAborted(chat.finished, signal);
+    }
+    checkCancelled(signal);
+  }
+  /** A chat waits its turn rather than failing; each starts once the one before it ends. */
+  async function reserveChat(controller: AbortController, waiting: () => void) {
+    await afterChats(controller.signal, waiting);
+    let finish = () => {};
+    const finished = new Promise<void>((resolve) => (finish = resolve));
+    chat = { controller, finished, finish };
+  }
+  const reserveInstall = (controller: AbortController) => {
+    if (install)
+      throw new MobileAiError(
+        'rate-limited',
+        'Another model is already downloading. Try again when it finishes.',
+      );
+    install = controller;
   };
   const release = (controller: AbortController) => {
-    if (operation === controller) operation = undefined;
+    operations.delete(controller);
+    if (chat?.controller === controller) {
+      chat.finish();
+      chat = undefined;
+    }
+    if (install === controller) install = undefined;
     ready();
   };
   const ai: DocBlocksHostAiAPI = {
@@ -173,7 +232,7 @@ export function createMobileAi(options: MobileAiOptions) {
       options.writePreferences(next);
       preferences = next;
       if (!next.enabled) {
-        operation?.abort();
+        abortAll();
         choices = [];
         descriptors = [];
         update({ kind: 'unavailable', reason: 'opt-out' });
@@ -185,7 +244,7 @@ export function createMobileAi(options: MobileAiOptions) {
     connect: start,
     disconnect: async () => {
       try {
-        operation?.abort();
+        abortAll();
         await embedding.setEnabled(false);
         await embedding.setEnabled(preferences.enabled);
         if (preferences.enabled && !suspended) await start();
@@ -207,23 +266,7 @@ export function createMobileAi(options: MobileAiOptions) {
         const models = await refresh();
         return {
           ok: true,
-          value: models.flatMap((model) =>
-            model.availability === 'download-required' || model.availability === 'downloading'
-              ? [
-                  {
-                    id: model.id,
-                    label: model.name,
-                    contextWindow: model.context_window ?? null,
-                    downloadBytes: model.download_bytes ?? null,
-                    state: model.availability,
-                    // The native listing carries no device rating.
-                    fit: null,
-                    score: null,
-                    recommended: false,
-                  },
-                ]
-              : [],
-          ),
+          value: downloadChoices(models),
         };
       } catch (error) {
         return failure(error);
@@ -231,9 +274,10 @@ export function createMobileAi(options: MobileAiOptions) {
     },
     installModel(id, onProgress) {
       const controller = new AbortController();
+      operations.add(controller);
       const done = (async (): Promise<AiResult<AiModelInfo>> => {
         try {
-          reserve(controller);
+          reserveInstall(controller);
           if (!offered(id))
             throw new MobileAiError(
               'model-unavailable',
@@ -242,10 +286,19 @@ export function createMobileAi(options: MobileAiOptions) {
           let percent: number | null = null;
           let bytes = 0,
             saved = 0,
-            stalled = 0;
+            stalled = 0,
+            busy = 0;
           let installed: ModelDescriptor;
           while (true) {
             try {
+              // Native starts or resumes a download only between conversations.
+              await afterChats(controller.signal, () =>
+                notify(onProgress, {
+                  phase: 'waiting',
+                  message: 'Waiting for the current AI request to finish…',
+                  percent,
+                }),
+              );
               installed = await embedding.models.prepare(id, {
                 allowDownload: true,
                 signal: controller.signal,
@@ -261,6 +314,15 @@ export function createMobileAi(options: MobileAiOptions) {
               });
               break;
             } catch (error) {
+              if (nativeBusy(error) && !controller.signal.aborted) {
+                // A chat that began after the wait above: the loop waits it out.
+                if (chat) continue;
+                const delay = (options.busyRetryDelaysMs ?? busyRetryDelaysMs)[busy++];
+                if (delay !== undefined) {
+                  await pause(delay, controller.signal);
+                  continue;
+                }
+              }
               // Preparing again resumes from the saved bytes, so only attempts
               // that saved nothing new spend the retry budget.
               if (bytes > saved) {
@@ -275,11 +337,7 @@ export function createMobileAi(options: MobileAiOptions) {
                 message: `Download interrupted. Trying again in ${Math.max(1, Math.round(delay / 1000))} seconds…`,
                 percent,
               });
-              // abortableDelay throws synchronously once aborted, and rejects with the bare abort reason.
-              checkCancelled(controller.signal);
-              await abortableDelay(delay, controller.signal).catch(() =>
-                checkCancelled(controller.signal),
-              );
+              await pause(delay, controller.signal);
             }
           }
           await refresh();
@@ -311,13 +369,19 @@ export function createMobileAi(options: MobileAiOptions) {
         finishReason: 'cancelled',
         usage: null,
       });
+      const queued = () =>
+        emit({
+          kind: 'progress',
+          progress: { phase: 'queued', percent: null, outputTokens: null, tokensPerSecond: null },
+        });
+      operations.add(controller);
       const done = (async (): Promise<AiResult<AiChatCompletion>> => {
         let timeout: ReturnType<typeof setTimeout> | undefined;
         try {
-          reserve(controller);
           const request = parseAiChatRequest(raw);
           if (!request)
             throw new MobileAiError('budget-exceeded', 'This AI request is invalid or too large.');
+          await reserveChat(controller, queued);
           await refresh();
           checkCancelled(controller.signal);
           modelId =
@@ -374,42 +438,54 @@ export function createMobileAi(options: MobileAiOptions) {
             context.status === 'used' || catalogs?.enabled === true,
           );
           if (knowledge) emit({ kind: 'knowledge', knowledge });
-          const result = await embedding.streamText(
-            {
-              model: model.id,
-              messages: context.messages,
-              maxTokens,
-              // Sampling support comes from inventory, never a host/provider-name test.
-              ...(model.supported_options?.includes('temperature') &&
-              request.temperature !== undefined
-                ? { temperature: request.temperature }
-                : {}),
-              // Native replies are capped at 4K tokens; leave that budget for
-              // the editor's answer instead of an invisible thinking phase.
-              ...(model.supported_options?.includes('reasoning_effort')
-                ? { reasoningEffort: 'none' }
-                : {}),
-            },
-            {
-              signal: controller.signal,
-              maxCharacters: Math.min(AI_WIRE_LIMITS.completionCharacters, 4 * 1024 * 1024),
-              onEvent: (event) => {
-                if (event.type === 'delta') {
-                  text += event.text;
-                  emit({ kind: 'delta', text: event.text });
-                }
-                if (event.type === 'progress') {
-                  const progress = parseAiChatProgress(event.progress);
-                  if (progress) emit({ kind: 'progress', progress });
-                }
+          const stream = () =>
+            embedding.streamText(
+              {
+                model: model.id,
+                messages: context.messages,
+                maxTokens,
+                // Sampling support comes from inventory, never a host/provider-name test.
+                ...(model.supported_options?.includes('temperature') &&
+                request.temperature !== undefined
+                  ? { temperature: request.temperature }
+                  : {}),
+                // Native replies are capped at 4K tokens; leave that budget for
+                // the editor's answer instead of an invisible thinking phase.
+                ...(model.supported_options?.includes('reasoning_effort')
+                  ? { reasoningEffort: 'none' }
+                  : {}),
               },
-            },
-          );
-          if (timedOut)
-            throw new MobileAiError(
-              'timeout',
-              'The on-device model took too long. Try a shorter selection or a smaller model.',
+              {
+                signal: controller.signal,
+                maxCharacters: Math.min(AI_WIRE_LIMITS.completionCharacters, 4 * 1024 * 1024),
+                onEvent: (event) => {
+                  if (event.type === 'delta') {
+                    text += event.text;
+                    emit({ kind: 'delta', text: event.text });
+                  }
+                  if (event.type === 'progress') {
+                    const progress = parseAiChatProgress(event.progress);
+                    if (progress) emit({ kind: 'progress', progress });
+                  }
+                },
+              },
             );
+          let result: Awaited<ReturnType<typeof stream>>;
+          for (let busy = 0; ; busy++) {
+            try {
+              result = await stream();
+              break;
+            } catch (error) {
+              // Native refuses a conversation while a download starts or
+              // resumes; nothing has streamed yet, so wait and ask again.
+              const delay = (options.busyRetryDelaysMs ?? busyRetryDelaysMs)[busy];
+              if (text || controller.signal.aborted || delay === undefined || !nativeBusy(error))
+                throw error;
+              queued();
+              await pause(delay, controller.signal);
+            }
+          }
+          if (timedOut) throw tookTooLong();
           if (!result.text.trim() && !result.cancelled)
             throw new MobileAiError(
               result.finishReason === 'length' ? 'budget-exceeded' : 'provider-unavailable',
@@ -438,7 +514,8 @@ export function createMobileAi(options: MobileAiOptions) {
             emit({ kind: 'done', completion: value });
             return { ok: true, value };
           }
-          const problem = aiError(error);
+          // Timing out aborts whatever step was running, including a wait to retry.
+          const problem = aiError(timedOut ? tookTooLong() : error);
           emit({ kind: 'error', error: problem });
           return { ok: false, error: problem };
         } finally {
@@ -453,7 +530,7 @@ export function createMobileAi(options: MobileAiOptions) {
     ai,
     suspend() {
       suspended = true;
-      operation?.abort();
+      abortAll();
       update({ kind: 'unavailable', reason: preferences.enabled ? 'disconnected' : 'opt-out' });
       void embedding
         .suspend()

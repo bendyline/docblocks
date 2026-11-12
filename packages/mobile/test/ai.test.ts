@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  catalogFloorBytes,
   connectEmbeddingRuntime,
   mobileCatalog,
   type GezelRuntimePlugin,
@@ -103,6 +104,7 @@ function fixture(initial: Partial<AiPreferences> = {}, downloadRetryDelaysMs = [
     },
     requestTimeoutMs: 40,
     downloadRetryDelaysMs,
+    busyRetryDelaysMs: [1, 1, 1],
   });
   return {
     ...host,
@@ -316,7 +318,9 @@ describe('mobile AI through the Gezel App SDK', () => {
     const f = fixture();
     f.models.models = [];
     f.providers[0].availability = 'unavailable';
-    f.models.memoryBudgetBytes = catalog[0].approxSizeBytes + 512 * 1024 ** 2;
+    // Room for the smallest model as Gezel sizes a load (weights, KV cache and
+    // runtime overhead), and too little for the next one.
+    f.models.memoryBudgetBytes = catalogFloorBytes(catalog[0].approxSizeBytes) + 64 * 1024 ** 2;
     await f.ai.setPreferences({ enabled: true });
     const result = await f.ai.availableModels!();
     assert.ok(result.ok, JSON.stringify(result));
@@ -606,6 +610,140 @@ describe('explicit mobile model installation', () => {
     assert.ok(!result.ok);
     if (!result.ok) assert.equal(result.error.code, 'cancelled');
     assert.equal(native.resumes, 0);
+  });
+});
+
+describe('mobile AI downloads and chats side by side', () => {
+  const busy = () => Object.assign(new Error('Another conversation is running'), { code: 'BUSY' });
+  // A download that stays under way until `finish`, so chats can run beside it.
+  function heldDownload(f: ReturnType<typeof fixture>) {
+    const entry = catalog[0];
+    const source = { ...entry.source, sizeBytes: entry.approxSizeBytes };
+    const id = '11111111-1111-4111-8111-111111111111';
+    const modelId = '22222222-2222-4222-8222-222222222222';
+    let record: MobileModelDownload | undefined;
+    f.runtime.resolveModelSource = async () => ({ source });
+    f.runtime.startModelDownload = async () => {
+      record = { id, source, name: entry.name, downloadedBytes: 0, state: 'downloading' };
+      return { download: record };
+    };
+    f.runtime.listModelDownloads = async () => ({ downloads: record ? [record] : [] });
+    return {
+      entry,
+      started: () => record !== undefined,
+      finish() {
+        f.models.models.push({
+          id: modelId,
+          name: entry.name,
+          sizeBytes: source.sizeBytes,
+          source,
+        });
+        record = { ...record!, state: 'complete', downloadedBytes: source.sizeBytes, modelId };
+      },
+    };
+  }
+  // Holds the next native generation until `release`.
+  function heldGeneration(f: ReturnType<typeof fixture>) {
+    const generate = f.runtime.generate;
+    const held = { started: 0, release: () => {} };
+    f.runtime.generate = async (input) => {
+      if (++held.started === 1) await new Promise<void>((resolve) => (held.release = resolve));
+      return generate(input);
+    };
+    return held;
+  }
+
+  it('answers a chat while a model downloads', async () => {
+    const f = fixture({ enabled: true });
+    const download = heldDownload(f);
+    const install = f.ai.installModel!(download.entry.id);
+    while (!download.started()) await tick();
+    const answer = await f.ai.chat(request, () => {}).done;
+    assert.ok(answer.ok, JSON.stringify(answer));
+    download.finish();
+    const installed = await install.done;
+    assert.ok(installed.ok, JSON.stringify(installed));
+  });
+  it('queues a second chat behind the first instead of failing it', async () => {
+    const f = fixture({ enabled: true });
+    const held = heldGeneration(f);
+    const first = f.ai.chat(request, () => {});
+    while (!held.started) await tick();
+    const events: AiChatEvent[] = [];
+    const second = f.ai.chat(request, (event) => events.push(event));
+    while (!events.length) await tick();
+    assert.deepEqual(events[0], {
+      kind: 'progress',
+      progress: { phase: 'queued', percent: null, outputTokens: null, tokensPerSecond: null },
+    });
+    assert.equal(held.started, 1);
+    held.release();
+    assert.ok((await first.done).ok);
+    const answer = await second.done;
+    assert.ok(answer.ok, JSON.stringify(answer));
+    assert.equal(held.started, 2);
+  });
+  it('cancels a queued chat without touching the running one', async () => {
+    const f = fixture({ enabled: true });
+    const held = heldGeneration(f);
+    const first = f.ai.chat(request, () => {});
+    while (!held.started) await tick();
+    const events: AiChatEvent[] = [];
+    const second = f.ai.chat(request, (event) => events.push(event));
+    while (!events.length) await tick();
+    second.cancel();
+    const stopped = await second.done;
+    assert.ok(stopped.ok);
+    if (stopped.ok) assert.equal(stopped.value.finishReason, 'cancelled');
+    held.release();
+    const answer = await first.done;
+    assert.ok(answer.ok && answer.value.finishReason !== 'cancelled', JSON.stringify(answer));
+    assert.equal(held.started, 1);
+  });
+  it('starts a download once the running chat ends', async () => {
+    const f = fixture({ enabled: true });
+    const held = heldGeneration(f);
+    const download = heldDownload(f);
+    const answer = f.ai.chat(request, () => {});
+    while (!held.started) await tick();
+    const progress: string[] = [];
+    const install = f.ai.installModel!(download.entry.id, (event) => progress.push(event.phase));
+    while (!progress.length) await tick();
+    assert.deepEqual(progress, ['waiting']);
+    assert.equal(download.started(), false);
+    held.release();
+    assert.ok((await answer.done).ok);
+    while (!download.started()) await tick();
+    download.finish();
+    const installed = await install.done;
+    assert.ok(installed.ok, JSON.stringify(installed));
+    assert.deepEqual(progress.slice(0, 2), ['waiting', 'resolving']);
+  });
+  it('asks native again when a download briefly holds it', async () => {
+    const f = fixture({ enabled: true });
+    const generate = f.runtime.generate;
+    let refusals = 2;
+    f.runtime.generate = async (input) => {
+      if (refusals-- > 0) throw busy();
+      return generate(input);
+    };
+    const events: AiChatEvent[] = [];
+    const answer = await f.ai.chat(request, (event) => events.push(event)).done;
+    assert.ok(answer.ok, JSON.stringify(answer));
+    assert.equal(events.filter((event) => event.kind === 'progress').length, 2);
+  });
+  it('says plainly when native stays busy', async () => {
+    const f = fixture({ enabled: true });
+    f.runtime.generate = async () => {
+      throw busy();
+    };
+    const answer = await f.ai.chat(request, () => {}).done;
+    assert.ok(!answer.ok);
+    if (!answer.ok)
+      assert.deepEqual(answer.error, {
+        code: 'rate-limited',
+        message: 'On-device AI is busy. Try again in a moment.',
+      });
   });
 });
 

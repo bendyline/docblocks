@@ -1,0 +1,56 @@
+{
+  "water-treatment.md": [
+    "The Callowbrook plant treats an average of 14.5 million litres a day for about 38,000 people, and water takes about nine hours to pass through its five stages.",
+    "In coagulation, alum dosed at about 25 milligrams per litre neutralises the negative charge on suspended particles, which then clump into floc during about 30 minutes of flocculation.",
+    "Water stays in the sedimentation basins for about four hours, long enough for roughly 90 percent of the floc to settle.",
+    "Eight gravity filters of anthracite over sand aim for a turbidity below 0.1 NTU, well under the regulatory limit of 0.3 NTU.",
+    "Disinfection uses ultraviolet reactors (40 millijoules per square centimetre) against chlorine-resistant parasites such as Cryptosporidium, then chlorine at about 1.2 milligrams per litre with at least 30 minutes of contact time.",
+    "Chlorine is trimmed to 0.6 milligrams per litre for distribution, and the pH is raised to 7.8 to reduce corrosion of older lead and copper service lines.",
+    "Raw water enters through an intake 4 metres below the Mirren River's surface and passes 50-millimetre bar screens and then 6-millimetre band screens.",
+    "A filter is backwashed when head loss reaches 2.4 metres or after 72 hours, and the first 15 minutes of filtered water afterwards is sent to waste.",
+    "An alarm sounds and equipment shuts down if filtered turbidity exceeds 0.3 NTU for more than 15 minutes or chlorine leaving the plant drops below 0.4 milligrams per litre.",
+    "In 2023 all 576 network samples were negative for E. coli, and the last boil-water advisory was issued in March 2008 after a sedimentation basin failure.",
+    "During spring snowmelt, when river turbidity can climb above 200 NTU, the plant can draw for up to 36 hours from the 90-million-litre Holloway Reservoir."
+  ],
+  "coral-atoll-history.md": [
+    "In June 1872 the Dellacourt Copra Company's schooner Merriwind arrived, and its captain, Josiah Ferrant, leased about 40 percent of Kerra's land from the paramount chief Aruteva for coconut plantations for 30 years.",
+    "Copra became the atoll's only export, reaching 310 tonnes in 1890, as many taro pits were filled in to make room for coconut groves.",
+    "A measles outbreak carried by a supply ship in 1883 killed 96 people, about a quarter of the population.",
+    "After copra prices fell by more than half between 1920 and 1922, the company closed its Port Annick station in 1924 and sold the plantations back to the Island Council for a nominal 500 crowns.",
+    "The February 1931 cyclone remembered as the Great Wind brought a 2.1-metre storm surge that destroyed about 80 percent of houses and salted the taro pits, and recovery took seven years.",
+    "Netani Vau founded the Ilavenu Fishers' Union in 1938, and within ten years its 140 members had replaced copra as the atoll's main source of cash.",
+    "In 1966 the Island Council gained self-government with Lusia Aruteva as its first elected chair, and in a 1987 referendum 78 percent voted to leave the Larrish Protectorate for free association with Calloway.",
+    "The 1978 causeway between Kerra and Little Kerra blocked the channel that flushed the inner lagoon, leading to a fish kill in 1981 until three culverts were added in 1984.",
+    "A 1,100-metre airstrip built at Little Kerra in 1974 brought a weekly flight to Calloway and tourism that reached 1,900 visitors in 1989.",
+    "The Port Annick tide gauge recorded sea level rising an average of 4.1 millimetres a year through 2020, and by 2010 only 9 of the atoll's 31 taro pits were still productive.",
+    "The community responded with a 640-kilowatt solar microgrid in 2012 that cut diesel imports by 70 percent, a 1.8-kilometre seawall in 2016, and 120 hectares of insurance land on Calloway bought in 2019.",
+    "Miriam Oakes opened the first school in 1898 and in 1906 published the first Ilavenu dictionary with about 3,200 entries; a 7,500-entry edition marked the 2022 anniversary."
+  ],
+  "onboarding-handbook.md": [
+    "P1 tickets (Ledgerline down, or payments failing for all customers) need a first response within 15 minutes, 24/7, and the engineer must press \"Page IC\" in Helmsman immediately rather than diagnosing alone.",
+    "First-response targets are 1 hour for P2, 8 business hours for P3 and 2 business days for P4.",
+    "Any report of missing or corrupted invoices is at least a P2, even if only one customer is affected.",
+    "Escalate to Tier 2, led by Marcus Oyelaran, after 45 minutes without progress on a P2 or one business day without progress on a P3.",
+    "Support engineers may issue credits of up to $500 on their own; anything above $500 needs a team lead's approval.",
+    "Week 1 is shadowing at least 20 tickets, week 2 is P4 tickets with every reply reviewed by a buddy, week 3 is independent P4 and P3 work, and week 4 is shadowing the on-call engineer for two evening shifts.",
+    "The certification quiz at the end of week 4 has a pass mark of 80 percent and can be retaken once, after 48 hours.",
+    "Every customer request must go through the Helmsman ticketing system; Compass holds about 230 runbooks, and Tallyboard tracks a 92 percent satisfaction target.",
+    "Only the incident commander may post to the Beacon status page, and the #sev-room channel in Parley is used only during an active P1 or P2 incident.",
+    "Security issues go to the \"Security\" queue in Helmsman, never through Parley, and one customer's data must never be shared with another customer.",
+    "Admin access is read-only for the first 60 days, new engineers work the middle shift (11:00 a.m. to 7:30 p.m.) for their first month, and weekend rotation starts in the third month.",
+    "Orientation starts on Monday at 9:30 a.m. with team lead Dalia Fennimore, who also holds office hours every Wednesday from 4:00 to 5:00 p.m."
+  ],
+  "battery-chemistry.md": [
+    "A lithium-ion cell has a graphite anode, a lithium metal-oxide cathode (NMC in the BW-21700), a porous separator about 16 micrometres thick, and an electrolyte that carries lithium ions but not electrons.",
+    "During charging, lithium ions move from the cathode through the electrolyte into the graphite layers (intercalation) while electrons travel through the external circuit, and discharge reverses the process.",
+    "The BW-21700 has a nominal voltage of 3.6 volts, is charged to a maximum of 4.2 volts using constant current and then constant voltage, and is considered empty at 2.5 volts.",
+    "The first charge forms the solid electrolyte interphase (SEI), which protects the electrolyte but permanently consumed about 8 percent of the lithium in the Brightwater cells.",
+    "Capacity fades through SEI growth, lithium plating, cathode cracking and calendar ageing, and a cell's first life ends when its capacity falls to 80 percent of the rated value.",
+    "Baseline cells cycled at 25°C from 0 to 100 percent kept 82 percent of their capacity after 800 cycles.",
+    "Cells cycled at 45°C fell to 80 percent capacity after only 410 cycles, roughly half the baseline life.",
+    "Cycling only between 10 and 90 percent state of charge kept 91 percent of capacity after 800 cycles, the best result in the programme.",
+    "Lithium plating occurs when a cell is charged too fast or while cold; charging at 1C at 0°C caused visible plating and a 12 percent capacity loss in just 50 cycles.",
+    "Cells stored for 12 months at 100 percent charge and 40°C lost 14 percent of their capacity, compared with 3 percent at 50 percent charge and 25°C.",
+    "In the baseline group, internal resistance rose from 18 milliohms to 31 milliohms over 800 cycles, so aged cells deliver less power and warm up more under load."
+  ]
+}

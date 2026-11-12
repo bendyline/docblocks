@@ -1,0 +1,46 @@
+{
+  "name": "@bendyline/docblocks-bench",
+  "version": "0.1.0",
+  "private": true,
+  "description": "docbench: DocBlocks' AI workloads as a model benchmark task pack",
+  "license": "MIT",
+  "author": "Bendyline",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bendyline/docblocks.git",
+    "directory": "packages/bench"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "docbench-pack": "./dist/cli.js"
+  },
+  "engines": {
+    "node": "^24.18.0 || >=26.0.0"
+  },
+  "files": [
+    "dist",
+    "fixtures"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bendyline/docblocks": "2.7.15",
+    "@bendyline/docblocks-react": "2.7.15",
+    "@bendyline/gezel": "1.3.0",
+    "@bendyline/squisq": "2.13.15",
+    "@bendyline/squisq-editor-react": "2.13.22",
+    "@happy-dom/global-registrator": "20.9.0"
+  }
+}
