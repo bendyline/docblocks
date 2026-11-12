@@ -912,6 +912,8 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
   const [error, setError] = useState<string | null>(null);
   /** The reply stopped at the model's output limit, so findings may be missing. */
   const [cutOff, setCutOff] = useState(false);
+  /** Findings the AI returned in a shape DocBlocks could not use, left out of the list. */
+  const [dropped, setDropped] = useState(0);
   const [applyErrorId, setApplyErrorId] = useState<string | null>(null);
   const [reviewModel, setReviewModel] = useState<string | null>(null);
   const [run, setRun] = useState<ReviewRun | null>(null);
@@ -999,7 +1001,7 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
           const parsed = truncated
             ? parseTruncatedAiReviewResponse(event.completion.text)
             : parseAiReviewResponse(event.completion.text);
-          if (!parsed || (truncated && parsed.length === 0)) {
+          if (!parsed || (truncated && parsed.findings.length === 0)) {
             // A cut-off reply comes out the same each time, so retrying is no help.
             fail(
               truncated
@@ -1012,9 +1014,10 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
             return;
           }
           setReviewModel(event.completion.model || null);
+          if (parsed.dropped > 0) setDropped((count) => count + parsed.dropped);
           // A small model asked for more often repeats itself.
           const already = new Set(reported);
-          const fresh = withoutPictureFindings(parsed, current.source).filter(
+          const fresh = withoutPictureFindings(parsed.findings, current.source).filter(
             (finding) => !already.has(finding.originalText),
           );
           // Each request numbers its findings from 1; the panel needs one id each.
@@ -1027,8 +1030,11 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
           ]);
           // The part's own findings are in; asking it for more is extra.
           if (pass === 0) setPartsDone(index + 1);
+          // A reply that used its room on findings left out still filled it.
           const full =
-            truncated || (current.findings !== null && parsed.length >= current.findings);
+            truncated ||
+            (current.findings !== null &&
+              parsed.findings.length + parsed.dropped >= current.findings);
           if (full && fresh.length > 0) {
             if (pass + 1 < REVIEW_PASSES) {
               step(index, pass + 1, [...reported, ...fresh.map((finding) => finding.originalText)]);
@@ -1051,6 +1057,7 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
     handleRef.current = null;
     requestRef.current += 1;
     setCutOff(false);
+    setDropped(0);
     setActive(null);
     setReviewedStyle(style);
     setRun(null);
@@ -1309,6 +1316,13 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
       {phase !== 'running' && skippedParts.length > 0 && (
         <div className="db-ai-review-stale" role="status">
           {partsWere(skippedParts)} skipped, so findings there may be missing.
+        </div>
+      )}
+      {phase !== 'running' && dropped > 0 && (
+        <div className="db-ai-review-stale" role="status">
+          {dropped === 1
+            ? 'The AI returned 1 finding DocBlocks could not read, so it was left out.'
+            : `The AI returned ${dropped} findings DocBlocks could not read, so they were left out.`}
         </div>
       )}
       {cutOff && phase === 'ready' && (

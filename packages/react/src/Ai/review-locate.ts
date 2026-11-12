@@ -9,11 +9,14 @@
  * is reported as inexact, so the panel can say the text has changed.
  */
 
-export interface ExcerptLocation {
-  /** Offsets into the current source; equal when the text was deleted. */
+/** [start, end) offsets into a source. */
+export interface ExcerptRange {
   readonly start: number;
   readonly end: number;
-  /** The text there is the quote, unchanged. */
+}
+
+export interface ExcerptLocation extends ExcerptRange {
+  /** The text there is the quote, unchanged but perhaps for its spacing and line breaks. */
   readonly exact: boolean;
 }
 
@@ -26,6 +29,49 @@ function occurrences(text: string, needle: string, limit = Infinity): number[] {
     index = text.indexOf(needle, index + 1)
   ) {
     found.push(index);
+  }
+  return found;
+}
+
+const BLANK_LINE = /\n[^\S\n]*\n/u;
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+/**
+ * Where `quote` occurs in `text`, stopping once `limit` are found.
+ *
+ * Copies character for character come first. Only when there are none does a
+ * run of spaces or line breaks inside the quote match any such run in the
+ * text: a model quoting hard-wrapped Markdown often drops the indent of a list
+ * item's continuation line, or joins the lines, and it still means the passage
+ * it read. Such a run never reaches across a blank line the quote does not
+ * have, so a quote cannot stand for two paragraphs it ran together.
+ */
+export function quoteOccurrences(text: string, quote: string, limit = Infinity): ExcerptRange[] {
+  if (!quote) return [];
+  const exact = occurrences(text, quote, limit).map((start) => ({
+    start,
+    end: start + quote.length,
+  }));
+  if (exact.length > 0 || !/\S\s+\S/u.test(quote)) return exact;
+  // The quote's own leading and trailing whitespace stays exact.
+  const lead = /^\s*/u.exec(quote)?.[0] ?? '';
+  const trail = /\s*$/u.exec(quote)?.[0] ?? '';
+  const body = quote.slice(lead.length, quote.length - trail.length);
+  const pattern = new RegExp(
+    escapeRegExp(lead) + body.split(/\s+/u).map(escapeRegExp).join('\\s+') + escapeRegExp(trail),
+    'gu',
+  );
+  const blankLines = BLANK_LINE.test(quote);
+  const found: ExcerptRange[] = [];
+  for (let match = pattern.exec(text); match && found.length < limit; match = pattern.exec(text)) {
+    if (blankLines || !BLANK_LINE.test(match[0])) {
+      found.push({ start: match.index, end: match.index + match[0].length });
+    }
+    // Overlapping copies count too, as they do for an exact quote.
+    pattern.lastIndex = match.index + 1;
   }
   return found;
 }
@@ -153,22 +199,20 @@ export function locateReviewExcerpt(
   quote: string,
 ): ExcerptLocation | null {
   if (!quote) return null;
-  const copies = occurrences(current, quote);
-  const only = copies.length === 1 ? copies[0] : undefined;
-  if (only !== undefined) return { start: only, end: only + quote.length, exact: true };
+  const copies = quoteOccurrences(current, quote);
+  const [first] = copies;
+  if (first && copies.length === 1) return { ...first, exact: true };
 
-  const origin = reviewed ? reviewed.indexOf(quote) : -1;
+  const origin = reviewed ? quoteOccurrences(reviewed, quote, 1)[0] : undefined;
   const anchored =
-    reviewed && origin >= 0
-      ? anchoredLocation(current, reviewed, origin, origin + quote.length)
-      : null;
-  if (copies.length > 1) {
+    reviewed && origin ? anchoredLocation(current, reviewed, origin.start, origin.end) : null;
+  if (first) {
     // Several copies: the one nearest where the reviewed one was.
-    const target = anchored?.start ?? Math.max(0, origin);
+    const target = anchored?.start ?? origin?.start ?? 0;
     const nearest = copies.reduce((best, candidate) =>
-      Math.abs(candidate - target) < Math.abs(best - target) ? candidate : best,
+      Math.abs(candidate.start - target) < Math.abs(best.start - target) ? candidate : best,
     );
-    return { start: nearest, end: nearest + quote.length, exact: true };
+    return { ...nearest, exact: true };
   }
   const found = anchored ?? similarLine(current, quote);
   return found ? { ...found, exact: false } : null;

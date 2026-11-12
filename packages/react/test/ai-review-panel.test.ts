@@ -309,6 +309,36 @@ describe('AiReviewPanel lifecycle', () => {
     }
   });
 
+  it('lists the findings it can read and says how many it left out', async () => {
+    const fake = fakeAi();
+    const { container, cleanup } = await render(fake.api, false);
+    try {
+      await startReview(container);
+      const [good] = JSON.parse(REVIEW) as Record<string, unknown>[];
+      const reply = JSON.stringify([
+        { ...good, rationale: undefined },
+        { ...good, quote: 'document', severity: 'high' },
+        { ...good, quote: 'A very', category: '' },
+      ]);
+      await act(async () => fake.requests[0].emit(completion(reply)));
+      expect(container.querySelector('[role="alert"]')).to.equal(null);
+      expect(container.querySelector('.db-ai-review-count')?.textContent).to.equal(
+        '1 finding · General',
+      );
+      expect(container.textContent).to.contain('Use a more precise phrase.');
+      expect(container.textContent).to.contain(
+        'The AI returned 2 findings DocBlocks could not read, so they were left out.',
+      );
+
+      // A new review starts the count over.
+      await click(container, 'Review again');
+      await act(async () => fake.requests.at(-1)?.emit(completion(REVIEW)));
+      expect(container.textContent).not.to.contain('could not read');
+    } finally {
+      await cleanup();
+    }
+  });
+
   it('stops, retries and cancels the live review when the panel closes', async () => {
     const fake = fakeAi();
     const { container, cleanup } = await render(fake.api, false);
@@ -400,6 +430,28 @@ describe('AiReviewPanel asking for more', () => {
       );
       expect(container.querySelectorAll('.db-ai-review-item')).to.have.length(11);
       expect(container.textContent).not.to.contain('ran out of room');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('counts findings it left out toward a full reply', async () => {
+    const fake = fakeAi(APPLE_CONTEXT);
+    const { container, cleanup } = await render(fake.api, false);
+    try {
+      await startReview(container);
+      const six = JSON.parse(findings(6, 1)) as Record<string, unknown>[];
+      six[5] = { ...six[5], severity: 'high' };
+      await act(async () => fake.requests[0].emit(completion(JSON.stringify(six))));
+      // Six findings filled the reply, though one could not be read.
+      expect(fake.requests).to.have.length(2);
+      await act(async () => fake.requests[1].emit(completion('[]')));
+      expect(container.querySelector('.db-ai-review-count')?.textContent).to.equal(
+        '5 findings · General',
+      );
+      expect(container.textContent).to.contain(
+        'The AI returned 1 finding DocBlocks could not read, so it was left out.',
+      );
     } finally {
       await cleanup();
     }

@@ -16,6 +16,7 @@ import {
   SMALL_MODEL_FINDINGS,
   splitReviewParts,
 } from './review-parts.js';
+import { quoteOccurrences, type ExcerptRange } from './review-locate.js';
 import { AI_REVIEW_STYLE_DEFINITIONS, type AiReviewStyle } from './review-styles.js';
 
 export type AiDraftMode = 'compose' | 'rewrite';
@@ -431,10 +432,9 @@ export function withoutPictureFindings(
     if (finding.originalText.includes(SVG_PICTURE_PLACEHOLDER)) return false;
     if (finding.replacement?.includes(SVG_PICTURE_PLACEHOLDER)) return false;
     if (ranges.length === 0) return true;
-    const start = findUniqueExcerpt(source, finding.originalText);
-    if (start === null) return true;
-    const end = start + finding.originalText.length;
-    return !ranges.some((range) => start < range.end && end > range.start);
+    const found = findUniqueExcerpt(source, finding.originalText);
+    if (found === null) return true;
+    return !ranges.some((range) => found.start < range.end && found.end > range.start);
   });
 }
 
@@ -442,11 +442,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
-  const actual = Object.keys(value);
+/** Every required key, any of the optional ones, and nothing else. */
+function hasKnownKeys(
+  value: Record<string, unknown>,
+  required: readonly string[],
+  optional: readonly string[],
+): boolean {
   return (
-    actual.length === keys.length &&
-    keys.every((key) => Object.prototype.hasOwnProperty.call(value, key))
+    required.every((key) => Object.prototype.hasOwnProperty.call(value, key)) &&
+    Object.keys(value).every((key) => required.includes(key) || optional.includes(key))
   );
 }
 
@@ -481,20 +485,27 @@ export function aiReviewReplyWasCutOff(response: string): boolean {
   return scan !== null && !scan.closed;
 }
 
-function reviewFinding(value: unknown, index: number): AiReviewFinding | null {
+const REVIEW_REQUIRED_KEYS = ['quote', 'category', 'severity', 'message'] as const;
+/**
+ * Asked for `null`, Apple's on-device model leaves these keys out instead,
+ * and a schema in Apple's dialect has no null type, so nullable means optional.
+ */
+const REVIEW_NULLABLE_KEYS = ['replacement', 'rationale'] as const;
+
+/** A missing nullable key is null; any other value must be a bounded string, else undefined. */
+function nullableString(value: unknown, maximum: number): string | null | undefined {
+  if (value === undefined || value === null) return null;
+  return boundedString(value, maximum) ? value : undefined;
+}
+
+type ParsedFinding = Omit<AiReviewFinding, 'id'>;
+
+function reviewFinding(value: unknown): ParsedFinding | null {
   if (!isRecord(value)) return null;
-  if (
-    !hasExactKeys(value, ['quote', 'replacement', 'category', 'severity', 'message', 'rationale'])
-  ) {
-    return null;
-  }
+  if (!hasKnownKeys(value, REVIEW_REQUIRED_KEYS, REVIEW_NULLABLE_KEYS)) return null;
   if (!boundedString(value.quote, REVIEW_QUOTE_CHARACTERS, 1)) return null;
-  if (
-    value.replacement !== null &&
-    !boundedString(value.replacement, REVIEW_REPLACEMENT_CHARACTERS)
-  ) {
-    return null;
-  }
+  const replacement = nullableString(value.replacement, REVIEW_REPLACEMENT_CHARACTERS);
+  if (replacement === undefined) return null;
   if (!boundedString(value.category, 80, 1)) return null;
   if (
     value.severity !== 'info' &&
@@ -504,64 +515,72 @@ function reviewFinding(value: unknown, index: number): AiReviewFinding | null {
     return null;
   }
   if (!boundedString(value.message, REVIEW_MESSAGE_CHARACTERS, 1)) return null;
-  if (value.rationale !== null && !boundedString(value.rationale, REVIEW_MESSAGE_CHARACTERS, 1)) {
-    return null;
-  }
+  const rationale = nullableString(value.rationale, REVIEW_MESSAGE_CHARACTERS);
+  if (rationale === undefined) return null;
   return {
-    id: `ai-review-${index + 1}`,
     category: value.category,
     severity: value.severity,
     message: value.message,
-    rationale: value.rationale,
+    // An empty rationale says, like a missing one, that there is nothing to add.
+    rationale: rationale?.trim() ? rationale : null,
     originalText: value.quote,
-    replacement: value.replacement,
+    replacement,
   };
 }
 
-function reviewFindings(values: readonly unknown[]): AiReviewFinding[] | null {
-  const findings: AiReviewFinding[] = [];
-  for (const [index, value] of values.entries()) {
-    const finding = reviewFinding(value, index);
-    if (!finding) return null;
-    findings.push(finding);
-  }
-  return findings;
+/** The findings one review reply held, less those in a shape DocBlocks cannot use. */
+export interface AiReviewParse {
+  readonly findings: AiReviewFinding[];
+  /** Findings the reply held that were left out because they were malformed. */
+  readonly dropped: number;
 }
 
 /**
- * Parse model output as untrusted data and keep only exact, bounded findings.
- * There is no limit on how many: the request's reply budget is the bound.
+ * Each finding stands alone: a malformed one is left out rather than costing
+ * the reply its others. A reply whose every finding is malformed is unreadable.
  */
-export function parseAiReviewResponse(response: string): AiReviewFinding[] | null {
+function reviewFindings(values: readonly unknown[]): AiReviewParse | null {
+  const parsed = values.map(reviewFinding).filter((finding) => finding !== null);
+  if (values.length > 0 && parsed.length === 0) return null;
+  return {
+    findings: parsed.map((finding, index) => ({ id: `ai-review-${index + 1}`, ...finding })),
+    dropped: values.length - parsed.length,
+  };
+}
+
+/**
+ * Parse model output as untrusted data and keep only well-formed, bounded
+ * findings. There is no limit on how many: the request's reply budget is the bound.
+ */
+export function parseAiReviewResponse(response: string): AiReviewParse | null {
   const values = jsonArrayFromResponse(response);
   return values ? reviewFindings(values) : null;
 }
 
 /**
  * Parse a review that stopped at the model's output limit. The findings it
- * completed are held to the same exact shape as a whole reply; only the
- * unfinished one at the end is dropped.
+ * completed are held to the same shape as a whole reply; the unfinished one
+ * at the end is not counted as dropped.
  */
-export function parseTruncatedAiReviewResponse(response: string): AiReviewFinding[] | null {
+export function parseTruncatedAiReviewResponse(response: string): AiReviewParse | null {
   const scan = completeLeadingObjects(response);
   return scan ? reviewFindings(scan.values) : null;
 }
 
-export function findUniqueExcerpt(source: string, excerpt: string): number | null {
-  if (!excerpt) return null;
-  const first = source.indexOf(excerpt);
-  if (first < 0 || source.indexOf(excerpt, first + 1) >= 0) return null;
-  return first;
+/**
+ * The one range of `source` that `excerpt` quotes, or null when it quotes none
+ * or several. A quote that differs only in its spacing or line breaks still
+ * counts: see {@link quoteOccurrences}.
+ */
+export function findUniqueExcerpt(source: string, excerpt: string): ExcerptRange | null {
+  const found = quoteOccurrences(source, excerpt, 2);
+  return found.length === 1 ? (found[0] ?? null) : null;
 }
 
 /** Apply only when the reviewed excerpt still identifies exactly one live range. */
 export function applyAiReviewFinding(source: string, finding: AiReviewFinding): string | null {
   if (finding.replacement === null) return null;
-  const offset = findUniqueExcerpt(source, finding.originalText);
-  if (offset === null) return null;
-  return (
-    source.slice(0, offset) +
-    finding.replacement +
-    source.slice(offset + finding.originalText.length)
-  );
+  const found = findUniqueExcerpt(source, finding.originalText);
+  if (found === null) return null;
+  return source.slice(0, found.start) + finding.replacement + source.slice(found.end);
 }

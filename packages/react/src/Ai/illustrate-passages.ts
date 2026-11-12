@@ -257,8 +257,7 @@ export function locatePassage(
   if (source.slice(passage.start, passage.end) === passage.text) {
     return { start: passage.start, end: passage.end };
   }
-  const start = findUniqueExcerpt(source, passage.text);
-  return start === null ? null : { start, end: start + passage.text.length };
+  return findUniqueExcerpt(source, passage.text);
 }
 
 export { documentTitle } from './document-title.js';
