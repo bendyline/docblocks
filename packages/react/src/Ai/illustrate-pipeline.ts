@@ -11,13 +11,8 @@
  * inside an event callback would be refused.
  */
 
-import type {
-  AiChatEvent,
-  AiChatRequest,
-  AiError,
-  DocBlocksHostAiAPI,
-} from '@bendyline/docblocks/host';
 import { extractPlainText, parseMarkdown } from '@bendyline/squisq/markdown';
+import { chatOnce, type ChatApi } from './chat-once.js';
 import { compileDiagram, type CompiledDiagram } from './diagram-compile.js';
 import { checkGrounding } from './diagram-grounding.js';
 import {
@@ -38,50 +33,9 @@ import {
   type PromptBudget,
 } from './illustrate-prompts.js';
 
-type ChatApi = Pick<DocBlocksHostAiAPI, 'chat'>;
-
-export type ChatOutcome =
-  | { readonly kind: 'ok'; readonly text: string; readonly truncated: boolean }
-  | { readonly kind: 'cancelled' }
-  | { readonly kind: 'error'; readonly error: AiError };
-
-/**
- * Run one chat to completion; aborting `signal` cancels it. `onEvent` sees the
- * call's progress and deltas, for a status line; the reply comes from `done`.
- */
-export async function chatOnce(
-  ai: ChatApi,
-  request: AiChatRequest,
-  signal?: AbortSignal,
-  onEvent?: (event: AiChatEvent) => void,
-): Promise<ChatOutcome> {
-  if (signal?.aborted) return { kind: 'cancelled' };
-  const handle = ai.chat(request, onEvent ?? (() => undefined));
-  const abort = () => handle.cancel();
-  signal?.addEventListener('abort', abort, { once: true });
-  try {
-    const result = await handle.done;
-    if (signal?.aborted) return { kind: 'cancelled' };
-    if (!result.ok) {
-      return result.error.code === 'cancelled'
-        ? { kind: 'cancelled' }
-        : { kind: 'error', error: result.error };
-    }
-    if (result.value.finishReason === 'cancelled') return { kind: 'cancelled' };
-    return {
-      kind: 'ok',
-      text: result.value.text,
-      truncated: result.value.finishReason === 'length',
-    };
-  } catch (error: unknown) {
-    return {
-      kind: 'error',
-      error: { code: 'unknown', message: error instanceof Error ? error.message : String(error) },
-    };
-  } finally {
-    signal?.removeEventListener('abort', abort);
-  }
-}
+// Moved to chat-once.ts so headless callers avoid the editor imports here;
+// re-exported for existing importers.
+export { chatOnce, type ChatOutcome } from './chat-once.js';
 
 export type DiagramOutcome =
   | {

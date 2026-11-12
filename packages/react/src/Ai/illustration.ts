@@ -22,7 +22,7 @@ import { extractNumbers } from './diagram-grounding.js';
 import { clip } from './diagram-sanitize.js';
 import { describeSvgRemovals, validateSvgPicture } from './diagram-validate.js';
 import { clipPassage } from './illustrate-passages.js';
-import { chatOnce } from './illustrate-pipeline.js';
+import { chatOnce } from './chat-once.js';
 import {
   AI_DIAGRAM_DESCRIPTION_CHARACTERS,
   REALIZE_PASSAGE_CHARACTERS,

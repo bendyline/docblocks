@@ -13,6 +13,7 @@ import { AiKnowledgeSettings } from './AiKnowledgeSettings.js';
 import { textModelDownloads, useModelDownload } from './model-downloads.js';
 import type {
   AiError,
+  AiModelDocbench,
   AiModelDownloadInfo,
   AiModelInfo,
   AiPreferences,
@@ -71,7 +72,30 @@ function statusSentence(status: AiStatus): string {
 }
 
 function modelLabel(model: AiModelInfo): string {
-  return model.local ? `${model.label} (on this device)` : model.label;
+  const label = model.local ? `${model.label} (on this device)` : model.label;
+  return model.docbench ? `${label} · docbench ${Math.round(model.docbench.score)}` : label;
+}
+
+/** docbench families in the benchmark's order, in the words Settings uses. */
+const DOCBENCH_FAMILIES: ReadonlyArray<readonly [string, string]> = [
+  ['review', 'review'],
+  ['writing', 'writing'],
+  ['visuals', 'pictures'],
+  ['presentations', 'slides'],
+  ['study', 'study aids'],
+  ['narration', 'narration'],
+];
+
+/**
+ * "Docbench 81 for document work: review 72, writing 90, …" — what the
+ * measured score covers, so a reader can weigh the part they use most.
+ */
+function docbenchSentence(docbench: AiModelDocbench): string {
+  const families = DOCBENCH_FAMILIES.flatMap(([id, words]) => {
+    const score = docbench.families[id];
+    return score === undefined ? [] : [`${words} ${Math.round(score)}`];
+  });
+  return `Docbench ${Math.round(docbench.score)} for document work${families.length > 0 ? `: ${families.join(', ')}` : ''}`;
 }
 
 function modelReady(model: AiModelInfo): boolean {
@@ -96,7 +120,10 @@ function formatDownloadSize(bytes: number | null): string | null {
   return `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
 }
 
-/** "Qwen — 15 GB · Recommended", "Gemma — 6.3 GB · 88% match · may run slowly". */
+/**
+ * "Qwen — 15 GB · Recommended · docbench 81",
+ * "Gemma — 6.3 GB · 88% match · may run slowly".
+ */
 function downloadOptionLabel(model: AiModelDownloadInfo): string {
   const size = formatDownloadSize(model.downloadBytes);
   const rating = model.recommended
@@ -104,8 +131,9 @@ function downloadOptionLabel(model: AiModelDownloadInfo): string {
     : model.score === null
       ? ''
       : ` · ${model.score}% match`;
+  const measured = model.docbench ? ` · docbench ${Math.round(model.docbench.score)}` : '';
   const slow = model.fit?.tier === 'tight' ? ` · ${model.fit.label}` : '';
-  return `${model.label}${size ? ` — ${size}` : ''}${rating}${slow}`;
+  return `${model.label}${size ? ` — ${size}` : ''}${rating}${measured}${slow}`;
 }
 
 export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
@@ -433,6 +461,11 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
                                 ? ` · ${formatDownloadSize(selectedDownload.downloadBytes)}`
                                 : ''}
                               {selectedDownload.fit ? ` · ${selectedDownload.fit.label}` : ''}
+                            </p>
+                          )}
+                          {selectedDownload?.docbench && (
+                            <p className="db-settings-hint">
+                              {docbenchSentence(selectedDownload.docbench)}
                             </p>
                           )}
                           <button

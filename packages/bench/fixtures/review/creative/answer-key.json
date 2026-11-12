@@ -1,0 +1,9 @@
+{
+  "style": "creative",
+  "note": "Creative has no defects to match. These are flat but correct documents (a newsletter blurb, a product page section and a personal essay opening) with plenty of room for sharper openings, concrete images, stronger headings and livelier phrasing. The creative style is judged by a rubric (useful, vivid ideas that keep the author's purpose, voice and facts and add no name, date, number, place or quotation), not matched against an answer key, so every case is empty.",
+  "cases": {
+    "library-spring-newsletter.md": [],
+    "kettle-product-page.md": [],
+    "first-garden-essay.md": []
+  }
+}

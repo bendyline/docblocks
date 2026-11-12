@@ -8,8 +8,20 @@
  * user already made in Gezel for connected apps.
  */
 
-import { AI_WIRE_LIMITS, HOST_WIRE_LIMITS, isBoundedString } from '@bendyline/docblocks/host';
-import type { AiModelDownloadInfo, AiModelFit, AiModelInfo } from '@bendyline/docblocks/host';
+import {
+  AI_WIRE_LIMITS,
+  HOST_WIRE_LIMITS,
+  isBoundedString,
+  providerModelDocbench,
+  providerModelRanking,
+  sortModelDownloads,
+} from '@bendyline/docblocks/host';
+import type {
+  AiModelDocbench,
+  AiModelDownloadInfo,
+  AiModelFit,
+  AiModelInfo,
+} from '@bendyline/docblocks/host';
 
 /** The fields DocBlocks reads from one provider listing entry. */
 export interface ProviderModelEntry {
@@ -30,6 +42,13 @@ export interface ProviderModelEntry {
    */
   readonly fit?: unknown;
   readonly recommendation?: unknown;
+  /**
+   * The model's measured docbench result (DocBlocks' own work, 0–100), and
+   * Gezel's ranking of the downloadable models by it among those that fit.
+   * Absent from Gezel builds that predate docbench and for unmeasured models.
+   */
+  readonly docbench?: unknown;
+  readonly docbench_recommendation?: unknown;
 }
 
 function bound(text: string, limit: number): string {
@@ -64,20 +83,10 @@ function fitOf(entry: ProviderModelEntry): AiModelFit | 'too-big' | null {
   };
 }
 
-function recommendationOf(entry: ProviderModelEntry): {
-  score: number | null;
-  recommended: boolean;
-} {
-  const value = entry.recommendation;
-  if (typeof value !== 'object' || value === null) return { score: null, recommended: false };
-  const { score, recommended } = value as Record<string, unknown>;
-  return {
-    score:
-      typeof score === 'number' && Number.isInteger(score) && score >= 0 && score <= 100
-        ? score
-        : null,
-    recommended: recommended === true,
-  };
+/** `{ docbench }` when the entry carries a valid result; malformed results are dropped. */
+function docbenchOf(entry: ProviderModelEntry): { docbench?: AiModelDocbench } {
+  const docbench = providerModelDocbench(entry);
+  return docbench ? { docbench } : {};
 }
 
 function providerOf(entry: ProviderModelEntry): string | null {
@@ -142,6 +151,7 @@ export function toAiModelList(entries: readonly ProviderModelEntry[]): AiModelIn
       local: entry.locality === 'on-device',
       contextWindow: contextWindowOf(entry),
       isDefault: index === defaultIndex,
+      ...docbenchOf(entry),
       ...(entry.availability === 'unavailable'
         ? {
             availability: 'unavailable' as const,
@@ -186,13 +196,11 @@ export function toAiModelDownloadList(
         typeof bytes === 'number' && Number.isSafeInteger(bytes) && bytes > 0 ? bytes : null,
       state: entry.availability,
       fit,
-      ...recommendationOf(entry),
+      ...providerModelRanking(entry),
+      ...docbenchOf(entry),
     });
   }
-  // Stable: unrated entries keep the provider's order.
-  return models.sort(
-    (a, b) => Number(b.recommended) - Number(a.recommended) || (b.score ?? -1) - (a.score ?? -1),
-  );
+  return sortModelDownloads(models);
 }
 
 /** The user's preferred model when the provider still offers it, else the default. */

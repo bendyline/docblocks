@@ -212,13 +212,15 @@ export interface AiReviewRequestOptions {
    * model's reply holds only a few: see {@link reviewFindingLimit}.
    */
   readonly findings?: number | null;
+  /** The reviewer's "today", which the prompt states. Defaults to now; a benchmark pins it. */
+  readonly now?: Date;
 }
 
 /** Every style shares the findings contract; only the reviewer's brief changes. */
 export function buildReviewRequest(
   source: string,
   style: AiReviewStyle = 'general',
-  { part, findings = SMALL_MODEL_FINDINGS }: AiReviewRequestOptions = {},
+  { part, findings = SMALL_MODEL_FINDINGS, now = new Date() }: AiReviewRequestOptions = {},
 ): AiChatRequest {
   const document = elideSvgPictures(source);
   const { brief, temperature } = AI_REVIEW_STYLE_DEFINITIONS[style];
@@ -235,7 +237,7 @@ export function buildReviewRequest(
         role: 'system',
         content:
           'You are a careful document reviewer inside DocBlocks. ' +
-          `Current local date: ${localDateStamp(new Date())} (YYYY-MM-DD). ` +
+          `Current local date: ${localDateStamp(now)} (YYYY-MM-DD). ` +
           'Use this date when deciding whether document dates are in the past, present or future. ' +
           'Do not flag dates on or before today as future dates. ' +
           `${brief} Do not critique Markdown syntax, ` +
@@ -318,6 +320,7 @@ export function buildReviewRequests(
   source: string,
   style: AiReviewStyle,
   contextWindow: number | null,
+  now: Date = new Date(),
 ): AiChatRequest[] {
   const document = elideSvgPictures(source);
   const findings = reviewFindingLimit(contextWindow);
@@ -333,12 +336,13 @@ export function buildReviewRequests(
     AI_REVIEW_DOCUMENT_CHARACTERS,
     reviewPartCharacters(contextWindow, overhead),
   );
-  if (document.length <= max) return [buildReviewRequest(source, style, { findings })];
+  if (document.length <= max) return [buildReviewRequest(source, style, { findings, now })];
   const parts = splitReviewParts(document, max);
   return parts.map((text, index) =>
     buildReviewRequest(source, style, {
       part: { text, index, count: parts.length },
       findings,
+      now,
     }),
   );
 }

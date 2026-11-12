@@ -1,5 +1,10 @@
 import { expect } from 'chai';
-import type { AiChatRequest, AiChatCompletion, AiResult } from '@bendyline/docblocks/host';
+import {
+  buildChatCompletionBody,
+  type AiChatRequest,
+  type AiChatCompletion,
+  type AiResult,
+} from '@bendyline/docblocks/host';
 import type { SpeechInputProvider } from '@bendyline/squisq-editor-react/speech';
 import { markdownToTiptap } from '@bendyline/squisq-editor-react';
 import {
@@ -154,7 +159,7 @@ describe('text from narration', () => {
     expect(chunks.join('')).to.equal(source);
   });
 
-  it('uses opt-in writing requests and rejects incomplete rewrites', async () => {
+  it('asks without reasoning, so a thinking model cannot spend the cap, and rejects incomplete rewrites', async () => {
     const requests: AiChatRequest[] = [];
     const ai = {
       chat: (request: AiChatRequest) => {
@@ -175,7 +180,13 @@ describe('text from narration', () => {
       error = caught;
     }
     expect((error as Error).message).to.contain('unchanged');
-    expect(requests[0].purpose).to.equal('write');
+    // Hosts let only `write` reason; the explicit cap must go to the rewrite itself.
+    expect(requests[0].purpose).not.to.equal('write');
+    expect(
+      buildChatCompletionBody({ ...requests[0], model: 'llama-cpp:thinking-model' })
+        .reasoning_effort,
+    ).to.equal('none');
+    expect(requests[0].maxTokens).to.equal(2_048);
     expect(requests[0].messages[0].content).to.contain('Preserve every fact');
     expect(requests[0].messages[1].content).to.contain('Um, my meaning.');
   });

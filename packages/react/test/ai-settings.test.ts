@@ -919,6 +919,64 @@ describe('AiSettingsControls', () => {
     }
   });
 
+  it('shows measured docbench quality beside downloads and installed models', async () => {
+    const measured: AiModelDownloadInfo = {
+      id: 'llama-cpp:gemma',
+      label: 'Gemma',
+      contextWindow: 32_768,
+      state: 'download-required',
+      downloadBytes: 7 * 1024 ** 3,
+      fit: { tier: 'fits', label: 'fits in VRAM', detail: 'Runs fully on the GPU.' },
+      score: 100,
+      recommended: true,
+      docbench: {
+        score: 79.4,
+        band: 1,
+        version: '0.2.1',
+        families: { review: 70.6, writing: 90, visuals: 75, study: 81 },
+      },
+    };
+    const fake = fakeAi({ ...READY, model: null }, OPTED_IN, false);
+    fake.api.models = async () => ({
+      ok: true,
+      value: [
+        {
+          id: 'llama-cpp:qwen',
+          label: 'Qwen',
+          local: true,
+          contextWindow: 32_768,
+          isDefault: true,
+          docbench: { score: 80.7, band: 1, version: '0.2.1', families: {} },
+        },
+      ],
+    });
+    fake.api.availableModels = async () => ({ ok: true, value: [measured] });
+    fake.api.installModel = () => ({ done: new Promise(() => undefined), cancel: () => undefined });
+
+    const { container, cleanup } = await render(fake.api);
+    try {
+      const picker = container.querySelectorAll<HTMLSelectElement>('select')[0];
+      expect(Array.from(picker?.options ?? []).map((option) => option.textContent)).to.include(
+        'Qwen (on this device) · docbench 81',
+      );
+      await act(async () => {
+        Array.from(container.querySelectorAll('button'))
+          .find((button) => button.textContent === 'Add model…')
+          ?.click();
+      });
+      await flush();
+      const select = container.querySelectorAll<HTMLSelectElement>('select')[1];
+      expect(Array.from(select?.options ?? []).map((option) => option.textContent)).to.deep.equal([
+        'Gemma — 7.0 GB · Recommended · docbench 79',
+      ]);
+      expect(container.textContent).to.contain(
+        'Docbench 79 for document work: review 71, writing 90, pictures 75, study aids 81',
+      );
+    } finally {
+      await cleanup();
+    }
+  });
+
   it('shows system model names and readiness reasons without allowing an unavailable choice', async () => {
     const apple: AiModelInfo = {
       id: 'system:apple',

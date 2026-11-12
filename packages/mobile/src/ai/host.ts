@@ -20,7 +20,7 @@ import {
   type EmbeddingConnection,
   type ModelDescriptor,
 } from '@bendyline/gezel-app-sdk/browser';
-import { downloadFit, modelChoices } from './models';
+import { downloadChoices, modelChoices } from './models';
 import {
   aiError,
   checkCancelled,
@@ -266,22 +266,7 @@ export function createMobileAi(options: MobileAiOptions) {
         const models = await refresh();
         return {
           ok: true,
-          value: models.flatMap((model) =>
-            model.availability === 'download-required' || model.availability === 'downloading'
-              ? [
-                  {
-                    id: model.id,
-                    label: model.name,
-                    contextWindow: model.context_window ?? null,
-                    downloadBytes: model.download_bytes ?? null,
-                    state: model.availability,
-                    fit: downloadFit(model),
-                    score: null,
-                    recommended: false,
-                  },
-                ]
-              : [],
-          ),
+          value: downloadChoices(models),
         };
       } catch (error) {
         return failure(error);

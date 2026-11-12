@@ -1,4 +1,12 @@
-import type { AiModelFit, AiModelInfo } from '@bendyline/docblocks/host';
+import {
+  providerModelDocbench,
+  providerModelRanking,
+  sortModelDownloads,
+  type AiModelDownloadInfo,
+  type AiModelFit,
+  type AiModelInfo,
+  type ProviderModelRatings,
+} from '@bendyline/docblocks/host';
 import { selectModel, type ModelDescriptor } from '@bendyline/gezel-app-sdk/browser';
 
 /**
@@ -32,5 +40,38 @@ export function modelChoices(
       isDefault: model.id === selected?.id,
       availability: model.availability,
       ...(model.unavailable_reason ? { unavailableReason: model.unavailable_reason } : {}),
+      ...docbenchOf(model),
     }));
+}
+
+/** `{ docbench }` when Gezel measured this build; a malformed result is dropped. */
+function docbenchOf(model: ProviderModelRatings): Pick<AiModelInfo, 'docbench'> {
+  const docbench = providerModelDocbench(model);
+  return docbench ? { docbench } : {};
+}
+
+/**
+ * The catalog models this phone can add, best match first. Gezel ranks them
+ * for document work by docbench among the open-license models that fit
+ * (`docbench_recommendation`); the desktop reads the same fields the same way.
+ */
+export function downloadChoices(models: readonly ModelDescriptor[]): AiModelDownloadInfo[] {
+  return sortModelDownloads(
+    models.flatMap((model) =>
+      model.availability === 'download-required' || model.availability === 'downloading'
+        ? [
+            {
+              id: model.id,
+              label: model.name,
+              contextWindow: model.context_window ?? null,
+              downloadBytes: model.download_bytes ?? null,
+              state: model.availability,
+              fit: downloadFit(model),
+              ...providerModelRanking(model),
+              ...docbenchOf(model),
+            },
+          ]
+        : [],
+    ),
+  );
 }

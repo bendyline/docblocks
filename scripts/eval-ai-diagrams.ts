@@ -2,7 +2,7 @@
  * Evaluate AI diagram suggestions against a real model.
  *
  * Runs the same pipeline the Illustrate panel uses over a small corpus of
- * documents (packages/react/test/fixtures/ai-diagrams) and reports, per
+ * documents (packages/bench/fixtures/ai-diagrams) and reports, per
  * model: whether the plan could be read, how many picks matched the gold
  * passages and kinds, how often a pick produced a usable diagram on the
  * first try or after the one repair, why the rest failed, and false
@@ -71,7 +71,7 @@ if (typeof (globalThis as { window?: unknown }).window === 'undefined') {
 }
 
 const root = path.resolve(import.meta.dirname, '..');
-const corpusDir = path.join(root, 'packages/react/test/fixtures/ai-diagrams');
+const corpusDir = path.join(root, 'packages/bench/fixtures/ai-diagrams');
 
 interface GoldEntry {
   readonly expect: readonly { readonly marker: string; readonly kinds: readonly string[] }[];

@@ -21,6 +21,7 @@ The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendy
 | `packages/core`    | `@bendyline/docblocks`       | Shared types and runtime boundary schemas. Multi-entry tsup build with filesystem backends plus `/document`, `/workspace`, `/host`, and `/vscode`. **Single source of truth for wire types.**                                                                                                                       |
 | `packages/react`   | `@bendyline/docblocks-react` | `<DocBlocksShell>`, `FileExplorer`, `WorkspacePicker`, `AppMenu`, `Export*`, hooks, `styles/docblocks.css`. Consumed by site + desktop renderer. (Ships no fonts — theme fonts live in `packages/site/public/fonts/`.) (VS Code webview uses squisq's `EditorShell` directly — see the editor-shell section below.) |
 | `packages/cli`     | `@bendyline/docblocks-cli`   | Commander program with 9 commands. Owns format conversion through the linked Squisq CLI registry, video rendering (Playwright + ffmpeg), and the MCP server.                                                                                                                                                        |
+| `packages/bench`   | `@bendyline/docblocks-bench` | Private. The docbench task pack (`docbench-pack`): runs the AI pipelines from `@bendyline/docblocks-react/ai` against a model and writes per-case outcomes for Gezel's `eval:docbench`. See [docs/docbench.md](docs/docbench.md).                                                                                   |
 | `packages/vscode`  | `docblocks-vscode`           | Extension host (Node) + Vite-built React webview. Dual build: `extension.js` + `extension.web.js` for vscode.dev.                                                                                                                                                                                                   |
 | `packages/desktop` | `docblocks-desktop`          | Electron — `main/` + `preload/preload.ts` + `renderer/` (Vite + React, mounts `<DocBlocksShell>`). Packaged with electron-builder.                                                                                                                                                                                  |
 | `packages/site`    | `docblocks-site`             | Single-component Vite app showing `<DocBlocksShell theme="auto">`.                                                                                                                                                                                                                                                  |
@@ -328,6 +329,17 @@ UV (MLX's runtime Python installer) and its verifier rejects a manifest that
 lists it. Gezel never downloads
 weights implicitly; the Settings **Add model** gesture may request a catalog
 model and shows progress while Gezel installs it.
+
+**docbench measures models on exactly what the editor sends.** The task pack
+(`packages/bench`) runs the pipelines exported from
+`@bendyline/docblocks-react/ai`, with request bodies from the same
+`buildChatCompletionBody` (`@bendyline/docblocks/host`) the desktop transport
+uses, and Gezel's `eval:docbench` judges and scores the outcomes. Keep AI
+logic headless so both can share it: the review loop lives in
+`Ai/review-run.ts`, which the Review panel and the pack both drive. Changing a
+prompt, a reply reader or a fixture changes what docbench measures; bump
+`DOCBENCH_VERSION` in `packages/bench/src/pack.ts` when it changes a score.
+See [docs/docbench.md](docs/docbench.md).
 
 **AI slide wording is Squisq's protocol; DocBlocks only makes the calls.**
 "Suggest with AI" in the presentation designer

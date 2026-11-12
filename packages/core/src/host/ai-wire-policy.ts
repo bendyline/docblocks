@@ -14,6 +14,7 @@ import type {
   AiConnectionStep,
   AiError,
   AiErrorCode,
+  AiModelDocbench,
   AiModelDownloadInfo,
   AiModelFit,
   AiModelInfo,
@@ -68,6 +69,8 @@ export const AI_WIRE_LIMITS = Object.freeze({
   factCheckSentenceCharacters: 1_000,
   factCheckDetails: 16,
   modelEntries: 200,
+  /** docbench families per model; the v1 pack has six. */
+  docbenchFamilies: 16,
   contextWindowCeiling: 8_000_000,
   downloadBytesCeiling: Number.MAX_SAFE_INTEGER,
 });
@@ -186,16 +189,47 @@ export function parseAiProgress(value: unknown): AiProgress | null {
   return { phase: value.phase, message: value.message, percent: value.percent as number | null };
 }
 
+/** A measured docbench result: bounded scores, a positive band, and a version. */
+export function parseAiModelDocbench(value: unknown): AiModelDocbench | null {
+  if (!isRecord(value) || !hasExactKeys(value, ['score', 'band', 'version', 'families'])) {
+    return null;
+  }
+  if (!isFiniteInRange(value.score, 0, 100)) return null;
+  if (!isNonNegativeInteger(value.band, AI_WIRE_LIMITS.modelEntries) || value.band === 0) {
+    return null;
+  }
+  if (!isBoundedString(value.version, AI_WIRE_LIMITS.progressPhaseCharacters, 1)) return null;
+  if (!isRecord(value.families)) return null;
+  const entries = Object.entries(value.families);
+  if (entries.length > AI_WIRE_LIMITS.docbenchFamilies) return null;
+  const families: Record<string, number> = {};
+  for (const [id, score] of entries) {
+    if (!isBoundedString(id, AI_WIRE_LIMITS.progressPhaseCharacters, 1)) return null;
+    if (!isFiniteInRange(score, 0, 100)) return null;
+    families[id] = score;
+  }
+  return { score: value.score, band: value.band, version: value.version, families };
+}
+
+/** `{ docbench }` when the value carries a valid one; null when it carries an invalid one. */
+function docbenchField(value: Record<string, unknown>): { docbench?: AiModelDocbench } | null {
+  if (value.docbench === undefined) return {};
+  const docbench = parseAiModelDocbench(value.docbench);
+  return docbench ? { docbench } : null;
+}
+
 export function parseAiModelInfo(value: unknown): AiModelInfo | null {
   if (!isRecord(value)) return null;
   if (
     !hasKeysWithin(
       value,
       ['id', 'label', 'local', 'contextWindow', 'isDefault'],
-      ['availability', 'unavailableReason'],
+      ['availability', 'unavailableReason', 'docbench'],
     )
   )
     return null;
+  const docbench = docbenchField(value);
+  if (!docbench) return null;
   if (!isBoundedString(value.id, HOST_WIRE_LIMITS.identifierCharacters, 1)) return null;
   if (!isBoundedString(value.label, HOST_WIRE_LIMITS.labelCharacters, 1)) return null;
   if (typeof value.local !== 'boolean') return null;
@@ -238,6 +272,7 @@ export function parseAiModelInfo(value: unknown): AiModelInfo | null {
       : {
           unavailableReason: value.unavailableReason as string,
         }),
+    ...docbench,
   };
 }
 
@@ -263,19 +298,16 @@ function parseAiModelFit(value: unknown): AiModelFit | null {
 export function parseAiModelDownloadInfo(value: unknown): AiModelDownloadInfo | null {
   if (!isRecord(value)) return null;
   if (
-    !hasExactKeys(value, [
-      'id',
-      'label',
-      'contextWindow',
-      'downloadBytes',
-      'state',
-      'fit',
-      'score',
-      'recommended',
-    ])
+    !hasKeysWithin(
+      value,
+      ['id', 'label', 'contextWindow', 'downloadBytes', 'state', 'fit', 'score', 'recommended'],
+      ['docbench'],
+    )
   ) {
     return null;
   }
+  const docbench = docbenchField(value);
+  if (!docbench) return null;
   const fit = value.fit === null ? null : parseAiModelFit(value.fit);
   if (value.fit !== null && !fit) return null;
   if (value.score !== null && !isNonNegativeInteger(value.score, 100)) return null;
@@ -305,6 +337,7 @@ export function parseAiModelDownloadInfo(value: unknown): AiModelDownloadInfo | 
     fit,
     score: value.score as number | null,
     recommended: value.recommended,
+    ...docbench,
   };
 }
 

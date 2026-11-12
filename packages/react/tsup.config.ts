@@ -3,6 +3,7 @@ import { defineConfig } from 'tsup';
 export default defineConfig({
   entry: {
     index: 'src/index.ts',
+    'ai/index': 'src/Ai/headless-api.ts',
     'calculation/index': 'src/Calculation/public-api.ts',
     'export/index': 'src/Export/public-api.ts',
     'proofing/index': 'src/Proofing/public-api.ts',

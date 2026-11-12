@@ -68,7 +68,11 @@ export function narrationRewriteChunks(text: string, limit = 1_200): string[] {
 
 export function narrationRewriteRequest(text: string): AiChatRequest {
   return {
-    purpose: 'write',
+    // Never `write`: hosts let only writing reason, and a thinking model given
+    // this explicit cap spent all of it reasoning, so every chunk stopped at
+    // the limit and the rewrite failed as incomplete (docbench 0.2, lfm3 1.7B).
+    // Tidying a transcript needs no reasoning.
+    purpose: 'chat',
     temperature: 0.2,
     maxTokens: 2_048,
     messages: [

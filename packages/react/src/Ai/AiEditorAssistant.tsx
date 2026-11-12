@@ -37,30 +37,26 @@ import { factCheckRequest, factsNeedReview, useAiKnowledge, useFactCheck } from 
 import { citationsToFootnotes, stripCitationMarkers } from './knowledge-citations.js';
 import { AiReportButton } from './AiOutputReport.js';
 import { draftCapacityNotice } from './draft-capacity.js';
-import { withoutDocumentEcho } from './draft-echo.js';
 import {
   AI_INSTRUCTION_CHARACTERS,
-  AI_REVIEW_DOCUMENT_CHARACTERS,
   AI_REWRITE_SELECTION_CHARACTERS,
   applyAiReviewFinding,
   buildDraftContinuation,
   buildDraftRequest,
-  buildReviewFollowUp,
-  buildReviewRequests,
   findUniqueExcerpt,
-  aiReviewReplyWasCutOff,
-  parseAiReviewResponse,
-  parseTruncatedAiReviewResponse,
-  REVIEW_PASSES,
-  reviewDocumentCharacters,
-  sanitizeGeneratedMarkdown,
-  withoutPictureFindings,
   type AiDraftMode,
   type AiReviewFinding,
 } from './ai-assistant.js';
+import { draftToApply, settleDraft } from './draft-run.js';
 import { locateReviewExcerpt, type ExcerptLocation } from './review-locate.js';
-import { reviewFindingLimit } from './review-parts.js';
 import { canReveal, revealSourceRange } from './review-reveal.js';
+import {
+  numberReviewFindings,
+  readReviewReply,
+  reviewStepRequest,
+  startReviewRun,
+  type ReviewRun,
+} from './review-run.js';
 import {
   AI_REVIEW_STYLE_DEFINITIONS,
   AI_REVIEW_STYLES,
@@ -537,26 +533,17 @@ export function AiDraftDialog({
           setIncomplete(Boolean(generatedDraftRef.current.trim()));
           return;
         }
-        const emptyContinuation = Boolean(prefix) && !event.completion.text.trim();
-        const finished = event.completion.finishReason === 'stop' && !emptyContinuation;
-        // Keep whitespace at the join: the preceding response may end mid-word
-        // or mid-table. Never trim a continuation independently of its draft.
-        const reply =
-          prefix || !finished
-            ? prefix + event.completion.text
-            : sanitizeGeneratedMarkdown(event.completion.text, documentSource);
-        // New content is inserted into the document it was written from, so
-        // document text the model copied into it would appear twice.
-        const echo =
-          mode === 'compose' && !prefix
-            ? withoutDocumentEcho(reply, documentSource, { trailing: finished })
-            : null;
-        generatedDraftRef.current = echo?.text ?? reply;
+        // Shared with the headless draft (and so the docbench pack): whitespace
+        // at a join is kept, a continuation is never cleaned up on its own, and
+        // document text copied into new content is removed.
+        const settled = settleDraft(prefix, event.completion, documentSource, mode);
+        const { emptyContinuation, finished } = settled;
+        generatedDraftRef.current = settled.draft;
         setDraft(generatedDraftRef.current);
         setIncomplete(!finished && Boolean(generatedDraftRef.current.trim()));
-        if (echo?.removed) {
+        if (settled.echoRemoved) {
           setFinishNote(
-            echo.text.trim()
+            settled.draft.trim()
               ? 'Removed text the model copied from your document.'
               : 'The model only repeated text already in your document. Regenerate, or make the instructions more specific.',
           );
@@ -609,7 +596,7 @@ export function AiDraftDialog({
 
   const apply = useCallback(async () => {
     if (running) return;
-    const replacement = sanitizeGeneratedMarkdown(draft ?? '', documentSource);
+    const replacement = draftToApply(draft ?? '', documentSource);
     if (!replacement) return;
     // An unfinished draft is confirmed below as reviewed by the person, so it is not asked twice.
     const factCheck =
@@ -838,16 +825,6 @@ export function AiDraftDialog({
 
 type ReviewPhase = 'idle' | 'running' | 'ready' | 'error';
 
-/** A review in progress: one request per part, sent one at a time. */
-interface ReviewRun {
-  readonly style: AiReviewStyle;
-  /** The document as reviewed; findings that touch its pictures are dropped. */
-  readonly source: string;
-  readonly requests: readonly AiChatRequest[];
-  /** Most findings each request asks for, or null for every one. */
-  readonly findings: number | null;
-}
-
 /** What the review is doing now, for the status line while it runs. */
 function reviewingText(active: { part: number; more: boolean } | null, parts: number): string {
   const part = active?.part ?? 0;
@@ -962,10 +939,8 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
             setPhase('ready');
           }
         };
-        const request =
-          pass === 0
-            ? current.requests[index]
-            : buildReviewFollowUp(current.requests[index], reported);
+        const reviewStep = { part: index, pass, reported };
+        const request = reviewStepRequest(current, reviewStep);
         const handle = knowledgeAi.chat(request, (event: AiChatEvent) => {
           if (
             requestRef.current !== requestId ||
@@ -992,56 +967,26 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
             fail(event.error.message);
             return;
           }
-          // A model with a small reply limit (Apple's on-device model stops at
-          // 1,024 tokens) can stop partway through a finding. Keep the ones it
-          // finished rather than discarding the whole review.
-          const truncated =
-            event.completion.finishReason === 'length' ||
-            aiReviewReplyWasCutOff(event.completion.text);
-          const parsed = truncated
-            ? parseTruncatedAiReviewResponse(event.completion.text)
-            : parseAiReviewResponse(event.completion.text);
-          if (!parsed || (truncated && parsed.findings.length === 0)) {
-            // A cut-off reply comes out the same each time, so retrying is no help.
-            fail(
-              truncated
-                ? "The AI's reply was cut off before it finished a single finding. Try a shorter " +
-                    'document, or choose a different model in AI settings.'
-                : parts > 1
-                  ? 'The AI returned a review DocBlocks could not read.'
-                  : 'The AI returned a review DocBlocks could not read. Try reviewing again.',
-            );
+          // The same reading the headless review (and so the docbench pack) uses.
+          const result = readReviewReply(current, reviewStep, {
+            text: event.completion.text,
+            truncated: event.completion.finishReason === 'length',
+          });
+          if (result.kind === 'unreadable') {
+            fail(result.message);
             return;
           }
           setReviewModel(event.completion.model || null);
-          if (parsed.dropped > 0) setDropped((count) => count + parsed.dropped);
-          // A small model asked for more often repeats itself.
-          const already = new Set(reported);
-          const fresh = withoutPictureFindings(parsed.findings, current.source).filter(
-            (finding) => !already.has(finding.originalText),
-          );
+          if (result.dropped > 0) setDropped((count) => count + result.dropped);
           // Each request numbers its findings from 1; the panel needs one id each.
-          setFindings((existing) => [
-            ...existing,
-            ...fresh.map((finding, offset) => ({
-              ...finding,
-              id: `ai-review-${existing.length + offset + 1}`,
-            })),
-          ]);
+          setFindings((existing) => numberReviewFindings(existing, result.fresh));
           // The part's own findings are in; asking it for more is extra.
           if (pass === 0) setPartsDone(index + 1);
-          // A reply that used its room on findings left out still filled it.
-          const full =
-            truncated ||
-            (current.findings !== null &&
-              parsed.findings.length + parsed.dropped >= current.findings);
-          if (full && fresh.length > 0) {
-            if (pass + 1 < REVIEW_PASSES) {
-              step(index, pass + 1, [...reported, ...fresh.map((finding) => finding.originalText)]);
-              return;
-            }
-            setCutOff(true);
+          if (result.followUp) {
+            step(result.followUp.part, result.followUp.pass, result.followUp.reported);
+            return;
           }
+          if (result.cutOff) setCutOff(true);
           next();
         });
         if (!settled) handleRef.current = handle;
@@ -1069,22 +1014,18 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
     setShown(null);
     setPendingReveal(null);
     setError(null);
-    if (!markdownSource.trim()) {
+    const start = startReviewRun(markdownSource, style, contextWindow);
+    if (start.kind === 'empty') {
       setReviewedSource(markdownSource);
       setPhase('ready');
       return;
     }
-    if (reviewDocumentCharacters(markdownSource) > AI_REVIEW_DOCUMENT_CHARACTERS) {
-      setError('This document is too long for one AI review pass. Review a shorter document.');
+    if (start.kind === 'too-long') {
+      setError(start.message);
       setPhase('error');
       return;
     }
-    const current: ReviewRun = {
-      style,
-      source: markdownSource,
-      requests: buildReviewRequests(markdownSource, style, contextWindow),
-      findings: reviewFindingLimit(contextWindow),
-    };
+    const current = start.run;
     setRun(current);
     setReviewedSource(markdownSource);
     resetKnowledge();

@@ -23,7 +23,7 @@ import type {
 import { buildDraftContinuation, sanitizeGeneratedMarkdown } from './ai-assistant.js';
 import { stripReasoning } from './ai-json.js';
 import { clipPassage, documentTitle } from './illustrate-passages.js';
-import { chatOnce, type ChatOutcome } from './illustrate-pipeline.js';
+import { chatOnce, type ChatOutcome } from './chat-once.js';
 import { buildRepairRequest } from './illustrate-prompts.js';
 import { studySourceDigest, type StudyAidKind, type StudyAidProvenance } from './study-aids.js';
 import {

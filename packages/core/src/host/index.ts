@@ -31,6 +31,7 @@ export type {
   AiFactCheck,
   AiFactCheckRequest,
   AiFactCheckSentence,
+  AiModelDocbench,
   AiModelDownloadInfo,
   AiModelFit,
   AiModelInfo,
@@ -64,6 +65,7 @@ export {
   parseAiError,
   parseAiFactCheck,
   parseAiFactCheckRequest,
+  parseAiModelDocbench,
   parseAiModelDownloadInfo,
   parseAiModelDownloadInfoList,
   parseAiModelInfo,
@@ -202,6 +204,21 @@ export {
 
 export * from './ai-knowledge.js';
 export * from './ai-images.js';
+export {
+  buildChatCompletionBody,
+  isLocalEngineModel,
+  type ChatCompletionBody,
+  type ChatCompletionBodyInput,
+  type ChatCompletionBodyOptions,
+  type ChatCompletionMessage,
+} from './ai-transport.js';
+export {
+  providerModelDocbench,
+  providerModelRanking,
+  sortModelDownloads,
+  type ProviderModelRanking,
+  type ProviderModelRatings,
+} from './ai-provider-models.js';
 
 import type { DocBlocksHostAPI, HostEnvironment } from './types.js';
 import {

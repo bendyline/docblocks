@@ -29,7 +29,7 @@ import {
   type PresentationSlideContext,
   type PresentationSlideReply,
 } from '@bendyline/squisq/transform';
-import { chatOnce } from '../Ai/illustrate-pipeline.js';
+import { chatOnce } from '../Ai/chat-once.js';
 
 /** Hosts that enforce structured output can return only the fields the reader
  * accepts. Without it, Apple's on-device model answers with a key per layout

@@ -1,0 +1,150 @@
+{
+  "style": "strunk",
+  "note": "Seeded breaks of the rules the Elements of Style brief names: comma splices, a missing serial comma, dangling participles, negative form, passive voice, vague abstract wording, separated related words, non-parallel lists, a succession of loose sentences, a paragraph that strays from its topic, and a tense shift in a summary. Every other series in these documents uses the serial comma, so the seeded one stands out.",
+  "cases": {
+    "inventory-count-memo.md": [
+      {
+        "id": "comma-splice",
+        "quote": "The count started at 6 a.m., most teams finished by noon.",
+        "issue": "Comma splice: two independent clauses joined by a comma.",
+        "level": "low"
+      },
+      {
+        "id": "serial-comma",
+        "quote": "pallets, cartons and loose stock",
+        "issue": "Missing serial comma before \"and\" in a series of three.",
+        "level": "low"
+      },
+      {
+        "id": "vague",
+        "quote": "There were some issues with various aspects of the process in certain areas.",
+        "issue": "Vague, abstract wording; say which problems occurred and where.",
+        "level": "medium"
+      },
+      {
+        "id": "loose-sentences",
+        "quote": "The team started late, and the scanners there lost signal",
+        "issue": "A string of loose clauses joined by \"and\"; recast the paragraph into varied, tighter sentences.",
+        "level": "high"
+      },
+      {
+        "id": "dangling-participle",
+        "quote": "Walking the aisles after the count, several mislabeled bins were found by the supervisors.",
+        "issue": "Dangling participle: the bins were not walking the aisles; make the supervisors the subject (which also removes the passive).",
+        "level": "medium"
+      },
+      {
+        "id": "negative-form",
+        "quote": "did not remember to lock",
+        "issue": "Negative form; \"forgot to lock\" is direct.",
+        "level": "low"
+      },
+      {
+        "id": "passive-decision",
+        "quote": "A decision was made by the managers to delay Monday's shipping",
+        "issue": "Passive voice; \"The managers decided to delay Monday's shipping.\"",
+        "level": "medium"
+      },
+      {
+        "id": "parallel-list",
+        "quote": "training new staff a week before the count",
+        "issue": "List items are not parallel (\"order\", \"training\", \"the count should start\"); start each with a verb.",
+        "level": "medium"
+      }
+    ],
+    "winter-garden-howto.md": [
+      {
+        "id": "serial-comma",
+        "quote": "spent annuals, diseased leaves and fallen fruit",
+        "issue": "Missing serial comma before \"and\" in a series of three.",
+        "level": "low"
+      },
+      {
+        "id": "comma-splice",
+        "quote": "Leave healthy seed heads standing, birds feed on them through the winter.",
+        "issue": "Comma splice: two independent clauses joined by a comma.",
+        "level": "low"
+      },
+      {
+        "id": "related-words",
+        "quote": "The gardener, after the first hard frost, once the leaves have dropped, should cut",
+        "issue": "Two interrupting phrases separate the subject from its verb; keep related words together (\"After the first hard frost, once the leaves have dropped, cut...\").",
+        "level": "medium"
+      },
+      {
+        "id": "dangling-participle",
+        "quote": "Having cleared the beds, compost should be spread two inches deep over the soil.",
+        "issue": "Dangling participle: the compost did not clear the beds; make the reader the subject (\"Having cleared the beds, spread compost...\").",
+        "level": "medium"
+      },
+      {
+        "id": "negative-form",
+        "quote": "Beginners often do not pay attention to drainage.",
+        "issue": "Negative form; \"Beginners often ignore drainage.\"",
+        "level": "low"
+      },
+      {
+        "id": "parallel",
+        "quote": "Mulch protects roots from frost, keeps weeds down, and the soil stays moist.",
+        "issue": "Coordinate ideas not in similar form; the third item breaks the pattern (\"and keeps the soil moist\").",
+        "level": "medium"
+      },
+      {
+        "id": "paragraph-unit",
+        "quote": "Your shears and loppers should be cleaned and oiled before you hang them up for the winter.",
+        "issue": "A sentence about tools interrupts the paragraph on mulch; the paragraph should keep to one topic, so move it to its own paragraph or section.",
+        "level": "high"
+      },
+      {
+        "id": "vague",
+        "quote": "Results will depend on a variety of factors.",
+        "issue": "Vague, abstract wording; name the factors or cut the sentence.",
+        "level": "medium"
+      }
+    ],
+    "book-club-notes.md": [
+      {
+        "id": "passive-vote",
+        "quote": "A vote was held by the group in March",
+        "issue": "Passive voice; \"In March the group voted for The Salt Road by a wide margin.\"",
+        "level": "medium"
+      },
+      {
+        "id": "summary-tense",
+        "quote": "Tobin fell ill near the coast",
+        "issue": "The summary shifts from present tense to past tense halfway through; keep the whole summary in one tense.",
+        "level": "high"
+      },
+      {
+        "id": "comma-splice",
+        "quote": "Most of us admired the writing, the plot moved too slowly in the middle.",
+        "issue": "Comma splice: two independent clauses joined by a comma.",
+        "level": "low"
+      },
+      {
+        "id": "serial-comma",
+        "quote": "the salt pans, the press gang and the coastal storms",
+        "issue": "Missing serial comma before \"and\" in a series of three.",
+        "level": "low"
+      },
+      {
+        "id": "negative-form",
+        "quote": "did not pay attention to the map",
+        "issue": "Negative form; \"ignored the map\".",
+        "level": "low"
+      },
+      {
+        "id": "dangling-participle",
+        "quote": "Reading the final chapter, the ending felt rushed to many of us.",
+        "issue": "Dangling participle: the ending was not reading the chapter; make the readers the subject.",
+        "level": "medium"
+      },
+      {
+        "id": "vague",
+        "quote": "The book deals with a number of important themes in various interesting ways.",
+        "issue": "Vague, abstract wording; name the themes and what the book does with them.",
+        "level": "medium"
+      }
+    ]
+  }
+}

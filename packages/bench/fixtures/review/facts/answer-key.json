@@ -1,0 +1,145 @@
+{
+  "style": "facts",
+  "note": "Seeded factual problems the facts brief names: unsourced statistics, overstated causal claims, numbers or dates that contradict each other, unattributed quotations, and record or consensus claims with no source. Each document also carries sourced, hedged claims a precise reviewer should leave alone; library-evening-hours-strong.md is a decoy with every claim sourced and hedged.",
+  "cases": {
+    "hybrid-schedule-memo.md": [
+      {
+        "id": "summary-contradiction",
+        "quote": "cut ticket resolution time by a third",
+        "issue": "The summary's headline claim contradicts the pilot data below it: 6.2 to 5.4 hours is a cut of about 13%, not a third.",
+        "level": "high"
+      },
+      {
+        "id": "percent-math",
+        "quote": "36 (60%)",
+        "issue": "36 of 48 volunteers is 75%, not 60%.",
+        "level": "low"
+      },
+      {
+        "id": "industry-standard",
+        "quote": "Hybrid schedules are now the industry standard",
+        "issue": "A consensus claim (industry standard, nearly every firm in the region) with no source.",
+        "level": "medium"
+      },
+      {
+        "id": "productivity-stat",
+        "quote": "Remote workers are 23% more productive than office workers.",
+        "issue": "A precise statistic with no source or citation.",
+        "level": "medium"
+      },
+      {
+        "id": "proves-always",
+        "quote": "Our own pilot proves that working from home always improves focus.",
+        "issue": "Overstated causal claim (\"proves\", \"always\"); the pilot measured resolution time, not focus.",
+        "level": "medium"
+      },
+      {
+        "id": "unattributed-quote",
+        "quote": "As one researcher put it",
+        "issue": "A quotation attributed to an unnamed researcher with no source.",
+        "level": "medium"
+      },
+      {
+        "id": "record-claim",
+        "quote": "the first in the country to run a fully paperless dispatch desk",
+        "issue": "A record (\"first in the country\") claim with no source.",
+        "level": "medium"
+      },
+      {
+        "id": "start-date-conflict",
+        "quote": "1 April: the new schedule starts for all operations staff.",
+        "issue": "The timeline's start date conflicts with the summary, which says the schedule starts on 7 April 2025.",
+        "level": "low"
+      }
+    ],
+    "fenwick-street-notice.md": [
+      {
+        "id": "boiling-wrong",
+        "quote": "Because boiling water removes lead",
+        "issue": "Boiling does not remove lead (it can concentrate it), so the after-work safety advice rests on a wrong claim and must be rewritten.",
+        "level": "high"
+      },
+      {
+        "id": "always-causes",
+        "quote": "Lead exposure always causes lasting learning problems in children.",
+        "issue": "Overstated causal claim (\"always\") with no source.",
+        "level": "medium"
+      },
+      {
+        "id": "national-stat",
+        "quote": "Nationally, about one home in five still gets its water through a lead line.",
+        "issue": "A national statistic with no source.",
+        "level": "medium"
+      },
+      {
+        "id": "oldest-system",
+        "quote": "Marrowbank also has the oldest water system in the state",
+        "issue": "A record claim (\"oldest in the state\") with no source, used to argue the work is more urgent here than anywhere else.",
+        "level": "medium"
+      },
+      {
+        "id": "unattributed-quote",
+        "quote": "No amount of lead in drinking water is safe for a child.",
+        "issue": "A block quotation with no attribution or source.",
+        "level": "medium"
+      },
+      {
+        "id": "duration-conflict",
+        "quote": "will take six weeks, finishing by 9 May",
+        "issue": "14 April to 9 May is under four weeks, not six.",
+        "level": "low"
+      },
+      {
+        "id": "budget-conflict",
+        "quote": "The $3.1 million project",
+        "issue": "The project cost conflicts with the $2.4 million budget given in the previous sentence.",
+        "level": "low"
+      }
+    ],
+    "quillon-frost-report.md": [
+      {
+        "id": "any-region",
+        "quote": "any fruit region can recover fully from a total crop loss within three years",
+        "issue": "The report's central conclusion generalizes from one valley with no supporting evidence, and the loss described was 70%, not total; the closing section needs reworking.",
+        "level": "high"
+      },
+      {
+        "id": "insurance-stat",
+        "quote": "Crop insurance covered about 40% of growers' losses.",
+        "issue": "A statistic with no source, in a paragraph where the other figures are sourced.",
+        "level": "medium"
+      },
+      {
+        "id": "fivefold",
+        "quote": "a fivefold increase",
+        "issue": "41,000 tonnes is about 3.4 times 12,000 tonnes, not five times.",
+        "level": "low"
+      },
+      {
+        "id": "proves-wind-machines",
+        "quote": "which proves that wind machines prevent frost damage",
+        "issue": "Overstated causal claim: one season without losses does not prove wind machines prevent frost damage.",
+        "level": "medium"
+      },
+      {
+        "id": "largest-region",
+        "quote": "Quillon Valley is now the largest apple-growing region in the country.",
+        "issue": "A record claim (\"largest in the country\") with no source.",
+        "level": "medium"
+      },
+      {
+        "id": "unattributed-quote",
+        "quote": "the frost taught us more in one night than our parents learned in forty years.",
+        "issue": "A quotation attributed only to \"growers\", with no named speaker or source.",
+        "level": "medium"
+      },
+      {
+        "id": "frost-date-conflict",
+        "quote": "26 April 2021",
+        "issue": "The frost date conflicts with the earlier, sourced date of 19 April 2021.",
+        "level": "low"
+      }
+    ],
+    "library-evening-hours-strong.md": []
+  }
+}

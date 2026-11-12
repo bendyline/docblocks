@@ -102,6 +102,24 @@ export interface AiModelInfo {
   readonly availability?: 'available' | 'unavailable' | 'download-required' | 'downloading';
   /** Native readiness explanation, suitable for the model picker. */
   readonly unavailableReason?: string;
+  /** How well this model does DocBlocks' own work, when the provider has measured it. */
+  readonly docbench?: AiModelDocbench;
+}
+
+/**
+ * A model's docbench result: a judged 0–100 score for DocBlocks' document
+ * work (review, writing, diagrams, slides, study aids, narration), measured
+ * per build and engine by the provider's published benchmark.
+ */
+export interface AiModelDocbench {
+  /** 0–100. */
+  readonly score: number;
+  /** Rank band within its round; models in one band are not reliably different. */
+  readonly band: number;
+  /** The docbench version that measured it; scores compare only within one. */
+  readonly version: string;
+  /** Per-family scores, 0–100, keyed by family id (`review`, `writing`, …). */
+  readonly families: Readonly<Record<string, number>>;
 }
 
 /**
@@ -131,6 +149,11 @@ export interface AiModelDownloadInfo {
   readonly score: number | null;
   /** The provider's one recommendation for this device. */
   readonly recommended: boolean;
+  /**
+   * Measured quality on DocBlocks' work. When the provider has measured any
+   * candidate, `score` and `recommended` rank by it among models that fit.
+   */
+  readonly docbench?: AiModelDocbench;
 }
 
 export type AiStatus =
