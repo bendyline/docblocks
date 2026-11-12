@@ -1,5 +1,19 @@
+import type { Page } from '@playwright/test';
+import { centerOf, windowDragsAt } from './drag-regions.js';
 import { expect, test, tourWelcome } from './fixtures.js';
 import { showWriteView } from '../../../e2e/helpers/toolbar.js';
+
+async function collapseSidebar(window: Page): Promise<void> {
+  const resizer = window.getByRole('separator', { name: 'Resize sidebar' });
+  const resizerBox = await resizer.boundingBox();
+  if (!resizerBox) throw new Error('Sidebar resizer not found');
+  const y = resizerBox.y + resizerBox.height / 2;
+  await window.mouse.move(resizerBox.x + resizerBox.width / 2, y);
+  await window.mouse.down();
+  await window.mouse.move(100, y);
+  await window.mouse.up();
+  await expect(window.locator('.db-shell')).toHaveClass(/db-shell--mobile/);
+}
 
 test('keeps toolbar controls outside the native caption button area', async ({ launchApp }) => {
   const { window } = await launchApp();
@@ -156,6 +170,71 @@ test('keeps the compact toolbar visible after the sidebar is collapsed', async (
   expect(geometry.exportBottom).toBeLessThanOrEqual(
     (geometry.headerBottom ?? -Infinity) + physicalPixel,
   );
+});
+
+test('keeps the collapsed titlebar draggable over a scrolled document', async ({ launchApp }) => {
+  const { window } = await launchApp();
+  const toolbar = window.locator('.squisq-toolbar');
+  await expect(toolbar).toBeVisible({ timeout: 30_000 });
+  await tourWelcome(window);
+  await showWriteView(toolbar);
+  await collapseSidebar(window);
+
+  // Scrolling carries the editor's contenteditable, and the controls inside
+  // it, up beneath the caption band. Chromium does not clip app-region boxes
+  // to their scroller, so while that content declared no-drag it carved the
+  // whole titlebar away, and a collapsed layout has no sidebar header left
+  // to drag instead.
+  await window.locator('.squisq-wysiwyg-container').evaluate((element) => {
+    element.scrollTop = 400;
+  });
+  const editorTop = await window
+    .locator('.squisq-wysiwyg-editor')
+    .evaluate((element) => element.getBoundingClientRect().top);
+  expect(editorTop).toBeLessThan(0);
+
+  const tabRowGap = await toolbar.evaluate((element) => {
+    const row = element.querySelector('.squisq-toolbar-view-tabs');
+    if (!row) throw new Error('View tab row not found');
+    const rowRect = row.getBoundingClientRect();
+    const lastControlRight = Math.max(
+      ...Array.from(row.children, (child) => child.getBoundingClientRect().right),
+    );
+    const point = { x: lastControlRight + 24, y: rowRect.top + rowRect.height / 2 };
+    const hit = document.elementFromPoint(point.x, point.y);
+    return {
+      point,
+      empty:
+        hit !== null &&
+        element.contains(hit) &&
+        hit.closest('button, a, input, [role="button"], [role="tab"]') === null,
+    };
+  });
+  expect(tabRowGap.empty).toBe(true);
+  const writeTab = toolbar.locator('[role="tab"][data-view="wysiwyg"]');
+  expect(await windowDragsAt(window, [tabRowGap.point, await centerOf(writeTab)])).toEqual([
+    true,
+    false,
+  ]);
+
+  // The file drawer slides over that header but precedes it in the document,
+  // so the covered header must not decide the drawer's own titlebar: its
+  // controls stay clickable and its grip still moves the window.
+  await toolbar.getByRole('button', { name: 'Show file list' }).click();
+  await expect(window.locator('.db-shell')).toHaveAttribute('data-db-drawer', 'open');
+  const sidebar = window.locator('.db-shell-sidebar');
+  await expect
+    .poll(() => sidebar.evaluate((element) => Math.round(element.getBoundingClientRect().left)))
+    .toBe(0);
+  const drawerHeader = sidebar.locator('.db-shell-sidebar-header');
+  const grip = drawerHeader.locator('.db-window-drag-grip');
+  await grip.hover();
+  await expect(grip).not.toHaveClass(/db-window-drag-grip--detect-hover/);
+  const settings = drawerHeader.getByRole('button', { name: 'Workspace settings' });
+  expect(await windowDragsAt(window, [await centerOf(grip), await centerOf(settings)])).toEqual([
+    true,
+    false,
+  ]);
 });
 
 test('keeps the welcome screen drag strip inside its pane', async ({ launchApp }) => {
