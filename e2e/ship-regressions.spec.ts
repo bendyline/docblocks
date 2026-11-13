@@ -192,6 +192,14 @@ test('task lists in table cells survive Source, Write, save, and reload', async 
   await cell.click();
   await openInsertMenu(page);
   await page.getByRole('menuitem', { name: 'Task List', exact: true }).click();
+  // The list starts as one empty item with the caret in it. Type three items,
+  // as an author would.
+  await expect(cell.locator('input[type="checkbox"]')).toHaveCount(1);
+  await page.keyboard.type('Task 1');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Task 2');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Task 3');
   await expect(cell.locator('input[type="checkbox"]')).toHaveCount(3);
   await cell.locator('input[type="checkbox"]').first().check();
   await page.getByRole('treeitem', { name: /^Welcome/ }).click();

@@ -16,7 +16,7 @@ export interface NewDocumentCaretProps {
 }
 
 /** Type held keystrokes at the caret, one paragraph per line. */
-export function typeIntoDocument(editor: Editor, text: string): void {
+function typeIntoDocument(editor: Editor, text: string): void {
   if (!text) return;
   const chain = editor.chain().focus();
   text.split('\n').forEach((line, index) => {
