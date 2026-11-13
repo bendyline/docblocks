@@ -16,6 +16,7 @@ import {
   FilePlus,
   Folder,
   FolderOpen,
+  FileUp,
   FolderPlus,
   FolderTree,
   PanelLeft,
@@ -50,6 +51,10 @@ export function NewFileIcon() {
 
 export function NewFolderIcon() {
   return <ShellIcon icon={FolderPlus} />;
+}
+
+export function ImportFilesIcon() {
+  return <ShellIcon icon={FileUp} />;
 }
 
 export function OpenFolderIcon() {

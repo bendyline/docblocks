@@ -206,18 +206,50 @@ describe('Gezel native packaging adapter', () => {
     ]);
   });
 
-  it('keeps UV on other platforms', async () => {
-    const destination = await stageForSourceBuild(
-      { appDir: root, platform: 'darwin', arch: 'arm64' },
-      {
-        stageElectronNative: async ({ destination }: { destination: string }) => {
-          await mkdir(path.join(destination, 'darwin-arm64'), { recursive: true });
-          await writeFile(path.join(destination, 'darwin-arm64', 'uv'), 'uv');
+  /** What Gezel's packager extracts for one macOS or Linux architecture. */
+  const stagedUnixEngines =
+    (key: string) =>
+    async ({ destination }: { destination: string }) => {
+      await mkdir(path.join(destination, key), { recursive: true });
+      for (const file of ['gezel-service-host', 'uv'])
+        await writeFile(path.join(destination, key, file), file);
+    };
+
+  // 50 MB on macOS and 54 to 63 MB on Linux that the store profile never runs.
+  it('leaves UV out of macOS and Linux engines too', async () => {
+    for (const [platform, arch] of [
+      ['darwin', 'arm64'],
+      ['linux', 'x64'],
+      ['linux', 'arm64'],
+    ] as const) {
+      const destination = await stageForSourceBuild(
+        { appDir: root, platform, arch },
+        {
+          stageElectronNative: stagedUnixEngines(`${platform}-${arch}`),
+          verifyNativePlatformRequirements: async () => {},
         },
+      );
+      expect(await readdir(path.join(destination, `${platform}-${arch}`)), platform).to.deep.equal([
+        'gezel-service-host',
+      ]);
+    }
+  });
+
+  it('keeps UV for a Mac App Store package, whose own step checks every pin first', async () => {
+    await stageForTarget(
+      {
+        packager: { info: { appDir: root }, platform: { buildConfigurationKey: 'mac' } },
+        electronPlatformName: 'mas',
+        arch: 3,
+      },
+      {
+        stageElectronNative: stagedUnixEngines('darwin-arm64'),
         verifyNativePlatformRequirements: async () => {},
       },
     );
-    expect(await readdir(path.join(destination, 'darwin-arm64'))).to.deep.equal(['uv']);
+    expect(
+      await readdir(path.join(root, 'dist', 'gezel-native', 'mac-arm64', 'darwin-arm64')),
+    ).to.deep.equal(['gezel-service-host', 'uv']);
   });
 
   it('fails the build when a Gezel release moves UV', async () => {

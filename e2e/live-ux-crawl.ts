@@ -636,10 +636,13 @@ async function crawlAppMobile(browser: Browser, theme: 'light' | 'dark'): Promis
     await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' });
     await page.locator('.db-shell').waitFor({ state: 'visible', timeout: READY_TIMEOUT });
     // The mobile first run covers the app; its tour CTA is the signal that
-    // seeding finished, and the explorer toolbar covers restored profiles.
+    // seeding finished, and a file row covers restored profiles. Not the
+    // explorer toolbar: the shell paints the file drawer in its "Loading…"
+    // state before the workspace is seeded, so the toolbar is visible up to a
+    // second before either the first-run screen or any row exists.
     await page
       .getByRole('button', { name: 'Tour the welcome document' })
-      .or(page.locator('.db-explorer-toolbar'))
+      .or(page.getByRole('treeitem').first())
       .first()
       .waitFor({ state: 'visible', timeout: READY_TIMEOUT });
     await page.evaluate(() => document.fonts.ready.then(() => undefined));

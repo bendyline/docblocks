@@ -22,7 +22,7 @@ import { extractNumbers } from './diagram-grounding.js';
 import { clip } from './diagram-sanitize.js';
 import { describeSvgRemovals, validateSvgPicture } from './diagram-validate.js';
 import { clipPassage } from './illustrate-passages.js';
-import { chatOnce } from './chat-once.js';
+import { chatOnce, TRY_AGAIN } from './chat-once.js';
 import {
   AI_DIAGRAM_DESCRIPTION_CHARACTERS,
   REALIZE_PASSAGE_CHARACTERS,
@@ -117,7 +117,14 @@ export function buildIllustrationRequest(options: {
 
 export type SvgExtraction =
   | { readonly ok: true; readonly svg: string }
-  | { readonly ok: false; readonly problem: string; readonly cutOff: boolean };
+  | {
+      readonly ok: false;
+      /** Written for the model, to send back with a request to try again. */
+      readonly problem: string;
+      /** The same failure in words for the person. */
+      readonly reason: string;
+      readonly cutOff: boolean;
+    };
 
 /** The one `<svg>…</svg>` document in a reply, past any reasoning, prose or fence. */
 export function extractSvg(reply: string): SvgExtraction {
@@ -125,7 +132,12 @@ export function extractSvg(reply: string): SvgExtraction {
     /<(think|thinking|reasoning)>/iu.test(reply) &&
     !/<\/(think|thinking|reasoning)>/iu.test(reply)
   ) {
-    return { ok: false, problem: 'The reply stopped while still reasoning.', cutOff: true };
+    return {
+      ok: false,
+      problem: 'The reply stopped while still reasoning.',
+      reason: 'Its reply ran out of room before it reached the drawing.',
+      cutOff: true,
+    };
   }
   const text = stripReasoning(reply);
   const start = text.search(/<svg\b/iu);
@@ -133,6 +145,7 @@ export function extractSvg(reply: string): SvgExtraction {
     return {
       ok: false,
       problem: 'The reply has no <svg> element. Return one complete <svg>…</svg> document.',
+      reason: 'Its reply was not a drawing.',
       cutOff: false,
     };
   }
@@ -141,6 +154,7 @@ export function extractSvg(reply: string): SvgExtraction {
     return {
       ok: false,
       problem: 'The SVG is not finished: it has no closing </svg> tag.',
+      reason: 'Its reply ran out of room before the drawing was finished.',
       cutOff: true,
     };
   }
@@ -149,6 +163,7 @@ export function extractSvg(reply: string): SvgExtraction {
     return {
       ok: false,
       problem: `The SVG is too large. Keep it under ${String(ILLUSTRATION_MAX_CHARACTERS)} characters.`,
+      reason: 'The drawing was too large to use.',
       cutOff: false,
     };
   }
@@ -245,17 +260,24 @@ export async function realizeIllustration(options: IllustrationOptions): Promise
       continue;
     }
 
+    // `problem` goes back to the model with a request to try again. `reason`
+    // is the same failure for the person, should the second try fail too.
     let problem = extracted.ok ? null : extracted.problem;
+    let reason = extracted.ok ? null : extracted.reason;
     if (extracted.ok) {
       const parsed = parseSvgIsland(extracted.svg);
       if (!parsed.ok) {
         problem = `It cannot be shown: ${parsed.message}`;
+        reason = 'The drawing could not be shown.';
       } else {
         const invented = options.ground ? inventedNumbers(extracted.svg, facts) : [];
         if (invented.length > 0) {
-          problem = `These numbers are not in the passage: ${invented.slice(0, 6).join(', ')}. Use only numbers it states.`;
+          const numbers = invented.slice(0, 6).join(', ');
+          problem = `These numbers are not in the passage: ${numbers}. Use only numbers it states.`;
+          reason = `The drawing showed numbers that are not in the text: ${numbers}.`;
         } else if (parsed.diagnostics.length > 0 && !repaired) {
           problem = `It uses markup that is removed when shown: ${describeSvgRemovals(parsed.diagnostics)}. Leave those out.`;
+          reason = 'The drawing used markup that cannot be shown.';
         } else {
           // Clean markup goes in as the model wrote it, which reads better in
           // the Source view; anything the sanitizer stripped goes in sanitized.
@@ -296,7 +318,7 @@ export async function realizeIllustration(options: IllustrationOptions): Promise
     }
     return {
       status: 'failed',
-      message: `The model's picture could not be used. ${problem ?? ''}`.trim(),
+      message: `The model's picture could not be used. ${reason ? `${reason} ` : ''}${TRY_AGAIN}`,
     };
   }
 }

@@ -15,12 +15,12 @@ This notice is included in the published npm tarball. Transitive packages instal
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
 | @antfu/install-pkg | 2.1.0 | MIT | https://github.com/antfu-collective/install-pkg |
-| @bendyline/squisq | 2.13.15 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-cli | 2.9.31 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-formats | 2.8.17 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq | 2.13.16 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-cli | 2.9.32 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-formats | 2.8.18 | MIT | https://github.com/bendyline/squisq |
 | @bendyline/squisq-graph | 2.13.1 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-react | 2.12.27 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-video | 2.4.21 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-react | 2.12.28 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-video | 2.4.22 | MIT | https://github.com/bendyline/squisq |
 | @braintree/sanitize-url | 7.1.2 | MIT | https://github.com/braintree/sanitize-url |
 | @chevrotain/types | 11.1.2 | Apache-2.0 | https://github.com/Chevrotain/chevrotain |
 | @ffmpeg/ffmpeg | 0.12.15 | MIT | https://github.com/ffmpegwasm/ffmpeg.wasm |
@@ -116,44 +116,44 @@ This notice is included in the published npm tarball. Transitive packages instal
 | cose-base | 1.0.3 | MIT | https://github.com/iVis-at-Bilkent/cose-base |
 | cose-base | 2.2.0 | MIT | https://github.com/iVis-at-Bilkent/cose-base |
 | cross-spawn | 7.0.6 | MIT | git@github.com:moxystudio/node-cross-spawn |
-| cytoscape | 3.34.3 | MIT | https://github.com/cytoscape/cytoscape.js |
+| cytoscape | 3.34.4 | MIT | https://github.com/cytoscape/cytoscape.js |
 | cytoscape-cose-bilkent | 4.1.0 | MIT | https://github.com/cytoscape/cytoscape.js-cose-bilkent |
 | cytoscape-fcose | 2.2.0 | MIT | https://github.com/iVis-at-Bilkent/cytoscape.js-fcose |
-| d3 | 7.9.0 | ISC | https://github.com/d3/d3 |
+| d3 | 7.9.2 | ISC | https://github.com/d3/d3 |
 | d3-array | 2.12.1 | BSD-3-Clause | https://github.com/d3/d3-array |
-| d3-array | 3.2.4 | ISC | https://github.com/d3/d3-array |
-| d3-axis | 3.0.0 | ISC | https://github.com/d3/d3-axis |
-| d3-brush | 3.0.0 | ISC | https://github.com/d3/d3-brush |
-| d3-chord | 3.0.1 | ISC | https://github.com/d3/d3-chord |
-| d3-color | 3.1.0 | ISC | https://github.com/d3/d3-color |
-| d3-contour | 4.0.2 | ISC | https://github.com/d3/d3-contour |
-| d3-delaunay | 6.0.4 | ISC | https://github.com/d3/d3-delaunay |
-| d3-dispatch | 3.0.1 | ISC | https://github.com/d3/d3-dispatch |
-| d3-drag | 3.0.0 | ISC | https://github.com/d3/d3-drag |
-| d3-dsv | 3.0.1 | ISC | https://github.com/d3/d3-dsv |
-| d3-ease | 3.0.1 | BSD-3-Clause | https://github.com/d3/d3-ease |
-| d3-fetch | 3.0.1 | ISC | https://github.com/d3/d3-fetch |
-| d3-force | 3.0.0 | ISC | https://github.com/d3/d3-force |
-| d3-format | 3.1.2 | ISC | https://github.com/d3/d3-format |
-| d3-geo | 3.1.1 | ISC | https://github.com/d3/d3-geo |
-| d3-hierarchy | 3.1.2 | ISC | https://github.com/d3/d3-hierarchy |
-| d3-interpolate | 3.0.1 | ISC | https://github.com/d3/d3-interpolate |
+| d3-array | 3.2.5 | ISC | https://github.com/d3/d3-array |
+| d3-axis | 3.0.1 | ISC | https://github.com/d3/d3-axis |
+| d3-brush | 3.0.1 | ISC | https://github.com/d3/d3-brush |
+| d3-chord | 3.0.2 | ISC | https://github.com/d3/d3-chord |
+| d3-color | 3.1.1 | ISC | https://github.com/d3/d3-color |
+| d3-contour | 4.0.3 | ISC | https://github.com/d3/d3-contour |
+| d3-delaunay | 6.0.6 | ISC | https://github.com/d3/d3-delaunay |
+| d3-dispatch | 3.0.2 | ISC | https://github.com/d3/d3-dispatch |
+| d3-drag | 3.0.1 | ISC | https://github.com/d3/d3-drag |
+| d3-dsv | 3.0.2 | ISC | https://github.com/d3/d3-dsv |
+| d3-ease | 3.0.2 | BSD-3-Clause | https://github.com/d3/d3-ease |
+| d3-fetch | 3.0.2 | ISC | https://github.com/d3/d3-fetch |
+| d3-force | 3.0.1 | ISC | https://github.com/d3/d3-force |
+| d3-format | 3.1.3 | ISC | https://github.com/d3/d3-format |
+| d3-geo | 3.1.2 | ISC | https://github.com/d3/d3-geo |
+| d3-hierarchy | 3.1.3 | ISC | https://github.com/d3/d3-hierarchy |
+| d3-interpolate | 3.0.2 | ISC | https://github.com/d3/d3-interpolate |
 | d3-path | 1.0.9 | BSD-3-Clause | https://github.com/d3/d3-path |
-| d3-path | 3.1.0 | ISC | https://github.com/d3/d3-path |
-| d3-polygon | 3.0.1 | ISC | https://github.com/d3/d3-polygon |
-| d3-quadtree | 3.0.1 | ISC | https://github.com/d3/d3-quadtree |
-| d3-random | 3.0.1 | ISC | https://github.com/d3/d3-random |
+| d3-path | 3.1.1 | ISC | https://github.com/d3/d3-path |
+| d3-polygon | 3.0.2 | ISC | https://github.com/d3/d3-polygon |
+| d3-quadtree | 3.0.2 | ISC | https://github.com/d3/d3-quadtree |
+| d3-random | 3.0.2 | ISC | https://github.com/d3/d3-random |
 | d3-sankey | 0.12.3 | BSD-3-Clause | https://github.com/d3/d3-sankey |
-| d3-scale | 4.0.2 | ISC | https://github.com/d3/d3-scale |
-| d3-scale-chromatic | 3.1.0 | ISC | https://github.com/d3/d3-scale-chromatic |
-| d3-selection | 3.0.0 | ISC | https://github.com/d3/d3-selection |
+| d3-scale | 4.0.3 | ISC | https://github.com/d3/d3-scale |
+| d3-scale-chromatic | 3.1.1 | ISC | https://github.com/d3/d3-scale-chromatic |
+| d3-selection | 3.0.1 | ISC | https://github.com/d3/d3-selection |
 | d3-shape | 1.3.7 | BSD-3-Clause | https://github.com/d3/d3-shape |
-| d3-shape | 3.2.0 | ISC | https://github.com/d3/d3-shape |
-| d3-time | 3.1.0 | ISC | https://github.com/d3/d3-time |
-| d3-time-format | 4.1.0 | ISC | https://github.com/d3/d3-time-format |
-| d3-timer | 3.0.1 | ISC | https://github.com/d3/d3-timer |
-| d3-transition | 3.0.1 | ISC | https://github.com/d3/d3-transition |
-| d3-zoom | 3.0.0 | ISC | https://github.com/d3/d3-zoom |
+| d3-shape | 3.2.1 | ISC | https://github.com/d3/d3-shape |
+| d3-time | 3.1.1 | ISC | https://github.com/d3/d3-time |
+| d3-time-format | 4.1.1 | ISC | https://github.com/d3/d3-time-format |
+| d3-timer | 3.0.2 | ISC | https://github.com/d3/d3-timer |
+| d3-transition | 3.0.2 | ISC | https://github.com/d3/d3-transition |
+| d3-zoom | 3.0.1 | ISC | https://github.com/d3/d3-zoom |
 | dagre-d3-es | 7.0.14 | MIT | https://github.com/tbo47/dagre-es |
 | dayjs | 1.11.23 | MIT | https://github.com/iamkun/dayjs |
 | debug | 4.4.3 | MIT | https://github.com/debug-js/debug |
@@ -170,7 +170,7 @@ This notice is included in the published npm tarball. Transitive packages instal
 | es-define-property | 1.0.1 | MIT | https://github.com/ljharb/es-define-property |
 | es-errors | 1.3.0 | MIT | https://github.com/ljharb/es-errors |
 | es-object-atoms | 1.1.2 | MIT | https://github.com/ljharb/es-object-atoms |
-| es-toolkit | 1.52.0 | MIT | https://github.com/toss/es-toolkit |
+| es-toolkit | 1.53.1 | MIT | https://github.com/toss/es-toolkit |
 | escape-html | 1.0.3 | MIT | https://github.com/component/escape-html |
 | escape-string-regexp | 5.0.0 | MIT | https://github.com/sindresorhus/escape-string-regexp |
 | etag | 1.8.1 | MIT | https://github.com/jshttp/etag |
@@ -292,7 +292,7 @@ This notice is included in the published npm tarball. Transitive packages instal
 | object-inspect | 1.13.4 | MIT | https://github.com/inspect-js/object-inspect |
 | on-finished | 2.4.1 | MIT | https://github.com/jshttp/on-finished |
 | once | 1.4.0 | ISC | https://github.com/isaacs/once |
-| package-manager-detector | 1.8.0 | MIT | https://github.com/antfu-collective/package-manager-detector |
+| package-manager-detector | 1.9.0 | MIT | https://github.com/antfu-collective/package-manager-detector |
 | pako | 1.0.11 | (MIT AND Zlib) | https://github.com/nodeca/pako |
 | parse-entities | 4.0.2 | MIT | https://github.com/wooorm/parse-entities |
 | parse5 | 7.3.0 | MIT | https://github.com/inikulin/parse5 |
@@ -356,7 +356,7 @@ This notice is included in the published npm tarball. Transitive packages instal
 | unist-util-visit-parents | 6.0.2 | MIT | https://github.com/syntax-tree/unist-util-visit-parents |
 | unpipe | 1.0.0 | MIT | https://github.com/stream-utils/unpipe |
 | util-deprecate | 1.0.2 | MIT | https://github.com/TooTallNate/util-deprecate |
-| uuid | 14.0.2 | MIT | https://github.com/uuidjs/uuid |
+| uuid | 14.0.3 | MIT | https://github.com/uuidjs/uuid |
 | vary | 1.1.2 | MIT | https://github.com/jshttp/vary |
 | vfile | 6.0.3 | MIT | https://github.com/vfile/vfile |
 | vfile-location | 5.0.3 | MIT | https://github.com/vfile/vfile-location |
@@ -409,7 +409,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-cli@2.9.31, @bendyline/squisq-formats@2.8.17, @bendyline/squisq-graph@2.13.1, @bendyline/squisq-react@2.12.27, @bendyline/squisq-video@2.4.21, @bendyline/squisq@2.13.15
+Components: @bendyline/squisq-cli@2.9.32, @bendyline/squisq-formats@2.8.18, @bendyline/squisq-graph@2.13.1, @bendyline/squisq-react@2.12.28, @bendyline/squisq-video@2.4.22, @bendyline/squisq@2.13.16
 Source files: node_modules/@bendyline/squisq-cli/LICENSE, node_modules/@bendyline/squisq-formats/LICENSE, node_modules/@bendyline/squisq-graph/LICENSE, node_modules/@bendyline/squisq-react/LICENSE, node_modules/@bendyline/squisq-video/LICENSE, node_modules/@bendyline/squisq/LICENSE
 ==============================================================================
 MIT License
@@ -679,7 +679,7 @@ This software contains code derived from the Puppeteer project (https://github.c
 available under the Apache 2.0 license (https://github.com/puppeteer/puppeteer/blob/master/LICENSE).
 
 ==============================================================================
-Components: @bendyline/squisq-cli@2.9.31
+Components: @bendyline/squisq-cli@2.9.32
 Source files: node_modules/@bendyline/squisq-cli/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-cli
@@ -699,7 +699,7 @@ Copyright and complete license texts for these dependencies are included in
 their respective npm distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-cli@2.9.31
+Components: @bendyline/squisq-cli@2.9.32
 Source files: node_modules/@bendyline/squisq-cli/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-cli
@@ -6039,7 +6039,7 @@ The above copyright notice and this permission notice shall be included in all c
 **THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.**
 
 ==============================================================================
-Components: @bendyline/squisq-formats@2.8.17
+Components: @bendyline/squisq-formats@2.8.18
 Source files: node_modules/@bendyline/squisq-formats/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-formats
@@ -6065,7 +6065,7 @@ texts for these dependencies are included in their respective npm
 distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-formats@2.8.17
+Components: @bendyline/squisq-formats@2.8.18
 Source files: node_modules/@bendyline/squisq-formats/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-formats
@@ -6838,7 +6838,7 @@ repository license, the pinned upstream copy is vendored and identified below.
 COMPONENTS
 
 ==============================================================================
-Components: @bendyline/squisq-react@2.12.27
+Components: @bendyline/squisq-react@2.12.28
 Source files: node_modules/@bendyline/squisq-react/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-react
@@ -6863,7 +6863,7 @@ third-party license texts for the complete standalone bundle graph are shipped
 in THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq-react@2.12.27
+Components: @bendyline/squisq-react@2.12.28
 Source files: node_modules/@bendyline/squisq-react/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-react
@@ -11962,7 +11962,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-video@2.4.21
+Components: @bendyline/squisq-video@2.4.22
 Source files: node_modules/@bendyline/squisq-video/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-video
@@ -11987,7 +11987,7 @@ Copyright and complete license texts for the listed dependencies are included
 in their respective npm distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-video@2.4.21
+Components: @bendyline/squisq-video@2.4.22
 Source files: node_modules/@bendyline/squisq-video/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-video
@@ -11999,7 +11999,7 @@ repository license, the pinned upstream copy is vendored and identified below.
 COMPONENTS
 
 ==============================================================================
-Components: @bendyline/squisq@2.13.15
+Components: @bendyline/squisq@2.13.16
 Source files: node_modules/@bendyline/squisq/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq
@@ -12030,7 +12030,7 @@ third-party license texts for bundled code and data are shipped in
 THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq@2.13.15
+Components: @bendyline/squisq@2.13.16
 Source files: node_modules/@bendyline/squisq/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq
@@ -13210,7 +13210,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: cytoscape@3.34.3
+Components: cytoscape@3.34.4
 Source files: node_modules/cytoscape/LICENSE
 ==============================================================================
 Copyright (c) 2016-2026, The Cytoscape Consortium.
@@ -13234,7 +13234,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: cytoscape@3.34.3
+Components: cytoscape@3.34.4
 Source files: node_modules/cytoscape/license-update.mjs
 ==============================================================================
 import fs from 'fs';
@@ -13271,10 +13271,10 @@ SOFTWARE.`;
 fs.writeFileSync(path.join(__dirname, 'LICENSE'), license);
 
 ==============================================================================
-Components: d3-array@3.2.4, d3@7.9.0
-Source files: node_modules/d3-array/LICENSE, node_modules/d3/LICENSE
+Components: d3-array@3.2.5, d3-axis@3.0.1, d3-brush@3.0.1, d3-chord@3.0.2, d3-color@3.1.1, d3-dispatch@3.0.2, d3-drag@3.0.1, d3-force@3.0.1, d3-format@3.1.3, d3-hierarchy@3.1.3, d3-interpolate@3.0.2, d3-polygon@3.0.2, d3-quadtree@3.0.2, d3-random@3.0.2, d3-scale@4.0.3, d3-selection@3.0.1, d3-shape@3.2.1, d3-time-format@4.1.1, d3-time@3.1.1, d3-timer@3.0.2, d3-transition@3.0.2, d3-zoom@3.0.1, d3@7.9.2
+Source files: node_modules/d3-array/LICENSE, node_modules/d3-axis/LICENSE, node_modules/d3-brush/LICENSE, node_modules/d3-chord/LICENSE, node_modules/d3-color/LICENSE, node_modules/d3-dispatch/LICENSE, node_modules/d3-drag/LICENSE, node_modules/d3-force/LICENSE, node_modules/d3-format/LICENSE, node_modules/d3-hierarchy/LICENSE, node_modules/d3-interpolate/LICENSE, node_modules/d3-polygon/LICENSE, node_modules/d3-quadtree/LICENSE, node_modules/d3-random/LICENSE, node_modules/d3-scale/LICENSE, node_modules/d3-selection/LICENSE, node_modules/d3-shape/LICENSE, node_modules/d3-time-format/LICENSE, node_modules/d3-time/LICENSE, node_modules/d3-timer/LICENSE, node_modules/d3-transition/LICENSE, node_modules/d3-zoom/LICENSE, node_modules/d3/LICENSE
 ==============================================================================
-Copyright 2010-2023 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -13289,46 +13289,10 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
 ==============================================================================
-Components: d3-axis@3.0.0, d3-brush@3.0.0, d3-chord@3.0.1, d3-dispatch@3.0.1, d3-drag@3.0.0, d3-force@3.0.0, d3-hierarchy@3.1.2, d3-interpolate@3.0.1, d3-polygon@3.0.1, d3-quadtree@3.0.1, d3-random@3.0.1, d3-scale@4.0.2, d3-selection@3.0.0, d3-time-format@4.1.0, d3-timer@3.0.1, d3-transition@3.0.1, d3-zoom@3.0.0
-Source files: node_modules/d3-axis/LICENSE, node_modules/d3-brush/LICENSE, node_modules/d3-chord/LICENSE, node_modules/d3-dispatch/LICENSE, node_modules/d3-drag/LICENSE, node_modules/d3-force/LICENSE, node_modules/d3-hierarchy/LICENSE, node_modules/d3-interpolate/LICENSE, node_modules/d3-polygon/LICENSE, node_modules/d3-quadtree/LICENSE, node_modules/d3-random/LICENSE, node_modules/d3-scale/LICENSE, node_modules/d3-selection/LICENSE, node_modules/d3-time-format/LICENSE, node_modules/d3-timer/LICENSE, node_modules/d3-transition/LICENSE, node_modules/d3-zoom/LICENSE
-==============================================================================
-Copyright 2010-2021 Mike Bostock
-
-Permission to use, copy, modify, and/or distribute this software for any purpose
-with or without fee is hereby granted, provided that the above copyright notice
-and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
-THIS SOFTWARE.
-
-==============================================================================
-Components: d3-color@3.1.0, d3-shape@3.2.0, d3-time@3.1.0
-Source files: node_modules/d3-color/LICENSE, node_modules/d3-shape/LICENSE, node_modules/d3-time/LICENSE
-==============================================================================
-Copyright 2010-2022 Mike Bostock
-
-Permission to use, copy, modify, and/or distribute this software for any purpose
-with or without fee is hereby granted, provided that the above copyright notice
-and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
-THIS SOFTWARE.
-
-==============================================================================
-Components: d3-contour@4.0.2
+Components: d3-contour@4.0.3
 Source files: node_modules/d3-contour/LICENSE
 ==============================================================================
-Copyright 2012-2023 Mike Bostock
+Copyright 2012-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -13343,10 +13307,10 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
 ==============================================================================
-Components: d3-delaunay@6.0.4
+Components: d3-delaunay@6.0.6
 Source files: node_modules/d3-delaunay/LICENSE
 ==============================================================================
-Copyright 2018-2021 Observable, Inc.
+Copyright 2018-2026 Observable, Inc.
 Copyright 2021 Mapbox
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -13362,10 +13326,10 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
 ==============================================================================
-Components: d3-dsv@3.0.1
+Components: d3-dsv@3.0.2
 Source files: node_modules/d3-dsv/LICENSE
 ==============================================================================
-Copyright 2013-2021 Mike Bostock
+Copyright 2013-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -13405,10 +13369,10 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: d3-ease@3.0.1
+Components: d3-ease@3.0.2
 Source files: node_modules/d3-ease/LICENSE
 ==============================================================================
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 Copyright 2001 Robert Penner
 All rights reserved.
 
@@ -13438,10 +13402,10 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-Components: d3-fetch@3.0.1
+Components: d3-fetch@3.0.2
 Source files: node_modules/d3-fetch/LICENSE
 ==============================================================================
-Copyright 2016-2021 Mike Bostock
+Copyright 2016-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -13456,28 +13420,10 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
 ==============================================================================
-Components: d3-format@3.1.2
-Source files: node_modules/d3-format/LICENSE
-==============================================================================
-Copyright 2010-2026 Mike Bostock
-
-Permission to use, copy, modify, and/or distribute this software for any purpose
-with or without fee is hereby granted, provided that the above copyright notice
-and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
-THIS SOFTWARE.
-
-==============================================================================
-Components: d3-geo@3.1.1
+Components: d3-geo@3.1.2
 Source files: node_modules/d3-geo/LICENSE
 ==============================================================================
-Copyright 2010-2024 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -13513,10 +13459,10 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: d3-path@3.1.0
+Components: d3-path@3.1.1
 Source files: node_modules/d3-path/LICENSE
 ==============================================================================
-Copyright 2015-2022 Mike Bostock
+Copyright 2015-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -13677,10 +13623,10 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
 ==============================================================================
-Components: d3-scale-chromatic@3.1.0
+Components: d3-scale-chromatic@3.1.1
 Source files: node_modules/d3-scale-chromatic/LICENSE
 ==============================================================================
-Copyright 2010-2024 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -14389,7 +14335,7 @@ THIS IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRE
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-Components: es-toolkit@1.52.0
+Components: es-toolkit@1.53.1
 Source files: node_modules/es-toolkit/LICENSE
 ==============================================================================
 MIT License
@@ -14415,7 +14361,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: es-toolkit@1.52.0
+Components: es-toolkit@1.53.1
 Source files: node_modules/es-toolkit/NOTICE
 ==============================================================================
 es-toolkit
@@ -16374,7 +16320,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: package-manager-detector@1.8.0
+Components: package-manager-detector@1.9.0
 Source files: node_modules/package-manager-detector/LICENSE
 ==============================================================================
 MIT License
@@ -18019,7 +17965,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: uuid@14.0.2
+Components: uuid@14.0.3
 Source files: node_modules/uuid/LICENSE.md
 ==============================================================================
 The MIT License (MIT)

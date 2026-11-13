@@ -70,8 +70,13 @@ export function quoteOccurrences(text: string, quote: string, limit = Infinity):
     if (blankLines || !BLANK_LINE.test(match[0])) {
       found.push({ start: match.index, end: match.index + match[0].length });
     }
-    // Overlapping copies count too, as they do for an exact quote.
-    pattern.lastIndex = match.index + 1;
+    // Overlapping copies count too, as they do for an exact quote. Step past
+    // the match's first character, not one code unit: under the `u` flag a
+    // `lastIndex` inside a surrogate pair is read as the pair's start, so a
+    // match that began with an emoji was found again in the same place
+    // without end.
+    const first = text.codePointAt(match.index) ?? 0;
+    pattern.lastIndex = match.index + (first > 0xffff ? 2 : 1);
   }
   return found;
 }

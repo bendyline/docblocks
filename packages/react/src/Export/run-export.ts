@@ -3,6 +3,7 @@
  */
 
 import type {
+  HtmlNode,
   MarkdownDocument,
   MarkdownBlockNode,
   MarkdownInlineNode,
@@ -35,9 +36,42 @@ export { buildExportFilename } from './export-filename.js';
 
 export type ExportBlobSaver = (blob: Blob, filename: string) => Promise<void> | void;
 
+/** What baking a document's edited clips produced, for the export to use. */
+export interface ExportBakedMedia {
+  /**
+   * The document with each baked clip pointing at its baked file and the
+   * clip's edits taken off (they are in the file now).
+   */
+  readonly markdown: string;
+  /**
+   * Each baked file: `path` is where it is stored in the document's media,
+   * `reference` is what `markdown` calls it.
+   */
+  readonly baked: ReadonlyArray<{ readonly path: string; readonly reference: string }>;
+  /** Clips that could not be baked; they keep their original file and play unedited. */
+  readonly failures: ReadonlyArray<{ readonly src: string; readonly error: string }>;
+}
+
+/**
+ * Bakes a document's edited audio and video clips — cuts, cleaned-up sound,
+ * volume, fades, crop — into ordinary files. `reference: 'copy'` names each
+ * one visibly beside its source (for an export that carries its own files);
+ * `'store'` points at where it is stored in the document's media folder.
+ */
+export type ExportMediaBaker = (
+  markdown: string,
+  options: { reference: 'store' | 'copy' },
+) => Promise<ExportBakedMedia>;
+
 /** Host-provided converters that must be loaded before an export begins. */
 export interface ExportConverterOverrides {
   docToPptx?: (typeof import('@bendyline/squisq-formats/pptx'))['docToPptx'];
+  /**
+   * Bakes edited clips for exports that cannot apply a clip's edits as they
+   * play: a plain Web page has no script to skip a cut. Without it such an
+   * export plays each clip's original file.
+   */
+  bakeMedia?: ExportMediaBaker;
   /**
    * Draws diagrams as pictures. Defaults to Squisq's browser renderer; tests
    * pass a stand-in because drawing needs a real canvas.
@@ -288,14 +322,22 @@ async function exportDocument(
   }
 
   if (options.format === 'html') {
-    await runHtmlExport(
+    const page = await withBakedMedia(
       markdown,
+      options,
+      mediaContainer,
+      converterOverrides,
+      warnings,
+    );
+    await runHtmlExport(
+      page.markdown,
       filename,
       options,
       mediaContainer,
       selectedFile,
       saveBlob,
       converterOverrides,
+      page.readMedia,
     );
     return;
   }
@@ -388,9 +430,10 @@ async function exportDocument(
       ? applyTransform(baseDoc, options.transformStyle).doc
       : baseDoc;
     const enrichedDoc = buildPreviewDoc(contentDoc);
-    if (themeId) {
-      enrichedDoc.themeId = themeId;
-    }
+    // The theme chosen in the dialog, even when it is the implicit Standard:
+    // a transform otherwise substitutes its own suggested theme, and the
+    // Documentary transform turned a white slideshow into a dark navy deck.
+    enrichedDoc.themeId = themeId ?? options.themeId;
     const images = mediaContainer ? await resolveImageData(doc, mediaContainer) : undefined;
     // Drawings, timelines and ASCII diagrams become native slide shapes;
     // Mermaid needs a picture, and an SVG island's or attached SVG's picture
@@ -405,6 +448,50 @@ async function exportDocument(
     await saveExportBlob(new Blob([buf], { type: MIME_TYPES.pptx }), filename, saveBlob);
     return;
   }
+}
+
+/** Reads one of the document's media files for an export, or null when it is missing. */
+type ExportMediaReader = (path: string) => Promise<ArrayBuffer | null>;
+
+/**
+ * A plain Web page plays a clip's file as it is, so a clip the author cut,
+ * cleaned up, or cropped has to be baked into a file first. Returns the
+ * document to export — edited clips pointing at their baked files — and how
+ * to read its media. A rendered page keeps the original: its player applies
+ * the edits itself.
+ *
+ * An export that carries its own files (a ZIP) gets each baked clip under a
+ * visible name beside its source, since the folder they are stored in is
+ * hidden and many Web hosts will not serve it. A single page refers to the
+ * stored file directly, as it does to every other media file.
+ */
+async function withBakedMedia(
+  markdown: string,
+  options: ExportOptions,
+  mediaContainer: ContentContainer | null | undefined,
+  overrides: ExportConverterOverrides,
+  warnings: string[],
+): Promise<{ markdown: string; readMedia: ExportMediaReader | undefined }> {
+  const readStored: ExportMediaReader | undefined = mediaContainer
+    ? (path) => mediaContainer.readFile(path)
+    : undefined;
+  if (options.htmlStyle !== 'plain' || !overrides.bakeMedia) {
+    return { markdown, readMedia: readStored };
+  }
+  const carriesFiles =
+    Boolean(mediaContainer) && (options.includeLinkedDocs || options.htmlBundle === 'zip');
+  const result = await overrides.bakeMedia(markdown, {
+    reference: carriesFiles ? 'copy' : 'store',
+  });
+  for (const failure of result.failures) {
+    const name = failure.src.split('/').pop() || failure.src;
+    warnings.push(`"${name}" was exported without its edits. ${failure.error}`);
+  }
+  const stored = new Map(result.baked.map((clip) => [clip.reference, clip.path]));
+  return {
+    markdown: result.markdown,
+    readMedia: readStored && ((path) => readStored(stored.get(path) ?? path)),
+  };
 }
 
 /** A Mermaid fence anywhere in a markdown source. */
@@ -462,6 +549,9 @@ async function runHtmlExport(
   selectedFile?: string | null,
   saveBlob?: ExportBlobSaver,
   converterOverrides: ExportConverterOverrides = {},
+  readMedia: ExportMediaReader | undefined = mediaContainer
+    ? (path) => mediaContainer.readFile(path)
+    : undefined,
 ): Promise<void> {
   const baseName = htmlFilename.replace(/\.html$/, '');
   const zipName = `${baseName}.zip`;
@@ -514,7 +604,7 @@ async function runHtmlExport(
     const blob = await markdownDocsToPlainHtmlBundle({
       entryPath,
       readDocument,
-      readBinary: (path) => mediaContainer.readFile(path),
+      readBinary: readMedia ?? ((path) => mediaContainer.readFile(path)),
       title: baseName,
       themeId,
       entryAsIndex: options.entryAsIndex,
@@ -572,8 +662,18 @@ async function runHtmlExport(
   const referencedImages = collectMarkdownImageUrls(mdDoc);
   const localImages = referencedImages.filter((u) => !isExternalUrl(u) && !page.images.has(u));
   const markdownDocToPlainHtml = await loadPlainHtmlRenderer();
+  // The page's audio and video travel in a ZIP beside its images. Images are
+  // already listed, so a clip written as an image link is not carried twice.
+  const localMedia =
+    options.htmlBundle === 'zip' && mediaContainer
+      ? (await collectMarkdownMediaPaths(mdDoc)).filter((path) => !localImages.includes(path))
+      : [];
 
-  if (options.htmlBundle === 'zip' && mediaContainer && localImages.length > 0) {
+  if (
+    options.htmlBundle === 'zip' &&
+    mediaContainer &&
+    localImages.length + localMedia.length > 0
+  ) {
     const [{ MemoryContentContainer }, { containerToZip }] = await Promise.all([
       import('@bendyline/squisq/storage'),
       import('@bendyline/squisq-formats/container'),
@@ -587,8 +687,9 @@ async function runHtmlExport(
     });
     const container = new MemoryContentContainer();
     await container.writeFile('index.html', new TextEncoder().encode(html));
-    for (const url of localImages) {
-      const data = await mediaContainer.readFile(url);
+    const read = readMedia ?? ((path: string) => mediaContainer.readFile(path));
+    for (const url of [...localImages, ...localMedia]) {
+      const data = await read(url);
       if (!data) continue;
       const cleanPath = url.replace(/^\/+/, '');
       await container.writeFile(cleanPath, new Uint8Array(data));
@@ -666,6 +767,47 @@ function collectMarkdownImageUrls(doc: MarkdownDocument): string[] {
   }
   walkBlocks(doc.children);
   return Array.from(new Set(urls));
+}
+
+/**
+ * The local audio and video files a plain page plays: `<audio>` / `<video>`
+ * tags (and their posters), and top-level `{[audio …]}` / `{[video …]}` tags,
+ * each of which the page shows as its file's player. A `#t=` fragment or
+ * query on a reference is not part of the file's path.
+ */
+async function collectMarkdownMediaPaths(doc: MarkdownDocument): Promise<string[]> {
+  const { isMediaAnnotationName, parseStandaloneAnnotation } =
+    await import('@bendyline/squisq/doc');
+  const paths = new Set<string>();
+  const add = (reference: unknown) => {
+    if (typeof reference !== 'string' || !reference || isExternalUrl(reference)) return;
+    const path = reference.replace(/[#?].*$/, '');
+    if (path) paths.add(path);
+  };
+  const visitHtml = (nodes: readonly HtmlNode[]): void => {
+    for (const node of nodes) {
+      if (node.type !== 'htmlElement') continue;
+      const tag = node.tagName.toLowerCase();
+      if (tag === 'video' || tag === 'audio' || tag === 'source') add(node.attributes.src);
+      if (tag === 'video' || tag === 'audio') add(node.attributes.poster);
+      visitHtml(node.children);
+    }
+  };
+  const visit = (node: unknown): void => {
+    if (!node || typeof node !== 'object') return;
+    const n = node as { type?: string; htmlChildren?: HtmlNode[]; children?: unknown[] };
+    if ((n.type === 'htmlBlock' || n.type === 'htmlInline') && Array.isArray(n.htmlChildren)) {
+      visitHtml(n.htmlChildren);
+    }
+    if (Array.isArray(n.children)) n.children.forEach(visit);
+  };
+  for (const child of doc.children) {
+    visit(child);
+    if (child.type !== 'paragraph') continue;
+    const tag = parseStandaloneAnnotation(child);
+    if (tag?.template && isMediaAnnotationName(tag.template)) add(tag.params.src);
+  }
+  return [...paths];
 }
 
 /** An image's bytes in the shape the DOCX and PDF exporters take. */

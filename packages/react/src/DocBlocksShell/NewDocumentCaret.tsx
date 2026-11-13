@@ -1,9 +1,30 @@
 import { useEffect } from 'react';
 import { useEditorContext } from '@bendyline/squisq-editor-react';
 
+/** Squisq's Write-view editor, as its context exposes it. */
+type Editor = NonNullable<ReturnType<typeof useEditorContext>['tiptapEditor']>;
+
 export interface NewDocumentCaretProps {
   /** Called once the caret is placed, or when there is nowhere to place it. */
   onPlaced: () => void;
+  /**
+   * What the author typed while the document was opening (`\n` for Enter),
+   * collected by `startTypedWhileOpening`. Called once, after the caret is
+   * placed; the text is then typed into the document.
+   */
+  takeTypedText?: () => string;
+}
+
+/** Type held keystrokes at the caret, one paragraph per line. */
+function typeIntoDocument(editor: Editor, text: string): void {
+  if (!text) return;
+  const chain = editor.chain().focus();
+  text.split('\n').forEach((line, index) => {
+    if (index > 0) chain.splitBlock();
+    // A text node, not a string: insertContent parses strings as HTML.
+    if (line) chain.insertContent({ type: 'text', text: line });
+  });
+  chain.run();
 }
 
 /**
@@ -16,11 +37,12 @@ export interface NewDocumentCaretProps {
  * Renders nothing. It sits in the editor's toolbar slot only to reach the
  * editor context.
  */
-export function NewDocumentCaret({ onPlaced }: NewDocumentCaretProps) {
+export function NewDocumentCaret({ onPlaced, takeTypedText }: NewDocumentCaretProps) {
   const { activeView, tiptapEditor } = useEditorContext();
 
   useEffect(() => {
     if (activeView !== 'wysiwyg') {
+      takeTypedText?.();
       onPlaced();
       return;
     }
@@ -44,11 +66,15 @@ export function NewDocumentCaret({ onPlaced }: NewDocumentCaretProps) {
           })
           .focus('end')
           .run();
+        // Whatever was typed before the editor could take it.
+        typeIntoDocument(tiptapEditor, takeTypedText?.() ?? '');
+      } else {
+        takeTypedText?.();
       }
       onPlaced();
     });
     return () => cancelAnimationFrame(frame);
-  }, [activeView, tiptapEditor, onPlaced]);
+  }, [activeView, tiptapEditor, onPlaced, takeTypedText]);
 
   return null;
 }

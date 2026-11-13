@@ -14,6 +14,16 @@ export interface GroundingResult {
   readonly ok: boolean;
   /** Specific enough to hand back to the model in a repair prompt. */
   readonly problems: readonly string[];
+  /** The same findings for the person: what was wrong, without the instruction to the model. */
+  readonly findings: readonly string[];
+}
+
+/** One thing a diagram states that the passage does not. */
+interface Ungrounded {
+  /** What was found, as a sentence a person can read. */
+  readonly finding: string;
+  /** What the model should do about it, when the finding alone does not say. */
+  readonly instruction?: string;
 }
 
 const LABEL_SHARE_REQUIRED = 0.6;
@@ -122,7 +132,7 @@ function labelsOf(spec: DiagramSpec): string[] {
   }
 }
 
-function checkLabels(labels: readonly string[], passage: Set<string>): string | null {
+function checkLabels(labels: readonly string[], passage: Set<string>): Ungrounded | null {
   const meaningful = labels.filter((label) => contentTokens(label).size > 0);
   if (meaningful.length === 0) return null;
   const unsupported = meaningful.filter(
@@ -134,7 +144,10 @@ function checkLabels(labels: readonly string[], passage: Set<string>): string | 
     .slice(0, 4)
     .map((label) => `"${label}"`)
     .join(', ');
-  return `These labels are not supported by the passage: ${sample}. Use words from the passage.`;
+  return {
+    finding: `These labels are not supported by the passage: ${sample}.`,
+    instruction: 'Use words from the passage.',
+  };
 }
 
 function yearsIn(text: string): string[] {
@@ -143,16 +156,17 @@ function yearsIn(text: string): string[] {
 
 /** Whether `spec` sticks to facts stated in `passage`. */
 export function checkGrounding(spec: DiagramSpec, passage: string): GroundingResult {
-  const problems: string[] = [];
+  const found: Ungrounded[] = [];
   const passageNumbers = extractNumbers(passage);
   const has = (value: number) => passageNumbers.some((known) => sameNumber(known, value));
 
   if (spec.kind === 'chart') {
     const missing = spec.values.filter((value) => !has(value));
     if (missing.length > 0) {
-      problems.push(
-        `These numbers are not in the passage: ${missing.slice(0, 6).join(', ')}. Copy values exactly.`,
-      );
+      found.push({
+        finding: `These numbers are not in the passage: ${missing.slice(0, 6).join(', ')}.`,
+        instruction: 'Copy values exactly.',
+      });
     }
   }
   if (spec.kind === 'stats' || spec.kind === 'funnel') {
@@ -166,7 +180,7 @@ export function checkGrounding(spec: DiagramSpec, passage: string): GroundingRes
       return numbers.length > 0 ? !numbers.some(has) : !lowerPassage.includes(value.toLowerCase());
     });
     if (missing.length > 0) {
-      problems.push(`These numbers are not in the passage: ${missing.join(', ')}.`);
+      found.push({ finding: `These numbers are not in the passage: ${missing.join(', ')}.` });
     }
   }
   if (spec.kind === 'timeline') {
@@ -179,12 +193,18 @@ export function checkGrounding(spec: DiagramSpec, passage: string): GroundingRes
         : !lowerPassage.includes(event.when.toLowerCase());
     });
     if (missing.length > 0) {
-      problems.push(
-        `These dates are not in the passage: ${missing.map((event) => event.when).join(', ')}.`,
-      );
+      found.push({
+        finding: `These dates are not in the passage: ${missing.map((event) => event.when).join(', ')}.`,
+      });
     }
   }
   const labels = checkLabels(labelsOf(spec), contentTokens(passage));
-  if (labels) problems.push(labels);
-  return { ok: problems.length === 0, problems };
+  if (labels) found.push(labels);
+  return {
+    ok: found.length === 0,
+    problems: found.map((item) =>
+      item.instruction ? `${item.finding} ${item.instruction}` : item.finding,
+    ),
+    findings: found.map((item) => item.finding),
+  };
 }

@@ -706,7 +706,7 @@ describe('Gezel connector with the real embedding SDK', () => {
     expect(fixture.starts).to.deep.equal([]);
   });
 
-  it('verifies a Windows payload against the pins packaging left it', async () => {
+  it('verifies a staged payload against the pins packaging left it', async () => {
     const manifest = { schemaVersion: 2 as const, release: '0.1.57', platforms: {} };
     const fixture = hosted({
       hostNative: {
@@ -716,7 +716,7 @@ describe('Gezel connector with the real embedding SDK', () => {
         canHost: true,
         stagedWithoutUv: true,
       },
-      loadWindowsManifest: async () => manifest,
+      loadStagedManifest: async () => manifest,
     });
     const connection = await fixture.connect();
     expect(fixture.verifications).to.deep.equal([

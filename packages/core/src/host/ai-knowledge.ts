@@ -21,9 +21,12 @@ export interface AiKnowledgeCatalog {
 export interface AiKnowledgeState {
   readonly catalogs: readonly AiKnowledgeCatalog[];
   /**
-   * A one-time model download that improves knowledge results, sized for the
-   * offer. Null when not offered: installed, unavailable, or no enabled
-   * catalog would use it. The provider decides; people only see the offer.
+   * The one-time download of the model that finds relevant passages, sized
+   * for Settings. A catalog in use finds next to nothing without it, so hosts
+   * start it when a catalog is installed or enabled; this is non-null while
+   * that download runs and while the model is still missing (an earlier
+   * install, or a download that failed). Null otherwise: installed,
+   * unavailable, or no enabled catalog would use it. The provider decides.
    */
   readonly improvement: { readonly downloadBytes: number; readonly downloading: boolean } | null;
 }
@@ -33,7 +36,7 @@ export type AiKnowledgeAction =
       readonly action: 'install' | 'remove' | 'enable' | 'disable' | 'cancel';
       readonly catalogId: string;
     }
-  /** Start the `improvement` download. */
+  /** Start the `improvement` download by hand, when it did not start with a catalog. */
   | { readonly action: 'improve' };
 
 export interface AiKnowledgeAPI {

@@ -15,6 +15,7 @@ export {
   DEFAULT_OPTIONS,
   FORMAT_EXTENSIONS,
   FORMAT_LABELS,
+  frontmatterTransformId,
   loadLastExportOptions,
   resolveExportDialogInitial,
   saveExportOptions,

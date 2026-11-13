@@ -491,6 +491,25 @@ describe('AI editor assistant', () => {
     ).to.equal(expected);
   });
 
+  it('applies a finding whose re-wrapped quote starts with an emoji', () => {
+    // The same copy used to be counted twice, so the quote looked ambiguous and Apply was disabled.
+    const rocket = '\u{1F680}';
+    const source = `# Plan\n\n${rocket} Our launch plan are\nready for there review next week.\n`;
+    const finding: AiReviewFinding = {
+      id: 'finding-1',
+      originalText: `${rocket} Our launch plan are ready for there review next week.`,
+      replacement: `${rocket} Our launch plan is ready for their review next week.`,
+      category: 'Grammar',
+      severity: 'suggestion',
+      message: 'Fix the verb and the homophone.',
+      rationale: null,
+    };
+    expect(findUniqueExcerpt(source, finding.originalText)).to.deep.equal({ start: 8, end: 64 });
+    expect(applyAiReviewFinding(source, finding)).to.equal(
+      `# Plan\n\n${rocket} Our launch plan is ready for their review next week.\n`,
+    );
+  });
+
   it('prefers an exact copy over one that differs only in spacing', () => {
     const source = 'A wordy\n  phrase here, and a wordy phrase there.';
     expect(findUniqueExcerpt(source, 'wordy phrase')).to.deep.equal({ start: 29, end: 41 });

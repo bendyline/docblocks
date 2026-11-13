@@ -94,8 +94,30 @@ describe('bundled Gezel host policy', () => {
         arch: 'x64',
       }),
     ).not.to.have.property('stagedWithoutUv');
+    // Packaging strips UV on every platform it stages for.
+    for (const [platform, arch] of [
+      ['win32', 'arm64'],
+      ['linux', 'x64'],
+      ['linux', 'arm64'],
+      ['darwin', 'arm64'],
+    ] as const) {
+      expect(
+        resolveGezelNativeHost({ ...packaged, platform, arch, versions: { macOS: '13.3' } }),
+        platform,
+      ).to.include({ stagedWithoutUv: true });
+      expect(resolveGezelNativeHost({ ...source, env: {}, platform, arch }), platform).to.include({
+        stagedWithoutUv: true,
+      });
+    }
+    // The Mac App Store package keeps its own seal, checked a different way.
     expect(
-      resolveGezelNativeHost({ ...packaged, platform: 'linux', arch: 'x64' }),
+      resolveGezelNativeHost({
+        ...packaged,
+        platform: 'darwin',
+        arch: 'arm64',
+        macAppStore: true,
+        versions: { macOS: '13.3' },
+      }),
     ).not.to.have.property('stagedWithoutUv');
   });
 

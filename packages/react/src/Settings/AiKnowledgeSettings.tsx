@@ -174,21 +174,30 @@ export function AiKnowledgeSettings({ knowledge }: { knowledge: AiKnowledgeAPI }
           Try again
         </button>
       )}
-      {/* The provider offers this only while it would help; once chosen, the
-          download runs quietly and the offer never returns. */}
-      {state?.improvement && !state.improvement.downloading && (
-        <p className="db-settings-hint">
-          <button
-            type="button"
-            className="db-ai-link-button"
-            disabled={busy}
-            onClick={() => void update({ action: 'improve' })}
-          >
-            Improve knowledge results with {sizedArticle(state.improvement.downloadBytes)} model
-            download
-          </button>
-        </p>
-      )}
+      {/* A catalog in use finds next to nothing without this model, so the host
+          starts its download with the catalog. The provider reports it only
+          while a catalog is in use and the model is missing: while it downloads,
+          and when it still has to be (an earlier install, or a download that
+          failed). Opening Settings never starts it. */}
+      {state?.improvement &&
+        (state.improvement.downloading ? (
+          <p className="db-settings-hint" role="status">
+            Downloading the model that finds relevant passages in your catalogs…
+          </p>
+        ) : (
+          <p className="db-settings-hint">
+            Your catalogs need {sizedArticle(state.improvement.downloadBytes)} model to find
+            relevant passages.{' '}
+            <button
+              type="button"
+              className="db-ai-link-button"
+              disabled={busy}
+              onClick={() => void update({ action: 'improve' })}
+            >
+              Download the model
+            </button>
+          </p>
+        ))}
       {state && (
         <div className="db-knowledge-bin">
           <div className="db-knowledge-bin-header">
@@ -440,7 +449,8 @@ function AddCatalogDialog({
     >
       <p className="db-settings-hint">
         Catalogs come from the connected AI service. Once one is downloaded, relevant passages from
-        it are included in AI writing, review, and chat.
+        it are included in AI writing, review, and chat. The first catalog you add also downloads a
+        small model that finds those passages.
       </p>
       {problem && (
         <p className="db-settings-hint db-settings-ai-error" role="alert">

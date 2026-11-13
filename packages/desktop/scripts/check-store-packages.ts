@@ -23,7 +23,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { verifyMasNativePayload } from '../main/ai/gezel-mas-native.js';
-import { windowsNativeManifest } from '../main/ai/gezel-windows-native.js';
+import { stagedNativeManifest } from '../main/ai/gezel-staged-native.js';
 import {
   MSIX_ARCHITECTURES,
   appxManifestViolations,
@@ -87,7 +87,7 @@ async function checkMsix(artifactsDir: string): Promise<void> {
       : 'tar';
   const names = artifacts(artifactsDir);
   const { verifyNativeBinaries } = await import('@bendyline/gezel-inference');
-  const manifest = await windowsNativeManifest(createRequire(import.meta.url).resolve);
+  const manifest = await stagedNativeManifest(createRequire(import.meta.url).resolve);
   for (const architecture of MSIX_ARCHITECTURES) {
     const matches = names.filter((name) =>
       ['appx', 'msix'].some((extension) => name.endsWith(`-win-${architecture}.${extension}`)),

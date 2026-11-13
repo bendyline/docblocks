@@ -497,6 +497,7 @@ export function VscodeEditor() {
           fileName={fileName ?? undefined}
           saveCoverImageOutput={saveRenderedImageOutput}
           saveDashboardImageOutput={saveRenderedImageOutput}
+          saveMediaEditOutput={saveRenderedImageOutput}
           blockTagVisibility="none"
           onChange={handleChange}
           onLinkClick={handleLinkClick}

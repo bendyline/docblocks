@@ -15,7 +15,10 @@ export interface GezelNativeHost {
   readonly unavailableReason?: string;
   /** MAS payloads are re-signed and authenticated by the enclosing store app. */
   readonly macAppStore?: boolean;
-  /** Windows payloads DocBlocks staged itself have no uv.exe. */
+  /**
+   * Payloads DocBlocks staged itself have no UV, so they are checked against
+   * Gezel's pins less that file. A Mac App Store payload has its own seal.
+   */
   readonly stagedWithoutUv?: boolean;
 }
 
@@ -78,8 +81,7 @@ export function resolveGezelNativeHost(input: GezelNativeHostInput): GezelNative
       // The pinned native release has no Intel Mac engine archives.
       canHost: !unavailableReason && (platform !== 'darwin' || arch === 'arm64'),
       ...(unavailableReason ? { unavailableReason } : {}),
-      ...(macAppStore ? { macAppStore: true } : {}),
-      ...(platform === 'win32' ? { stagedWithoutUv: true } : {}),
+      ...(macAppStore ? { macAppStore: true } : { stagedWithoutUv: true }),
     };
   }
   const configured = env.DOCBLOCKS_GEZEL_NATIVE_BIN_DIR?.trim();
@@ -100,6 +102,6 @@ export function resolveGezelNativeHost(input: GezelNativeHostInput): GezelNative
     allowStandaloneMacPayload: true,
     canHost: staged,
     ...(staged ? {} : { unavailableReason: UNSTAGED_NATIVE_REASON }),
-    ...(platform === 'win32' && !configured ? { stagedWithoutUv: true } : {}),
+    ...(configured ? {} : { stagedWithoutUv: true }),
   };
 }

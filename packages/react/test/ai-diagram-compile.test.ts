@@ -361,7 +361,7 @@ describe('checkGrounding', () => {
       labels: ['Q1', 'Q2'],
       values: [1.2, 1800],
     };
-    expect(checkGrounding(chart, passage)).to.deep.equal({ ok: true, problems: [] });
+    expect(checkGrounding(chart, passage)).to.deep.equal({ ok: true, problems: [], findings: [] });
   });
 
   it('names invented numbers', () => {

@@ -71,6 +71,9 @@ jobs:
     # dependency skips the job before its matrix is expanded.
     name: Desktop Build
     needs: build-and-test
+    # A healthy run takes 10-15 minutes; cap it so a hung step cannot hold a
+    # runner for the default six hours.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -99,13 +102,18 @@ jobs:
       - name: Typecheck desktop
         run: npm run typecheck -w docblocks-desktop
 
+      # Both Mocha steps run without --exit, so a leaked native handle would
+      # otherwise keep the step alive after the run; the watchdog reports it
+      # and exits.
       - name: Run full desktop unit suite (Windows)
         if: runner.os == 'Windows'
-        run: npx mocha --no-config --require tsx --require ./packages/react/test/setup.ts "packages/desktop/test/**/*.test.ts"
+        timeout-minutes: 10
+        run: npx mocha --no-config --require tsx --require ./packages/react/test/setup.ts --require ./packages/desktop/test/helpers/mocha-exit-watchdog.ts "packages/desktop/test/**/*.test.ts"
 
       - name: Verify native filesystem semantics
         if: runner.os != 'Windows'
-        run: npx mocha --no-config --require tsx packages/desktop/test/node-filesystem-v2.test.ts
+        timeout-minutes: 5
+        run: npx mocha --no-config --require tsx --require ./packages/desktop/test/helpers/mocha-exit-watchdog.ts packages/desktop/test/node-filesystem-v2.test.ts
 
       - name: Build + package desktop (dir)
         run: npm run dist:dir -w docblocks-desktop

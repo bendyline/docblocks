@@ -777,6 +777,67 @@ function requireTransformersRuntime(): void {
 
 requireTransformersRuntime();
 
+/** Every string under `value`, with the export conditions that lead to it. */
+function exportTargets(value: unknown, conditions: readonly string[] = []): [string[], string][] {
+  if (typeof value === 'string') return [[[...conditions], value]];
+  if (!isRecord(value)) return [];
+  return Object.entries(value).flatMap(([key, child]) =>
+    exportTargets(child, [...conditions, key]),
+  );
+}
+
+/**
+ * Two exclusions keep files out of app.asar that a shipped build never reads:
+ * zod's TypeScript sources, and the Python sidecar of Gezel's MLX provider,
+ * which the store profile never builds. Each holds only while the package
+ * keeps the layout it was written against, so fail here when one moves on.
+ */
+function requireUnreadSourcesStayOut(): void {
+  const files = isRecord(config) && Array.isArray(config.files) ? config.files : [];
+  for (const entry of [
+    '!node_modules/zod/src/**',
+    '!node_modules/**/node_modules/zod/src/**',
+    '!node_modules/@bendyline/gezel-inference/dist/providers/mlx/python/**',
+  ]) {
+    if (!files.includes(entry)) failConfigPolicy(`electron-builder.yml must exclude ${entry}.`);
+  }
+  const desktop = path.dirname(desktopManifestPath);
+  const inference = installedPackageDirectory('@bendyline/gezel-inference', desktop);
+  // zod is loaded by Gezel, so check the copy Gezel resolves.
+  const zod = installedPackageDirectory('zod', inference);
+  for (const [conditions, target] of exportTargets(
+    readJsonRecord(path.join(zod, 'package.json')).exports,
+  )) {
+    // `@zod/source` is a custom condition for zod's own development; Node and
+    // Electron never select it. Type declarations are not loaded at runtime.
+    if (conditions.includes('@zod/source') || conditions.includes('types')) continue;
+    if (target.startsWith('./src/')) {
+      failConfigPolicy(
+        `electron-builder.yml excludes zod/src, but zod now loads ${target} (${conditions.join(' > ')}).`,
+      );
+    }
+  }
+  const sidecar = path.join(inference, 'dist', 'providers', 'mlx', 'python');
+  if (!existsSync(sidecar)) {
+    failConfigPolicy(
+      'Gezel no longer keeps the MLX Python sidecar in dist/providers/mlx/python; update the exclusion in electron-builder.yml.',
+    );
+  }
+  const loadable = readdirSync(sidecar, { recursive: true, encoding: 'utf8' }).filter((file) =>
+    /\.(?:[cm]?js|json|node)$/u.test(file),
+  );
+  if (loadable.length > 0) {
+    failConfigPolicy(
+      `electron-builder.yml excludes the MLX Python sidecar, which now holds files Node can load: ${loadable.join(', ')}.`,
+    );
+  }
+  process.stdout.write(
+    'electron-builder.yml: zod sources and the MLX Python sidecar stay out of app.asar\n',
+  );
+}
+
+requireUnreadSourcesStayOut();
+
 for (const [platformName, targetName] of [
   ['win', 'nsis'],
   ['mac', 'dmg'],

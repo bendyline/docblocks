@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 
-import { locateReviewExcerpt } from '../src/Ai/review-locate.js';
+import { locateReviewExcerpt, quoteOccurrences } from '../src/Ai/review-locate.js';
 
 const REVIEWED = [
   '# Migration notes',
@@ -34,6 +34,35 @@ describe('locating a review excerpt', () => {
     expect(text(current, location)).to.equal(
       'Giving the model the goal beats walking it\n  through the steps.',
     );
+  });
+
+  // A match that starts with a character outside the Basic Multilingual Plane
+  // used to be found again at the same place without end: Show in document
+  // froze the window until the array of copies could grow no further.
+  it('finds a re-wrapped quote that starts with an emoji once, and returns', () => {
+    const rocket = '\u{1F680}';
+    const current = `# Plan\n\n${rocket} Our launch plan are\nready for there review next week.\n`;
+    const quote = `${rocket} Our launch plan are ready for there review next week.`;
+    const passage = `${rocket} Our launch plan are\nready for there review next week.`;
+    const start = current.indexOf(rocket);
+    expect(quoteOccurrences(current, quote)).to.deep.equal([
+      { start, end: start + passage.length },
+    ]);
+    const location = locateReviewExcerpt(current, current, quote);
+    expect(location?.exact).to.equal(true);
+    expect(text(current, location)).to.equal(passage);
+  });
+
+  it('counts each copy of an emoji-led quote once, overlapping ones included', () => {
+    const rocket = '\u{1F680}';
+    const twice = `${rocket} Launch\nplan.\n\nLater: ${rocket} Launch\nplan.`;
+    expect(quoteOccurrences(twice, `${rocket} Launch plan.`)).to.have.length(2);
+    // "A A" occurs twice in "A\nA\nA", sharing the middle character.
+    const overlapping = [rocket, rocket, rocket].join('\n');
+    expect(quoteOccurrences(overlapping, `${rocket} ${rocket}`)).to.deep.equal([
+      { start: 0, end: 5 },
+      { start: 3, end: 8 },
+    ]);
   });
 
   it('follows edited text by what surrounded it when the quote differs in spacing', () => {

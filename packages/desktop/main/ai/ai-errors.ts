@@ -230,9 +230,9 @@ export function toAiError(error: unknown): AiError {
   ) {
     return aiError(
       'model-unavailable',
-      // Retrieval never needs the model, so only the improvement download lands
-      // here. People hear "better knowledge results", never "reranker".
-      'Gezel could not download the model that improves knowledge results.',
+      // Retrieval never fails for want of the model, so only its download
+      // lands here. People hear what the model does, never "reranker".
+      'Gezel could not download the model that finds relevant passages in your catalogs.',
       error instanceof Error ? error.message : undefined,
     );
   }

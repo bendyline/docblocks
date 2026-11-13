@@ -22,7 +22,7 @@ import type {
 } from './ai-service.js';
 import type { GezelNativeHost } from './gezel-native-host.js';
 import { verifyMasNativePayload } from './gezel-mas-native.js';
-import { windowsNativeManifest, type NativeFileManifest } from './gezel-windows-native.js';
+import { stagedNativeManifest, type NativeFileManifest } from './gezel-staged-native.js';
 import {
   gezelKnowledgeState,
   updateGezelKnowledge,
@@ -54,8 +54,8 @@ export interface GezelConnectorOptions {
   readonly standalone?: boolean;
   /** Test seam for {@link knowledgeRuntimeInstalled}. */
   readonly knowledgeRuntime?: () => boolean;
-  /** Test seam for {@link windowsNativeManifest}. */
-  readonly loadWindowsManifest?: () => Promise<NativeFileManifest>;
+  /** Test seam for {@link stagedNativeManifest}. */
+  readonly loadStagedManifest?: () => Promise<NativeFileManifest>;
 }
 
 /**
@@ -371,7 +371,7 @@ export class GezelConnector implements AiConnector {
             ...input,
             allowStandaloneMacPayload: hostNative?.allowStandaloneMacPayload,
             ...(hostNative?.stagedWithoutUv
-              ? { manifest: await (this.options.loadWindowsManifest ?? windowsNativeManifest)() }
+              ? { manifest: await (this.options.loadStagedManifest ?? stagedNativeManifest)() }
               : {}),
           };
           return verify(options);

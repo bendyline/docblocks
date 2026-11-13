@@ -12,6 +12,13 @@ import { parseMarkdown } from '@bendyline/squisq/markdown';
 import { buildNarrationScript } from '@bendyline/squisq/narration';
 import { THEMES } from '@bendyline/squisq/schemas';
 import { MemoryContentContainer } from '@bendyline/squisq/storage';
+import type {
+  AiChatCompletion,
+  AiChatRequest,
+  AiResult,
+  AiStatus,
+  DocBlocksHostAiAPI,
+} from '@bendyline/docblocks/host';
 
 import { PresentationMaker } from '../src/Presentation/PresentationMaker.js';
 
@@ -382,6 +389,113 @@ describe('PresentationMaker slide preview', () => {
       panel.style.color = theme.colors.text;
       expect(diagram()?.style.background).to.equal(panel.style.background);
       expect(diagram()?.style.color).to.equal(panel.style.color);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+});
+
+const DECK = [
+  '# Launch plan',
+  '',
+  'We ship the editor in March. Two teams share the work.',
+  '',
+  '## What ships',
+  '',
+  'The editor, the exporter and the slide designer ship together.',
+  '',
+  '## Who does what',
+  '',
+  'Design owns the look. Engineering owns the exporter. Support owns the guide.',
+  '',
+  '## What happens next',
+  '',
+  'A beta opens in February. Feedback closes two weeks later.',
+].join('\n');
+
+/** A ready AI host whose requests stay open until the test answers them. */
+function waitingAi() {
+  const requests: AiChatRequest[] = [];
+  const status: AiStatus = {
+    kind: 'ready',
+    provider: { name: 'Test provider', version: null, mode: 'hosted' },
+    model: { id: 'm', label: 'Test model', local: true, contextWindow: 8192, isDefault: true },
+    activeRequests: 0,
+  };
+  const unused = (): never => {
+    throw new Error('Not used by the slide designer');
+  };
+  const api: DocBlocksHostAiAPI = {
+    providerInstalled: unused,
+    status: async () => status,
+    onStatus: () => () => undefined,
+    getPreferences: unused,
+    setPreferences: unused,
+    connect: unused,
+    disconnect: unused,
+    models: unused,
+    chat(request) {
+      requests.push(request);
+      let cancel: () => void = () => undefined;
+      const done = new Promise<AiResult<AiChatCompletion>>((resolve) => {
+        cancel = () => resolve({ ok: false, error: { code: 'cancelled', message: 'Cancelled.' } });
+      });
+      return { done, cancel };
+    },
+  };
+  return { api, requests };
+}
+
+describe('PresentationMaker Suggest with AI', () => {
+  // The whole deck is planned in one request before any slide is asked for.
+  // Until that answered, the dialog showed nothing and "Use dynamic slides"
+  // still closed it with the design the AI had not touched.
+  it('shows it is working, and holds its other buttons, from the click', async () => {
+    const { api, requests } = waitingAi();
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        createElement(EditorProvider, {
+          initialMarkdown: DECK,
+          children: createElement(PresentationMaker, { ai: api, onClose: () => undefined }),
+        }),
+      );
+    });
+    const button = (label: string) =>
+      Array.from(document.body.querySelectorAll<HTMLButtonElement>('.db-presentation button')).find(
+        (candidate) => candidate.textContent === label,
+      );
+    try {
+      await settle();
+      expect(button('Suggest with AI')?.disabled, 'Suggest with AI is ready').to.equal(false);
+      expect(button('Use dynamic slides')?.disabled).to.equal(false);
+
+      await act(async () => button('Suggest with AI')?.click());
+
+      // One request is out and nothing has come back.
+      expect(requests).to.have.length(1);
+      const status = document.body.querySelector('.db-presentation-progress');
+      expect(status?.textContent).to.contain('Planning the slides');
+      expect(status?.querySelector('progress')?.hasAttribute('value'), 'no amount yet').to.equal(
+        false,
+      );
+      expect(button('Suggest with AI'), 'Suggest with AI').to.equal(undefined);
+      expect(button('Use dynamic slides')?.disabled, 'Use dynamic slides').to.equal(true);
+      expect(button('Reset design')?.disabled, 'Reset design').to.equal(true);
+
+      await act(async () => button('Stop')?.click());
+      await settle();
+
+      expect(document.body.querySelector('.db-presentation-progress')).to.equal(null);
+      expect(button('Use dynamic slides')?.disabled).to.equal(false);
+      expect(
+        Array.from(document.body.querySelectorAll('.db-presentation p[role="status"]'))
+          .map((item) => item.textContent)
+          .join(' '),
+      ).to.contain('Stopped after 0 of');
     } finally {
       await act(async () => root.unmount());
       container.remove();

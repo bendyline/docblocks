@@ -70,4 +70,73 @@ describe('FileExplorer external drops', () => {
       await provider.v2.dispose();
     }
   });
+
+  it('offers an Import files button that sends picked files to the same importer', async () => {
+    const provider = new MemoryFileSystemProvider('import-test', 'Import test');
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    let received: File[] = [];
+
+    try {
+      await act(async () => {
+        root.render(
+          createElement(FileExplorer, {
+            provider,
+            onImportFiles: (files) => {
+              received = files;
+            },
+          }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+
+      const button = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Import files"]',
+      );
+      const input = container.querySelector<HTMLInputElement>(
+        'input[type="file"][aria-label="Choose files to import"]',
+      );
+      expect(button, 'Import files button').to.not.equal(null);
+      expect(input?.multiple).to.equal(true);
+      expect(input?.accept).to.contain('.docx');
+
+      let opened = false;
+      input?.addEventListener('click', (event) => {
+        opened = true;
+        event.preventDefault();
+      });
+      await act(async () => button?.click());
+      expect(opened, 'button opens the file picker').to.equal(true);
+
+      const docx = new File(['PK'], 'plan.docx');
+      Object.defineProperty(input, 'files', { value: [docx], configurable: true });
+      await act(async () => {
+        input?.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      expect(received.map((file) => file.name)).to.deep.equal(['plan.docx']);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      await provider.v2.dispose();
+    }
+  });
+
+  it('has no Import files button when the host cannot import', async () => {
+    const provider = new MemoryFileSystemProvider('no-import', 'No import');
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => {
+        root.render(createElement(FileExplorer, { provider }));
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(container.querySelector('button[aria-label="Import files"]')).to.equal(null);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      await provider.v2.dispose();
+    }
+  });
 });

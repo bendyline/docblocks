@@ -425,6 +425,8 @@ export function AiDraftDialog({
   const [finishNote, setFinishNote] = useState<string | null>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const handleRef = useRef<AiChatHandle | null>(null);
+  /** Ends the running request for the person, without waiting for the provider. */
+  const stopRef = useRef<(() => void) | null>(null);
   const requestRef = useRef(0);
   const { confirm: confirmAction, confirmDialog } = useConfirmDialog();
   const { knowledge, citable, ai: knowledgeAi, reset: resetKnowledge } = useAiKnowledge(ai);
@@ -485,37 +487,8 @@ export function AiDraftDialog({
       if (!prefix) resetKnowledge();
       const startedAt = Date.now();
       setGeneration({ progress: null, startedAt, lastActivityAt: startedAt });
-      const handle = knowledgeAi.chat(request, (event: AiChatEvent) => {
-        if (requestRef.current !== requestId || event.kind === 'knowledge') return;
-        if (event.kind === 'progress') {
-          setGeneration(
-            (current) =>
-              current && {
-                ...current,
-                progress: event.progress,
-                lastActivityAt: Date.now(),
-              },
-          );
-          return;
-        }
-        if (event.kind === 'delta') {
-          generatedDraftRef.current += event.text;
-          setDraft(generatedDraftRef.current);
-          setGeneration(
-            (current) =>
-              current && {
-                ...current,
-                lastActivityAt: Date.now(),
-                progress: {
-                  phase: 'generating',
-                  percent: null,
-                  outputTokens: current.progress?.outputTokens ?? null,
-                  tokensPerSecond: current.progress?.tokensPerSecond ?? null,
-                },
-              },
-          );
-          return;
-        }
+      // How the request ends in the dialog: the provider's last event, or Stop.
+      const finish = (event: Extract<AiChatEvent, { kind: 'done' | 'error' }>) => {
         setRunning(false);
         // Nothing arrived: return to the prompt instead of an empty draft.
         const nothing =
@@ -563,8 +536,59 @@ export function AiDraftDialog({
             'The model returned no additional text. Your draft is preserved and may still be incomplete. Try a smaller selection or a model with more context.',
           );
         }
+      };
+      const handle = knowledgeAi.chat(request, (event: AiChatEvent) => {
+        if (requestRef.current !== requestId || event.kind === 'knowledge') return;
+        if (event.kind === 'progress') {
+          setGeneration(
+            (current) =>
+              current && {
+                ...current,
+                progress: event.progress,
+                lastActivityAt: Date.now(),
+              },
+          );
+          return;
+        }
+        if (event.kind === 'delta') {
+          generatedDraftRef.current += event.text;
+          setDraft(generatedDraftRef.current);
+          setGeneration(
+            (current) =>
+              current && {
+                ...current,
+                lastActivityAt: Date.now(),
+                progress: {
+                  phase: 'generating',
+                  percent: null,
+                  outputTokens: current.progress?.outputTokens ?? null,
+                  tokensPerSecond: current.progress?.tokensPerSecond ?? null,
+                },
+              },
+          );
+          return;
+        }
+        finish(event);
       });
       handleRef.current = handle;
+      // Stop ends the request here and now. The provider is told, not waited
+      // for: one that is still loading the model took 9.5 seconds to answer a
+      // cancel, and until it did the dialog kept counting "Waiting for
+      // model…" with Stop still showing. Its own ending is then a stale event.
+      stopRef.current = () => {
+        if (requestRef.current !== requestId) return;
+        requestRef.current += 1;
+        handle.cancel();
+        finish({
+          kind: 'done',
+          completion: {
+            text: generatedDraftRef.current.slice(prefix.length),
+            model: request.model ?? '',
+            finishReason: 'cancelled',
+            usage: null,
+          },
+        });
+      };
     },
     [knowledgeAi, resetKnowledge, documentSource, mode],
   );
@@ -592,7 +616,7 @@ export function AiDraftDialog({
     start(continuationRequest, draft);
   };
 
-  const stop = useCallback(() => handleRef.current?.cancel(), []);
+  const stop = useCallback(() => stopRef.current?.(), []);
 
   const apply = useCallback(async () => {
     if (running) return;
@@ -702,7 +726,9 @@ export function AiDraftDialog({
         <>
           {/* In the footer, not the scrolling body: a long selection must never
               push progress or an error out of sight of the buttons. */}
-          {(running || finishNote || error || capacity || knowledge || facts?.checked) && (
+          {/* Boolean(): a check that found nothing to check has `checked: 0`, and
+              React draws a bare 0. */}
+          {(running || finishNote || error || capacity || knowledge || Boolean(facts?.checked)) && (
             <div className="db-ai-footer-status">
               {running && generation && (
                 <AiGenerationStatus

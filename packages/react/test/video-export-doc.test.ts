@@ -11,7 +11,7 @@ import {
   PRESENTATION_KEY,
 } from '@bendyline/squisq/transform';
 import assert from 'node:assert/strict';
-import type { Doc } from '@bendyline/squisq/schemas';
+import type { Doc, MediaProvider } from '@bendyline/squisq/schemas';
 
 import { PresentationInvalidError } from '../src/Export/export-errors.js';
 import { buildVideoExportDoc, persistedTransformStyle } from '../src/Export/video-export-doc.js';
@@ -155,6 +155,65 @@ describe('video export document', () => {
       fileName: 'notes/Longview Plan.md',
     });
     expect(slides(exported)[0]?.title).to.equal('Longview Plan');
+  });
+
+  describe('a slide over a video', () => {
+    // A caption-only slide over a long clip — the slide used to advance, and
+    // the clip stop, after the caption's three-second reading time.
+    const CLIP_DECK =
+      '# Demo\n\n.\n\n<video src="video/demo.webm" controls width="480"></video>\n\n' +
+      '# Next\n\nA sentence of its own.\n';
+
+    const provider: MediaProvider = {
+      resolveUrl: async (path) => (path === 'video/demo.webm' ? 'blob:demo-clip' : path),
+      listMedia: async () => [],
+      addMedia: async (name) => name,
+      removeMedia: async () => {},
+      dispose: () => {},
+    };
+
+    const createElement = document.createElement;
+    afterEach(() => {
+      document.createElement = createElement;
+    });
+
+    /** The DOM here cannot decode media: report `seconds` for the clip's URL. */
+    function stubClipLength(seconds: number): void {
+      document.createElement = ((tag: string) => {
+        const el = createElement.call(document, tag);
+        if (tag !== 'video') return el;
+        let current = '';
+        Object.defineProperty(el, 'duration', {
+          get: () => (current === 'blob:demo-clip' ? seconds : Number.NaN),
+        });
+        Object.defineProperty(el, 'src', {
+          get: () => current,
+          set: (value: string) => {
+            current = value;
+            queueMicrotask(() =>
+              el.dispatchEvent(new Event(value === 'blob:demo-clip' ? 'loadedmetadata' : 'error')),
+            );
+          },
+        });
+        (el as HTMLVideoElement).load = () => {};
+        return el;
+      }) as typeof document.createElement;
+    }
+
+    it('plays the whole clip, measured as the preview measures it', async () => {
+      stubClipLength(101.5);
+      const exported = await buildVideoExportDoc(CLIP_DECK, { mediaProvider: provider });
+      expect(slide(exported, 'demo').duration).to.equal(101.5);
+      expect(slide(exported, 'next').startTime).to.equal(101.5);
+    });
+
+    it('keeps the reading-time slide when the clip cannot be measured', async () => {
+      stubClipLength(Number.NaN);
+      const exported = await buildVideoExportDoc(CLIP_DECK.replace('demo.webm', 'gone.webm'), {
+        mediaProvider: provider,
+      });
+      expect(slide(exported, 'demo').duration).to.equal(3);
+    });
   });
 });
 

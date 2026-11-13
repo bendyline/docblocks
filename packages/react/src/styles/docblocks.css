@@ -9267,6 +9267,45 @@ button.db-git-file-row:hover {
     -webkit-app-region: no-drag;
   }
 
+  /* Chromium maps each app-region box to the window without clipping it to
+     its scroll container, then applies the boxes in document order, so a
+     later no-drag box cuts its whole rectangle out of any drag region above
+     it. A scrolled document's contenteditable, and every control inside it,
+     would otherwise swallow the titlebar. While visible, in-flow document and
+     file-tree content never reaches the caption band, so it declares no
+     region. Overlays portaled beside the document keep the rule above.
+     `initial`, never `none`: Chromium computes any explicit keyword other
+     than `drag`, `none` included, to no-drag. */
+  .db-shell .squisq-editor-content [contenteditable='true'],
+  .db-shell
+    .squisq-editor-content
+    [contenteditable='true']
+    :is(button, a, input, select, textarea, [contenteditable], [role='button'], [role='tab']),
+  .db-shell
+    .db-tree
+    :is(
+      button,
+      a,
+      input,
+      select,
+      textarea,
+      [contenteditable='true'],
+      [role='button'],
+      [role='tab']
+    ) {
+    app-region: initial;
+    -webkit-app-region: initial;
+  }
+
+  /* The single-pane drawer covers the editor header but precedes it in the
+     document, so the covered header's regions would decide the drawer's
+     caption band. While the drawer is open its header is the titlebar. */
+  .db-shell[data-db-drawer='open'] .squisq-editor-header,
+  .db-shell[data-db-drawer='open'] .squisq-editor-header * {
+    app-region: initial;
+    -webkit-app-region: initial;
+  }
+
   /* Folder and empty states do not render Squisq's toolbar, and the first-run
      welcome screen covers it. Preserve a top drag strip in those states and
      keep folder content below it. The titlebar-area values are measured from

@@ -231,6 +231,44 @@ html:has(.db-desktop-root) .squisq-template-gallery-dialog {
   -webkit-app-region: no-drag;
 }
 
+/* Chromium maps each app-region box to the window without clipping it to its
+   scroll container, then applies the boxes in document order, so a later
+   no-drag box cuts its whole rectangle out of any drag region above it.
+   Scrolling the document carries the editor's contenteditable, and every
+   control inside it, up beneath the caption band; a scrolled document then
+   swallowed the titlebar, all of it once the sidebar was collapsed. While
+   visible, in-flow document and file-tree content never reaches the caption
+   band, so it declares no region at all. Overlays the editor portals beside
+   the document, such as a maximized diagram, are not inside the
+   contenteditable and keep the no-drag rule above.
+
+   `initial`, never `none`: Chromium keeps a legacy quirk in which any
+   explicit app-region keyword other than `drag` (including `none`) computes
+   to no-drag. Only a CSS-wide keyword restores the region-less default. */
+.db-desktop-root .squisq-editor-content [contenteditable='true'],
+.db-desktop-root
+  .squisq-editor-content
+  [contenteditable='true']
+  :is(button, a, input, select, textarea, [contenteditable], [role='button'], [role='tab']),
+.db-desktop-root
+  .db-tree
+  :is(button, a, input, select, textarea, [contenteditable='true'], [role='button'], [role='tab']) {
+  app-region: initial;
+  -webkit-app-region: initial;
+}
+
+/* The collapsed layout's file drawer slides over the editor header but comes
+   first in the document, so the covered header's regions are applied last
+   and decide the drawer's caption band: drawer controls above empty toolbar
+   space turned into drag area, and the grip above a toolbar button stopped
+   dragging. While the drawer is open its header is the titlebar, and the
+   editor header beneath the scrim declares no regions. */
+.db-desktop-root .db-shell[data-db-drawer='open'] .squisq-editor-header,
+.db-desktop-root .db-shell[data-db-drawer='open'] .squisq-editor-header * {
+  app-region: initial;
+  -webkit-app-region: initial;
+}
+
 /* Folder and empty states do not render Squisq's toolbar, and the first-run
    welcome screen covers it. Preserve a top drag strip in those states and
    keep folder content below it. The titlebar-area values are measured from the

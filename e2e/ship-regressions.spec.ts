@@ -192,6 +192,14 @@ test('task lists in table cells survive Source, Write, save, and reload', async 
   await cell.click();
   await openInsertMenu(page);
   await page.getByRole('menuitem', { name: 'Task List', exact: true }).click();
+  // The list starts as one empty item with the caret in it. Type three items,
+  // as an author would.
+  await expect(cell.locator('input[type="checkbox"]')).toHaveCount(1);
+  await page.keyboard.type('Task 1');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Task 2');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Task 3');
   await expect(cell.locator('input[type="checkbox"]')).toHaveCount(3);
   await cell.locator('input[type="checkbox"]').first().check();
   await page.getByRole('treeitem', { name: /^Welcome/ }).click();
@@ -231,6 +239,27 @@ test('opening a document in Write never rewrites the file', async ({ page }, tes
   expect([...files.keys()].filter((path) => path.startsWith('.versions/opened-only.md/'))).toEqual(
     [],
   );
+});
+
+test('clicking the document that is already open leaves it open, undo history and all', async ({
+  page,
+}) => {
+  await openInitializedSite(page);
+  await newDocument(page, 'still-open');
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+  await page.keyboard.type('Typed before the click.');
+  await expect(editor).toHaveText('Typed before the click.');
+  // A reload replaces the editor, so a mark on its element would not survive.
+  await editor.evaluate((element) => element.setAttribute('data-kept', 'yes'));
+
+  await page.getByRole('treeitem', { name: /^still-open/ }).click();
+
+  await expect(editor).toHaveText('Typed before the click.');
+  await expect(editor).toHaveAttribute('data-kept', 'yes');
+  await editor.click();
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(editor).not.toHaveText('Typed before the click.');
 });
 
 test('table column alignment survives an edit and save', async ({ page }, testInfo) => {

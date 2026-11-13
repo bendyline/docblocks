@@ -393,9 +393,12 @@ test.describe('DocBlocks App', () => {
     await expect(toolbar).toBeVisible();
 
     const buttons = toolbar.locator('.db-explorer-btn');
-    await expect(buttons).toHaveCount(5); // Two sort controls, Search, +F and +D.
+    await expect(buttons).toHaveCount(6); // Two sort controls, Search, +F, +D and Import.
     await expect(
       toolbar.getByRole('button', { name: 'Search workspace' }).locator('svg.lucide-search'),
+    ).toBeVisible();
+    await expect(
+      toolbar.getByRole('button', { name: 'Import files' }).locator('svg.lucide-file-up'),
     ).toBeVisible();
     const newFileButton = toolbar.getByRole('button', { name: 'New File' });
     const newFolderButton = toolbar.getByRole('button', { name: 'New Folder' });
