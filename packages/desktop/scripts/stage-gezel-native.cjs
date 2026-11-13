@@ -14,8 +14,12 @@ function stagedDirectory(appDir, os, arch) {
   return path.join(appDir, 'dist', 'gezel-native', `${os}-${arch}`);
 }
 
-/** Stage one platform's engines where packaging copies them from. */
-async function stageGezelNative({ appDir, platform, arch, os }, overrides = {}) {
+/**
+ * Stage one platform's engines where packaging copies them from. `keepUv` is
+ * for the Mac App Store: prepare-mas-gezel.cjs checks the whole pinned set
+ * before it removes UV itself.
+ */
+async function stageGezelNative({ appDir, platform, arch, os, keepUv = false }, overrides = {}) {
   const serviceRequire = createRequire(require.resolve('@bendyline/gezel-inference/package.json'));
   const manifest = JSON.parse(await readFile(path.join(appDir, 'package.json'), 'utf8'));
   const installed = serviceRequire('./package.json');
@@ -42,9 +46,15 @@ async function stageGezelNative({ appDir, platform, arch, os }, overrides = {}) 
     cache: path.join(appDir, 'dist', 'gezel-native-cache'),
     ...(overrides.fetchImpl ? { fetchImpl: overrides.fetchImpl } : {}),
   });
-  // UV only provisions Python for MLX, which never runs on Windows, and installs
-  // code at runtime. main/ai/gezel-windows-native.ts drops it from the pins too.
-  if (platform === 'win32') await rm(path.join(destination, `win32-${arch}`, 'uv.exe'));
+  // UV only provisions Python for MLX and installs code at runtime. Every build
+  // DocBlocks ships runs Gezel's store profile, which refuses both, so UV never
+  // runs: 50 to 63 MB of dead weight per platform. Not forced: a Gezel release
+  // that moves the file fails the build. main/ai/gezel-staged-native.ts drops
+  // it from the pins too.
+  if (!keepUv) {
+    const uv = platform === 'win32' ? 'uv.exe' : 'uv';
+    await rm(path.join(destination, `${platform}-${arch}`, uv));
+  }
   await (overrides.verifyNativePlatformRequirements ?? verifyNativePlatformRequirements)({
     directory: destination,
     platform,
@@ -57,7 +67,13 @@ async function stageForTarget(context, overrides = {}) {
   const platform = context.electronPlatformName === 'mas' ? 'darwin' : context.electronPlatformName;
   const arch = require('builder-util').Arch[context.arch];
   await stageGezelNative(
-    { appDir, platform, arch, os: context.packager.platform?.buildConfigurationKey },
+    {
+      appDir,
+      platform,
+      arch,
+      os: context.packager.platform?.buildConfigurationKey,
+      keepUv: context.electronPlatformName === 'mas',
+    },
     overrides,
   );
   if (platform === 'win32') {

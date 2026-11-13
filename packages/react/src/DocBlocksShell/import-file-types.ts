@@ -74,6 +74,34 @@ export const DIRECT_IMPORT_EXTENSIONS = new Set([
 
 const DIRECT_IMPORT_BASENAMES = new Set(['dockerfile', 'license', 'makefile', 'readme']);
 
+/**
+ * What the status line says while files import. Converting a Word, PDF or
+ * spreadsheet file can take many seconds on first use, and an import that
+ * shows nothing until it finishes looks like a drop that failed.
+ */
+export function importingMessage(files: readonly Pick<File, 'name'>[]): string {
+  const first = files[0];
+  const subject = files.length === 1 && first ? `“${first.name}”` : `${String(files.length)} files`;
+  const converting = files.some((file) =>
+    OUTSIDE_IN_IMPORT_EXTENSIONS.has(extensionOfFileName(file.name)),
+  );
+  return converting
+    ? `Importing ${subject}… Converting documents can take a few seconds.`
+    : `Importing ${subject}…`;
+}
+
+/**
+ * `accept` for the Import files picker: everything the importer takes, so
+ * the system dialog lists exactly the files that will work.
+ */
+export const IMPORT_ACCEPT = [
+  ...OUTSIDE_IN_IMPORT_EXTENSIONS,
+  ...BUNDLE_IMPORT_EXTENSIONS,
+  ...DIRECT_IMPORT_EXTENSIONS,
+  'text/*',
+  'image/*',
+].join(',');
+
 export function extensionOfFileName(name: string): string {
   const dot = name.lastIndexOf('.');
   return dot <= 0 ? '' : name.slice(dot).toLowerCase();

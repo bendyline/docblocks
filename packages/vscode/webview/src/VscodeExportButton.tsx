@@ -7,6 +7,7 @@ import {
   ExportDialog,
   PdfReplacementsError,
   buildExportFilename,
+  frontmatterTransformId,
   loadLastExportOptions,
   resolveExportDialogInitial,
   runExport,
@@ -61,9 +62,20 @@ export function VscodeExportButton({
     [markdownDoc],
   );
 
+  const docTransformStyle = useMemo(
+    () => frontmatterTransformId(markdownDoc?.frontmatter as Record<string, unknown> | undefined),
+    [markdownDoc],
+  );
+
   const dialogInitial = useMemo(
-    () => resolveExportDialogInitial(loadLastExportOptions(), docThemeId, defaultThemeId),
-    [docThemeId, defaultThemeId],
+    () =>
+      resolveExportDialogInitial(
+        loadLastExportOptions(),
+        docThemeId,
+        defaultThemeId,
+        docTransformStyle,
+      ),
+    [docThemeId, defaultThemeId, docTransformStyle],
   );
 
   const refreshDestination = useCallback(

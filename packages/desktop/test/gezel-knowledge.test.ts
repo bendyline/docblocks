@@ -288,15 +288,84 @@ describe('Gezel knowledge catalogs', () => {
     const actions: unknown[] = [];
     const app = stateApp({}, actions);
     await updateGezelKnowledge(app, { action: 'improve' }, new AbortController().signal);
-    await updateGezelKnowledge(
-      app,
-      { action: 'enable', catalogId: 'science' },
-      new AbortController().signal,
-    );
+    expect(actions).to.deep.equal([{ action: 'prepare-reranker' }]);
+  });
+  // A catalog in use finds next to nothing until the model that judges its
+  // passages is installed, so the model is part of adding a catalog.
+  it('starts the relevance model download when a catalog is installed or enabled', async () => {
+    const signal = new AbortController().signal;
+    for (const action of ['install', 'enable'] as const) {
+      const actions: unknown[] = [];
+      await updateGezelKnowledge(stateApp({}, actions), { action, catalogId: 'science' }, signal);
+      expect(actions, action).to.deep.equal([
+        { action, catalogId: 'science' },
+        { action: 'prepare-reranker' },
+      ]);
+    }
+    // Nothing else puts a catalog to use.
+    for (const action of ['disable', 'remove', 'cancel'] as const) {
+      const actions: unknown[] = [];
+      await updateGezelKnowledge(stateApp({}, actions), { action, catalogId: 'science' }, signal);
+      expect(actions, action).to.deep.equal([{ action, catalogId: 'science' }]);
+    }
+  });
+  it('keeps a catalog change when the relevance model download is refused', async () => {
+    const actions: unknown[] = [];
+    const refusing = {
+      knowledge: {
+        update: async (action: { action: string }) => {
+          actions.push(action);
+          if (action.action === 'prepare-reranker') {
+            throw Object.assign(new Error('No relevance model is configured.'), {
+              code: 'reranker_unavailable',
+            });
+          }
+        },
+      },
+    } as unknown as GezelApp;
+    const warnings: unknown[] = [];
+    const warn = console.warn;
+    console.warn = (...args: unknown[]) => warnings.push(args[0]);
+    try {
+      await updateGezelKnowledge(
+        refusing,
+        { action: 'install', catalogId: 'science' },
+        new AbortController().signal,
+      );
+    } finally {
+      console.warn = warn;
+    }
     expect(actions).to.deep.equal([
+      { action: 'install', catalogId: 'science' },
       { action: 'prepare-reranker' },
-      { action: 'enable', catalogId: 'science' },
     ]);
+    expect(warnings).to.have.length(1);
+    expect(String(warnings[0])).to.contain('No relevance model is configured.');
+  });
+  it('does not ask for the relevance model when the catalog change itself fails', async () => {
+    const actions: unknown[] = [];
+    const failing = {
+      knowledge: {
+        update: async (action: unknown) => {
+          actions.push(action);
+          throw Object.assign(new Error('That catalog is not available.'), {
+            code: 'catalog_not_found',
+          });
+        },
+      },
+    } as unknown as GezelApp;
+    let thrown: unknown;
+    try {
+      await updateGezelKnowledge(
+        failing,
+        { action: 'install', catalogId: 'missing' },
+        new AbortController().signal,
+      );
+    } catch (error: unknown) {
+      thrown = error;
+    }
+    expect(thrown).to.be.instanceOf(Error);
+    expect(actions).to.deep.equal([{ action: 'install', catalogId: 'missing' }]);
   });
 });
 

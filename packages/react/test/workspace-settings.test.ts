@@ -25,7 +25,11 @@ import {
   type WorkspaceSettings,
   type WorkspaceSettingsPatch,
 } from '@bendyline/docblocks/workspace-settings';
-import { DEFAULT_OPTIONS, resolveExportDialogInitial } from '../src/Export/export-options.js';
+import {
+  DEFAULT_OPTIONS,
+  frontmatterTransformId,
+  resolveExportDialogInitial,
+} from '../src/Export/export-options.js';
 import { WorkspaceSettingsDialog } from '../src/WorkspacePicker/WorkspaceSettingsDialog.js';
 
 (globalThis as typeof globalThis & { React: typeof React }).React = React;
@@ -258,6 +262,29 @@ describe('export dialog theme layering', () => {
     expect(resolveExportDialogInitial(null, null).themeId).to.equal('standard');
     // Everything else the user last chose still carries over.
     expect(resolveExportDialogInitial(last, null, undefined).format).to.equal('docx');
+  });
+
+  it('starts on the slide transform the preview plays, else none', () => {
+    // A transform picked for another document restyled this one's deck.
+    const last = { ...DEFAULT_OPTIONS, format: 'pptx' as const, transformStyle: 'documentary' };
+    expect(resolveExportDialogInitial(last, null).transformStyle).to.equal('');
+    expect(resolveExportDialogInitial(null, null).transformStyle).to.equal('');
+    expect(resolveExportDialogInitial(last, null, null, 'magazine').transformStyle).to.equal(
+      'magazine',
+    );
+  });
+});
+
+describe('frontmatterTransformId', () => {
+  it('reads the transform the editor saved, canonical key first', () => {
+    expect(frontmatterTransformId({ 'squisq-transform': 'Documentary' })).to.equal('documentary');
+    expect(frontmatterTransformId({ 'transform-style': 'Data Driven' })).to.equal('data-driven');
+    expect(frontmatterTransformId({ 'squisq-transform': 'dataDriven' })).to.equal('data-driven');
+    expect(
+      frontmatterTransformId({ 'squisq-transform': 'none', 'transform-style': 'magazine' }),
+    ).to.equal(null);
+    expect(frontmatterTransformId({ 'squisq-transform': 3 })).to.equal(null);
+    expect(frontmatterTransformId(undefined)).to.equal(null);
   });
 });
 

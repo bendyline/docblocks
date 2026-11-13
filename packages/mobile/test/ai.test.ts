@@ -883,9 +883,40 @@ describe('mobile knowledge', () => {
       ok: true,
       value: null,
     });
+    // A catalog in use needs the model that judges its passages, so installing
+    // or enabling one starts that download too; disabling one does not.
+    assert.deepEqual(await f.ai.knowledge.update({ action: 'disable', catalogId: catalog.id }), {
+      ok: true,
+      value: null,
+    });
     assert.deepEqual(f.updates, [
       { action: 'prepare-reranker' },
       { action: 'install', catalogId: catalog.id },
+      { action: 'prepare-reranker' },
+      { action: 'disable', catalogId: catalog.id },
+    ]);
+    await f.ai.setPreferences({ enabled: false });
+  });
+
+  it('keeps a catalog change when the relevance model download is refused', async () => {
+    const attempted: Action[] = [];
+    const f = withKnowledge({
+      update: async (action) => {
+        attempted.push(action);
+        if (action.action === 'prepare-reranker') {
+          throw Object.assign(new Error('No relevance model is configured.'), {
+            code: 'reranker_unavailable',
+          });
+        }
+      },
+    });
+    assert.deepEqual(await f.ai.knowledge.update({ action: 'enable', catalogId: catalog.id }), {
+      ok: true,
+      value: null,
+    });
+    assert.deepEqual(attempted, [
+      { action: 'enable', catalogId: catalog.id },
+      { action: 'prepare-reranker' },
     ]);
     await f.ai.setPreferences({ enabled: false });
   });

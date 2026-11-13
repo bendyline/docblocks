@@ -207,6 +207,13 @@ export function createMobileAi(options: MobileAiOptions) {
           await embedding.knowledge.update(
             action.action === 'improve' ? { action: 'prepare-reranker' } : action,
           );
+          // A catalog in use finds next to nothing until the model that judges
+          // its passages is installed, so that download starts with the catalog
+          // (as on the desktop: gezel-knowledge.ts). A refusal leaves the
+          // catalog change standing; Settings then offers the download again.
+          if (action.action === 'install' || action.action === 'enable') {
+            await embedding.knowledge.update({ action: 'prepare-reranker' }).catch(() => undefined);
+          }
           return { ok: true, value: null };
         } catch (error) {
           return failure(error);

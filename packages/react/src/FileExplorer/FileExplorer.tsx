@@ -28,6 +28,7 @@ import {
   TREE_NAV_KEYS,
 } from './tree-keyboard.js';
 import {
+  ImportFilesIcon,
   NewFileIcon,
   NewFolderIcon,
   OpenFolderIcon,
@@ -36,6 +37,7 @@ import {
   SortByNameIcon,
 } from '../icons.js';
 import { useGitContext } from '../Git/GitContext.js';
+import { IMPORT_ACCEPT } from '../DocBlocksShell/import-file-types.js';
 import { BADGE_GLYPHS, BADGE_LABELS, isFileDirty } from '../Git/git-status.js';
 import { PinnedDocuments } from './PinnedDocuments.js';
 import type { PinnedDocumentListItem } from '../DocBlocksShell/pinned-documents.js';
@@ -319,6 +321,19 @@ export function FileExplorer({
       }
     },
     [dragCounter],
+  );
+
+  // The visible way in for files the drop target also accepts. Dropping onto
+  // the file list was the only one, and nothing on screen said so.
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const handleImportPicked = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.currentTarget.files ?? []);
+      // Clear it so choosing the same file again still fires change.
+      event.currentTarget.value = '';
+      if (files.length > 0) onImportFiles?.(files);
+    },
+    [onImportFiles],
   );
 
   const handleDrop = useCallback(
@@ -844,6 +859,28 @@ export function FileExplorer({
           >
             <NewFileIcon />
           </button>
+          {onImportFiles && (
+            <>
+              <button
+                type="button"
+                className="db-explorer-btn"
+                onClick={() => importInputRef.current?.click()}
+                title="Import files (or drop them on the file list)"
+                aria-label="Import files"
+              >
+                <ImportFilesIcon />
+              </button>
+              <input
+                ref={importInputRef}
+                type="file"
+                multiple
+                hidden
+                accept={IMPORT_ACCEPT}
+                aria-label="Choose files to import"
+                onChange={handleImportPicked}
+              />
+            </>
+          )}
         </div>
       </div>
 

@@ -72,10 +72,34 @@ export const FORMAT_EXTENSIONS: Record<ExportFormat, string> = {
 
 const STORAGE_KEY = 'docblocks-export-options';
 
+/** Where the editor persists the Slideshow preview's transform choice. */
+const TRANSFORM_KEY = 'squisq-transform';
+const LEGACY_TRANSFORM_KEY = 'transform-style';
+
+/**
+ * The transform id a document's frontmatter names, normalized but not checked
+ * against the installed transforms (those load lazily). Null when it names
+ * none. The canonical key wins whenever it is present, as in the editor.
+ */
+export function frontmatterTransformId(
+  frontmatter: Readonly<Record<string, unknown>> | undefined,
+): string | null {
+  if (!frontmatter) return null;
+  const value = Object.prototype.hasOwnProperty.call(frontmatter, TRANSFORM_KEY)
+    ? frontmatter[TRANSFORM_KEY]
+    : frontmatter[LEGACY_TRANSFORM_KEY];
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, '-');
+  if (!normalized || normalized === 'none') return null;
+  // `dataDriven` was written by older Squisq versions.
+  return normalized === 'datadriven' ? 'data-driven' : normalized;
+}
+
 export const DEFAULT_OPTIONS: ExportOptions = {
   format: 'pdf',
   themeId: 'standard',
-  transformStyle: 'documentary',
+  // None: a deck exports as the Slideshow view shows it.
+  transformStyle: '',
   pageSize: 'letter',
   htmlStyle: 'plain',
   htmlBundle: 'single',
@@ -86,17 +110,24 @@ export const DEFAULT_OPTIONS: ExportOptions = {
 /**
  * Options that populate the export dialog: the user's last-chosen options
  * (else the built-in defaults) for format, page size and the rest, but always
- * the theme the editor previews this document in -- its own theme, else the
- * workspace default, else Standard. The last export's theme belonged to some
- * other document; carrying it over made the export differ from the preview.
+ * the theme and slide transform the editor previews this document with -- its
+ * own theme, else the workspace default, else Standard; its own transform,
+ * else none. The last export's choices belonged to some other document;
+ * carrying them over made the export differ from the preview (a Documentary
+ * transform turned a white slideshow into a dark navy PowerPoint).
  */
 export function resolveExportDialogInitial(
   lastOptions: ExportOptions | null,
   docThemeId: string | null | undefined,
   workspaceThemeId?: string | null,
+  docTransformStyle?: string | null,
 ): ExportOptions {
   const base = lastOptions ?? DEFAULT_OPTIONS;
-  return { ...base, themeId: docThemeId || workspaceThemeId || DEFAULT_OPTIONS.themeId };
+  return {
+    ...base,
+    themeId: docThemeId || workspaceThemeId || DEFAULT_OPTIONS.themeId,
+    transformStyle: docTransformStyle || DEFAULT_OPTIONS.transformStyle,
+  };
 }
 
 /** A theme as the export dialog's Theme select lists it. */

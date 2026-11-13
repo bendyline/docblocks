@@ -437,7 +437,35 @@ describe('realizeDiagram', () => {
     });
     expect(ai.requests).to.have.length(2);
     expect(outcome.status).to.equal('failed');
-    expect(outcome.status === 'failed' ? outcome.message : '').to.contain('2030');
+    expect(outcome.status === 'failed' ? outcome.message : '').to.equal(
+      'The diagram used facts that are not in the text. These dates are not in the passage: 2030.',
+    );
+  });
+
+  // A small model's flowchart with no usable edges used to end in: It needs at
+  // least 1 edge whose "from" and "to" are node ids from "nodes".
+  it('tells the person a reply could not be used, in their words, not the data format', async () => {
+    const noEdges = '{"nodes":[{"id":"a","label":"Company founded"}],"edges":[]}';
+    const ai = scriptedAi(() => noEdges);
+    const outcome = await realizeDiagram({
+      ai: ai.api,
+      kind: 'flow',
+      material,
+      heading: '',
+      title: '',
+      ground: true,
+      budget,
+      validateMermaid: validateMermaidSource,
+    });
+    expect(ai.requests).to.have.length(2);
+    // The model is still told exactly what was wrong.
+    expect(ai.requests[1]?.messages.at(-1)?.content).to.match(/"nodes"|at least/u);
+    const message = outcome.status === 'failed' ? outcome.message : '';
+    expect(message).to.equal(
+      "The model's diagram could not be used. Its reply was incomplete, or not in the form a " +
+        'diagram needs. Try again; a larger model may do better.',
+    );
+    expect(message).not.to.match(/"|node ids|edge/u);
   });
 
   it("accepts facts from the person's own request", async () => {

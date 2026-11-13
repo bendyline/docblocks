@@ -156,7 +156,12 @@ describe('AI illustrations', () => {
         ground: true,
       });
       expect(outcome.status).to.equal('failed');
-      expect(outcome.status === 'failed' ? outcome.message : '').to.contain('75');
+      // The model is told what to do about it; the person is told what happened.
+      expect(ai.requests[1]?.messages.at(-1)?.content).to.contain('Use only numbers it states');
+      expect(outcome.status === 'failed' ? outcome.message : '').to.equal(
+        "The model's picture could not be used. The drawing showed numbers that are not in " +
+          'the text: 75, 0.75. Try again; a larger model may do better.',
+      );
     });
 
     it('accepts numbers the person stated in their own request', async () => {
@@ -186,7 +191,12 @@ describe('AI illustrations', () => {
       const ai = scriptedAi(['I cannot draw that.']);
       const outcome = await realizeIllustration({ ai: ai.api, ...BASE });
       expect(ai.requests).to.have.length(2);
-      expect(outcome.status === 'failed' ? outcome.message : '').to.contain('no <svg> element');
+      // The model is told what was wrong in markup terms; the person is not.
+      expect(ai.requests[1]?.messages.at(-1)?.content).to.contain('no <svg> element');
+      expect(outcome.status === 'failed' ? outcome.message : '').to.equal(
+        "The model's picture could not be used. Its reply was not a drawing. " +
+          'Try again; a larger model may do better.',
+      );
     });
   });
 });

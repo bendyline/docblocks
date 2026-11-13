@@ -241,7 +241,7 @@ describe('AI knowledge settings', () => {
         bin!.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
       );
       await flush();
-      await clickButton(container, 'Improve knowledge results with a 23 MB model download');
+      await clickButton(container, 'Download the model');
       expect(actions).to.deep.equal([
         { action: 'install', catalogId: 'science' },
         { action: 'disable', catalogId: 'science' },
@@ -336,36 +336,70 @@ describe('AI knowledge settings', () => {
       await cleanup();
     }
   });
-  it('offers the improvement download only while it would help, never naming the model', async () => {
+  it('says catalogs need their model while it is missing, never naming the model', async () => {
     const fake = fakeAi(READY, OPTED_IN);
-    const textFor = async (improvement: AiKnowledgeState['improvement']) => {
+    const renderFor = async (improvement: AiKnowledgeState['improvement']) => {
+      const actions: unknown[] = [];
       const { container, cleanup } = await render({
         ...fake.api,
         knowledge: {
           state: async () => ({ ok: true, value: { ...KNOWLEDGE, improvement } }),
-          update: async () => ({ ok: true, value: null }),
+          update: async (action) => {
+            actions.push(action);
+            return { ok: true, value: null };
+          },
         },
       });
       try {
-        return container.textContent ?? '';
+        return {
+          text: container.textContent ?? '',
+          buttons: buttonLabels(container),
+          status: container.querySelector('.db-settings-ai-knowledge > [role="status"]')
+            ?.textContent,
+          actions,
+        };
       } finally {
         await cleanup();
       }
     };
-    const offered = await textFor({ downloadBytes: 23_856_961, downloading: false });
-    expect(offered).to.contain('Improve knowledge results with a 23 MB model download');
-    expect(offered.toLowerCase()).not.to.contain('rerank');
-    expect(await textFor({ downloadBytes: 8 * 1024 ** 2, downloading: false })).to.contain(
-      'with an 8 MB model download',
+    // Missing: a plain statement that it is needed, and the way to get it.
+    const missing = await renderFor({ downloadBytes: 23_856_961, downloading: false });
+    expect(missing.text).to.contain('Your catalogs need a 23 MB model to find relevant passages.');
+    expect(missing.buttons).to.include('Download the model');
+    expect(missing.text).not.to.contain('Improve knowledge results');
+    expect(missing.text.toLowerCase()).not.to.contain('rerank');
+    // Opening Settings never starts the download; only a gesture does.
+    expect(missing.actions).to.deep.equal([]);
+    expect((await renderFor({ downloadBytes: 8 * 1024 ** 2, downloading: false })).text).to.contain(
+      'need an 8 MB model',
     );
-    expect(await textFor({ downloadBytes: 18 * 1024 ** 2, downloading: false })).to.contain(
-      'with an 18 MB model download',
+    expect(
+      (await renderFor({ downloadBytes: 18 * 1024 ** 2, downloading: false })).text,
+    ).to.contain('need an 18 MB model');
+    // Downloading (the host starts it with a catalog): said, with nothing to press.
+    const downloading = await renderFor({ downloadBytes: 23_856_961, downloading: true });
+    expect(downloading.status).to.equal(
+      'Downloading the model that finds relevant passages in your catalogs…',
     );
-    // Once chosen it downloads quietly, and once installed the offer is gone.
-    for (const improvement of [{ downloadBytes: 23_856_961, downloading: true }, null]) {
-      const text = await textFor(improvement);
-      expect(text).not.to.contain('Improve knowledge results');
-      expect(text.toLowerCase()).not.to.contain('rerank');
+    expect(downloading.buttons).not.to.include('Download the model');
+    expect(downloading.text.toLowerCase()).not.to.contain('rerank');
+    // Installed: nothing is said about it.
+    const installed = await renderFor(null);
+    expect(installed.text).not.to.contain('find relevant passages');
+    expect(installed.text).not.to.contain('finds relevant passages');
+    expect(installed.buttons).not.to.include('Download the model');
+  });
+  it('tells the person adding a first catalog that its model comes with it', async () => {
+    const { container, cleanup } = await render(knowledgeApi(fakeAi(READY, OPTED_IN).api, []));
+    try {
+      await clickButton(container, 'Add catalog…');
+      const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')!;
+      expect(dialog.textContent).to.contain(
+        'The first catalog you add also downloads a small model that finds those passages.',
+      );
+      await clickButton(dialog, 'Done');
+    } finally {
+      await cleanup();
     }
   });
   it('does not read catalogs while AI is off', async () => {

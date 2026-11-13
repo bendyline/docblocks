@@ -80,6 +80,8 @@ interface SuggestionProgress {
   done: number;
   total: number;
   active: { sourceStart: number; sourceEnd: number } | null;
+  /** The deck's layouts are being planned together; no slide has been asked for yet. */
+  planning: boolean;
 }
 function sectionAt(sections: Sections, offset: number) {
   return sections.find((item) => offset >= item.sourceStart && offset < item.sourceEnd);
@@ -401,6 +403,11 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
     const outcome = { done: 0, refined: 0, retained: 0 };
     setError(null);
     setNotice('');
+    // From the click, not from the first slide. A deck of several slides is
+    // planned in one request before any slide is asked for, and until that
+    // answered the dialog looked idle: no status, and "Use dynamic slides"
+    // still closed it with the design the AI had not touched.
+    setProgress({ done: 0, total, active: null, planning: true });
     try {
       await refinePresentationPlan(ai, plan, {
         signal: run.signal,
@@ -411,6 +418,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
             done,
             total,
             active: next ? { sourceStart: next.sourceStart, sourceEnd: next.sourceEnd } : null,
+            planning: false,
           });
           if (next && follow.current) setSelectedSourceStart(next.sourceStart);
         },
@@ -500,12 +508,14 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
               <div className="db-presentation-progress" role="status">
                 <span className="db-ai-spinner" aria-hidden="true" />
                 <span>
-                  Suggesting slide {Math.min(progress.done + 1, progress.total)} of {progress.total}
-                  …
+                  {progress.planning
+                    ? 'Planning the slides…'
+                    : `Suggesting slide ${Math.min(progress.done + 1, progress.total)} of ${progress.total}…`}
                 </span>
+                {/* No value while planning: the bar shows activity, not an amount. */}
                 <progress
                   max={progress.total}
-                  value={progress.done}
+                  value={progress.planning ? undefined : progress.done}
                   aria-label="Slides suggested so far"
                 />
               </div>

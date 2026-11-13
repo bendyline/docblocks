@@ -60,9 +60,9 @@ agent orchestration, MCP server or complete community catalog. `afterPack`
 checks that the full service did not return and that runtime assets remain.
 
 The desktop pins published releases exactly: `@bendyline/gezel-inference`
-`1.1.0` and `@bendyline/gezel-app-sdk` `1.2.0` at runtime, plus Gezel core
-`1.3.0` as a dev dependency that tsup bundles into main. The inference package
-brings its matching client, catalog and knowledge packages. Inference `1.1.0`
+`1.1.1` and `@bendyline/gezel-app-sdk` `1.2.1` at runtime, plus Gezel core
+`1.3.1` as a dev dependency that tsup bundles into main. The inference package
+brings its matching client, catalog and knowledge packages. Inference `1.1.1`
 selects native release `0.1.62`. Mobile runs the same core and App SDK, which
 its published Capacitor plugin pins exactly.
 
@@ -195,12 +195,15 @@ progress and failures, and lets users enable, disable, or confirm removal of a
 catalog. Catalogs belong to the connected provider: switching between built-in
 AI and standalone Gezel switches the catalog registry. Removal from standalone
 Gezel affects other apps using that registry. Catalog downloads require explicit
-gestures. When the provider reports that a one-time model download would improve
-results (a catalog is enabled and that model is missing), Settings shows a single
-link, "Improve knowledge results with a 23 MB model download"; choosing it starts
-the download, and the link does not return once it is running or installed.
-Opening Settings or querying never starts it, and the UI never calls the model a
-reranker.
+gestures. A catalog in use finds next to nothing until the provider's relevance
+model is installed, so that one-time download (23 MB) starts with the gesture
+that puts a catalog to use: downloading one or switching one on. The Add dialog
+says so. While the download runs Settings says so, and while a catalog is in use
+and the model is still missing (a catalog added by an earlier version, or a
+download that failed) Settings says "Your catalogs need a 23 MB model to find
+relevant passages" with a link that starts it. A refused model download never
+fails the catalog change. Opening Settings or querying never starts it, and the
+UI never calls the model a reranker.
 
 Writing, review, and chat all call the SDK's `knowledge.retrieve` before
 inference and leave ranking to the SDK: Gezel ranks passages with the relevance
@@ -324,10 +327,16 @@ app signatures against the embedded profile's team, the entitlements,
 `Info.plist` (including the exempt-encryption declaration), the helper set, and
 the app's own runtime verifier over its Gezel engines.
 
-Windows builds, Store and direct alike, leave out `uv.exe`. It only provisions
-Python for MLX, which never runs on Windows, and installs code at runtime.
-`stage-gezel-native.cjs` removes it and `main/ai/gezel-windows-native.ts` drops
-it from the pins Gezel verifies against. Change both together.
+Every build leaves out UV (`uv.exe` on Windows, `uv` on macOS and Linux). It
+only provisions Python for MLX and installs code at runtime, and shipped builds
+run Gezel's store profile, which refuses both.
+`stage-gezel-native.cjs` removes it and `main/ai/gezel-staged-native.ts` drops
+it from the pins Gezel verifies against. Change both together. The Mac App
+Store package is the one exception in how: its engines are staged whole,
+because `prepare-mas-gezel.cjs` checks every pin before it removes UV itself.
+
+`app.asar` also leaves out the MLX provider's Python sidecar and zod's
+TypeScript sources (`electron-builder.yml`). Neither is read by a shipped build.
 
 ### Windows update feeds
 

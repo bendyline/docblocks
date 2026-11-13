@@ -10,25 +10,33 @@
  * the title; `buildPreviewDoc` is what turns a section with a body into a
  * `content` slide carrying its paragraphs and tables. Skipping it is how the
  * preview showed a table while the MP4 showed a title card.
+ *
+ * The editor also holds each block open for the videos it plays, measuring
+ * the files in the browser (Squisq's `applyVideoDurations`). The export
+ * measures them the same way, first, so a slide over a long clip plays the
+ * whole clip in the MP4 as it does in the preview.
  */
 
 import { parseMarkdown } from '@bendyline/squisq/markdown';
-import type { Doc } from '@bendyline/squisq/schemas';
+import type { Doc, MediaProvider } from '@bendyline/squisq/schemas';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import { PresentationInvalidError } from './export-errors.js';
+import { frontmatterTransformId } from './export-options.js';
 
 /** Rows per `{[dataTable src=…]}` preview — the editor's own window. */
 const DATA_PREVIEW_ROWS = 50;
-
-/** Where the editor persists the preview's transform choice. */
-const TRANSFORM_KEY = 'squisq-transform';
-const LEGACY_TRANSFORM_KEY = 'transform-style';
 
 export interface VideoExportDocOptions {
   /** Workspace path of the document; its base name titles a heading-less preamble. */
   fileName?: string | null;
   /** Resolves narration audio and data-table sidecars, as the preview does. */
   workspaceContainer?: ContentContainer | null;
+  /**
+   * Resolves the document's video files so their lengths can be measured —
+   * pass the editor's provider to reuse its measurements. Without one, a
+   * provider over `workspaceContainer` is made for the purpose.
+   */
+  mediaProvider?: MediaProvider | null;
 }
 
 /**
@@ -40,15 +48,8 @@ export function persistedTransformStyle(
   frontmatter: Readonly<Record<string, unknown>> | undefined,
   knownIds: ReadonlySet<string>,
 ): string | null {
-  if (!frontmatter) return null;
-  const value = Object.prototype.hasOwnProperty.call(frontmatter, TRANSFORM_KEY)
-    ? frontmatter[TRANSFORM_KEY]
-    : frontmatter[LEGACY_TRANSFORM_KEY];
-  if (typeof value !== 'string') return null;
-  const normalized = value.trim().toLowerCase().replace(/\s+/g, '-');
-  // `dataDriven` was written by older Squisq versions.
-  const id = normalized === 'datadriven' ? 'data-driven' : normalized;
-  return knownIds.has(id) ? id : null;
+  const id = frontmatterTransformId(frontmatter);
+  return id && knownIds.has(id) ? id : null;
 }
 
 /**
@@ -72,6 +73,31 @@ async function withDataPreviews(
   }
 }
 
+/**
+ * Hold each block open for the videos it plays, measuring the files the
+ * document names without an out-point. A file that cannot be measured keeps
+ * its block's text timing — the preview's own fallback — so this never fails
+ * the export.
+ */
+async function withVideoDurations(
+  doc: Doc,
+  provider: MediaProvider | null | undefined,
+  container: ContentContainer | null | undefined,
+): Promise<Doc> {
+  const owned =
+    !provider && container
+      ? (await import('@bendyline/squisq/storage')).createMediaProviderFromContainer(container)
+      : null;
+  try {
+    const { resolveVideoDurations } = await import('@bendyline/squisq-react');
+    return await resolveVideoDurations(doc, { provider: provider ?? owned });
+  } catch {
+    return doc;
+  } finally {
+    owned?.dispose();
+  }
+}
+
 export async function buildVideoExportDoc(
   markdownSource: string,
   options: VideoExportDocOptions = {},
@@ -79,6 +105,7 @@ export async function buildVideoExportDoc(
   const [
     {
       buildPreviewDoc,
+      collectVideoDurationSources,
       documentTitleFromFileName,
       markdownToDoc,
       resolveAudioMapping,
@@ -89,6 +116,11 @@ export async function buildVideoExportDoc(
 
   let doc = markdownToDoc(parseMarkdown(markdownSource));
   const container = options.workspaceContainer;
+  // Video lengths before audio: recorded narration then re-times the blocks
+  // it covers and keeps precedence, as in the preview.
+  if (collectVideoDurationSources(doc).length > 0) {
+    doc = await withVideoDurations(doc, options.mediaProvider, container);
+  }
   if (container) {
     // Audio before transforms, so generated slides inherit narration timing.
     // Discovery is optional here as it is in the preview: a failure exports

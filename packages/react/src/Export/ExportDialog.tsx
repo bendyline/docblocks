@@ -26,6 +26,12 @@ export interface ExportDialogProps {
   /** Whether the export is currently running. */
   exporting: boolean;
   /**
+   * What a running export is doing, when it is more than writing the file
+   * ("Applying clip edits… 40%"). Shown on the Export button in place of
+   * "Exporting...".
+   */
+  exportingLabel?: string | null;
+  /**
    * Message from a failed export attempt. Rendered in the dialog, which
    * stays open so the user can adjust options and retry — a failure must
    * never look like a success.
@@ -160,6 +166,7 @@ export function ExportDialog({
   initial,
   documentThemes,
   exporting,
+  exportingLabel,
   error,
   errorAction,
   destination,
@@ -308,7 +315,9 @@ export function ExportDialog({
             onClick={handleExport}
             disabled={exporting || Boolean(destination?.error)}
           >
-            {exporting ? 'Exporting...' : (actionLabel?.(currentOptions) ?? 'Export')}
+            {exporting
+              ? (exportingLabel ?? 'Exporting...')
+              : (actionLabel?.(currentOptions) ?? 'Export')}
           </button>
         </>
       }

@@ -33,4 +33,24 @@ describe('PowerPoint theme visibility', () => {
       );
     }
   });
+
+  it('keeps the chosen Standard theme when a transform is applied', async () => {
+    // The Documentary transform suggests its own dark theme. A document with
+    // no theme previews in Standard, and the dialog says Standard, so the deck
+    // must be Standard too (it came out dark navy).
+    let saved: Blob | undefined;
+    await runExport(
+      '# Offsite plan\n\nTwo days by the water.\n\n## Agenda\n\n- Arrive\n- Workshop\n',
+      '/offsite.md',
+      { ...DEFAULT_OPTIONS, format: 'pptx', themeId: 'standard', transformStyle: 'documentary' },
+      null,
+      (blob) => {
+        saved = blob;
+      },
+      { diagramRenderer: async () => null },
+    );
+    const pkg = await openPackage(await saved!.arrayBuffer());
+    const theme = await getPartXml(pkg, 'ppt/theme/theme1.xml');
+    expect(theme!.documentElement.getAttribute('name')).to.equal('Standard Light');
+  });
 });

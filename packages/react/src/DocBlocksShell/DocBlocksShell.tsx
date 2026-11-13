@@ -264,6 +264,7 @@ import { decodeDbkWorkspace } from './dbk-import.js';
 import { resolveShellEditorLinkTarget } from './editor-link-navigation.js';
 import { ensureShellWikiArticle, wikiArticleExtension } from './wiki-articles.js';
 import { importDroppedFiles, summariseImport } from './import-files.js';
+import { importingMessage } from './import-file-types.js';
 import {
   createNewOutsideInDocument,
   createOutsideInContentContainer,
@@ -286,6 +287,7 @@ import { providerEntryExists, removeProviderEntry, writeProviderText } from './p
 import { usePromptDialog } from '../components/usePromptDialog.js';
 import { useConfirmDialog } from '../components/useConfirmDialog.js';
 import { NewDocumentDialog, type NewDocumentChoice } from '../components/NewDocumentDialog.js';
+import { startTypedWhileOpening, type TypedWhileOpening } from './typedWhileOpening.js';
 import { EditorErrorBoundary } from './EditorErrorBoundary.js';
 import { localDateStamp } from '../local-date.js';
 import { openExternalUrl } from '../external-url.js';
@@ -1198,6 +1200,10 @@ export function DocBlocksShell({
   // "Opening …" while a clicked document is still loading, so a slow open
   // (a cloud file downloading first) never looks like a dead click.
   const { notice: openingNotice, track: trackOpening } = useOpeningNotice();
+  // "Importing …" from the moment files are dropped or picked until the
+  // import settles; the latest import owns it.
+  const [importingNotice, setImportingNotice] = useState<string | null>(null);
+  const importingTokenRef = useRef<object | null>(null);
 
   // The shell's stand-in for `window.prompt()`, which Electron's renderer does
   // not implement -- calling it there throws and the action dies silently.
@@ -1207,6 +1213,17 @@ export function DocBlocksShell({
   // the caret on the line beneath its title.
   const [newDocumentCaretPath, setNewDocumentCaretPath] = useState<string | null>(null);
   const clearNewDocumentCaret = useCallback(() => setNewDocumentCaretPath(null), []);
+  // Keys typed between Create and the new document's editor taking focus.
+  const typedWhileOpeningRef = useRef<TypedWhileOpening | null>(null);
+  const takeTypedWhileOpening = useCallback((): string => {
+    const buffer = typedWhileOpeningRef.current;
+    typedWhileOpeningRef.current = null;
+    return buffer ? buffer.take() : '';
+  }, []);
+  const cancelTypedWhileOpening = useCallback((): void => {
+    typedWhileOpeningRef.current?.cancel();
+    typedWhileOpeningRef.current = null;
+  }, []);
 
   // Stand-ins for `window.confirm()` (a question) and `window.alert()` (a
   // message worth stopping for). Transient outcomes use showToast instead.
@@ -1621,6 +1638,8 @@ export function DocBlocksShell({
     void workspaceOutputsSchedulerRef.current?.regenerate({ force: true });
   }, []);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const selectedFileRef = useRef(selectedFile);
+  selectedFileRef.current = selectedFile;
   const [selectedSourceFile, setSelectedSourceFile] = useState<string | null>(null);
   const [selectedOutsideIn, setSelectedOutsideIn] = useState<OutsideInLayout | null>(null);
   const [selectedOutsideInEditingEnabled, setSelectedOutsideInEditingEnabled] = useState(false);
@@ -3987,6 +4006,10 @@ export function DocBlocksShell({
       const path = '/' + filename;
       const requestId = ++navigationRequestRef.current;
       const createdRef: { current: EditableShellDocument | null } = { current: null };
+      // The dialog has closed; the editor will not have focus for a while.
+      // Hold what is typed meanwhile and give it to NewDocumentCaret.
+      cancelTypedWhileOpening();
+      typedWhileOpeningRef.current = startTypedWhileOpening();
       try {
         const transitioned = await documentSession.transitionWithLoad(async () => {
           if (requestId !== navigationRequestRef.current) return null;
@@ -4040,8 +4063,12 @@ export function DocBlocksShell({
             content: created.content,
           };
         });
-        if (!transitioned) return;
+        if (!transitioned) {
+          cancelTypedWhileOpening();
+          return;
+        }
       } catch (error: unknown) {
+        cancelTypedWhileOpening();
         showToast(
           'error',
           error instanceof Error ? error.message : 'Could not create the document.',
@@ -4049,7 +4076,10 @@ export function DocBlocksShell({
         return;
       }
       const created = createdRef.current;
-      if (!created) return;
+      if (!created) {
+        cancelTypedWhileOpening();
+        return;
+      }
       notifyWorkspaceChanged(activeWorkspaceId ?? provider.id, created.displayPath);
       rememberNewFileFormat(format);
       adoptSelectedDocument(created);
@@ -4079,6 +4109,7 @@ export function DocBlocksShell({
       notifyWorkspaceChanged,
       rememberNewFileFormat,
       showToast,
+      cancelTypedWhileOpening,
     ],
   );
 
@@ -4405,6 +4436,17 @@ export function DocBlocksShell({
         setFolderEntries(entries);
         pushHash(activeWorkspaceId, null);
       } else {
+        // Already open: stay on it. Loading it again shows the same text, but
+        // ends its undo history and discards what its panels hold, such as
+        // pictures an AI request just drew. A change made outside the app
+        // arrives through the file watcher, not through this click. Taking
+        // the request number above still cancels a navigation in flight.
+        const openFile = selectedFileRef.current;
+        if (!createWikiArticle && openFile !== null && sameProviderPath(openFile, path)) {
+          closeWelcomeGateway();
+          if (singlePane) setMobileShowEditor(true);
+          return;
+        }
         const stopOpeningNotice = trackOpening(path);
         try {
           let openedDocument: EditableShellDocument | null = null;
@@ -5168,10 +5210,28 @@ export function DocBlocksShell({
     [handleRestoreBackup, provider],
   );
 
+  /** Run an import with "Importing …" on screen until it settles. */
+  const withImportingNotice = useCallback(
+    async <T,>(files: File[], run: () => Promise<T>): Promise<T> => {
+      const token = {};
+      importingTokenRef.current = token;
+      setImportingNotice(importingMessage(files));
+      try {
+        return await run();
+      } finally {
+        if (importingTokenRef.current === token) {
+          importingTokenRef.current = null;
+          setImportingNotice(null);
+        }
+      }
+    },
+    [],
+  );
+
   const handleImportFiles = useCallback(
     async (files: File[]) => {
       if (!provider) return;
-      const result = await importOrRestore(files);
+      const result = await withImportingNotice(files, () => importOrRestore(files));
       if (!result) return;
       notifyWorkspaceChanged(activeWorkspaceId);
       // Refresh file tree so the new markdown files + _files folders show up.
@@ -5180,7 +5240,14 @@ export function DocBlocksShell({
       const summary = summariseImport(result);
       if (summary) showToast(summary.kind, summary.message);
     },
-    [activeWorkspaceId, notifyWorkspaceChanged, provider, showToast, importOrRestore],
+    [
+      activeWorkspaceId,
+      notifyWorkspaceChanged,
+      provider,
+      showToast,
+      importOrRestore,
+      withImportingNotice,
+    ],
   );
 
   /**
@@ -5191,7 +5258,7 @@ export function DocBlocksShell({
   const handleImportFilesToEditor = useCallback(
     async (files: File[]) => {
       if (!provider) return;
-      const result = await importOrRestore(files);
+      const result = await withImportingNotice(files, () => importOrRestore(files));
       if (!result) return;
       notifyWorkspaceChanged(activeWorkspaceId);
       setExplorerKey((k) => k + 1);
@@ -5207,7 +5274,15 @@ export function DocBlocksShell({
         if (only) void handleSelect(only.path, 'file');
       }
     },
-    [activeWorkspaceId, notifyWorkspaceChanged, provider, showToast, handleSelect, importOrRestore],
+    [
+      activeWorkspaceId,
+      notifyWorkspaceChanged,
+      provider,
+      showToast,
+      handleSelect,
+      importOrRestore,
+      withImportingNotice,
+    ],
   );
 
   const editorDropActive = useEditorFileDrop(
@@ -5831,7 +5906,13 @@ export function DocBlocksShell({
             {saveToast.message}
           </div>
         )}
-        {!saveToast && <OpeningNotice notice={openingNotice} />}
+        {!saveToast && importingNotice && (
+          <div className="db-opening-notice" role="status" aria-live="polite">
+            <span className="db-ai-spinner" aria-hidden="true" />
+            <span>{importingNotice}</span>
+          </div>
+        )}
+        {!saveToast && !importingNotice && <OpeningNotice notice={openingNotice} />}
         {offlineReadyToast && !saveToast && (
           <div className="db-save-toast db-save-toast--success" role="status" aria-live="polite">
             DocBlocks is ready to work offline.
@@ -6249,6 +6330,7 @@ export function DocBlocksShell({
                               imageAlt={basenameOf(selectedFile)}
                               saveCoverImageOutput={saveRenderedImageOutput}
                               saveDashboardImageOutput={saveRenderedImageOutput}
+                              saveMediaEditOutput={saveRenderedImageOutput}
                               onChange={handleEditorChange}
                               onLinkClick={handleEditorLinkClick}
                               wikiLinks={wikiLinks}
@@ -6336,7 +6418,10 @@ export function DocBlocksShell({
                                 <>
                                   {newDocumentCaretPath === selectedFile && (
                                     <Suspense fallback={null}>
-                                      <NewDocumentCaret onPlaced={clearNewDocumentCaret} />
+                                      <NewDocumentCaret
+                                        onPlaced={clearNewDocumentCaret}
+                                        takeTypedText={takeTypedWhileOpening}
+                                      />
                                     </Suspense>
                                   )}
                                   {canFind && (

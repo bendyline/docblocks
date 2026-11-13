@@ -90,6 +90,25 @@ describe('desktop AI model listing', () => {
     expect(models.map((model) => model.isDefault)).to.deep.equal([true, false]);
   });
 
+  // A model read "Qwen 3.5 (0.8B, Q4)" in the download list and
+  // "qwen3.5-0.8b-q4 · llama-cpp" once installed, in the picker and in every
+  // "Generated with" line. Gezel now names installed models too.
+  it('shows an installed model by the name its provider gives it, else by its id', () => {
+    const models = toAiModelList([
+      {
+        id: 'llama-cpp:qwen3.5-0.8b-q4',
+        owned_by: 'llama-cpp',
+        name: 'Qwen 3.5 (0.8B, Q4)',
+        availability: 'available',
+      },
+      { id: 'llama-cpp:custom-gguf', owned_by: 'llama-cpp', availability: 'available' },
+    ]);
+    expect(models.map((model) => model.label)).to.deep.equal([
+      'Qwen 3.5 (0.8B, Q4)',
+      'custom-gguf · llama-cpp',
+    ]);
+  });
+
   it('drops entries that cannot cross the wire, duplicates, and anything past the cap', () => {
     const models = toAiModelList([
       { id: '' },

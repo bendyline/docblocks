@@ -95,7 +95,7 @@ const OVERFLOW_SCRIPT = `(() => {
       (label ? '[' + label.slice(0, 40) + ']' : '');
   };
   const ignored = (node) =>
-    node.closest('.monaco-editor, .ProseMirror, svg, canvas, [inert], [aria-hidden="true"], .db-visually-hidden, .squisq-scene-root, .squisq-timeline-scroll');
+    node.closest('.monaco-editor, .monaco-aria-container, .ProseMirror, svg, canvas, [inert], [aria-hidden="true"], .db-visually-hidden, .squisq-scene-root, .squisq-timeline-scroll');
   const shown = (node, rect) => {
     if (rect.width < 1 || rect.height < 1) return false;
     const style = getComputedStyle(node);

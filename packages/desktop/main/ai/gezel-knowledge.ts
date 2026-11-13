@@ -68,17 +68,49 @@ export async function gezelKnowledgeState(app: GezelApp, signal: AbortSignal): P
       : null,
   };
 }
-export function updateGezelKnowledge(
+/**
+ * Start the download of the model that finds a catalog's passages.
+ *
+ * Gezel returns a passage its relevance model has not judged only when the
+ * passage clears a high bar of its own. In practice a catalog in use without
+ * the model finds nothing: two requests about Entity Framework drew nothing
+ * from the Entity Framework catalog, and the same request cited three of its
+ * articles once the model was installed. So the model comes with a catalog
+ * instead of being offered afterwards.
+ *
+ * Gezel answers an installed model with success. A refusal (no network, a
+ * Gezel that predates the action) leaves the catalog change standing:
+ * Settings keeps saying the model is needed and offers the download again.
+ */
+async function startRelevanceModel(app: GezelApp, signal: AbortSignal): Promise<void> {
+  try {
+    await app.knowledge.update({ action: 'prepare-reranker' }, { signal });
+  } catch (error: unknown) {
+    signal.throwIfAborted();
+    console.warn(
+      `[ai] could not start the knowledge relevance model download: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
+
+export async function updateGezelKnowledge(
   app: GezelApp,
   action: AiKnowledgeAction,
   signal: AbortSignal,
 ): Promise<void> {
   // Enabling or disabling changes what the next request may cite.
   catalogSnapshots.delete(app);
-  return app.knowledge.update(
-    action.action === 'improve' ? { action: 'prepare-reranker' } : action,
-    { signal },
-  );
+  if (action.action === 'improve') {
+    await app.knowledge.update({ action: 'prepare-reranker' }, { signal });
+    return;
+  }
+  await app.knowledge.update(action, { signal });
+  // Downloading a catalog or switching one on puts it to use.
+  if (action.action === 'install' || action.action === 'enable') {
+    await startRelevanceModel(app, signal);
+  }
 }
 
 export interface GezelKnowledgeContext {

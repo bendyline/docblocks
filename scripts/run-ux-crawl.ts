@@ -13,8 +13,9 @@
  *   npm run ux:crawl -- --review          # functional, export, accessibility audit
  *   npm run ux:crawl -- --affordances     # click every control; contact sheet
  *   npm run ux:crawl -- --pages           # every static page × 7 profiles; downloads
+ *   npm run ux:crawl -- --journey         # author a document like a new user; modes, exports
  *   npm run ux:crawl -- --scale           # isolated editor typing/load benchmark
- *   npm run ux:crawl -- --all             # crawl, pages, affordances, review into one folder
+ *   npm run ux:crawl -- --all             # crawl, pages, affordances, review, journey into one folder
  *   LIVE_UX_BASE_URL=https://docblocks.com npm run ux:crawl   # the live site
  *   LIVE_UX_BASE_URL=https://docblocks.com npm run ux:crawl -- --all reports/teardown
  *
@@ -31,16 +32,22 @@ import { preview, type PreviewServer } from 'vite';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sitePackageRoot = path.join(repoRoot, 'packages', 'site');
 const crawlEntry = path.join(repoRoot, 'e2e', 'live-ux-crawl.ts');
+const journeyEntry = path.join(repoRoot, 'e2e', 'site-journey-review.ts');
 /**
  * The teardown `--all` runs, in order, each into a subfolder of one output
  * directory. Scale is left out: its typing timings need an otherwise idle
  * machine, so it runs on its own.
+ *
+ * They run one at a time on purpose. Against a deployed origin each fresh
+ * profile that allows service workers precaches the whole app; two drivers at
+ * once starve each other's lazy chunks and report slow dialogs as failures.
  */
 const ALL_DRIVERS = [
   ['crawl', crawlEntry],
   ['pages', path.join(repoRoot, 'e2e', 'site-pages-crawl.ts')],
   ['affordances', path.join(repoRoot, 'e2e', 'site-affordance-crawl.ts')],
   ['review', path.join(repoRoot, 'e2e', 'site-ship-review.ts')],
+  ['journey', journeyEntry],
 ] as const;
 
 // Distinct from the site dev server (5220), the desktop dev server (5221), and
@@ -119,9 +126,12 @@ async function main(): Promise<void> {
   const affordances = passThrough.includes('--affordances');
   const pages = passThrough.includes('--pages');
   const scale = passThrough.includes('--scale');
+  const journey = passThrough.includes('--journey');
   const all = passThrough.includes('--all');
-  if ([review, affordances, pages, scale, all].filter(Boolean).length > 1) {
-    throw new Error('Choose one of --review, --affordances, --pages, --scale, or --all.');
+  if ([review, affordances, pages, scale, journey, all].filter(Boolean).length > 1) {
+    throw new Error(
+      'Choose one of --review, --affordances, --pages, --journey, --scale, or --all.',
+    );
   }
   const entry = review
     ? path.join(repoRoot, 'e2e', 'site-ship-review.ts')
@@ -129,14 +139,22 @@ async function main(): Promise<void> {
       ? path.join(repoRoot, 'e2e', 'site-affordance-crawl.ts')
       : pages
         ? path.join(repoRoot, 'e2e', 'site-pages-crawl.ts')
-        : scale
-          ? path.join(repoRoot, 'e2e', 'site-scale-review.ts')
-          : crawlEntry;
+        : journey
+          ? journeyEntry
+          : scale
+            ? path.join(repoRoot, 'e2e', 'site-scale-review.ts')
+            : crawlEntry;
   const crawlArgs = passThrough.filter(
     (argument) =>
-      !['--no-build', '--review', '--affordances', '--pages', '--scale', '--all'].includes(
-        argument,
-      ),
+      ![
+        '--no-build',
+        '--review',
+        '--affordances',
+        '--pages',
+        '--journey',
+        '--scale',
+        '--all',
+      ].includes(argument),
   );
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 13);
   const allRoot = crawlArgs[0] ?? path.join('reports', `site-review-${stamp}`);

@@ -8,13 +8,13 @@ This file is the distribution-level entry point for third-party software used by
 
 | Distribution                           | Notice shipped with the artifact                                                             | Inventory basis       |
 | -------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------- |
-| DocBlocks Capacitor distribution       | [packages/mobile/THIRD_PARTY_NOTICES.txt](packages/mobile/THIRD_PARTY_NOTICES.txt)           | 228 locked components |
+| DocBlocks Capacitor distribution       | [packages/mobile/THIRD_PARTY_NOTICES.txt](packages/mobile/THIRD_PARTY_NOTICES.txt)           | 222 locked components |
 | @bendyline/docblocks npm package       | [packages/core/THIRD_PARTY_NOTICES.txt](packages/core/THIRD_PARTY_NOTICES.txt)               | 113 locked components |
 | @bendyline/docblocks-react npm package | [packages/react/THIRD_PARTY_NOTICES.txt](packages/react/THIRD_PARTY_NOTICES.txt)             | 382 locked components |
 | @bendyline/docblocks-cli npm package   | [packages/cli/THIRD_PARTY_NOTICES.txt](packages/cli/THIRD_PARTY_NOTICES.txt)                 | 353 locked components |
-| DocBlocks site distribution            | [packages/site/public/THIRD_PARTY_NOTICES.txt](packages/site/public/THIRD_PARTY_NOTICES.txt) | 219 locked components |
-| DocBlocks VS Code extension (VSIX)     | [packages/vscode/THIRD_PARTY_NOTICES.txt](packages/vscode/THIRD_PARTY_NOTICES.txt)           | 211 locked components |
-| DocBlocks desktop distribution         | [packages/desktop/THIRD_PARTY_NOTICES.txt](packages/desktop/THIRD_PARTY_NOTICES.txt)         | 278 locked components |
+| DocBlocks site distribution            | [packages/site/public/THIRD_PARTY_NOTICES.txt](packages/site/public/THIRD_PARTY_NOTICES.txt) | 213 locked components |
+| DocBlocks VS Code extension (VSIX)     | [packages/vscode/THIRD_PARTY_NOTICES.txt](packages/vscode/THIRD_PARTY_NOTICES.txt)           | 205 locked components |
+| DocBlocks desktop distribution         | [packages/desktop/THIRD_PARTY_NOTICES.txt](packages/desktop/THIRD_PARTY_NOTICES.txt)         | 272 locked components |
 
 The public npm package notices are explicitly included by each package's `files` allowlist. The VSIX content check requires its notice. The site precaches its notice and component manifest. Electron Builder copies the desktop notice, Electron license, and Chromium notices into every desktop distribution, and the packaged-desktop smoke test verifies them.
 
@@ -26,7 +26,7 @@ The public npm package notices are explicitly included by each package's `files`
 
 ## Major runtime components
 
-- Squisq packages: @bendyline/squisq-calc@2.11.2, @bendyline/squisq-cli@2.9.31, @bendyline/squisq-editor-react@2.13.22, @bendyline/squisq-formats@2.8.17, @bendyline/squisq-graph@2.13.1, @bendyline/squisq-grid-react@2.11.44, @bendyline/squisq-react@2.12.27, @bendyline/squisq-video-react@2.5.28, @bendyline/squisq-video@2.4.21, @bendyline/squisq@2.13.15.
+- Squisq packages: @bendyline/squisq-calc@2.11.2, @bendyline/squisq-cli@2.9.32, @bendyline/squisq-editor-react@2.13.23, @bendyline/squisq-formats@2.8.18, @bendyline/squisq-graph@2.13.1, @bendyline/squisq-grid-react@2.11.45, @bendyline/squisq-react@2.12.28, @bendyline/squisq-video-react@2.5.29, @bendyline/squisq-video@2.4.22, @bendyline/squisq@2.13.16.
 - MCP SDK: @modelcontextprotocol/sdk@1.32.1.
 - Monaco Editor: monaco-editor@0.50.0.
 - Archive and PDF tooling: jszip@3.10.1, pdf-lib@1.17.1, pdfjs-dist@4.10.38, and @pdf-lib/upng@1.0.1.

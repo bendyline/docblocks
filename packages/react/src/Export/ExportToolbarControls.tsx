@@ -36,11 +36,12 @@ import type { DocBlocksHostSpeechAPI } from '@bendyline/docblocks/host';
 import type { ExportOptions } from './export-options.js';
 import {
   FORMAT_EXTENSIONS,
+  frontmatterTransformId,
   loadLastExportOptions,
   resolveExportDialogInitial,
   saveExportOptions,
 } from './export-options.js';
-import type { ExportBlobSaver } from './run-export.js';
+import type { ExportBlobSaver, ExportConverterOverrides } from './run-export.js';
 import { browserSaveMode, saveActionLabel } from './browser-save.js';
 import { buildExportFilename } from './export-filename.js';
 import { hostErrorDetail } from './host-error.js';
@@ -285,6 +286,8 @@ export function ExportToolbarControls({
   const [videoDoc, setVideoDoc] = useState<VideoExportModalProps['doc'] | null>(null);
   const [transformSummaries, setTransformSummaries] = useState<ExportSummaryOption[]>([]);
   const [exporting, setExporting] = useState(false);
+  // What a long export is doing, when it is more than writing the file.
+  const [exportStage, setExportStage] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [openAfterSave, setOpenAfterSave] = useState(loadOpenAfterExport);
   const [openError, setOpenError] = useState<string | null>(null);
@@ -334,9 +337,21 @@ export function ExportToolbarControls({
   const previewThemeId = previewSettings?.activeThemeId;
   const documentThemes = previewSettings?.customThemes;
 
+  // The slide transform the Slideshow preview applies, from the same frontmatter.
+  const docTransformStyle = useMemo(
+    () => frontmatterTransformId(markdownDoc?.frontmatter as Record<string, unknown> | undefined),
+    [markdownDoc],
+  );
+
   const dialogInitial = useMemo(
-    () => resolveExportDialogInitial(lastOptions, previewThemeId ?? docThemeId, defaultThemeId),
-    [lastOptions, previewThemeId, docThemeId, defaultThemeId],
+    () =>
+      resolveExportDialogInitial(
+        lastOptions,
+        previewThemeId ?? docThemeId,
+        defaultThemeId,
+        docTransformStyle,
+      ),
+    [lastOptions, previewThemeId, docThemeId, defaultThemeId, docTransformStyle],
   );
 
   // Close menu on outside click
@@ -477,7 +492,11 @@ export function ExportToolbarControls({
         const [modules, exportDoc] = await Promise.all([
           videoModules ?? loadVideoExportModules(),
           // The same projection the Video preview plays, so the MP4 matches it.
-          buildVideoExportDoc(markdownSource, { fileName: selectedFile, workspaceContainer }),
+          buildVideoExportDoc(markdownSource, {
+            fileName: selectedFile,
+            workspaceContainer,
+            mediaProvider,
+          }),
         ]);
         setVideoModules(modules);
         setVideoDoc(exportDoc);
@@ -493,7 +512,7 @@ export function ExportToolbarControls({
         setVideoLoading(false);
       }
     },
-    [closeMenu, markdownSource, selectedFile, videoModules, workspaceContainer],
+    [closeMenu, markdownSource, mediaProvider, selectedFile, videoModules, workspaceContainer],
   );
 
   const handleCloseVideoModal = useCallback(() => {
@@ -550,6 +569,28 @@ export function ExportToolbarControls({
     [destinationAdapter, openAfterSave],
   );
 
+  // A plain Web page cannot apply a clip's edits as it plays, so that export
+  // has the document's render manager bake each edited clip into a file first.
+  const converterOverrides = useMemo<ExportConverterOverrides | undefined>(() => {
+    if (!mediaEditRenders) return undefined;
+    return {
+      bakeMedia: async (markdown, { reference }) => {
+        const { bakeMarkdownMedia } = await import('@bendyline/squisq-editor-react');
+        try {
+          return await bakeMarkdownMedia(markdown, mediaEditRenders, {
+            reference,
+            onProgress: (fraction, clip) => {
+              if (clip.count === 0) return;
+              setExportStage(`Applying clip edits… ${Math.round(fraction * 100)}%`);
+            },
+          });
+        } finally {
+          setExportStage(null);
+        }
+      },
+    };
+  }, [mediaEditRenders]);
+
   const handleExport = useCallback(
     async (opts: ExportOptions, allowPdfReplacements = false) => {
       setExporting(true);
@@ -583,7 +624,7 @@ export function ExportToolbarControls({
                   savedTarget = await saveToDestination(blob, filename, exportTarget);
                 }
               : saveBlob,
-          undefined,
+          converterOverrides,
           { allowPdfReplacements },
         );
         // Only a completed export dismisses the dialog. Closing in a
@@ -616,6 +657,7 @@ export function ExportToolbarControls({
       saveToDestination,
       saveBlob,
       openSaved,
+      converterOverrides,
     ],
   );
 
@@ -654,7 +696,7 @@ export function ExportToolbarControls({
                 savedTarget = await saveToDestination(blob, filename, quickTarget);
               }
             : saveBlob,
-          undefined,
+          converterOverrides,
           { allowPdfReplacements },
         );
         setExportCompletion({
@@ -676,6 +718,7 @@ export function ExportToolbarControls({
     },
     [
       closeMenu,
+      converterOverrides,
       destinationAdapter,
       lastOptions,
       markdownSource,
@@ -740,7 +783,7 @@ export function ExportToolbarControls({
           onClick={handleOpenDialog}
           disabled={exporting}
           aria-label="Export document"
-          data-tooltip={exporting ? 'Exporting...' : 'Export document'}
+          data-tooltip={exporting ? (exportStage ?? 'Exporting...') : 'Export document'}
         >
           <ExportGlyph />
         </button>
@@ -918,6 +961,7 @@ export function ExportToolbarControls({
             initial={dialogInitial}
             documentThemes={documentThemes}
             exporting={exporting}
+            exportingLabel={exportStage}
             error={exportError}
             errorAction={
               pdfReplacements

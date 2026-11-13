@@ -12,7 +12,7 @@
  */
 
 import { extractPlainText, parseMarkdown } from '@bendyline/squisq/markdown';
-import { chatOnce, type ChatApi } from './chat-once.js';
+import { chatOnce, TRY_AGAIN, type ChatApi } from './chat-once.js';
 import { compileDiagram, type CompiledDiagram } from './diagram-compile.js';
 import { checkGrounding } from './diagram-grounding.js';
 import {
@@ -111,9 +111,11 @@ export async function realizeDiagram(options: RealizeOptions): Promise<DiagramOu
         request = buildRepairRequest(request, outcome.text, parsed.problem);
         continue;
       }
+      // `parsed.problem` is written for the model, in the words of the data
+      // format it was asked for. The person is told what happened instead.
       return {
         status: 'failed',
-        message: `The model's diagram could not be used. ${parsed.problem}`,
+        message: `The model's diagram could not be used. Its reply was incomplete, or not in the form a diagram needs. ${TRY_AGAIN}`,
       };
     }
 
@@ -127,7 +129,7 @@ export async function realizeDiagram(options: RealizeOptions): Promise<DiagramOu
         }
         return {
           status: 'failed',
-          message: `The diagram used facts that are not in the text. ${grounding.problems.join(' ')}`,
+          message: `The diagram used facts that are not in the text. ${grounding.findings.join(' ')}`,
         };
       }
     }

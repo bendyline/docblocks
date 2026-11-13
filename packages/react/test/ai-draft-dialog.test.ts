@@ -288,6 +288,22 @@ describe('AiDraftDialog', () => {
     expect(applied).to.deep.equal(['The hotel opened in 1910.']);
   });
 
+  // A check with nothing to check has `checked: 0`. The footer's condition
+  // ended in that count, so React drew a lone "0" above the buttons.
+  it('shows no status row when the draft holds nothing to check', async () => {
+    fake = fakeAi(() => ({ checked: 0, unsourced: [] }));
+    await render('compose', { text: '# Notes\n' });
+    await type(prompt(), 'Write a greeting.');
+    await click('Generate');
+    await finish('Hello there.');
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 450)));
+    expect(fake.checks, 'the draft was checked').to.have.length(1);
+    expect(document.querySelector('.db-ai-footer-status')).to.equal(null);
+    expect(document.querySelector('.db-ai-draft-footer')?.textContent).to.equal(
+      'CancelRegenerateInsert',
+    );
+  });
+
   it('searches for what was asked, and keeps cited sources as footnotes on insert', async () => {
     fake = fakeAi(() => ({ checked: 1, unsourced: [] }));
     const cited = {
@@ -706,6 +722,54 @@ describe('AiDraftDialog', () => {
     expect(document.querySelector('.db-ai-generation-status')?.textContent).not.to.contain(
       'tokens',
     );
+  });
+
+  // A provider that is still loading the model took 9.5 seconds to answer a
+  // cancel. Until it did, the dialog kept counting "Waiting for model…" with
+  // Stop still showing.
+  it('stops at once, before the provider answers, and ignores its late ending', async () => {
+    await render('compose', { text: '# Notes\n' });
+    await type(prompt(), 'Write a greeting.');
+    await click('Generate');
+    await act(async () =>
+      fake.requests[0].emit({
+        kind: 'progress',
+        progress: {
+          phase: 'loading_model',
+          percent: null,
+          outputTokens: null,
+          tokensPerSecond: null,
+        },
+      }),
+    );
+    await click('Stop');
+    // The provider has been told and has said nothing back.
+    expect(fake.requests[0].cancelled).to.equal(true);
+    expect(document.querySelector('[role="status"]')).to.equal(null);
+    expect(() => button('Stop')).to.throw('Missing button: Stop');
+    expect(button('Generate').disabled).to.equal(false);
+    expect(document.querySelector('.db-ai-draft-output')).to.equal(null);
+
+    await act(async () => fake.requests[0].emit(completion('Too late.', 'cancelled')));
+    expect(document.querySelector('.db-ai-draft-output')).to.equal(null);
+  });
+
+  it('keeps what had arrived when stopped part-way, whatever the provider sends afterwards', async () => {
+    await render('compose', { text: '# Notes\n' });
+    await type(prompt(), 'Write a greeting.');
+    await click('Generate');
+    await act(async () => fake.requests[0].emit({ kind: 'delta', text: 'Hello the' }));
+    await click('Stop');
+    expect(fake.requests[0].cancelled).to.equal(true);
+    expect(output().value).to.equal('Hello the');
+    expect(document.querySelector('.db-ai-note')?.textContent).to.equal(
+      'Generation stopped. The draft may be incomplete.',
+    );
+    expect(button('Insert').disabled).to.equal(false);
+
+    await act(async () => fake.requests[0].emit({ kind: 'delta', text: 're, late' }));
+    await act(async () => fake.requests[0].emit(completion('Hello there, late.', 'cancelled')));
+    expect(output().value).to.equal('Hello the');
   });
 
   it('regenerates without confirmation when edits have been reverted to the generated draft', async () => {

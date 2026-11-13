@@ -41,6 +41,15 @@ files:
   # check-electron-builder-config.ts fails if an export it resolves is excluded.
   - '!node_modules/@huggingface/transformers/{src,types}/**'
   - '!node_modules/@huggingface/transformers/dist/!(transformers.node.cjs|transformers.node.mjs)'
+  # Gezel's MLX provider runs a Python sidecar that UV provisions. Shipped
+  # builds run the store profile, which never builds that provider, so the
+  # sidecar's sources are never read. The provider's JavaScript stays: other
+  # providers import it.
+  - '!node_modules/@bendyline/gezel-inference/dist/providers/mlx/python/**'
+  # zod publishes its TypeScript sources and their tests (3.7 MB) for a custom
+  # export condition that Node and Electron never use.
+  - '!node_modules/zod/src/**'
+  - '!node_modules/**/node_modules/zod/src/**'
   - package.json
 
 # Legal materials that must remain directly readable beside app.asar.

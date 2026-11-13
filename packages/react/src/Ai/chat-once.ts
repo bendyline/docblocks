@@ -24,6 +24,13 @@ export type ChatOutcome =
   | { readonly kind: 'error'; readonly error: AiError };
 
 /**
+ * What a person can do about a reply that could not be used. These failures
+ * come mostly from small models, and the reason a reply was refused is written
+ * for the model that will be asked again, not for the person.
+ */
+export const TRY_AGAIN = 'Try again; a larger model may do better.';
+
+/**
  * Run one chat to completion; aborting `signal` cancels it. `onEvent` sees the
  * call's progress and deltas, for a status line; the reply comes from `done`.
  */
