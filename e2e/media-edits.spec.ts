@@ -76,6 +76,18 @@ test('cleans up a clip’s audio non-destructively and renders it in the backgro
   await expect(pill).toHaveAttribute('aria-expanded', 'true');
 
   const editButton = tray.getByRole('button', { name: 'Edit audio' });
+  // Squisq 2.13.23 remounts a media-only document's tray pill collapsed when
+  // a source change rewrites the clip (Apply, and its undo): the Write view's
+  // trailing empty line widens the minimal sync past the clip, so the clip
+  // gets a new tray id. Fixed upstream in wysiwygMinimalSync; until that
+  // ships, reopen the pill the way a person would. With the fix the pill stays
+  // open and this passes on the first try.
+  const expectEdited = async (value: 'true' | 'false') => {
+    await expect(async () => {
+      if ((await pill.getAttribute('aria-expanded')) !== 'true') await pill.click();
+      await expect(editButton).toHaveAttribute('data-edited', value, { timeout: 1_000 });
+    }).toPass({ timeout: 10_000 });
+  };
   await expect(editButton).toBeVisible({ timeout: 30_000 });
   // ProseMirror merges edits less than 500 ms apart into one undo step; a
   // person cannot open the panel and apply that fast, so keep the insert and
@@ -90,7 +102,7 @@ test('cleans up a clip’s audio non-destructively and renders it in the backgro
   await modal.getByRole('button', { name: 'Clean up voice' }).click();
   await modal.getByRole('button', { name: 'Apply' }).click();
   await expect(modal).toBeHidden();
-  await expect(editButton).toHaveAttribute('data-edited', 'true', { timeout: 10_000 });
+  await expectEdited('true');
 
   // The render runs in the background; reopening shows its status.
   await editButton.click();
@@ -103,5 +115,5 @@ test('cleans up a clip’s audio non-destructively and renders it in the backgro
   await content.focus();
   await expect(content).toBeFocused();
   await content.press('ControlOrMeta+z');
-  await expect(editButton).toHaveAttribute('data-edited', 'false', { timeout: 10_000 });
+  await expectEdited('false');
 });
