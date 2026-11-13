@@ -10,7 +10,6 @@ const requiredInferenceAssets = [
     'memory/embed-worker.js',
     'relevance/relevance-worker.js',
     'providers/llama-cpp/gguf-metadata-worker.js',
-    'providers/mlx/python/gezel_mlx_server.py',
     'catalog/chat-models/raw-index.json',
     'catalog/knowledge-catalogs/raw-index.json',
     'catalog/LICENSE',
@@ -20,6 +19,12 @@ const requiredInferenceAssets = [
     'kokoro-lexicon/lexicon-gb-en.txt.gz',
   ].map((file) => `dist/${file}`),
 ];
+/**
+ * The MLX provider's Python sidecar, which UV provisions. Shipped builds run
+ * the store profile, which never builds that provider, so electron-builder.yml
+ * leaves it out.
+ */
+const excludedInferenceDirectory = 'dist/providers/mlx/python/';
 async function verifyGezelRuntimeFiles(asarPath) {
   const asar = await import('@electron/asar');
   const files = asar
@@ -38,6 +43,12 @@ async function verifyGezelRuntimeFiles(asarPath) {
     if (!files.includes(root + relative))
       throw new Error(`Missing Gezel runtime asset in app.asar: ${relative}`);
   }
+  const sidecar = files.filter((filename) =>
+    filename.startsWith(root + excludedInferenceDirectory),
+  );
+  if (sidecar.length)
+    throw new Error(`Gezel MLX Python sidecar in app.asar: ${sidecar.slice(0, 5).join(', ')}`);
 }
 exports.requiredInferenceAssets = requiredInferenceAssets;
+exports.excludedInferenceDirectory = excludedInferenceDirectory;
 exports.verifyGezelRuntimeFiles = verifyGezelRuntimeFiles;

@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 const require = createRequire(import.meta.url);
 const asar = require('@electron/asar');
 const {
+  excludedInferenceDirectory,
   requiredInferenceAssets,
   verifyGezelRuntimeFiles,
 } = require('../scripts/gezel-runtime-files.cjs');
@@ -50,6 +51,13 @@ describe('Gezel inference packaging', () => {
       expect(error.message).to.contain('Full Gezel product dependency');
     });
   }
+  it('rejects an artifact that ships the MLX Python sidecar', async () => {
+    const error = await verifyGezelRuntimeFiles(
+      await fixtureAsar([`${inferencePath}/${excludedInferenceDirectory}gezel_mlx_server.py`]),
+    ).catch((cause: Error) => cause);
+    expect(error).to.be.instanceOf(Error);
+    expect(error.message).to.contain('Gezel MLX Python sidecar');
+  });
   it('rejects an artifact missing the knowledge worker', async () => {
     const error = await verifyGezelRuntimeFiles(
       await fixtureAsar([], 'dist/knowledge/search-worker.js'),

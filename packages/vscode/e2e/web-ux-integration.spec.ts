@@ -294,7 +294,8 @@ test.describe('VS Code web and UX integration', () => {
     await editor.getByRole('button', { name: /export document/i }).click();
     const dialog = editor.getByRole('dialog', { name: 'Export Document' });
     await dialog.getByRole('radio', { name: 'PowerPoint' }).click();
-    await expect(dialog.getByLabel('Transform')).toHaveValue('documentary');
+    // No transform by default: the deck exports as the Slideshow view shows it.
+    await expect(dialog.getByLabel('Transform')).toHaveValue('');
     await dialog.getByRole('button', { name: 'Choose export location' }).click();
 
     const saveDialog = page.locator('.quick-input-widget');
