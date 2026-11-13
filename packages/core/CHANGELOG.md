@@ -1,3 +1,9 @@
+## @bendyline/docblocks [2.8.0](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@2.7.16...@bendyline/docblocks@2.8.0) (2026-11-13)
+
+### Features
+
+* Clip editing, AI wrapping ([#52](https://github.com/bendyline/docblocks/issues/52)) ([157f1e9](https://github.com/bendyline/docblocks/commit/157f1e9727ca1275fdd33b3108ba4a48e9845c6e))
+
 ## @bendyline/docblocks [2.7.16](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@2.7.15...@bendyline/docblocks@2.7.16) (2026-11-12)
 
 ### Bug Fixes
