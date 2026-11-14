@@ -173,6 +173,7 @@ describe('Core exports', () => {
       'parseSupportMailtoUrl',
       'parseWorkspacePath',
       'providerModelDocbench',
+      'providerModelIsSystem',
       'providerModelRanking',
       'reconcileElectronWorkspaceDescriptors',
       'registerTransientWorkspace',

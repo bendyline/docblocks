@@ -3325,6 +3325,23 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   margin-top: 8px;
 }
 
+/* "Add recommended model (…)" leads; "Pick a model…" sits beside it, or below when the label is long. */
+.db-settings-ai-model-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.db-settings-ai-model-actions .db-settings-action {
+  max-width: 100%;
+  text-align: left;
+}
+
+.db-settings-ai-model-actions + .db-settings-hint {
+  margin-top: 8px;
+}
+
 .db-settings-ai-model-downloads {
   margin-top: 10px;
   padding: 12px;

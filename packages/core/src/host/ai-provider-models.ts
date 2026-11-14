@@ -70,6 +70,15 @@ export function providerModelDocbench(entry: ProviderModelRatings): AiModelDocbe
   );
 }
 
+/**
+ * Whether the operating system supplies this model (Apple Foundation Models)
+ * instead of weights the app downloads: Gezel reports that as a system
+ * `preparation`. An entry from a Gezel that predates the field reads false.
+ */
+export function providerModelIsSystem(entry: { readonly preparation?: unknown }): boolean {
+  return entry.preparation === 'system-download' || entry.preparation === 'system-settings';
+}
+
 /** Best match first: the recommendation, then by score. Unrated entries keep the provider's order. */
 export function sortModelDownloads<T extends Pick<AiModelDownloadInfo, 'recommended' | 'score'>>(
   models: readonly T[],

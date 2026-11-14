@@ -18,11 +18,11 @@ AI models, speech models, and voices are not part of this distribution. They are
 
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
-| @bendyline/gezel | 1.3.1 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-app-sdk | 1.2.1 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-catalog | 1.3.1 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-client | 1.3.1 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-inference | 1.1.1 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel | 1.3.3 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-app-sdk | 1.2.3 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-catalog | 1.3.3 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-client | 1.3.3 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-inference | 1.1.3 | MIT | https://github.com/bendyline/gezel |
 | @bendyline/gezel-knowledge | 1.2.11 | MIT | https://github.com/bendyline/gezel |
 | @bendyline/gezk | 1.0.7 | MIT | https://github.com/bendyline/gezel |
 | @bendyline/squisq | 2.13.16 | MIT | https://github.com/bendyline/squisq |
@@ -150,7 +150,7 @@ AI models, speech models, and voices are not part of this distribution. They are
 | hast-util-from-parse5 | 8.0.3 | MIT | https://github.com/syntax-tree/hast-util-from-parse5 |
 | hast-util-parse-selector | 4.0.0 | MIT | https://github.com/syntax-tree/hast-util-parse-selector |
 | hastscript | 9.0.1 | MIT | https://github.com/syntax-tree/hastscript |
-| hono | 4.13.14 | MIT | https://github.com/honojs/hono |
+| hono | 4.13.16 | MIT | https://github.com/honojs/hono |
 | html2canvas | 1.4.1 | MIT | git@github.com:niklasvh/html2canvas |
 | is-alphabetical | 2.0.1 | MIT | https://github.com/wooorm/is-alphabetical |
 | is-alphanumerical | 2.0.1 | MIT | https://github.com/wooorm/is-alphanumerical |
@@ -308,7 +308,7 @@ The following locked packages declare a license identifier but publish no packag
 | onnxruntime-node | 1.30.0 | MIT | https://www.npmjs.com/package/onnxruntime-node |
 
 ==============================================================================
-Components: @bendyline/gezel-app-sdk@1.2.1, @bendyline/gezel-catalog@1.3.1, @bendyline/gezel-client@1.3.1, @bendyline/gezel-inference@1.1.1, @bendyline/gezel-knowledge@1.2.11, @bendyline/gezel@1.3.1, @bendyline/gezk@1.0.7
+Components: @bendyline/gezel-app-sdk@1.2.3, @bendyline/gezel-catalog@1.3.3, @bendyline/gezel-client@1.3.3, @bendyline/gezel-inference@1.1.3, @bendyline/gezel-knowledge@1.2.11, @bendyline/gezel@1.3.3, @bendyline/gezk@1.0.7
 Source files: node_modules/@bendyline/gezel-app-sdk/LICENSE, node_modules/@bendyline/gezel-catalog/LICENSE, node_modules/@bendyline/gezel-client/LICENSE, node_modules/@bendyline/gezel-inference/LICENSE, node_modules/@bendyline/gezel-knowledge/LICENSE, node_modules/@bendyline/gezel/LICENSE, node_modules/@bendyline/gezk/LICENSE
 ==============================================================================
 MIT License
@@ -13405,7 +13405,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: hono@4.13.14
+Components: hono@4.13.16
 Source files: node_modules/hono/LICENSE
 ==============================================================================
 MIT License

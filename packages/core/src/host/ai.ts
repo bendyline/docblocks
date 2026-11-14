@@ -104,6 +104,13 @@ export interface AiModelInfo {
   readonly unavailableReason?: string;
   /** How well this model does DocBlocks' own work, when the provider has measured it. */
   readonly docbench?: AiModelDocbench;
+  /**
+   * True when the operating system supplies this model (Apple Foundation
+   * Models) rather than weights DocBlocks downloads. Settings still steers a
+   * person whose only ready model is a system one toward the recommended
+   * download, which does document work better. Omitted by older hosts.
+   */
+  readonly system?: boolean;
 }
 
 /**

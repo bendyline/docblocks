@@ -43,11 +43,25 @@ if (phase === 'inspect') {
   );
   assert(apple, 'Apple readiness must remain discoverable');
   assert(available.value.length, 'First-run catalog must offer a model download');
+  // With nothing downloaded (Apple's model aside), Settings leads with one
+  // action for Gezel's docbench pick; the full catalog sits behind "Pick a model…".
+  const recommended = available.value.find((model) => model.recommended);
+  assert(recommended?.docbench, 'First-run catalog must recommend a docbench-measured model');
+  const action = await until(() =>
+    [...document.querySelectorAll('[role=dialog] button')].find((node) =>
+      node.textContent.startsWith('Add recommended model ('),
+    ),
+  );
+  assert(
+    action.textContent.startsWith(`Add recommended model (${recommended.label}, `),
+    `Settings must offer the recommended model: ${action.textContent}`,
+  );
   toggle.closest('.db-settings-section, fieldset')?.scrollIntoView({ block: 'start' });
   await pause();
   return {
     apple,
     downloads: available.value.map((model) => model.label),
+    recommendedAction: action.textContent,
     settings: document.querySelector('[role=dialog]')?.textContent,
   };
 }

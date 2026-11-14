@@ -125,13 +125,13 @@ Apache-2.0
 androidx.webkit:webkit:1.14.0
 Apache-2.0
 
-com.bendyline.gezel:gezel-llama:0.1.62
+com.bendyline.gezel:gezel-llama:0.1.63
 MIT (Gezel, llama.cpp and ggml); Android NDK notices below
 
-com.bendyline.gezel:gezel-runtime:0.1.62
+com.bendyline.gezel:gezel-runtime:0.1.63
 MIT (Gezel, llama.cpp and ggml); Android NDK notices below
 
-com.bendyline.gezel:gezel-speech:0.1.62
+com.bendyline.gezel:gezel-speech:0.1.63
 MIT (Gezel, whisper.cpp and ggml; ONNX Runtime); ONNX Runtime third-party notices below
 
 com.google.guava:listenablefuture:1.0

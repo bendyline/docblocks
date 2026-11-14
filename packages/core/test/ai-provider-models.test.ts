@@ -1,6 +1,7 @@
 import { expect } from 'chai';
 import {
   providerModelDocbench,
+  providerModelIsSystem,
   providerModelRanking,
   sortModelDownloads,
 } from '../src/host/ai-provider-models.js';
@@ -29,6 +30,14 @@ describe('reading Gezel model ratings', () => {
     expect(providerModelDocbench({ docbench: { ...docbench, score: 140 } })).to.equal(undefined);
     expect(providerModelDocbench({ docbench: 'great' })).to.equal(undefined);
     expect(providerModelDocbench({})).to.equal(undefined);
+  });
+
+  it('reads a system preparation as an operating-system model', () => {
+    expect(providerModelIsSystem({ preparation: 'system-settings' })).to.equal(true);
+    expect(providerModelIsSystem({ preparation: 'system-download' })).to.equal(true);
+    for (const preparation of ['app-download', 'none', 'unknown', undefined, 4]) {
+      expect(providerModelIsSystem({ preparation })).to.equal(false);
+    }
   });
 
   it('orders downloads best match first and leaves unrated ones in provider order', () => {

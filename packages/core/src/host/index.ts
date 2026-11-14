@@ -214,6 +214,7 @@ export {
 } from './ai-transport.js';
 export {
   providerModelDocbench,
+  providerModelIsSystem,
   providerModelRanking,
   sortModelDownloads,
   type ProviderModelRanking,

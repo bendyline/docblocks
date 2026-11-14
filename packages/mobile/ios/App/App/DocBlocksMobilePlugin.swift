@@ -199,6 +199,7 @@ public class DocBlocksMobilePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicke
 
 class DocBlocksViewController: CAPBridgeViewController {
     private var boundary: PackagedEditorBoundary?
+    private var restingScroll: NSKeyValueObservation?
     override func capacitorDidLoad() {
         guard let implementation = bridge as? CapacitorBridge else { return }
         let original = implementation.webViewDelegationHandler
@@ -213,7 +214,24 @@ class DocBlocksViewController: CAPBridgeViewController {
             scrollView.topEdgeEffect.isHidden = true
             scrollView.bottomEdgeEffect.isHidden = true
         }
+        if let scrollView = webView?.scrollView { restingScroll = Self.holdAtRest(scrollView) }
         bridge?.registerPluginInstance(DocBlocksMobilePlugin())
+    }
+
+    /// The shell is one screen-sized page whose panes scroll themselves, so the web
+    /// view's own scroll view has nothing to reveal. While the keyboard is up, though,
+    /// WebKit lengthens it by the keyboard's height, and a drag that runs past the end
+    /// of the editor, or WebKit revealing the caret, slides the whole app up and its
+    /// top bars off the screen. Hold it at rest, except while the page is pinch-zoomed,
+    /// when panning is the only way to reach the rest of it. The shell keeps the caret
+    /// above the keyboard itself (useKeyboardInset).
+    private static func holdAtRest(_ scrollView: UIScrollView) -> NSKeyValueObservation {
+        scrollView.observe(\.contentOffset) { scrollView, _ in
+            guard scrollView.zoomScale <= scrollView.minimumZoomScale * 1.001 else { return }
+            let inset = scrollView.adjustedContentInset
+            let rest = CGPoint(x: -inset.left, y: -inset.top)
+            if scrollView.contentOffset != rest { scrollView.contentOffset = rest }
+        }
     }
 }
 

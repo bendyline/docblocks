@@ -224,7 +224,7 @@ export function parseAiModelInfo(value: unknown): AiModelInfo | null {
     !hasKeysWithin(
       value,
       ['id', 'label', 'local', 'contextWindow', 'isDefault'],
-      ['availability', 'unavailableReason', 'docbench'],
+      ['availability', 'unavailableReason', 'docbench', 'system'],
     )
   )
     return null;
@@ -234,6 +234,7 @@ export function parseAiModelInfo(value: unknown): AiModelInfo | null {
   if (!isBoundedString(value.label, HOST_WIRE_LIMITS.labelCharacters, 1)) return null;
   if (typeof value.local !== 'boolean') return null;
   if (typeof value.isDefault !== 'boolean') return null;
+  if (value.system !== undefined && typeof value.system !== 'boolean') return null;
   if (
     value.availability !== undefined &&
     !['available', 'unavailable', 'download-required', 'downloading'].includes(
@@ -273,6 +274,7 @@ export function parseAiModelInfo(value: unknown): AiModelInfo | null {
           unavailableReason: value.unavailableReason as string,
         }),
     ...docbench,
+    ...(value.system === undefined ? {} : { system: value.system }),
   };
 }
 
