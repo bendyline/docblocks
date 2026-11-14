@@ -307,3 +307,112 @@ describe('FileExplorer new item failures', () => {
     expect(rows.map((row) => row.dataset.path)).to.include('corrected.md');
   });
 });
+
+/**
+ * In the shell, New File hands creation to the host (`onCreateDocument`), which
+ * opens the document with the caret placed and keeps what is typed while it
+ * opens. The form used to write the file and only select it: nothing had
+ * focus, and the first words typed into the new document were lost.
+ */
+describe('FileExplorer new file handed to the host', () => {
+  let container: HTMLElement;
+  let root: ReturnType<typeof createRoot>;
+  let provider: MemoryFileSystemProvider;
+  let calls: Array<{ path: string; format: string; activeTag: string | undefined }>;
+  let selections: string[];
+  let formatsUsed: string[];
+  let treeChanges: number;
+  let reject: Error | null;
+
+  beforeEach(async () => {
+    calls = [];
+    selections = [];
+    formatsUsed = [];
+    treeChanges = 0;
+    reject = null;
+    provider = new MemoryFileSystemProvider('mem', 'Memory');
+    container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root.render(
+        createElement(FileExplorer, {
+          provider,
+          onSelect: (path) => selections.push(path),
+          onNewFileFormatUsed: (format) => formatsUsed.push(format),
+          onTreeChange: () => {
+            treeChanges += 1;
+          },
+          onCreateDocument: async (path, format) => {
+            calls.push({ path, format, activeTag: document.activeElement?.tagName });
+            if (reject) throw reject;
+          },
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    await provider.v2.dispose();
+  });
+
+  async function submit(name: string, format = 'markdown'): Promise<HTMLInputElement> {
+    const newFile = container.querySelector<HTMLButtonElement>('[aria-label="New File"]');
+    await act(async () => newFile!.click());
+    const input = container.querySelector<HTMLInputElement>('.db-new-item-input')!;
+    await act(async () => typeInto(input, name));
+    const select = container.querySelector<HTMLSelectElement>('.db-new-item-format')!;
+    await act(async () => {
+      select.value = format;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    // Enter in the name box: focus is still in the field when the form submits.
+    input.focus();
+    const form = container.querySelector<HTMLFormElement>('.db-new-item-row');
+    await act(async () => {
+      form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    return input;
+  }
+
+  it('hands the named file and its type to the host instead of writing it', async () => {
+    await submit('notes', 'docx');
+
+    expect(calls.map(({ path, format }) => ({ path, format }))).to.deep.equal([
+      { path: 'notes.docx', format: 'docx' },
+    ]);
+    expect(await provider.exists('notes.docx'), 'the host writes the file').to.equal(false);
+    expect(container.querySelector('.db-new-item-input'), 'the form closes').to.equal(null);
+  });
+
+  it('leaves selecting, recording the type and refreshing to the host', async () => {
+    await submit('notes');
+
+    expect(selections).to.deep.equal([]);
+    expect(formatsUsed).to.deep.equal([]);
+    expect(treeChanges).to.equal(0);
+  });
+
+  it('takes focus out of the name box before the document opens', async () => {
+    await submit('notes');
+
+    // The host holds keys for the new document only while no form field has
+    // focus; left in the name box, the next keys would have gone there.
+    expect(calls[0]?.activeTag).not.to.equal('INPUT');
+  });
+
+  it('shows why the host could not create the file and keeps the name', async () => {
+    reject = new Error('A document with that name already exists.');
+    const input = await submit('notes');
+
+    expect(container.querySelector('[role="alert"]')?.textContent).to.equal(
+      'A document with that name already exists.',
+    );
+    expect(input.isConnected).to.equal(true);
+    expect(input.value).to.equal('notes');
+  });
+});

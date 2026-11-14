@@ -28,6 +28,16 @@ const imageModelDir = process.env.DOCBLOCKS_E2E_IMAGE_MODEL_DIR?.trim();
 const chatModelDir = process.env.DOCBLOCKS_E2E_CHAT_MODEL_DIR?.trim();
 /** A cold render loads the weights first; a laptop GPU then needs a minute. */
 const RENDER_TIMEOUT_MS = 600_000;
+/** A redraw runs on weights that are already loaded. */
+const REDRAW_TIMEOUT_MS = 180_000;
+/**
+ * Draws allowed for one design graphic. The grounding check refuses a brief
+ * that states something the passage does not ("12%" for "12 minutes", an
+ * invented "Q1"), and a small model writes such briefs often; the card then
+ * says why and offers Redraw. That is the product working, so a model whose
+ * every brief is refused skips this test, as one that suggests nothing does.
+ */
+const MAX_DESIGN_DRAWS = 6;
 
 /** Link a model directory into the private home, as if Settings had installed it. */
 function seed(gezelHome: string, engine: 'sd-cpp' | 'llama-cpp', source: string): void {
@@ -217,7 +227,7 @@ test.describe('real image generation', () => {
     gezelHome,
   }) => {
     test.skip(!chatModelDir, 'Set DOCBLOCKS_E2E_CHAT_MODEL_DIR for the brief.');
-    test.setTimeout(RENDER_TIMEOUT_MS + 600_000);
+    test.setTimeout(RENDER_TIMEOUT_MS + 600_000 + (MAX_DESIGN_DRAWS - 1) * REDRAW_TIMEOUT_MS);
     seed(gezelHome, 'sd-cpp', imageModelDir!);
     seed(gezelHome, 'llama-cpp', chatModelDir!);
     const imageId = `sd-cpp:${path.basename(imageModelDir!)}`;
@@ -280,10 +290,44 @@ test.describe('real image generation', () => {
     }
     await ideas.first().getByRole('combobox', { name: 'Kind' }).selectOption('design');
     await panel.getByRole('button', { name: 'Draw 1 picture' }).click();
-    const card = panel.locator('.db-ai-illustrate-card').filter({
-      has: window.getByRole('button', { name: 'Insert', exact: true }),
-    });
-    await expect(card).toHaveCount(1, { timeout: RENDER_TIMEOUT_MS });
+    const card = panel.locator('.db-ai-illustrate-card');
+    await expect(card).toHaveCount(1);
+    const insert = card.getByRole('button', { name: 'Insert', exact: true });
+    const redraw = card.getByRole('button', { name: 'Redraw', exact: true });
+    const refusal = card.locator('.db-ai-error[role="alert"]');
+    // Wait for a picture or the card's reason for not drawing one, and redraw
+    // on a refusal. The test used to wait for Insert alone, so a refused brief
+    // sat out the whole render timeout and then failed without saying why.
+    const refusals: string[] = [];
+    for (let draw = 1; ; draw += 1) {
+      await expect(insert.or(refusal).first()).toBeVisible({
+        timeout: draw === 1 ? RENDER_TIMEOUT_MS : REDRAW_TIMEOUT_MS,
+      });
+      if (await insert.isVisible()) break;
+      refusals.push((await refusal.first().innerText()).trim());
+      if (draw >= MAX_DESIGN_DRAWS) {
+        await test.info().attach('Refused design briefs', {
+          body: refusals.join('\n'),
+          contentType: 'text/plain',
+        });
+        test.skip(
+          true,
+          `The model's ${MAX_DESIGN_DRAWS} design briefs were all refused, so nothing was rendered. Last: ${refusals[refusals.length - 1]}`,
+        );
+      }
+      await redraw.click();
+      // Drawing hides the card's actions. A redraw refused again within a
+      // poll would skip that state, and the next turn of the loop reads it.
+      await expect(redraw)
+        .toBeHidden({ timeout: 5_000 })
+        .catch(() => undefined);
+    }
+    if (refusals.length > 0) {
+      await test.info().attach('Refused design briefs', {
+        body: refusals.join('\n'),
+        contentType: 'text/plain',
+      });
+    }
     await expect(card.locator('.db-ai-design-preview img')).toBeVisible();
     await test.info().attach('Design graphic', {
       body: await panel.screenshot({ path: test.info().outputPath('design-graphic.png') }),
