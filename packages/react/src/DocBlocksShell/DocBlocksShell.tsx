@@ -4000,10 +4000,23 @@ export function DocBlocksShell({
     if (provider) setNewDocumentDialogOpen(true);
   }, [provider]);
 
-  const createNewDocument = useCallback(
-    async ({ filename, format }: NewDocumentChoice) => {
+  /**
+   * Create a document at `requestedPath` and open it in Write view with the
+   * caret ready, keeping what is typed while it opens (NewDocumentCaret).
+   * Both ways of creating a document come here: the New document dialog and
+   * the file list's New File form, which used to write the file and merely
+   * select it, so nothing had focus and the first words typed were lost.
+   * A Markdown document starts as its name as a `# Title`, or empty when
+   * `blank` (New File makes a plain file). Throws when the document cannot be
+   * created, so each entry point reports that its own way.
+   */
+  const createAndOpenDocument = useCallback(
+    async (
+      path: string,
+      format: NewFileFormat,
+      { blank = false }: { blank?: boolean } = {},
+    ): Promise<void> => {
       if (!provider) return;
-      const path = '/' + filename;
       const requestId = ++navigationRequestRef.current;
       const createdRef: { current: EditableShellDocument | null } = { current: null };
       // The dialog has closed; the editor will not have focus for a while.
@@ -4014,7 +4027,7 @@ export function DocBlocksShell({
         const transitioned = await documentSession.transitionWithLoad(async () => {
           if (requestId !== navigationRequestRef.current) return null;
           if (format === 'markdown') {
-            const content = '# ' + filename.replace(/\.[^.]+$/, '') + '\n';
+            const content = blank ? '' : '# ' + basenameOf(path).replace(/\.[^.]+$/, '') + '\n';
             const providerV2 = getFileSystemProviderV2(provider);
             if (providerV2) {
               try {
@@ -4069,11 +4082,7 @@ export function DocBlocksShell({
         }
       } catch (error: unknown) {
         cancelTypedWhileOpening();
-        showToast(
-          'error',
-          error instanceof Error ? error.message : 'Could not create the document.',
-        );
-        return;
+        throw error;
       }
       const created = createdRef.current;
       if (!created) {
@@ -4084,7 +4093,9 @@ export function DocBlocksShell({
       rememberNewFileFormat(format);
       adoptSelectedDocument(created);
       setNewDocumentCaretPath(created.displayPath);
-      setMobileShowEditor(true);
+      // As selecting a document does: only the single-pane layout swaps the
+      // file list for the editor.
+      if (singlePane) setMobileShowEditor(true);
       setInitialView('wysiwyg');
       setInitialSharedMode(null);
       setExplorerKey((k) => k + 1);
@@ -4108,9 +4119,29 @@ export function DocBlocksShell({
       documentSession,
       notifyWorkspaceChanged,
       rememberNewFileFormat,
-      showToast,
       cancelTypedWhileOpening,
+      singlePane,
     ],
+  );
+
+  const createNewDocument = useCallback(
+    async ({ filename, format }: NewDocumentChoice) => {
+      try {
+        await createAndOpenDocument('/' + filename, format);
+      } catch (error: unknown) {
+        showToast(
+          'error',
+          error instanceof Error ? error.message : 'Could not create the document.',
+        );
+      }
+    },
+    [createAndOpenDocument, showToast],
+  );
+
+  /** The file list's New File form: a plain file, opened ready to type into. */
+  const createDocumentFromExplorer = useCallback(
+    (path: string, format: NewFileFormat) => createAndOpenDocument(path, format, { blank: true }),
+    [createAndOpenDocument],
   );
 
   const handleNewFolder = useCallback(async () => {
@@ -6119,6 +6150,7 @@ export function DocBlocksShell({
               outsideInRender={outsideInRenderRef.current}
               defaultNewFileFormat={defaultNewFileFormat}
               onNewFileFormatUsed={rememberNewFileFormat}
+              onCreateDocument={createDocumentFromExplorer}
               metadataRefreshKey={`${documentSnapshot.targetKey ?? ''}:${documentSnapshot.persistedRevision}`}
               activeWorkspaceId={activeWorkspaceId}
               // The descriptor follows renames; the provider's label covers the

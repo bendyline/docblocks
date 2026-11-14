@@ -1,5 +1,6 @@
 import {
   providerModelDocbench,
+  providerModelIsSystem,
   providerModelRanking,
   sortModelDownloads,
   type AiModelDownloadInfo,
@@ -41,6 +42,7 @@ export function modelChoices(
       availability: model.availability,
       ...(model.unavailable_reason ? { unavailableReason: model.unavailable_reason } : {}),
       ...docbenchOf(model),
+      ...(providerModelIsSystem(model) ? { system: true } : {}),
     }));
 }
 

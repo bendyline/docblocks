@@ -66,6 +66,10 @@ export function NewDocumentCaret({ onPlaced, takeTypedText }: NewDocumentCaretPr
           })
           .focus('end')
           .run();
+        // Tiptap's focus command moves DOM focus a frame later. Take it now:
+        // taking the typed text stops holding keys, and a key pressed in that
+        // frame landed on the page and was lost ("Fat first words").
+        tiptapEditor.view.focus();
         // Whatever was typed before the editor could take it.
         typeIntoDocument(tiptapEditor, takeTypedText?.() ?? '');
       } else {

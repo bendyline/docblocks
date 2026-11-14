@@ -445,6 +445,13 @@ describe('parseAiModelInfoList', () => {
       expect(parseAiModelInfoList([{ ...model, ...patch }])).to.equal(null);
   });
 
+  it('carries whether the operating system supplies a model', () => {
+    for (const system of [true, false]) {
+      expect(parseAiModelInfoList([{ ...model, system }])).to.deep.equal([{ ...model, system }]);
+    }
+    expect(parseAiModelInfoList([{ ...model, system: 'yes' }])).to.equal(null);
+  });
+
   it('rejects a list past the cap and a non-array', () => {
     const many = Array.from({ length: AI_WIRE_LIMITS.modelEntries + 1 }, () => model);
     expect(parseAiModelInfoList(many)).to.equal(null);

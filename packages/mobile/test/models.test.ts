@@ -85,4 +85,26 @@ describe('mobile model choices', () => {
     );
     assert.equal(installed?.docbench?.score, 80.7);
   });
+
+  it('marks the operating system’s model, never a downloaded one', () => {
+    const choices = modelChoices(
+      [
+        download('apple-foundation-models:apple-foundation-models', {
+          owned_by: 'apple-foundation-models',
+          availability: 'available',
+          preparation: 'system-settings',
+          download_bytes: undefined,
+        }),
+        download('llama-cpp:writer', { availability: 'available' }),
+      ],
+      null,
+    );
+    assert.deepEqual(
+      choices.map((choice) => [choice.id, choice.system]),
+      [
+        ['apple-foundation-models:apple-foundation-models', true],
+        ['llama-cpp:writer', undefined],
+      ],
+    );
+  });
 });

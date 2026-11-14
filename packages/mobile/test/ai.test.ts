@@ -204,6 +204,9 @@ describe('mobile AI through the Gezel App SDK', () => {
         assert.equal(models.value.length, 2);
         assert.equal(models.value.find((m) => m.id === modelId)?.label, label);
         assert.equal(models.value.find((m) => m.id === modelId)?.isDefault, true);
+        // Settings tells the OS model apart from downloaded weights by this flag.
+        assert.equal(models.value.find((m) => m.id === modelId)?.system, true);
+        assert.equal(models.value.find((m) => m.id !== modelId)?.system, undefined);
       }
       const result = await f.ai.chat({ ...request, maxTokens: 2048 }, () => {}).done;
       assert.ok(result.ok, JSON.stringify(result));

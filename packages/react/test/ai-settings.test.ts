@@ -850,9 +850,9 @@ describe('AiSettingsControls', () => {
         fake.api.availableModels = async () => ({ ok: true, value: [] });
         view = await render(fake.api);
         expect(view.container.querySelector('progress')?.value).to.equal(61);
-        expect(
-          view.container.querySelector(`option[value="${downloadable.id}"]`)?.textContent,
-        ).to.contain(downloadable.label);
+        // A fresh mount shows the running download on its own, not the picker.
+        expect(view.container.textContent).to.contain('Downloading weights (61%)');
+        expect(view.container.querySelectorAll('select')).to.have.length(1);
         expect(view.container.textContent).not.to.contain('No downloadable models');
         expect(starts).to.equal(1);
         expect(buttonLabels(view.container)).to.include('Cancel download');
@@ -921,12 +921,7 @@ describe('AiSettingsControls', () => {
 
     const { container, cleanup } = await render(fake.api);
     try {
-      await act(async () => {
-        Array.from(container.querySelectorAll('button'))
-          .find((button) => button.textContent === 'Add model…')
-          ?.click();
-      });
-      await flush();
+      await clickButton(container, 'Pick a model…');
       const select = container.querySelectorAll<HTMLSelectElement>('select')[1];
       expect(Array.from(select?.options ?? []).map((option) => option.textContent)).to.deep.equal([
         'Qwen — 15 GB · Recommended',
@@ -1081,5 +1076,195 @@ describe('AiSettingsControls', () => {
     } finally {
       await cleanup();
     }
+  });
+
+  describe('steering a person without a model of their own to the recommended download', () => {
+    const recommended: AiModelDownloadInfo = {
+      id: 'llama-cpp:gemma',
+      label: 'Gemma 3 4B',
+      contextWindow: 32_768,
+      downloadBytes: Math.round(2.5 * 1024 ** 3),
+      state: 'download-required',
+      fit: { tier: 'fits', label: 'fits in memory', detail: 'Runs comfortably.' },
+      score: 100,
+      recommended: true,
+      docbench: { score: 71.6, band: 2, version: '0.2.1', families: { review: 64 } },
+    };
+    const other: AiModelDownloadInfo = {
+      id: 'llama-cpp:small',
+      label: 'Small',
+      contextWindow: 8192,
+      downloadBytes: 900 * 1024 ** 2,
+      state: 'download-required',
+      fit: null,
+      score: 60,
+      recommended: false,
+    };
+    const apple: AiModelInfo = {
+      id: 'apple-foundation-models:apple-foundation-models',
+      label: 'Apple Foundation Models',
+      local: true,
+      contextWindow: 4096,
+      isDefault: true,
+      availability: 'available',
+      system: true,
+    };
+    const gemma: AiModelInfo = {
+      id: recommended.id,
+      label: recommended.label,
+      local: true,
+      contextWindow: recommended.contextWindow,
+      isDefault: false,
+    };
+    const CTA = 'Add recommended model (Gemma 3 4B, 2.5 GB, docbench 72)';
+
+    function steering(
+      installed: readonly AiModelInfo[],
+      catalog: AiResult<readonly AiModelDownloadInfo[]> = { ok: true, value: [recommended, other] },
+    ) {
+      const fake = fakeAi(
+        {
+          ...READY,
+          model: installed.find((model) => model.isDefault) ?? null,
+          provider: { ...READY.provider, mode: 'hosted' },
+        },
+        OPTED_IN,
+        false,
+      );
+      const state = {
+        installed,
+        catalogReads: 0,
+        installs: [] as string[],
+        progress: (_progress: AiProgress): void => undefined,
+        done: deferred<AiResult<AiModelInfo>>(),
+      };
+      fake.api.models = async () => ({ ok: true, value: state.installed });
+      fake.api.availableModels = async () => {
+        state.catalogReads++;
+        return catalog;
+      };
+      fake.api.installModel = (id, onProgress) => {
+        state.installs.push(id);
+        state.progress = onProgress ?? (() => undefined);
+        return { done: state.done.promise, cancel: () => undefined };
+      };
+      return { fake, state };
+    }
+
+    for (const [situation, installed] of [
+      ['nothing is downloaded', []],
+      ['only Apple Foundation Models is ready', [apple]],
+    ] as const) {
+      it(`downloads the recommended model in one step when ${situation}`, async () => {
+        const { fake, state } = steering(installed);
+        const { container, cleanup } = await render(fake.api);
+        try {
+          expect(buttonLabels(container)).to.deep.equal([CTA, 'Pick a model…']);
+          expect(container.textContent).to.contain(
+            'The best docbench score for document work among the models that fit this device. Downloads continue when Settings is closed.',
+          );
+          // The catalog picker stays closed until asked for.
+          expect(container.querySelectorAll('select')).to.have.length(1);
+
+          await clickButton(container, CTA);
+          expect(state.installs).to.deep.equal([recommended.id]);
+          expect(buttonLabels(container)).not.to.include(CTA);
+          expect(document.activeElement?.textContent).to.equal('Cancel download');
+          await act(async () =>
+            state.progress({
+              phase: 'downloading',
+              message: 'Downloading Gemma 3 4B…',
+              percent: 30,
+            }),
+          );
+          expect(container.querySelector('progress')?.value).to.equal(30);
+          expect(container.textContent).to.contain('Downloading Gemma 3 4B… (30%)');
+          expect(container.textContent).to.contain('Downloads continue when Settings is closed.');
+
+          state.installed = [...installed, gemma];
+          await act(async () => state.done.resolve({ ok: true, value: gemma }));
+          await flush();
+          expect(fake.calls).to.include(`set {"model":"${gemma.id}"}`);
+          expect(container.querySelector('progress')).to.equal(null);
+          expect(container.querySelector('select')?.value).to.equal(gemma.id);
+          // With a model of their own, the person browses the catalog as before.
+          expect(buttonLabels(container)).to.deep.equal(['Add model…']);
+        } finally {
+          await cleanup();
+        }
+      });
+    }
+
+    it('keeps the full catalog one step away under "Pick a model…"', async () => {
+      const { fake } = steering([]);
+      const { container, cleanup } = await render(fake.api);
+      try {
+        await clickButton(container, 'Pick a model…');
+        expect(buttonLabels(container)).to.deep.equal(['Hide model downloads', 'Download model']);
+        const select = container.querySelectorAll<HTMLSelectElement>('select')[1];
+        expect(Array.from(select?.options ?? []).map((option) => option.value)).to.deep.equal([
+          recommended.id,
+          other.id,
+        ]);
+        await clickButton(container, 'Hide model downloads');
+        expect(buttonLabels(container)).to.deep.equal([CTA, 'Pick a model…']);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('names an unmeasured recommendation without a size or score it does not have', async () => {
+      const plain: AiModelDownloadInfo = { ...other, downloadBytes: null, recommended: true };
+      const { fake } = steering([], { ok: true, value: [plain] });
+      const { container, cleanup } = await render(fake.api);
+      try {
+        expect(buttonLabels(container)).to.deep.equal([
+          'Add recommended model (Small)',
+          'Pick a model…',
+        ]);
+        expect(container.textContent).to.contain(
+          'Recommended for this device. Downloads continue when Settings is closed.',
+        );
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('offers the catalog as before when the provider recommends nothing', async () => {
+      const { fake } = steering([], { ok: true, value: [other] });
+      const { container, cleanup } = await render(fake.api);
+      try {
+        expect(buttonLabels(container)).to.deep.equal(['Add model…']);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('does not read the catalog for a person who already has a downloaded model', async () => {
+      const { fake, state } = steering([{ ...gemma, isDefault: true }]);
+      const { container, cleanup } = await render(fake.api);
+      try {
+        expect(buttonLabels(container)).to.deep.equal(['Add model…']);
+        expect(state.catalogReads).to.equal(0);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('keeps a failed recommendation lookup quiet until the person opens the catalog', async () => {
+      const { fake } = steering([], {
+        ok: false,
+        error: { code: 'provider-unavailable', message: 'Catalog offline' },
+      });
+      const { container, cleanup } = await render(fake.api);
+      try {
+        expect(container.querySelector('[role="alert"]')).to.equal(null);
+        expect(buttonLabels(container)).to.deep.equal(['Add model…']);
+        await clickButton(container, 'Add model…');
+        expect(container.querySelector('[role="alert"]')?.textContent).to.equal('Catalog offline');
+      } finally {
+        await cleanup();
+      }
+    });
   });
 });

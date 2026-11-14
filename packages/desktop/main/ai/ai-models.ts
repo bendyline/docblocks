@@ -13,6 +13,7 @@ import {
   HOST_WIRE_LIMITS,
   isBoundedString,
   providerModelDocbench,
+  providerModelIsSystem,
   providerModelRanking,
   sortModelDownloads,
 } from '@bendyline/docblocks/host';
@@ -34,6 +35,8 @@ export interface ProviderModelEntry {
   readonly availability?: 'available' | 'unavailable' | 'download-required' | 'downloading';
   readonly unavailable_reason?: string;
   readonly locality?: 'on-device' | 'network' | 'unknown';
+  /** How the model becomes ready; a system value marks an OS model such as Apple's. */
+  readonly preparation?: string;
   readonly download_bytes?: number;
   /**
    * Gezel's rating of a downloadable model against this machine. Unknown
@@ -152,6 +155,7 @@ export function toAiModelList(entries: readonly ProviderModelEntry[]): AiModelIn
       contextWindow: contextWindowOf(entry),
       isDefault: index === defaultIndex,
       ...docbenchOf(entry),
+      ...(providerModelIsSystem(entry) ? { system: true } : {}),
       ...(entry.availability === 'unavailable'
         ? {
             availability: 'unavailable' as const,

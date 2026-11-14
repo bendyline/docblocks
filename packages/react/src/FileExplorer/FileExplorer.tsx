@@ -193,6 +193,16 @@ export interface FileExplorerProps {
   defaultNewFileFormat?: NewFileFormat;
   /** Called with the type of each file the New File form creates. */
   onNewFileFormatUsed?: (format: NewFileFormat) => void;
+  /**
+   * Creates the file the New File form names and opens it, ready to type
+   * into. When given, the form hands file creation to it instead of writing
+   * the file and selecting it: the host's own path puts the caret in the new
+   * document and keeps what is typed while it opens, which a selected file
+   * never did. The host also records the format and refreshes the tree, so
+   * `onNewFileFormatUsed` and `onTreeChange` are not called for it. Rejects
+   * with the message the form shows when the file cannot be created.
+   */
+  onCreateDocument?: (path: string, format: NewFileFormat) => Promise<void>;
   /** Shows a Search button that switches the sidebar to workspace search. */
   onShowSearch?: () => void;
   /** Tooltip shortcut for the Search button, e.g. `Ctrl+Shift+F`. */
@@ -230,6 +240,7 @@ export function FileExplorer({
   outsideInRender,
   defaultNewFileFormat = 'markdown',
   onNewFileFormatUsed,
+  onCreateDocument,
   onShowSearch,
   searchShortcutLabel,
   className,
@@ -396,6 +407,16 @@ export function FileExplorer({
           return;
         }
         createdPath = `${prefix}${filename}`;
+        if (onCreateDocument) {
+          // Focus left in the name box would claim the next keys: the host
+          // holds keys for the new document only while no form field has focus.
+          const active = document.activeElement;
+          if (active instanceof HTMLElement && active.closest('.db-new-item')) active.blur();
+          await onCreateDocument(createdPath, newFileFormat);
+          setNewItemName('');
+          setNewItemType(null);
+          return;
+        }
         if (newFileFormat === 'markdown') {
           await tree.createFile(createdPath, '');
         } else {
@@ -431,6 +452,7 @@ export function FileExplorer({
     newFileFormat,
     newItemName,
     newItemType,
+    onCreateDocument,
     onNewFileFormatUsed,
     onTreeChange,
     outsideInRender,

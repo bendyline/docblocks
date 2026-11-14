@@ -85,6 +85,27 @@ describe('desktop AI model listing', () => {
     expect(parseAiModelInfoList(models)).to.deep.equal(models);
   });
 
+  it('marks an operating-system model so Settings still recommends a download', () => {
+    const models = toAiModelList([
+      {
+        id: 'apple-foundation-models:apple-foundation-models',
+        name: 'Apple Foundation Models',
+        locality: 'on-device',
+        availability: 'available',
+        preparation: 'system-settings',
+      },
+      {
+        id: 'llama-cpp:writer',
+        locality: 'on-device',
+        availability: 'available',
+        preparation: 'app-download',
+      },
+      { id: 'gezel:older', availability: 'available' },
+    ]);
+    expect(models.map((model) => model.system)).to.deep.equal([true, undefined, undefined]);
+    expect(parseAiModelInfoList(models)).to.deep.equal(models);
+  });
+
   it('defaults to the first entry when the provider names no fallback', () => {
     const models = toAiModelList([{ id: 'llama-cpp:a' }, { id: 'llama-cpp:b' }]);
     expect(models.map((model) => model.isDefault)).to.deep.equal([true, false]);

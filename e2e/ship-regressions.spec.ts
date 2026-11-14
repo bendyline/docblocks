@@ -262,6 +262,45 @@ test('clicking the document that is already open leaves it open, undo history an
   await expect(editor).not.toHaveText('Typed before the click.');
 });
 
+test('New document keeps every key typed right after Create', async ({ page }) => {
+  await openInitializedSite(page);
+  // Several in a row: the key that went missing fell in one frame, so a single
+  // document passed about half the time.
+  for (const name of ['at-once-1', 'at-once-2', 'at-once-3']) {
+    await page.keyboard.press('ControlOrMeta+KeyN');
+    const dialog = page.getByRole('dialog', { name: 'New document' });
+    await dialog.getByLabel('Document name').fill(name);
+    await dialog.getByLabel('Type').selectOption('markdown');
+    await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+    await page.keyboard.type('Fast first words.', { delay: 25 });
+
+    const editor = page.getByRole('textbox', { name: new RegExp(`^Edit /?${name}\\.md$`) });
+    await expect(editor.locator('h1')).toHaveText(name, { timeout: 30_000 });
+    await expect(editor.locator('p')).toHaveText(['Fast first words.']);
+  }
+});
+
+test('New File opens the new document ready for what is typed straight away', async ({ page }) => {
+  await openInitializedSite(page);
+  await page.getByRole('button', { name: 'New File', exact: true }).click();
+  const input = page.getByRole('textbox', { name: 'New file name' });
+  await input.fill('typed-at-once.md');
+  // Name it, press Enter, and keep typing, as a person does. The form used to
+  // leave nothing focused, so these keys went nowhere.
+  await input.press('Enter');
+  await page.keyboard.type('First words of a new file.', { delay: 30 });
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('A second line.', { delay: 30 });
+
+  const editor = page.getByRole('textbox', { name: 'Edit typed-at-once.md', exact: true });
+  await expect(editor).toHaveText('First words of a new file.A second line.', {
+    timeout: 30_000,
+  });
+  await expect(editor.locator('p')).toHaveText(['First words of a new file.', 'A second line.']);
+  // New File makes a plain file: no title line.
+  await expect(editor.locator('h1')).toHaveCount(0);
+});
+
 test('table column alignment survives an edit and save', async ({ page }, testInfo) => {
   await openInitializedSite(page);
   await seedWorkspace(page, 'Aligned table', {

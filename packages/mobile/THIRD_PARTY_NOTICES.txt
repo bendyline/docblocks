@@ -17,9 +17,9 @@ AI models, speech models, and voices are not part of this distribution. They are
 
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
-| @bendyline/gezel | 1.3.1 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-app-sdk | 1.2.1 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-capacitor | 1.1.1 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel | 1.3.3 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-app-sdk | 1.2.3 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-capacitor | 1.1.3 | MIT | https://github.com/bendyline/gezel |
 | @bendyline/gezk | 1.0.7 | MIT | https://github.com/bendyline/gezel |
 | @bendyline/squisq | 2.13.16 | MIT | https://github.com/bendyline/squisq |
 | @bendyline/squisq-calc | 2.11.2 | MIT | https://github.com/bendyline/squisq |
@@ -254,7 +254,7 @@ The following locked packages declare a license identifier but publish no packag
 | fastdom | 1.0.12 | MIT | https://github.com/wilsonpage/fastdom |
 
 ==============================================================================
-Components: @bendyline/gezel-app-sdk@1.2.1, @bendyline/gezel-capacitor@1.1.1, @bendyline/gezel@1.3.1, @bendyline/gezk@1.0.7
+Components: @bendyline/gezel-app-sdk@1.2.3, @bendyline/gezel-capacitor@1.1.3, @bendyline/gezel@1.3.3, @bendyline/gezk@1.0.7
 Source files: node_modules/@bendyline/gezel-app-sdk/LICENSE, node_modules/@bendyline/gezel-capacitor/LICENSE, node_modules/@bendyline/gezel/LICENSE, node_modules/@bendyline/gezk/LICENSE
 ==============================================================================
 MIT License

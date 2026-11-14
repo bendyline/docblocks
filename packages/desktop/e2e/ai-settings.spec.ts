@@ -63,6 +63,32 @@ test('AI self-hosts without an installed Gezel, and the choice persists', async 
   // getByLabel would also read the wrapped select's option text.
   await expect(section.getByRole('combobox', { name: 'Model', exact: true })).toBeVisible();
   await expect(section.getByRole('button', { name: 'Connect Gezel app' })).toHaveCount(0);
+  // Nothing is downloaded in this isolated home, so when Gezel recommends a
+  // download for this machine, Settings leads with it as one action and keeps
+  // the full catalog behind "Pick a model…". Hosts Gezel cannot rate offer none.
+  const recommended = await first.window.evaluate(async () => {
+    const ai = (
+      globalThis as {
+        docBlocksHost?: {
+          ai?: {
+            availableModels?(): Promise<
+              { ok: true; value: { label: string; recommended: boolean }[] } | { ok: false }
+            >;
+          };
+        };
+      }
+    ).docBlocksHost?.ai;
+    const available = await ai?.availableModels?.();
+    return available?.ok
+      ? (available.value.find((model) => model.recommended)?.label ?? null)
+      : null;
+  });
+  if (recommended) {
+    await expect(
+      section.getByRole('button', { name: `Add recommended model (${recommended}, ` }),
+    ).toBeVisible();
+    await expect(section.getByRole('button', { name: 'Pick a model…' })).toBeVisible();
+  }
   await first.close();
 
   // The opt-in persists; relaunching starts the private service silently.
