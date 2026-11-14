@@ -1,3 +1,15 @@
+## @bendyline/docblocks-bench [1.1.1](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-bench@1.1.0...@bendyline/docblocks-bench@1.1.1) (2026-11-14)
+
+### Bug Fixes
+
+* New doc typing race and image E2E waits ([#53](https://github.com/bendyline/docblocks/issues/53)) ([2281167](https://github.com/bendyline/docblocks/commit/22811670c9bc11ae2afe8a862a1748e5b7793a98))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.8.1
+* **@bendyline/docblocks-react:** upgraded to 2.8.1
+
 ## @bendyline/docblocks-bench [1.1.0](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-bench@1.0.0...@bendyline/docblocks-bench@1.1.0) (2026-11-13)
 
 ### Features
