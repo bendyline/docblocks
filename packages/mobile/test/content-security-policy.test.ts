@@ -33,4 +33,14 @@ describe('mobile content security policy', () => {
 
     expect(directives.get('frame-src')).to.deep.equal(['blob:', ...ONLINE_VIDEO_FRAME_SOURCES]);
   });
+
+  // Attached and recorded media reach the WebView as object URLs, and video,
+  // audio, and media-edit exports read those URLs back with fetch(). WebKit
+  // rejects a fetch the policy does not cover with a bare "Load failed".
+  it('lets fetch() read back Blob and data URLs', async () => {
+    const html = await readFile(path.join(process.cwd(), 'packages/mobile/index.html'), 'utf8');
+    const directives = parseContentSecurityPolicy(html);
+
+    expect(directives.get('connect-src')).to.include.members(['blob:', 'data:']);
+  });
 });

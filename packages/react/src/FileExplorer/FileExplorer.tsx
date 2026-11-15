@@ -804,8 +804,13 @@ export function FileExplorer({
 
       {/* Toolbar */}
       <div className="db-explorer-toolbar">
-        {/* A long name is cut short; the tooltip carries all of it. */}
-        <span className="db-explorer-title" title={workspaceName || undefined}>
+        {/* A long name is cut short; the tooltip carries all of it. In a narrow
+            sidebar it is hidden outright -- the workspace picker above already
+            names the workspace. */}
+        <span
+          className="db-explorer-title db-explorer-workspace-name"
+          title={workspaceName || undefined}
+        >
           {workspaceName || 'Files'}
         </span>
         <div className="db-explorer-actions">

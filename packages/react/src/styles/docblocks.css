@@ -325,6 +325,7 @@
 }
 
 .db-explorer-toolbar {
+  container: db-explorer-toolbar / inline-size;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -352,11 +353,23 @@
   white-space: nowrap;
 }
 
+/* The workspace picker in the sidebar header already names the workspace, so
+   in anything short of a wide sidebar the toolbar drops its copy and leaves the
+   actions the room. Phone drawers top out at 400px, so this always applies
+   there; on desktop the name returns once the sidebar is dragged wide. */
+@container db-explorer-toolbar (max-width: 479px) {
+  .db-explorer-workspace-name {
+    display: none;
+  }
+}
+
 .db-explorer-actions {
   display: flex;
   flex-shrink: 0;
   align-items: center;
   gap: 2px;
+  /* Stays right-aligned when it is the toolbar's only visible child. */
+  margin-left: auto;
 }
 
 .db-explorer-sort-actions {
@@ -2385,6 +2398,9 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 
 /* ── Dialog ───────────────────────────────────────────────────── */
 
+/* The panel keeps a 16px margin inside the safe areas, so no dialog reaches
+   under a notch, the status bar or the home indicator. Panels cap their
+   height at 100% of the room that margin leaves, not at the viewport's. */
 .db-dialog-overlay {
   position: fixed;
   inset: 0;
@@ -2394,7 +2410,8 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  padding: 16px;
+  padding: calc(var(--db-safe-top) + 16px) calc(var(--db-safe-right) + 16px)
+    calc(var(--db-safe-bottom) + 16px) calc(var(--db-safe-left) + 16px);
   background: rgba(0, 0, 0, 0.4);
   /* The AI, presentation and narration dialogs portal onto <body>, outside
      .db-shell; give them the chrome face the shell would have. */
@@ -2404,7 +2421,7 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 /* Palette-style dialogs (quick-open) sit near the top, where the eye already is. */
 .db-dialog-overlay--top {
   align-items: flex-start;
-  padding-top: min(12vh, 96px);
+  padding-top: max(calc(var(--db-safe-top) + 16px), min(12vh, 96px));
 }
 
 /* On touch, a dialog that takes typing sits in the upper part of the screen.
@@ -2414,9 +2431,10 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
    before the keyboard rises, so it doesn't jump when the keyboard opens. The
    bottom padding keeps it inside what the keyboard leaves visible
    (useKeyboardInset measures that), and the body scrolls when it no longer
-   fits. "Takes typing" is any field that raises the keyboard. It deliberately
-   isn't `:read-write`, which a field leaves while disabled, so a dialog
-   would drop back to center mid-operation. */
+   fits, since panels cap their height at the room the padding leaves. "Takes
+   typing" is any field that raises the keyboard. It deliberately isn't
+   `:read-write`, which a field leaves while disabled, so a dialog would drop
+   back to center mid-operation. */
 :root[data-db-pointer='coarse']
   .db-dialog-overlay:has(
     input:not(
@@ -2437,52 +2455,6 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   align-items: flex-start;
   padding-top: max(calc(var(--db-safe-top) + 16px), min(12vh, 96px));
   padding-bottom: calc(max(var(--db-safe-bottom), var(--db-keyboard-inset)) + 16px);
-}
-
-/* Fit the panel to the room that padding leaves rather than to 100dvh, which
-   iOS doesn't shrink for the keyboard. That room also caps the fixed-height
-   panels (sectioned Settings, Add knowledge), while the wide size keeps its
-   own ceiling. */
-:root[data-db-pointer='coarse']
-  .db-dialog-overlay:has(
-    input:not(
-      [type='button'],
-      [type='checkbox'],
-      [type='color'],
-      [type='file'],
-      [type='hidden'],
-      [type='image'],
-      [type='radio'],
-      [type='range'],
-      [type='reset'],
-      [type='submit']
-    ),
-    textarea,
-    [contenteditable]:not([contenteditable='false'])
-  )
-  > .db-dialog {
-  max-height: 100%;
-}
-
-:root[data-db-pointer='coarse']
-  .db-dialog-overlay:has(
-    input:not(
-      [type='button'],
-      [type='checkbox'],
-      [type='color'],
-      [type='file'],
-      [type='hidden'],
-      [type='image'],
-      [type='radio'],
-      [type='range'],
-      [type='reset'],
-      [type='submit']
-    ),
-    textarea,
-    [contenteditable]:not([contenteditable='false'])
-  )
-  > .db-dialog--wide {
-  max-height: min(100%, 660px);
 }
 
 /* Present to assistive technology, absent from the layout. */
@@ -2506,10 +2478,47 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   box-shadow: 0 8px 32px var(--db-shadow);
   width: 380px;
   max-width: 100%;
-  max-height: calc(100vh - 32px);
-  max-height: calc(100dvh - 32px);
+  max-height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+/* ── Dialogs as full-window sheets on a phone ──
+   The wide and full dialogs browse or edit at length, and a phone has no
+   margin to spare around them. There they fill the window down to the
+   on-screen keyboard, without a frame, and the header runs up under the
+   status bar with its title just below it, so the dialog meets the top of
+   the screen as one surface. The default-size dialogs (confirmations, short
+   forms) stay floating cards. Positioned against the viewport, the sheet sets
+   aside the overlay's margins, including the touch rule's above. */
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-dialog-overlay
+  > :is(.db-dialog--wide, .db-dialog--full) {
+  position: fixed;
+  inset: 0 0 var(--db-keyboard-inset);
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  /* The panel's own color fills the status-bar strip above a hidden title,
+     the strips beside a landscape notch, and the strip above the home
+     indicator, which the keyboard covers once it rises. */
+  padding: var(--db-safe-top) var(--db-safe-right)
+    max(0px, calc(var(--db-safe-bottom) - var(--db-keyboard-inset))) var(--db-safe-left);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-dialog-overlay
+  > :is(.db-dialog--wide, .db-dialog--full)
+  > .db-dialog-header {
+  margin: calc(-1 * var(--db-safe-top)) calc(-1 * var(--db-safe-right)) 0
+    calc(-1 * var(--db-safe-left));
+  padding-top: calc(var(--db-safe-top) + 16px);
+  padding-right: calc(var(--db-safe-right) + 20px);
+  padding-left: calc(var(--db-safe-left) + 20px);
 }
 
 .db-dialog-header {
@@ -2679,8 +2688,7 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
    the 520px measure the single-column dialog had. */
 .db-dialog.db-settings-dialog--sectioned {
   width: 740px;
-  height: min(660px, calc(100vh - 32px));
-  height: min(660px, calc(100dvh - 32px));
+  height: min(660px, 100%);
 }
 
 .db-dialog-body.db-settings-dialog-body--sectioned {
@@ -4277,6 +4285,18 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
    pixels. */
 :root {
   --squisq-keyboard-inset: var(--db-keyboard-inset);
+}
+
+/* Squisq's dialogs keep clear of the notch, the status bar and the home
+   indicator by these, and on a phone their headers run up under the status
+   bar. The shell's own insets rather than the browser's: the iPhone app
+   divides them back for its zoom (packages/mobile/src/base.css). Bound on
+   :root, where Squisq's portalled dialogs inherit from. */
+:root {
+  --squisq-safe-area-top: var(--db-safe-top);
+  --squisq-safe-area-right: var(--db-safe-right);
+  --squisq-safe-area-bottom: var(--db-safe-bottom);
+  --squisq-safe-area-left: var(--db-safe-left);
 }
 
 /* Match Monaco's built-in vs-dark canvas exactly so replacing the loading
@@ -7806,7 +7826,7 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 /* The add dialog keeps one height while a search narrows the list, and only
    the list scrolls, so the search field stays in reach. */
 .db-knowledge-add-dialog {
-  height: min(calc(100dvh - 32px), 560px);
+  height: min(100%, 560px);
 }
 
 .db-knowledge-add-body {
@@ -8371,7 +8391,7 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 .db-dialog--wide {
   width: 560px;
   max-width: 100%;
-  max-height: min(calc(100dvh - 32px), 660px);
+  max-height: min(100%, 660px);
 }
 
 .db-dialog--full {
@@ -8838,7 +8858,7 @@ button.db-git-file-row:hover {
    glance instead of scrolling; one column on narrow windows. */
 .db-dialog.db-shortcuts-dialog {
   width: 780px;
-  max-height: min(calc(100dvh - 32px), 780px);
+  max-height: min(100%, 780px);
 }
 
 .db-shortcuts {
