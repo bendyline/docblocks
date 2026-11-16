@@ -4765,7 +4765,9 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
-  :is(.squisq-template-picker-trigger, .squisq-transition-picker-trigger):hover {
+  :is(.squisq-template-picker-trigger, .squisq-transition-picker-trigger):not(
+    [aria-disabled='true']
+  ):hover {
   background: var(--db-bg-hover);
   border-color: var(--db-border-strong);
 }
@@ -6038,7 +6040,9 @@ html:has(.db-shell)
 
 html:has(.db-shell)
   .squisq-toolbar-overflow-menu
-  :is(.squisq-template-picker-trigger, .squisq-transition-picker-trigger):hover {
+  :is(.squisq-template-picker-trigger, .squisq-transition-picker-trigger):not(
+    [aria-disabled='true']
+  ):hover {
   background: var(--db-bg-hover);
   border-color: var(--db-border-strong);
 }

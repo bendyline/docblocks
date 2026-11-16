@@ -2,7 +2,11 @@ import { expect } from 'chai';
 import * as React from 'react';
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
-import { CompactWelcomeScreen, WelcomeScreen } from '../src/DocBlocksShell/WelcomeScreen.js';
+import {
+  CompactWelcomeScreen,
+  WELCOME_GREETING,
+  WelcomeScreen,
+} from '../src/DocBlocksShell/WelcomeScreen.js';
 
 // The root Mocha/tsx loader does not inherit the package's react-jsx setting.
 (globalThis as typeof globalThis & { React: typeof React }).React = React;
@@ -86,6 +90,63 @@ describe('CompactWelcomeScreen', () => {
     } finally {
       await act(async () => root.unmount());
       container.remove();
+    }
+  });
+});
+
+describe('first-run greeting', () => {
+  async function render(element: React.ReactElement) {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => root.render(element));
+    return {
+      container,
+      async cleanup() {
+        await act(async () => root.unmount());
+        container.remove();
+      },
+    };
+  }
+  const handlers = {
+    onCreateDocument: () => undefined,
+    onTour: () => undefined,
+    onDismiss: () => undefined,
+  };
+
+  it('welcomes the user by default', async () => {
+    const compact = await render(createElement(CompactWelcomeScreen, handlers));
+    const wide = await render(createElement(WelcomeScreen, handlers));
+    try {
+      expect(compact.container.querySelector('h1')?.textContent).to.equal(WELCOME_GREETING);
+      expect(wide.container.querySelector('.db-welcome-gateway-eyebrow')?.textContent).to.equal(
+        WELCOME_GREETING,
+      );
+    } finally {
+      await compact.cleanup();
+      await wide.cleanup();
+    }
+  });
+
+  it('leads with the host’s greeting when its own screen has already welcomed the user', async () => {
+    const greeting = 'Your folder is ready';
+    const compact = await render(createElement(CompactWelcomeScreen, { ...handlers, greeting }));
+    const wide = await render(createElement(WelcomeScreen, { ...handlers, greeting }));
+    try {
+      const heading = compact.container.querySelector('h1');
+      expect(heading?.textContent).to.equal(greeting);
+      // The section is still named by its heading.
+      expect(compact.container.querySelector('section')?.getAttribute('aria-labelledby')).to.equal(
+        heading?.id,
+      );
+      expect(wide.container.querySelector('.db-welcome-gateway-eyebrow')?.textContent).to.equal(
+        greeting,
+      );
+      expect(wide.container.textContent).to.not.contain(WELCOME_GREETING);
+      expect(compact.container.textContent).to.not.contain(WELCOME_GREETING);
+    } finally {
+      await compact.cleanup();
+      await wide.cleanup();
     }
   });
 });

@@ -9,8 +9,8 @@ import androidx.core.splashscreen.SplashScreen;
  * Holds Android's launch splash (the brown and the D of the splash theme) over
  * the app until the page reports that startup has settled, so launch goes from
  * the splash straight to the restored document. Released early it reveals
- * index.html's splash — the same brown and mark — which is what shows behind
- * the first-run storage question.
+ * index.html's splash — the same brown and mark — which the first-run welcome
+ * screen (src/storage-welcome.ts) grows out of.
  */
 final class LaunchSplash {
     private LaunchSplash() {}

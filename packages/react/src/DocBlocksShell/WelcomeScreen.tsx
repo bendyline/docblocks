@@ -7,6 +7,12 @@ import { CloseIcon } from '../icons.js';
  */
 export const WELCOME_HEADLINE = 'The Markdown editor that turns one file into anything.';
 
+/**
+ * What a first-run screen greets the user with, unless the host has already
+ * said it (see `DocBlocksShellProps.firstRunGreeting`).
+ */
+export const WELCOME_GREETING = 'Welcome to DocBlocks';
+
 /** What that means, for someone who has never heard of Markdown. */
 export const WELCOME_SUMMARY =
   'Write the way you normally would, then share the same file as a PDF, a Word document, a slide deck, or a video.';
@@ -32,6 +38,8 @@ export interface WelcomeScreenProps {
    * already running a native app has nothing to go and get.
    */
   offerApps?: boolean;
+  /** The eyebrow over the headline. */
+  greeting?: string;
 }
 
 /**
@@ -48,6 +56,7 @@ export function WelcomeScreen({
   onTour,
   onDismiss,
   offerApps = false,
+  greeting = WELCOME_GREETING,
 }: WelcomeScreenProps) {
   return (
     <section className="db-welcome-gateway" aria-labelledby="db-welcome-gateway-title">
@@ -62,7 +71,7 @@ export function WelcomeScreen({
       </button>
       <div className="db-welcome-gateway-body">
         <div className="db-welcome-gateway-copy">
-          <p className="db-welcome-gateway-eyebrow">Welcome to DocBlocks</p>
+          <p className="db-welcome-gateway-eyebrow">{greeting}</p>
           <h1 id="db-welcome-gateway-title">{WELCOME_HEADLINE}</h1>
           <p>{WELCOME_SUMMARY}</p>
           <p className="db-welcome-gateway-note">{WELCOME_PRIVACY_NOTE}</p>
@@ -100,6 +109,8 @@ export interface CompactWelcomeScreenProps {
   onTour: () => void;
   /** Closes the screen for good, leaving the file pane beneath. */
   onDismiss: () => void;
+  /** The heading. */
+  greeting?: string;
 }
 
 /**
@@ -112,6 +123,7 @@ export function CompactWelcomeScreen({
   onCreateDocument,
   onTour,
   onDismiss,
+  greeting = WELCOME_GREETING,
 }: CompactWelcomeScreenProps) {
   return (
     <section className="db-mobile-first-run" aria-labelledby="db-mobile-first-run-title">
@@ -126,7 +138,7 @@ export function CompactWelcomeScreen({
       </button>
       <div className="db-mobile-first-run-body">
         <p className="db-mobile-first-run-eyebrow">Local-first Markdown editor</p>
-        <h1 id="db-mobile-first-run-title">Welcome to DocBlocks</h1>
+        <h1 id="db-mobile-first-run-title">{greeting}</h1>
         <p>{WELCOME_SUMMARY}</p>
         <p className="db-mobile-first-run-note">{WELCOME_PRIVACY_NOTE}</p>
         <div className="db-mobile-first-run-actions">
