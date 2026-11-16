@@ -321,10 +321,9 @@ test.describe('DocBlocks App', () => {
       };
     });
 
-    expect(layout.left).toBeGreaterThanOrEqual(16);
-    expect(layout.right).toBeLessThanOrEqual(444);
-    expect(layout.top).toBeGreaterThanOrEqual(16);
-    expect(layout.bottom).toBeLessThanOrEqual(444);
+    // A compact window has no margin to spare, so the wide Settings dialog
+    // becomes a sheet that fills it.
+    expect(layout).toMatchObject({ left: 0, right: 460, top: 0, bottom: 460 });
     expect(layout.accentRows).toBe(3);
     // Too narrow for the tab rail: sections come from a dropdown instead.
     expect(layout.sectionPicker).toBe(true);
