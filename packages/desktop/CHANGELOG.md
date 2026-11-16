@@ -1,3 +1,15 @@
+## docblocks-desktop [2.8.2](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.8.1...docblocks-desktop@2.8.2) (2026-11-16)
+
+### Bug Fixes
+
+* Update squisq ([#54](https://github.com/bendyline/docblocks/issues/54)) ([9d72511](https://github.com/bendyline/docblocks/commit/9d72511c4410a6874d0e140770785e740e9d0e7e))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.8.2
+* **@bendyline/docblocks-react:** upgraded to 2.8.2
+
 ## docblocks-desktop [2.8.1](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.8.0...docblocks-desktop@2.8.1) (2026-11-14)
 
 ### Bug Fixes
