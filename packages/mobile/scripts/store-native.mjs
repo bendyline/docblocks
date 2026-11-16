@@ -16,6 +16,7 @@ import { fileURLToPath, URL } from 'node:url';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { runGradle } from './gradle.mjs';
 import { findJdk21 } from './jdk.mjs';
 import { resolveSwiftPackages } from './swiftpm.mjs';
 import {
@@ -131,15 +132,14 @@ function buildAndroid() {
     DOCBLOCKS_REQUIRE_RELEASE_SIGNING: '1',
   };
   const windows = process.platform === 'win32';
-  run(
-    windows ? 'gradlew.bat' : './gradlew',
+  runGradle(
     [
       '--no-daemon',
       ':app:bundleRelease',
       `-PdocblocksVersionName=${version}`,
       `-PdocblocksVersionCode=${buildNumber}`,
     ],
-    { cwd: path.join(mobile, 'android'), env: environment, shell: windows },
+    { cwd: path.join(mobile, 'android'), env: environment },
   );
   const bundle = path.join(output, `${name}.aab`);
   copyFileSync(

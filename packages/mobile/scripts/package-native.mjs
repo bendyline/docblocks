@@ -4,6 +4,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { fileURLToPath, URL } from 'node:url';
 import path from 'node:path';
 import process from 'node:process';
+import { runGradle } from './gradle.mjs';
 import { findJdk21 } from './jdk.mjs';
 import { resolveSwiftPackages } from './swiftpm.mjs';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
@@ -75,8 +76,7 @@ if (platform === 'ios') {
   ]);
   artifacts.push({ path: archive, kind: 'xcarchive' });
 } else {
-  run(
-    process.platform === 'win32' ? 'gradlew.bat' : './gradlew',
+  runGradle(
     [
       '--no-daemon',
       ':app:assembleRelease',
@@ -84,7 +84,7 @@ if (platform === 'ios') {
       `-PdocblocksVersionName=${version}`,
       `-PdocblocksVersionCode=${buildNumber}`,
     ],
-    { cwd: path.join(mobile, 'android'), env: environment, shell: process.platform === 'win32' },
+    { cwd: path.join(mobile, 'android'), env: environment },
   );
   for (const [source, name] of [
     ['apk/release/app-release-unsigned.apk', 'docblocks-unsigned.apk'],

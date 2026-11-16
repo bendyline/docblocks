@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 import process from 'node:process';
 import path from 'node:path';
+import { runGradle } from './gradle.mjs';
 import { findJdk21 } from './jdk.mjs';
 const repo = fileURLToPath(new URL('../../../', import.meta.url));
 const mobile = path.join(repo, 'packages/mobile');
@@ -65,23 +66,13 @@ if (
     [path.join(repo, 'node_modules/@capacitor/cli/bin/capacitor'), 'sync', 'android'],
     { cwd: mobile },
   );
-  const resolveClasspath = (extraArgs = []) =>
-    run(
-      process.platform === 'win32' ? 'gradlew.bat' : './gradlew',
-      ['--no-daemon', ...extraArgs, ':app:writeMobileConformanceClasspath'],
-      { cwd: path.join(mobile, 'android'), env: environment, shell: process.platform === 'win32' },
-    );
   // This step only resolves a classpath, which on a fresh runner means
-  // downloading the Android Gradle plugin and its dependencies. Maven Central
-  // has briefly answered 404 for artifacts it hosts, failing a release gate.
-  // Retry once, refreshing because Gradle caches "not found" answers; a real
-  // build error fails again, and the conformance tests below never retry.
-  try {
-    resolveClasspath();
-  } catch {
-    process.stderr.write('Retrying Android classpath resolution once.\n');
-    resolveClasspath(['--refresh-dependencies']);
-  }
+  // downloading the Android Gradle plugin and its dependencies; runGradle
+  // retries only download failures. The conformance tests below never retry.
+  runGradle(['--no-daemon', ':app:writeMobileConformanceClasspath'], {
+    cwd: path.join(mobile, 'android'),
+    env: environment,
+  });
   const classpath = readFileSync(
     path.join(mobile, 'android/app/build/mobile-conformance-classpath.txt'),
     'utf8',
