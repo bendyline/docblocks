@@ -131,6 +131,42 @@ describe('adaptive styles', () => {
     );
   });
 
+  it('hands Squisq the shell safe-area insets from <html>', () => {
+    // The shell's insets, not env(): the iPhone app divides them back for its
+    // zoom, and Squisq's portalled dialogs inherit from <html>.
+    const block = /^:root \{\s*(--squisq-safe-area-top:[^}]*)\}/m.exec(styles)?.[1] ?? '';
+    for (const side of ['top', 'right', 'bottom', 'left']) {
+      expect(block).to.include(`--squisq-safe-area-${side}: var(--db-safe-${side});`);
+    }
+  });
+
+  it('keeps every dialog margin inside the safe areas', () => {
+    const overlay = /\n\.db-dialog-overlay \{([^}]*)\}/.exec(styles)?.[1] ?? '';
+    for (const side of ['top', 'right', 'bottom', 'left']) {
+      expect(overlay).to.include(`calc(var(--db-safe-${side}) + 16px)`);
+    }
+    // Panels cap at the room the margin leaves, never at the viewport.
+    expect(styles).to.not.match(/100d?vh - 32px/);
+    const panel = /\n\.db-dialog \{([^}]*)\}/.exec(styles)?.[1] ?? '';
+    expect(panel).to.include('max-height: 100%;');
+  });
+
+  it('fills a phone window with the wide and full dialogs, header under the status bar', () => {
+    const sheet = ":root:is([data-db-width='compact'], [data-db-form-factor='phone'])";
+    const panel = new RegExp(
+      `${escapeRegExp(sheet)}\\s*\\.db-dialog-overlay\\s*> :is\\(\\.db-dialog--wide, \\.db-dialog--full\\) \\{([^}]*)\\}`,
+    ).exec(styles)?.[1];
+    expect(panel, 'sheet panel rule missing').to.not.equal(undefined);
+    expect(panel).to.include('position: fixed;');
+    // Down to the on-screen keyboard, which iOS raises without resizing.
+    expect(panel).to.include('inset: 0 0 var(--db-keyboard-inset);');
+    const header = new RegExp(
+      `${escapeRegExp(sheet)}[^{]*> \\.db-dialog-header \\{([^}]*)\\}`,
+    ).exec(styles)?.[1];
+    expect(header, 'sheet header rule missing').to.not.equal(undefined);
+    expect(header).to.include('padding-top: calc(var(--db-safe-top) + 16px);');
+  });
+
   it('keeps pinch-zoom available while removing the double-tap delay', () => {
     // `touch-action: none` here would disable pinch-zoom of the document, an
     // accessibility regression. `manipulation` only drops double-tap zoom.
@@ -144,3 +180,7 @@ describe('adaptive styles', () => {
     expect(DB_BREAKPOINTS.expandedMax).to.equal(1439);
   });
 });
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}

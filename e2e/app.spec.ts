@@ -321,10 +321,9 @@ test.describe('DocBlocks App', () => {
       };
     });
 
-    expect(layout.left).toBeGreaterThanOrEqual(16);
-    expect(layout.right).toBeLessThanOrEqual(444);
-    expect(layout.top).toBeGreaterThanOrEqual(16);
-    expect(layout.bottom).toBeLessThanOrEqual(444);
+    // A compact window has no margin to spare, so the wide Settings dialog
+    // becomes a sheet that fills it.
+    expect(layout).toMatchObject({ left: 0, right: 460, top: 0, bottom: 460 });
     expect(layout.accentRows).toBe(3);
     // Too narrow for the tab rail: sections come from a dropdown instead.
     expect(layout.sectionPicker).toBe(true);
@@ -382,8 +381,21 @@ test.describe('DocBlocks App', () => {
     expect(bytes.toString('utf8')).toBe(WELCOME_DOCUMENT_CONTENT);
   });
 
-  test('heads the file explorer with the workspace name', async ({ page }) => {
-    const title = page.locator('.db-explorer-toolbar > .db-explorer-title');
+  test('heads the file explorer with the workspace name only in a wide sidebar', async ({
+    page,
+  }) => {
+    const title = page.locator('.db-explorer-toolbar > .db-explorer-workspace-name');
+    // The default 320px sidebar leaves the name to the workspace picker.
+    await expect(title).toBeHidden();
+
+    const resizer = page.getByRole('separator', { name: 'Resize sidebar' });
+    const box = await resizer.boundingBox();
+    if (!box) throw new Error('Sidebar resizer not found');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 240, box.y + box.height / 2);
+    await page.mouse.up();
+
     await expect(title).toBeVisible();
     await expect(title).toHaveText('My Documents');
   });
@@ -1322,7 +1334,10 @@ test.describe('Workspace picker', () => {
     await page.locator('.db-workspace-picker-btn').click();
     await expect(page.locator('.db-workspace-dropdown')).toBeVisible();
 
-    await page.locator('.db-explorer-title').click();
+    // The toolbar's left padding: outside the dropdown and clear of any button.
+    await page
+      .locator('.db-file-explorer > .db-explorer-toolbar')
+      .click({ position: { x: 2, y: 2 } });
     await expect(page.locator('.db-workspace-dropdown')).not.toBeVisible();
   });
 
