@@ -24,20 +24,33 @@ async function openWriteWithTypo(page: Page): Promise<void> {
   await ((await tour.count()) > 0 ? tour : startWriting).click();
   const editor = page.locator('.tiptap[contenteditable="true"]');
   await expect(editor).toBeVisible({ timeout: 30_000 });
-  await page
-    .locator('.tiptap h1')
-    .first()
-    .evaluate((heading) => {
-      (heading.closest('[contenteditable="true"]') as HTMLElement).focus();
-      const range = document.createRange();
-      range.selectNodeContents(heading);
-      range.collapse(false);
-      const selection = window.getSelection();
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-    });
+  // The welcome screen leaves the editor inert, and visible, until its close
+  // commits, and focus cannot enter an inert subtree. A caret placed before
+  // then never reaches ProseMirror, and when the shell focuses the editor a
+  // moment later ProseMirror puts the caret back at the start of the document.
+  await expect
+    .poll(() => editor.evaluate((element) => element.closest('[inert]') === null))
+    .toBe(true);
+  const heading = page.locator('.tiptap h1').first();
+  await heading.evaluate(async (element) => {
+    (element.closest('[contenteditable="true"]') as HTMLElement).focus();
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    range.collapse(false);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    // ProseMirror reads the caret from the selectionchange this queues; a key
+    // pressed before that arrives acts on the previous selection.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+  });
+  await expect(editor).toBeFocused();
   await page.keyboard.press('Enter');
   await page.keyboard.insertText('This is teh probe.');
+  // Its own paragraph under the title: typed into the title instead, the probe
+  // draws no squiggle, and the wait below would time out without saying why.
+  await expect(editor.locator('p', { hasText: /^This is teh probe\.$/ })).toBeVisible();
+  await expect(heading).not.toContainText('probe');
   await editor.blur();
   // Cold engine setup precedes the first squiggle.
   await expect(squiggle(page)).toBeVisible({ timeout: 60_000 });
