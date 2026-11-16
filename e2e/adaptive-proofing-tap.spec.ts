@@ -32,18 +32,58 @@ async function openWriteWithTypo(page: Page): Promise<void> {
     .poll(() => editor.evaluate((element) => element.closest('[inert]') === null))
     .toBe(true);
   const heading = page.locator('.tiptap h1').first();
-  await heading.evaluate(async (element) => {
-    (element.closest('[contenteditable="true"]') as HTMLElement).focus();
-    const range = document.createRange();
-    range.selectNodeContents(element);
-    range.collapse(false);
-    const selection = window.getSelection();
-    selection?.removeAllRanges();
-    selection?.addRange(range);
-    // ProseMirror reads the caret from the selectionchange this queues; a key
-    // pressed before that arrives acts on the previous selection.
-    await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
-  });
+  // ProseMirror learns of a caret placed from script only through the
+  // selectionchange event, and does not read the DOM caret again when a key
+  // goes down: Enter pressed before the event arrives splits the title at
+  // ProseMirror's own caret, the start of the document, and the probe is typed
+  // into the title. On a busy page WebKit delivers the event hundreds of
+  // milliseconds late, and until then ProseMirror can also write its own caret
+  // back over this one (20 ms after the editor takes focus, or on a redraw).
+  // So wait for the event, then check that the caret held; place it again if
+  // it did not.
+  await expect(async () => {
+    const held = await heading.evaluate(async (title) => {
+      const delivered = new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(false), 5_000);
+        document.addEventListener(
+          'selectionchange',
+          () => {
+            clearTimeout(timer);
+            // ProseMirror re-adds its listener after every redraw, so it can
+            // run after this one; and its focus check runs 20 ms after focus.
+            setTimeout(() => resolve(true), 50);
+          },
+          { once: true },
+        );
+      });
+      (title.closest('[contenteditable="true"]') as HTMLElement).focus();
+      // The end of the title's own text: the template badges after it are not
+      // editable, and a caret beyond them is one ProseMirror has to move.
+      const walker = document.createTreeWalker(title, NodeFilter.SHOW_TEXT, {
+        acceptNode: (node) =>
+          node.parentElement?.closest('[contenteditable="false"]')
+            ? NodeFilter.FILTER_REJECT
+            : NodeFilter.FILTER_ACCEPT,
+      });
+      let text: Node | null = null;
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) text = node;
+      const selection = window.getSelection();
+      if (!text || !selection) return false;
+      const end = document.createRange();
+      end.setStart(text, text.textContent?.length ?? 0);
+      end.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(end.cloneRange());
+      if (!(await delivered) || selection.rangeCount === 0) return false;
+      const caret = selection.getRangeAt(0);
+      return (
+        caret.collapsed &&
+        title.contains(caret.startContainer) &&
+        caret.compareBoundaryPoints(Range.START_TO_START, end) >= 0
+      );
+    });
+    expect(held, 'the caret holds at the end of the title').toBe(true);
+  }).toPass({ timeout: 30_000 });
   await expect(editor).toBeFocused();
   await page.keyboard.press('Enter');
   await page.keyboard.insertText('This is teh probe.');
