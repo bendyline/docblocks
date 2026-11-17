@@ -9,7 +9,7 @@
   },
   "version": "0.1.0",
   "license": "MIT",
-  "publisher": "bendyline",
+  "publisher": "Bendyline",
   "private": true,
   "repository": {
     "type": "git",
@@ -251,7 +251,7 @@
     "@vitejs/plugin-react": "4.7.0",
     "@vscode/test-electron": "3.0.0",
     "@vscode/test-web": "0.0.80",
-    "@vscode/vsce": "3.9.2",
+    "@vscode/vsce": "4.1.0",
     "monaco-editor": "0.50.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",

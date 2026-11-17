@@ -151,15 +151,14 @@ The initial approvals were reviewed against the scripts installed from the
 lockfile and admitted only after their npm publication timestamps were more
 than seven days old:
 
-| Package version(s)                    | Install-time behavior                                                                                                | Published (UTC)        |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| `@playwright/browser-chromium@1.58.2` | Downloads the Chromium, headless-shell, and FFmpeg runtime used by VS Code Web tests.                                | 2026-02-06             |
-| `@vscode/vsce-sign@2.0.9`             | Selects the platform signing binary; its fallback can fetch the matching npm binary package.                         | 2025-11-13             |
-| `electron-winstaller@5.4.0`           | Copies the checked-in host-architecture 7-Zip executable used for Windows packaging.                                 | 2024-07-23             |
-| `esbuild@0.25.12`, `esbuild@0.28.1`   | Selects and validates esbuild's platform binary.                                                                     | 2025-11-01; 2026-06-12 |
-| `ffmpeg-static@5.2.0`                 | Downloads the platform FFmpeg binary used by CLI video rendering.                                                    | 2023-07-07             |
-| `fsevents@2.3.2`, `fsevents@2.3.3`    | Builds the optional macOS filesystem-events native module through npm's implicit `node-gyp rebuild`.                 | 2021-02-05; 2023-08-21 |
-| `keytar@7.9.0`                        | Installs a prebuilt native credential-store module or falls back to `node-gyp`; it is optional tooling beneath VSCE. | 2022-02-17             |
+| Package version(s)                    | Install-time behavior                                                                                               | Published (UTC)        |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| `@playwright/browser-chromium@1.58.2` | Downloads the Chromium, headless-shell, and FFmpeg runtime used by VS Code Web tests.                               | 2026-02-06             |
+| `@vscode/vsce-sign@2.1.0`             | Selects the platform signing binary; its fallback can fetch the matching npm binary package (2.1.0 adds `--force`). | 2026-08-17             |
+| `electron-winstaller@5.4.0`           | Copies the checked-in host-architecture 7-Zip executable used for Windows packaging.                                | 2024-07-23             |
+| `esbuild@0.25.12`, `esbuild@0.28.1`   | Selects and validates esbuild's platform binary.                                                                    | 2025-11-01; 2026-06-12 |
+| `ffmpeg-static@5.2.0`                 | Downloads the platform FFmpeg binary used by CLI video rendering.                                                   | 2023-07-07             |
+| `fsevents@2.3.2`, `fsevents@2.3.3`    | Builds the optional macOS filesystem-events native module through npm's implicit `node-gyp rebuild`.                | 2021-02-05; 2023-08-21 |
 
 To review a future change:
 
