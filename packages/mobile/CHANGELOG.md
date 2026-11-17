@@ -1,3 +1,14 @@
+## docblocks-mobile [1.1.4](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.1.3...docblocks-mobile@1.1.4) (2026-11-17)
+
+### Bug Fixes
+
+* More mobile fixes ([#57](https://github.com/bendyline/docblocks/issues/57)) ([4e9f36f](https://github.com/bendyline/docblocks/commit/4e9f36f20779cea8357839bec6351b47bcf4b19a))
+
+
+### Dependencies
+
+* **@bendyline/docblocks-react:** upgraded to 2.8.4
+
 ## docblocks-mobile [1.1.3](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.1.2...docblocks-mobile@1.1.3) (2026-11-17)
 
 ### Bug Fixes
