@@ -3,6 +3,7 @@ import { native } from './native';
 import { installMobileAi } from './ai';
 import { installMobileSpeech } from './speech';
 import { routeExternalLinks } from './external-links';
+import { ensureStorageChosen } from './storage-welcome';
 import {
   encodeMobileBytes,
   MOBILE_STORAGE_LIMITS,
@@ -26,7 +27,7 @@ import {
 } from '@bendyline/docblocks/host';
 
 export async function installMobileHost(): Promise<void> {
-  if (Capacitor.getPlatform() === 'android') await native.chooseStorage();
+  if (Capacitor.getPlatform() === 'android') await ensureStorageChosen();
   const info = parseMobileBootstrap(await native.bootstrap());
   const mobileAi = Capacitor.isPluginAvailable('GezelRuntime') ? installMobileAi() : undefined;
   const mobileSpeech = Capacitor.isPluginAvailable('GezelOfflineSpeech')

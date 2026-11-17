@@ -190,6 +190,77 @@
   font-family: inherit;
 }
 
+/* Progress bars draw from the tokens. The per-bar rules below only set
+   `accent-color`, which iOS WebKit ignores for <progress>: it painted its
+   own near-black track on the dark chrome, so a bar at 0% — Drawing picture
+   1 of 1 — read as an empty, unlabeled pill. Zero specificity, so a rule
+   that sizes a bar still wins; unscoped, for the same portal reason. An
+   indeterminate bar (no `value`) gets a sliding band instead of the native
+   animation that `appearance: none` gives up. */
+:where(progress) {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  background-color: var(--db-border-strong);
+  color: var(--db-accent);
+  vertical-align: middle;
+}
+
+:where(progress)::-webkit-progress-bar {
+  border-radius: 999px;
+  background-color: var(--db-border-strong);
+}
+
+:where(progress)::-webkit-progress-value {
+  border-radius: 999px;
+  background-color: var(--db-accent);
+}
+
+:where(progress)::-moz-progress-bar {
+  border-radius: 999px;
+  background-color: var(--db-accent);
+}
+
+:where(progress:not([value])) {
+  background-image: linear-gradient(90deg, transparent, var(--db-accent), transparent);
+  background-repeat: no-repeat;
+  background-size: 40% 100%;
+  animation: db-progress-indeterminate 1.4s ease-in-out infinite;
+}
+
+/* Separate rules: one engine drops a whole selector list over the other's
+   unknown pseudo-element. */
+:where(progress:not([value]))::-webkit-progress-bar {
+  background-color: transparent;
+}
+
+:where(progress:not([value]))::-webkit-progress-value {
+  background-color: transparent;
+}
+
+:where(progress:not([value]))::-moz-progress-bar {
+  background-color: transparent;
+}
+
+@keyframes db-progress-indeterminate {
+  from {
+    background-position: -100% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(progress:not([value])) {
+    animation: none;
+    background-position: 50% 0;
+  }
+}
+
 :root:has(.db-shell[data-theme='dark']),
 .db-shell[data-theme='dark'] {
   /* Native control chrome (a <select>'s chevron, an unchecked radio or
@@ -4765,7 +4836,9 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
-  :is(.squisq-template-picker-trigger, .squisq-transition-picker-trigger):hover {
+  :is(.squisq-template-picker-trigger, .squisq-transition-picker-trigger):not(
+    [aria-disabled='true']
+  ):hover {
   background: var(--db-bg-hover);
   border-color: var(--db-border-strong);
 }
@@ -6038,7 +6111,9 @@ html:has(.db-shell)
 
 html:has(.db-shell)
   .squisq-toolbar-overflow-menu
-  :is(.squisq-template-picker-trigger, .squisq-transition-picker-trigger):hover {
+  :is(.squisq-template-picker-trigger, .squisq-transition-picker-trigger):not(
+    [aria-disabled='true']
+  ):hover {
   background: var(--db-bg-hover);
   border-color: var(--db-border-strong);
 }
@@ -7658,6 +7733,14 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   margin-top: 10px;
   color: var(--db-text-muted);
   font-size: 11px;
+}
+
+/* A narration clip or template marker, described rather than quoted. */
+.db-ai-review-excerpt .db-ai-review-excerpt-marker {
+  margin: 5px 0 0;
+  color: var(--db-text-secondary);
+  font-size: 13px;
+  font-style: italic;
 }
 
 .db-ai-review-excerpt--replacement blockquote {

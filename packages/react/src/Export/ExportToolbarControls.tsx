@@ -50,7 +50,7 @@ import { createImageSaveOutput } from './image-save.js';
 import { OpenAfterSaveCheckbox } from './OpenAfterSaveCheckbox.js';
 import { loadOpenAfterExport, saveOpenAfterExport } from '../preferences/export.js';
 import { loadTransformStyleSummaries, type ExportSummaryOption } from './transform-summaries.js';
-import { buildVideoExportDoc } from './video-export-doc.js';
+import { buildVideoExportDoc, videoExportFileBaseName } from './video-export-doc.js';
 import { Dialog } from '../components/Dialog.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
 
@@ -763,6 +763,11 @@ export function ExportToolbarControls({
     [destinationAdapter, openSaved],
   );
 
+  const videoFileBaseName = useMemo(
+    () => videoExportFileBaseName(markdownDoc, selectedFile),
+    [markdownDoc, selectedFile],
+  );
+
   const LoadedVideoExportModal = videoModules?.Modal;
   const showAnimatedGifExport =
     showVideoExport && typeof ffmpegWasm?.coreURL === 'string' && ffmpegWasm.coreURL.length > 0;
@@ -1145,6 +1150,7 @@ export function ExportToolbarControls({
             mediaEditRenders={mediaEditRenders}
             colorScheme={colorScheme}
             uiPalette={videoExportPalette}
+            fileBaseName={videoFileBaseName}
             saveOptions={
               destinationAdapter?.openSaved ? (
                 <>

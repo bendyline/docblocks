@@ -113,6 +113,41 @@ describe('segmentPassages', () => {
     ).to.deep.equal([]);
   });
 
+  it('describes annotation markers instead of showing their markup', () => {
+    const source =
+      '{[audio src=audio/narration-20261114-192442.webm anchor=document startAt=1.09]}\n\n' +
+      '## Clips {[audio=intro.mp3]}\n\n' +
+      '{[audio=intro.mp3]}\n\n' +
+      '{[video src=media/demo.mp4]}\n\n' +
+      '{[quote]}\n\n' +
+      'Plain words with {[unknown thing]} markup inside them.\n';
+    const passages = segmentPassages(source, { everyBlock: true });
+    expect(passages.map((passage) => passage.plain)).to.deep.equal([
+      'Narration for the whole document',
+      'Audio clip (intro.mp3)',
+      'Video clip (demo.mp4)',
+      'Start of a Quote block',
+      'Plain words with markup inside them.',
+    ]);
+    expect(passages.map((passage) => passage.marker)).to.deep.equal([
+      true,
+      true,
+      true,
+      true,
+      false,
+    ]);
+    expect(passages[1]?.heading).to.equal('Clips');
+    for (const passage of passages) {
+      expect(source.slice(passage.start, passage.end)).to.equal(passage.text);
+    }
+  });
+
+  it('never offers an annotation marker to the planner', () => {
+    const marker = `{[audio src=audio/${'narration-'.repeat(12)}take.webm anchor=document]}`;
+    expect(marker.length).to.be.greaterThan(80);
+    expect(segmentPassages(`${marker}\n`)).to.deep.equal([]);
+  });
+
   it('scores cues a picture would help with', () => {
     const [steps, history, table] = segmentPassages(DOC);
     expect(steps?.hints.sequence).to.be.greaterThan(2);

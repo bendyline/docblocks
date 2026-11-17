@@ -92,48 +92,55 @@ public class DocBlocksMobilePlugin extends Plugin {
         preparedFolder = SuggestedFolder.prepare();
         getActivity().runOnUiThread(() -> { try { startActivityForResult(call, folderPicker(), "folderResult"); } catch (Exception e) { pickingFolder = false; SuggestedFolder.discardIfEmpty(preparedFolder); preparedFolder = false; call.reject("The folder picker could not be opened."); } });
     }
+    /** Whether the first-run storage question is settled; until it is, the page shows its welcome screen. */
+    @PluginMethod public void storageDecided(PluginCall call) {
+        if (call.getData().length() != 0 || registry == null) { call.reject("Device storage could not be opened."); return; }
+        call.resolve(new JSObject().put("decided", registry.decided()));
+    }
     /**
-     * First launch only: the folder picker opens straight in Documents/DocBlocks, so keeping
-     * documents where they outlive the app is "Use this folder", then "Allow". Backing out keeps
-     * them on the device, where the app warns until a folder is chosen. Android grants lasting
-     * access to a shared folder only through this picker, so it cannot be skipped.
+     * First run only, from the page's welcome screen: the folder picker opens straight in
+     * Documents/DocBlocks, so keeping documents where they outlive the app is "Use this folder",
+     * then "Allow". Android grants lasting access to a shared folder only through this picker, so
+     * backing out, or a folder that cannot be opened, records nothing and the welcome screen asks
+     * again. Only a device with no folder picker settles on device storage, where the app warns
+     * until a folder is chosen.
      */
     @PluginMethod public void chooseStorage(PluginCall call) {
         if (call.getData().length() != 0 || registry == null) { call.reject("Device storage could not be opened."); return; }
-        if (registry.decided()) { call.resolve(); return; }
+        if (registry.decided()) { call.resolve(storageOutcome(registry.hasDefaultFolder() ? "chosen" : "device")); return; }
         if (pickingFolder || exportToken != null) { call.reject("Close the current picker first."); return; }
         pickingFolder = true;
-        // The picker opens over index.html's splash, not the native one it would sit behind.
-        LaunchSplash.release();
         preparedFolder = SuggestedFolder.prepare();
         getActivity().runOnUiThread(() -> {
             try {
                 android.widget.Toast.makeText(getContext(), "Tap “Use this folder” to keep your documents here.", android.widget.Toast.LENGTH_LONG).show();
                 startActivityForResult(call, folderPicker(), "storageResult");
-            } catch (Exception e) { settleStorage(call, null, 0); }
+            } catch (Exception e) {
+                pickingFolder = false; SuggestedFolder.discardIfEmpty(preparedFolder); preparedFolder = false;
+                submit(call, () -> {
+                    try { registry.choose(null); } catch (Exception unrecorded) { /* Device storage is the default either way; the next launch asks again. */ }
+                    call.resolve(storageOutcome("device"));
+                });
+            }
         });
     }
     @ActivityCallback private void storageResult(PluginCall call, ActivityResult result) {
+        pickingFolder = false;
         Intent data = result.getData();
         Uri picked = result.getResultCode() == Activity.RESULT_OK && data != null ? data.getData() : null;
         if (picked == null) SuggestedFolder.discardIfEmpty(preparedFolder);
         preparedFolder = false;
-        if (call == null) { pickingFolder = false; return; }
-        settleStorage(call, picked, data == null ? 0 : data.getFlags());
-    }
-    /** Every outcome records the decision, so a cancelled or failed choice never prompts again and falls back to device storage. */
-    private void settleStorage(PluginCall call, Uri folder, int flags) {
-        pickingFolder = false;
+        if (call == null) return;
+        if (picked == null) { call.resolve(storageOutcome("cancelled")); return; }
+        int flags = data.getFlags();
         submit(call, () -> {
-            String chosen = null;
-            if (folder != null) {
-                try { chosen = registry.add(folder, flags, storage).getString("id"); }
-                catch (Exception e) { getActivity().runOnUiThread(() -> android.widget.Toast.makeText(getContext(), "That folder could not be opened. Documents will stay on this device.", android.widget.Toast.LENGTH_LONG).show()); }
-            }
-            try { registry.choose(chosen); } catch (Exception e) { /* Unrecorded, device storage stays the default; with no folder added, the next launch asks again. */ }
-            call.resolve();
+            // A folder added but not made the default is picked again: add() finds it and choose() retries.
+            try { registry.choose(registry.add(picked, flags, storage).getString("id")); }
+            catch (Exception e) { call.resolve(storageOutcome("failed")); return; }
+            call.resolve(storageOutcome("chosen"));
         });
     }
+    private static JSObject storageOutcome(String outcome) { return new JSObject().put("outcome", outcome); }
     @ActivityCallback private void folderResult(PluginCall call, ActivityResult result) {
         pickingFolder = false;
         boolean cancelled = result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null;

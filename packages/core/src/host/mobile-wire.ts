@@ -410,3 +410,23 @@ export function parseMobileOpenRequests(input: unknown) {
 export function parseMobilePickedFolder(input: unknown) {
   return z.object({ workspace: workspace.nullable() }).strict().parse(input).workspace;
 }
+
+/** Android's first-run storage question: whether it has already been settled. */
+export function parseMobileStorageDecided(input: unknown): boolean {
+  return z.object({ decided: z.boolean() }).strict().parse(input).decided;
+}
+
+/**
+ * How Android's first-run folder picker ended. `chosen`: a folder is now the
+ * default. `device`: the device has no folder picker, so documents stay on
+ * it. `cancelled`: the user backed out. `failed`: the folder they picked
+ * could not be opened. Neither of the last two records a choice, so the
+ * welcome screen asks again.
+ */
+export type MobileStorageOutcome = 'chosen' | 'device' | 'cancelled' | 'failed';
+export function parseMobileStorageOutcome(input: unknown): MobileStorageOutcome {
+  return z
+    .object({ outcome: z.enum(['chosen', 'device', 'cancelled', 'failed']) })
+    .strict()
+    .parse(input).outcome;
+}

@@ -623,6 +623,12 @@ export interface DocBlocksShellProps {
    * a splash screen over the shell drops it here.
    */
   onStartupSettled?: () => void;
+  /**
+   * What the first-run screen greets the user with, in place of "Welcome to
+   * DocBlocks". A host whose own screen has just welcomed them (Android,
+   * after asking for a folder) moves on instead of saying it twice.
+   */
+  firstRunGreeting?: string;
 }
 
 function useOsTheme(): 'light' | 'dark' {
@@ -1002,6 +1008,7 @@ export function DocBlocksShell({
   allowPresentationFullscreen = true,
   offlineReady = false,
   onStartupSettled,
+  firstRunGreeting,
 }: DocBlocksShellProps) {
   const osTheme = useOsTheme();
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
@@ -6644,6 +6651,7 @@ export function DocBlocksShell({
                 onTour={handleTourWelcome}
                 onDismiss={handleTourWelcome}
                 offerApps={hostEnvironment === null}
+                greeting={firstRunGreeting}
               />
             )}
           </main>
@@ -6657,6 +6665,7 @@ export function DocBlocksShell({
               setMobileShowEditor(true);
             }}
             onDismiss={closeWelcomeGateway}
+            greeting={firstRunGreeting}
           />
         )}
       </GitContext.Provider>

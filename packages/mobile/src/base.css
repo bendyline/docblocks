@@ -59,3 +59,184 @@ html:root,
   padding-bottom: calc(var(--db-bottom-bar-pad) - 4px);
   padding-left: max(18px, calc(20px - var(--db-safe-left)));
 }
+
+/* Android's first-run welcome screen (storage-welcome.ts). It is carried by
+   index.html's launch splash, whose brown gives way to the shell's chrome
+   colors as the screen fades in. Its look follows the shell's own phone
+   first-run screen (.db-mobile-first-run in docblocks.css), which comes next,
+   so the two read as one sequence. The shell's stylesheet is not loaded yet,
+   so its tokens are repeated here. */
+#db-splash.db-splash--welcome {
+  --db-welcome-bg: #f3eede;
+  --db-welcome-glow: rgba(160, 70, 31, 0.15);
+  --db-welcome-text: #231f18;
+  --db-welcome-text-secondary: #3d3528;
+  --db-welcome-text-muted: #6b6252;
+  --db-welcome-accent: #a0461f;
+  --db-welcome-accent-hover: #8a3a1a;
+  --db-welcome-on-accent: #fffdf9;
+  --db-welcome-focus: #231f18;
+  --db-welcome-icon-edge: transparent;
+  background-color: var(--db-welcome-bg);
+  transition:
+    background-color 320ms ease-out,
+    opacity 200ms ease-out;
+}
+
+@media (prefers-color-scheme: dark) {
+  #db-splash.db-splash--welcome {
+    --db-welcome-bg: #262219;
+    --db-welcome-glow: rgba(224, 131, 90, 0.18);
+    --db-welcome-text: #ece6d8;
+    --db-welcome-text-secondary: #d4ccb0;
+    --db-welcome-text-muted: #a39885;
+    --db-welcome-accent: #e0835a;
+    --db-welcome-accent-hover: #eb9a76;
+    --db-welcome-on-accent: #1a1812;
+    --db-welcome-focus: #ece6d8;
+    /* The icon's brown is close to the dark page; an edge keeps its shape. */
+    --db-welcome-icon-edge: rgba(236, 230, 216, 0.14);
+  }
+}
+
+/* The splash's own mark fades as the screen arrives; its "Opening DocBlocks…"
+   status would only repeat what the screen says. */
+#db-splash.db-splash--welcome > svg {
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+}
+
+#db-splash.db-splash--welcome > p {
+  display: none;
+}
+
+/* Scrolls when a large font scale outgrows the screen and centers its column
+   when it does not: `margin: auto` on the column, as .db-mobile-first-run does. */
+.db-storage-welcome {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: calc(var(--db-safe-top) + 56px) calc(var(--db-safe-right) + 24px)
+    calc(var(--db-safe-bottom) + 24px) calc(var(--db-safe-left) + 24px);
+  background: radial-gradient(circle at 92% 4%, var(--db-welcome-glow), transparent 42%);
+  color: var(--db-welcome-text);
+  font-family:
+    'DocBlocks Fixed UI',
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
+  animation: db-storage-welcome-in 280ms ease-out 120ms both;
+}
+
+@keyframes db-storage-welcome-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.db-storage-welcome-body {
+  width: 100%;
+  max-width: 440px;
+  margin: auto;
+}
+
+/* The splash's mark on its brown: the app icon the user just tapped. */
+#db-splash .db-storage-welcome-icon {
+  display: block;
+  width: 64px;
+  height: 64px;
+  margin: 0 0 22px;
+  border-radius: 15px;
+  background: #231f18;
+  box-shadow: inset 0 0 0 1px var(--db-welcome-icon-edge);
+}
+
+.db-storage-welcome h1 {
+  margin: 0;
+  color: var(--db-welcome-text);
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+/* Moved here programmatically for screen readers; it is not a control. */
+.db-storage-welcome h1:focus {
+  outline: none;
+}
+
+.db-storage-welcome-body > p {
+  margin: 14px 0 0;
+  color: var(--db-welcome-text-secondary);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.db-storage-welcome-body > .db-storage-welcome-note {
+  margin-top: 8px;
+  color: var(--db-welcome-text-muted);
+}
+
+.db-storage-welcome-pick {
+  display: block;
+  width: 100%;
+  min-height: 46px;
+  margin-top: 24px;
+  padding: 8px 12px;
+  border: 1px solid var(--db-welcome-accent);
+  border-radius: 7px;
+  background: var(--db-welcome-accent);
+  color: var(--db-welcome-on-accent);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Touch leaves :hover on the last thing tapped, which would keep the button
+   lit after the picker returns; only a real pointer gets the hover color. */
+@media (hover: hover) {
+  .db-storage-welcome-pick:hover:enabled {
+    border-color: var(--db-welcome-accent-hover);
+    background: var(--db-welcome-accent-hover);
+  }
+}
+
+.db-storage-welcome-pick:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.db-storage-welcome-pick:focus-visible {
+  outline: 2px solid var(--db-welcome-focus);
+  outline-offset: 2px;
+}
+
+.db-storage-welcome-body > .db-storage-welcome-status {
+  color: var(--db-welcome-text);
+  font-size: 14px;
+}
+
+/* Rendered even while empty: a live region must be present before its message
+   arrives for the message to be announced. */
+.db-storage-welcome-body > .db-storage-welcome-status:empty {
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #db-splash.db-splash--welcome,
+  #db-splash.db-splash--welcome > svg {
+    transition: none;
+  }
+
+  .db-storage-welcome {
+    animation: none;
+  }
+}

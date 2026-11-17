@@ -9,8 +9,9 @@
  * On Android the native splash (LaunchSplash.java) normally still covers all of
  * it: the page's splash is then taken away underneath, unseen, before the
  * native one lets go, so the first frame drawn is the app itself. Once the
- * native splash has gone early — for the first-run storage question — the
- * page's splash is the one in view and fades as it does on iOS.
+ * native splash has gone early — for the first-run welcome screen, which the
+ * page's splash carries (storage-welcome.ts) — the page's splash is the one in
+ * view and fades, screen and all, as it does on iOS.
  *
  * Calling it again, or with no splash, does nothing more.
  */

@@ -61,6 +61,8 @@ final class WorkspaceRegistry {
     }
     /** Picked folders predate the first-run choice, so they count as a decision already made. */
     synchronized boolean decided() { return chosen || !entries.isEmpty(); }
+    /** Whether a picked folder, not device storage, is the default. */
+    synchronized boolean hasDefaultFolder() { return defaultId != null; }
     /** Records the first-run decision; null keeps documents in device storage. */
     synchronized void choose(String id) throws Exception {
         replace(choice, Storage.object("defaultId", id).toString()); chosen = true; defaultId = id;

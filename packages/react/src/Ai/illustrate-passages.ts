@@ -13,7 +13,14 @@
  */
 
 import { extractPlainText, parseMarkdown, type MarkdownNode } from '@bendyline/squisq/markdown';
-import { isContainerTemplate, isPictureFence } from '@bendyline/squisq/doc';
+import {
+  TEMPLATE_METADATA,
+  isContainerTemplate,
+  isPictureFence,
+  parseStandaloneAnnotation,
+  resolveTemplateName,
+  type ParsedAnnotation,
+} from '@bendyline/squisq/doc';
 import {
   applySourceEditsToText,
   blockInsertionPoint,
@@ -50,8 +57,16 @@ export interface Passage {
   readonly end: number;
   /** Exact source text, used to find the passage again after edits. */
   readonly text: string;
-  /** Plain text, for prompts and grounding. */
+  /**
+   * Plain text, for prompts and grounding, with any `{[…]}` markup removed.
+   * For a marker it is a short description of the marker instead.
+   */
   readonly plain: string;
+  /**
+   * The block is a standalone `{[…]}` annotation (a narration or media clip,
+   * or the start of a template block), not prose.
+   */
+  readonly marker: boolean;
   /** Text of the heading the passage sits under, or '' before any heading. */
   readonly heading: string;
   /** Which section the passage is in: 0 before the first heading, then one per heading. */
@@ -76,6 +91,46 @@ const PART_CUES =
 const DATE_CUES =
   /\b(1\d{3}|2\d{3})\b|\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sep(tember)?|oct(ober)?|nov(ember)?|dec(ember)?)\s+\d{4}\b|\bq[1-4]\s+\d{4}\b/giu;
 const NUMBER_CUES = /(?<![\w.])[-−]?\$?\d[\d,]*(?:\.\d+)?\s?(%|k|m|bn|million|billion)?(?![\w])/giu;
+
+/** `{[…]}` markup left in plain text: an annotation or an unknown icon token. */
+const ANNOTATION_MARKUP = /\{\[[^\]]*\]\}/gu;
+
+/** Plain text with annotation markup removed and whitespace collapsed. */
+function readable(text: string): string {
+  return text.replace(ANNOTATION_MARKUP, ' ').replace(/\s+/gu, ' ').trim();
+}
+
+/** The file a media annotation names, without its folders. */
+function mediaFile(params: Readonly<Record<string, string>>): string {
+  const path = params.src ?? params.audio ?? params.video ?? params.media ?? '';
+  return path.split(/[\\/]/u).pop()?.trim() ?? '';
+}
+
+/** A short description of a standalone annotation, for a person to read. */
+export function describeAnnotation({ template, params }: ParsedAnnotation): string {
+  const media =
+    template ??
+    (params.audio !== undefined
+      ? 'audio'
+      : params.video !== undefined
+        ? 'video'
+        : params.media !== undefined
+          ? 'media'
+          : undefined);
+  const file = mediaFile(params);
+  if (media === 'audio') {
+    if (params.anchor === 'document') return 'Narration for the whole document';
+    if (/^narration-/iu.test(file)) return 'Narration recording';
+    return file ? `Audio clip (${file})` : 'Audio clip';
+  }
+  if (media === 'video') return file ? `Video clip (${file})` : 'Video clip';
+  if (media === 'media') return file ? `Media clip (${file})` : 'Media clip';
+  if (template) {
+    const label = TEMPLATE_METADATA[resolveTemplateName(template)]?.label ?? template;
+    return `Start of a ${label} block`;
+  }
+  return 'Block settings';
+}
 
 function count(text: string, pattern: RegExp): number {
   return text.match(pattern)?.length ?? 0;
@@ -165,7 +220,7 @@ export function segmentPassages(
   let templated = false;
   children.forEach((node, position) => {
     if (node.type === 'heading') {
-      heading = extractPlainText(node).trim();
+      heading = readable(extractPlainText(node));
       section++;
       // Slides, charts, and the children of drawings and layouts are already
       // laid out by their template; leave them alone.
@@ -180,7 +235,12 @@ export function segmentPassages(
     const end = node.position?.end.offset;
     if (typeof start !== 'number' || typeof end !== 'number') return;
     if (isVisual(node)) return;
-    const plain = extractPlainText(node).replace(/\s+/gu, ' ').trim();
+    // A standalone `{[…]}` paragraph is a narration or media clip, or the
+    // start of a template block: nothing to draw from, so the planner never
+    // sees it, and a person choosing a place sees what it is, not its markup.
+    const annotation = node.type === 'paragraph' ? parseStandaloneAnnotation(node) : null;
+    if (annotation && !every) return;
+    const plain = annotation ? describeAnnotation(annotation) : readable(extractPlainText(node));
     if (!plain) return;
     if (!every) {
       if (isVisual(children[position + 1])) return;
@@ -196,6 +256,7 @@ export function segmentPassages(
       end,
       text: source.slice(start, end),
       plain,
+      marker: annotation !== null,
       heading,
       section,
       hints,

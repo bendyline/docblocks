@@ -12,7 +12,9 @@ export interface MobilePlugin {
   takeOpenRequests(): Promise<unknown>;
   pickFolder(): Promise<unknown>;
   forgetFolder(options: { workspaceId: string }): Promise<void>;
-  /** Android only: the one-time choice between a shared folder and device storage. */
+  /** Android only: whether the first-run storage question is settled (`{ decided }`). */
+  storageDecided(): Promise<unknown>;
+  /** Android only: the first-run folder picker, from the welcome screen (`{ outcome }`). */
   chooseStorage(): Promise<unknown>;
   /** Android only: make a picked folder the workspace opened by default. */
   setDefaultFolder(options: { workspaceId: string }): Promise<void>;

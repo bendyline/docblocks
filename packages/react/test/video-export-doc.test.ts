@@ -14,7 +14,11 @@ import assert from 'node:assert/strict';
 import type { Doc, MediaProvider } from '@bendyline/squisq/schemas';
 
 import { PresentationInvalidError } from '../src/Export/export-errors.js';
-import { buildVideoExportDoc, persistedTransformStyle } from '../src/Export/video-export-doc.js';
+import {
+  buildVideoExportDoc,
+  persistedTransformStyle,
+  videoExportFileBaseName,
+} from '../src/Export/video-export-doc.js';
 
 // Trimmed from the document that exposed the bug: an untemplated `##` section
 // whose body is a table played in the preview but exported as a title card.
@@ -214,6 +218,25 @@ describe('video export document', () => {
       });
       expect(slide(exported, 'demo').duration).to.equal(3);
     });
+  });
+});
+
+describe('video export file name', () => {
+  it('uses an authored frontmatter title first', () => {
+    const markdown = parseMarkdown('---\ntitle: Launch Recap\n---\n\n# Kickoff\n\nBody.\n');
+    expect(videoExportFileBaseName(markdown, '/talks/q3.md')).to.equal('Launch Recap');
+  });
+
+  it('falls back to the top heading', () => {
+    const markdown = parseMarkdown('## Agenda\n\n# Fist Fighter Arts\n\nBody.\n');
+    expect(videoExportFileBaseName(markdown, '/talks/q3.md')).to.equal('Fist Fighter Arts');
+  });
+
+  it('falls back to the file name, then leaves the exporter to its default', () => {
+    const markdown = parseMarkdown('Just a paragraph.\n');
+    expect(videoExportFileBaseName(markdown, '/talks/Test123.md')).to.equal('Test123');
+    expect(videoExportFileBaseName(null, '/talks/Test123.md')).to.equal('Test123');
+    expect(videoExportFileBaseName(markdown, null)).to.equal(undefined);
   });
 });
 

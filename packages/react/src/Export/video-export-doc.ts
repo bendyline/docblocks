@@ -17,9 +17,11 @@
  * whole clip in the MP4 as it does in the preview.
  */
 
-import { parseMarkdown } from '@bendyline/squisq/markdown';
+import { inferDocumentTitle, parseMarkdown } from '@bendyline/squisq/markdown';
+import type { MarkdownDocument } from '@bendyline/squisq/markdown';
 import type { Doc, MediaProvider } from '@bendyline/squisq/schemas';
 import type { ContentContainer } from '@bendyline/squisq/storage';
+import { titleForSelectedFile } from '../DocBlocksShell/document-title.js';
 import { PresentationInvalidError } from './export-errors.js';
 import { frontmatterTransformId } from './export-options.js';
 
@@ -50,6 +52,19 @@ export function persistedTransformStyle(
 ): string | null {
   const id = frontmatterTransformId(frontmatter);
   return id && knownIds.has(id) ? id : null;
+}
+
+/**
+ * What a saved video is called, without its extension: the document's title
+ * (an authored frontmatter `title:`, else its top heading), else the file's
+ * own name. Undefined leaves the exporter to its own default.
+ */
+export function videoExportFileBaseName(
+  markdownDoc: MarkdownDocument | null,
+  fileName: string | null,
+): string | undefined {
+  const title = markdownDoc ? inferDocumentTitle(markdownDoc) : undefined;
+  return title || titleForSelectedFile(fileName, undefined, undefined, false) || undefined;
 }
 
 /**

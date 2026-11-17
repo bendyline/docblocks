@@ -1,0 +1,38 @@
+// Gradle init script: fetch Maven Central's artifacts from Google's mirror.
+//
+// The maven-central-mirror action installs this into the runner's Gradle
+// init.d, so it applies to GitHub-hosted CI jobs only; local builds never load
+// it. Hosted runners share egress addresses, and Maven Central rate limits
+// them: a cold Android build fetches a few hundred POMs and JARs, and Maven
+// Central answered HTTP 429 Too Many Requests to all of them through four
+// attempts spread over five minutes. Google hosts a mirror of Maven Central on
+// Cloud Storage that serves the same files at the same paths.
+//
+// Only the host changes. Every Maven Central repository a build declares (the
+// root buildscript, Capacitor's and Gezel's plugin builds, settings) keeps its
+// place in the search order, every other repository (Google Maven, the Gradle
+// Plugin Portal, Gezel's bundled local repositories) is untouched, and
+// app/gradle.lockfile still fixes every version.
+
+def centralUrls = ['https://repo.maven.apache.org/maven2', 'https://repo1.maven.org/maven2']
+def mirrorUrl = 'https://maven-central.storage-download.googleapis.com/maven2/'
+
+// configureEach also covers repositories added later, so this catches every
+// mavenCentral() a build script declares after the hook is registered.
+def useMirror = { repositories ->
+    repositories.withType(MavenArtifactRepository).configureEach { repository ->
+        def url = String.valueOf(repository.url)
+        if (centralUrls.any { url.startsWith(it) }) repository.url = mirrorUrl
+    }
+}
+
+beforeSettings { settings ->
+    useMirror(settings.buildscript.repositories)
+    useMirror(settings.pluginManagement.repositories)
+    useMirror(settings.dependencyResolutionManagement.repositories)
+}
+
+allprojects { project ->
+    useMirror(project.buildscript.repositories)
+    useMirror(project.repositories)
+}

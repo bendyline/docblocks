@@ -4,6 +4,7 @@ import { DocBlocksShell } from '@bendyline/docblocks-react';
 import { SITE_CALC_ENGINE_FACTORY } from './calculationConfig';
 import { SITE_PROOFING_PROVIDER } from './proofingConfig';
 import { dismissSplash } from './splash';
+import { firstRunGreeting } from './storage-welcome';
 // pdf.js parses PDFs only with a worker, and only the bundler can give its URL.
 // pdfjs-dist is pinned to the version Squisq's formats package loads.
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
@@ -35,6 +36,8 @@ createRoot(document.getElementById('root')!).render(
       // index.html's launch splash covers the shell until it has restored the
       // last document, so its interim states never flash past.
       onStartupSettled={dismissSplash}
+      // Android's welcome screen has just greeted a user who picked a folder.
+      firstRunGreeting={firstRunGreeting()}
     />
   </StrictMode>,
 );
