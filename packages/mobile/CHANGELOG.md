@@ -1,3 +1,16 @@
+## docblocks-mobile [1.1.3](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.1.2...docblocks-mobile@1.1.3) (2026-11-17)
+
+### Bug Fixes
+
+* Add resilient Gradle retries for mobile builds ([#55](https://github.com/bendyline/docblocks/issues/55)) ([fdd8ea3](https://github.com/bendyline/docblocks/commit/fdd8ea315f5ae8f705290790c50adf633ed7fa37))
+* Various mobile fixes ([#56](https://github.com/bendyline/docblocks/issues/56)) ([9840a04](https://github.com/bendyline/docblocks/commit/9840a041913b3de56b7ca92a13dc2cf9739b60f0))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.8.3
+* **@bendyline/docblocks-react:** upgraded to 2.8.3
+
 ## docblocks-mobile [1.1.2](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.1.1...docblocks-mobile@1.1.2) (2026-11-16)
 
 ### Bug Fixes
