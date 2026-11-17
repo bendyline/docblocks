@@ -215,7 +215,11 @@ describe('local Gezel links', () => {
     expect(() => gezelBuildPackages(source)).to.throw('runtime dependency cycle');
   });
 
-  it('builds the sibling packages even when desktop startup passes an npm prefix', async () => {
+  it('builds the sibling packages even when desktop startup passes an npm prefix', async function () {
+    // Runs three real `npm run build` children in sequence. Cold npm starts on
+    // a hosted Windows runner have taken over 2s together, past Mocha's default
+    // (the Windows CI step runs with --no-config, so the root 10s does not apply).
+    this.timeout(30_000);
     fs.mkdirSync(path.join(root, 'node_modules'), { recursive: true });
     fs.symlinkSync(
       path.join(repoRoot, 'node_modules/npm'),
