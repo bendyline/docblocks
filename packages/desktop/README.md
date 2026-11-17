@@ -176,12 +176,19 @@ MAS packaging first verifies the upstream native pins, moves executables into
 `Contents/Helpers` and Metal libraries into `Contents/Frameworks`, and preserves
 their logical resource paths with sealed symlinks. It signs executables with
 sandbox inheritance and libraries with the app identity and no entitlements.
-The enclosing app seals a manifest of the resulting bytes. Local builds verify
-those hashes exactly. App Store delivery changes code signatures; only an
-authenticated Apple store signing certificate and complete app resource seal
-permit changed hashes. Runtime also verifies native locations, symlinks,
-signatures and executable inheritance. Direct macOS builds preserve the upstream
-Developer ID signatures.
+The enclosing app seals a manifest of the resulting bytes, and
+`check-store-packages` verifies those hashes, native locations, symlinks,
+signatures and executable inheritance before upload. Direct macOS builds
+preserve the upstream Developer ID signatures.
+
+At startup, a shipped build checks only that its engines are the release its
+Gezel pins and are complete: every pinned file is present at its pinned size,
+or, in the Mac App Store build, which Apple re-signs (App Store and TestFlight
+differently), its two executables are present. It does not hash or
+signature-check them. The operating system's code signing protects the
+installed app, and a check that lives inside that same app could not add to
+it. Packaging is where hashes and signatures are verified. A failed check tells
+the person to reinstall DocBlocks; a source build says to restage instead.
 
 The inference pin `1.1.3` selects notarized native release `0.1.63`.
 Signed MAS build and runtime qualification remain separate release gates.

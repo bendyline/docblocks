@@ -116,11 +116,9 @@ describe('MAS native provenance, layout and signing', () => {
   }
   const verify = (
     manifest: ReturnType<typeof parseMasNativeManifest>,
-    deliveredByStore = false,
     verifySeal: () => Promise<void> = async () => undefined,
   ) =>
     verifyMasNativeFiles(root, manifest, {
-      deliveredByStore,
       verifySeal,
       verifySignature: async () => undefined,
     });
@@ -241,39 +239,37 @@ describe('MAS native provenance, layout and signing', () => {
     expect((await rejected(verify(manifest))).message).to.contain('plugin link changed');
   });
 
-  it('permits store re-signing only with authenticated seals before and after verification', async () => {
+  it('checks the package DocBlocks signed: exact pins, with the seal before and after', async () => {
     const { operation } = await prepare();
     const manifest = parseMasNativeManifest(await operation, release);
-    const helper = path.join(app, 'Contents', 'Helpers', 'gezel-apple-fm');
-    await writeFile(
-      helper,
-      Buffer.concat([await readFile(helper), Buffer.from(' Apple delivery signature')]),
-    );
-    expect((await rejected(verify(manifest))).message).to.contain('hash mismatch');
     let seals = 0;
-    await verify(manifest, true, async () => {
+    await verify(manifest, async () => {
       seals++;
     });
     expect(seals).to.equal(2);
     expect(
       (
         await rejected(
-          verify(manifest, true, async () => {
-            throw new Error('invalid Apple seal');
+          verify(manifest, async () => {
+            throw new Error('invalid seal');
           }),
         )
       ).message,
-    ).to.equal('invalid Apple seal');
+    ).to.equal('invalid seal');
     let checks = 0;
     expect(
       (
         await rejected(
-          verify(manifest, true, async () => {
-            if (++checks === 2) throw new Error('changed Apple seal');
+          verify(manifest, async () => {
+            if (++checks === 2) throw new Error('changed seal');
           }),
         )
       ).message,
-    ).to.equal('changed Apple seal');
+    ).to.equal('changed seal');
+    // Re-signed bytes are never accepted here, even under a valid seal.
+    const helper = path.join(app, 'Contents', 'Helpers', 'gezel-apple-fm');
+    await writeFile(helper, Buffer.concat([await readFile(helper), Buffer.from(' re-signed')]));
+    expect((await rejected(verify(manifest))).message).to.contain('hash mismatch');
   });
 });
 async function rejected(operation: Promise<unknown>): Promise<Error> {

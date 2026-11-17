@@ -8,7 +8,7 @@
  */
 
 import { expect } from 'chai';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { HostServiceModule } from '@bendyline/gezel-app-sdk/host';
@@ -22,6 +22,9 @@ import {
   type GezelConnectorOptions,
 } from '../main/ai/gezel-connector.js';
 import type { ProviderChatChunk } from '../main/ai/ai-service.js';
+import { DAMAGED_NATIVE_REASON } from '../main/ai/gezel-native-host.js';
+import { MAS_NATIVE_EXECUTABLES } from '../main/ai/gezel-mas-native.js';
+import type { NativeFileManifest } from '../main/ai/gezel-staged-native.js';
 
 const BASE_URL = 'https://127.0.0.1:59999';
 
@@ -592,6 +595,30 @@ describe('Gezel connector with the real embedding SDK', () => {
     }
   });
 
+  // A one-engine payload for whatever platform runs the tests, plus UV.
+  const platformKey = `${process.platform}-${process.arch}`;
+  const engine = { sha256: '0'.repeat(64), sizeBytes: 6, signature: 'hash-only' as const };
+  const PINS: NativeFileManifest = {
+    schemaVersion: 2,
+    release: '0.1.63',
+    platforms: {
+      [platformKey]: { files: { engine, uv: { ...engine, sizeBytes: 2 } }, symlinks: {} },
+    },
+  };
+  async function stagePayload(
+    files: readonly string[] = [`${platformKey}/engine`],
+    release = PINS.release,
+  ) {
+    const dir = path.join(root, 'native');
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, 'release.json'), JSON.stringify({ release }));
+    for (const file of files) {
+      await mkdir(path.join(dir, path.dirname(file)), { recursive: true });
+      await writeFile(path.join(dir, file), 'engine');
+    }
+    return dir;
+  }
+
   function hosted(options: Partial<GezelConnectorOptions> = {}) {
     const daemon = new FakeDaemon();
     daemon.validToken = 'private-token';
@@ -662,11 +689,12 @@ describe('Gezel connector with the real embedding SDK', () => {
         standalone: false,
         hostHome: path.join(root, 'private'),
         hostNative: {
-          nativeBinDir: path.join(root, 'native'),
+          nativeBinDir: await stagePayload(),
           distributionProfile: 'store',
-          allowStandaloneMacPayload: false,
           canHost: true,
+          stagedWithoutUv: true,
         },
+        loadNativeManifest: async () => PINS,
       });
       expect(await fixture.connector.detect()).to.deep.equal({
         installed: false,
@@ -676,9 +704,8 @@ describe('Gezel connector with the real embedding SDK', () => {
       });
       const connection = await fixture.connect();
       for (const key of keys) expect(process.env[key], key).to.equal(undefined);
-      expect(fixture.verifications).to.deep.equal([
-        { candidates: [path.join(root, 'native')], allowStandaloneMacPayload: false },
-      ]);
+      // DocBlocks checks its own payload; Gezel's hash and signature verifier never runs.
+      expect(fixture.verifications).to.deep.equal([]);
       expect(fixture.starts[0]).to.include({ home: path.join(root, 'private') });
       await connection.close();
       for (const key of keys) expect(process.env[key], key).to.equal('/outside/sandbox');
@@ -690,39 +717,67 @@ describe('Gezel connector with the real embedding SDK', () => {
     }
   });
 
-  it('rejects an invalid native payload before starting the service', async () => {
+  it('refuses engines from another release in plain words, before starting the service', async () => {
     const fixture = hosted({
       hostNative: {
-        nativeBinDir: path.join(root, 'native'),
+        nativeBinDir: await stagePayload(undefined, '0.1.62'),
         distributionProfile: 'store',
-        allowStandaloneMacPayload: false,
         canHost: true,
+        stagedWithoutUv: true,
+        damagedPayloadReason: DAMAGED_NATIVE_REASON,
       },
+      loadNativeManifest: async () => PINS,
     });
-    fixture.service.verifyNativeBinaries = async () => ({ reused: false, reason: 'bad signature' });
     const error = toAiError(await rejection(fixture.connect()));
-    expect(error.code).to.equal('runtime-missing');
-    expect(error.detail).to.contain('bad signature');
+    expect(error).to.deep.equal({
+      code: 'runtime-missing',
+      message: DAMAGED_NATIVE_REASON,
+      detail: 'engines are release 0.1.62; this build needs 0.1.63',
+    });
     expect(fixture.starts).to.deep.equal([]);
   });
 
-  it('verifies a staged payload against the pins packaging left it', async () => {
-    const manifest = { schemaVersion: 2 as const, release: '0.1.57', platforms: {} };
+  it('expects UV only in a payload DocBlocks did not stage itself', async () => {
+    const reason = 'The engines in DOCBLOCKS_GEZEL_NATIVE_BIN_DIR do not match.';
+    const staged = (stagedWithoutUv: boolean) =>
+      hosted({
+        hostNative: {
+          nativeBinDir: path.join(root, 'native'),
+          distributionProfile: 'store',
+          canHost: true,
+          damagedPayloadReason: reason,
+          ...(stagedWithoutUv ? { stagedWithoutUv } : {}),
+        },
+        loadNativeManifest: async () => PINS,
+      });
+    await stagePayload();
+    const connection = await staged(true).connect();
+    await connection.close();
+    const error = toAiError(await rejection(staged(false).connect()));
+    expect(error).to.include({ message: reason, detail: `missing: ${platformKey}/uv` });
+  });
+
+  it('checks a Mac App Store payload for its executables only, since Apple re-signs them', async () => {
     const fixture = hosted({
       hostNative: {
-        nativeBinDir: path.join(root, 'native'),
+        nativeBinDir: await stagePayload(MAS_NATIVE_EXECUTABLES),
         distributionProfile: 'store',
-        allowStandaloneMacPayload: false,
         canHost: true,
-        stagedWithoutUv: true,
+        macAppStore: true,
       },
-      loadStagedManifest: async () => manifest,
+      // Pinned sizes that no file here matches: a store payload ignores them.
+      loadNativeManifest: async () => PINS,
     });
     const connection = await fixture.connect();
-    expect(fixture.verifications).to.deep.equal([
-      { candidates: [path.join(root, 'native')], allowStandaloneMacPayload: false, manifest },
-    ]);
     await connection.close();
+    await rm(path.join(root, 'native', MAS_NATIVE_EXECUTABLES[0]));
+    const error = toAiError(await rejection(fixture.connect()));
+    expect(error).to.include({
+      code: 'runtime-missing',
+      message: DAMAGED_NATIVE_REASON,
+      detail: `missing: ${MAS_NATIVE_EXECUTABLES[0]}`,
+    });
+    expect(fixture.verifications).to.deep.equal([]);
   });
 
   it('never loads or starts the bundled service below its OS floor', async () => {
@@ -733,7 +788,6 @@ describe('Gezel connector with the real embedding SDK', () => {
       standalone: false,
       hostNative: {
         distributionProfile: 'store',
-        allowStandaloneMacPayload: false,
         canHost: false,
         unavailableReason: reason,
       },
@@ -800,7 +854,6 @@ describe('Gezel connector with the real embedding SDK', () => {
           ? {
               hostNative: {
                 distributionProfile: 'store' as const,
-                allowStandaloneMacPayload: false,
                 canHost: false,
                 macAppStore: true,
               },
@@ -854,7 +907,6 @@ describe('Gezel connector with the real embedding SDK', () => {
       hostNative: {
         nativeBinDir: '/unused',
         distributionProfile: 'store',
-        allowStandaloneMacPayload: false,
         canHost: true,
       },
       loadService: async () => {

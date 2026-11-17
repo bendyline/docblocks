@@ -1200,11 +1200,15 @@
   transform: rotate(180deg);
 }
 
+/* Shares the app menu's layer. On desktop the sidebar stops clipping so this
+   menu can cross into the editor pane, and there it must clear the first-run
+   welcome screen (`.db-welcome-gateway`, 60): at an equal z-index the screen
+   wins on document order and hides everything past the sidebar's edge. */
 .db-workspace-dropdown {
   position: absolute;
   left: 8px;
   top: 100%;
-  z-index: 60;
+  z-index: 70;
   min-width: calc(100% - 16px);
   max-width: min(320px, 90vw);
   background: var(--db-bg-raised);

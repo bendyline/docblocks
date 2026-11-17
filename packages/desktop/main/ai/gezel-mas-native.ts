@@ -17,12 +17,24 @@ interface MasNativeManifest {
   files: Record<string, MasNativeFile>;
   symlinks: Record<string, string>;
 }
+/*
+ * Build-time verification of the MAS package DocBlocks signs itself, run by
+ * check-store-packages before upload. The shipped app does not run it: Apple
+ * re-signs delivered code (App Store and TestFlight differently), the
+ * operating system enforces that signature, and a check from inside the same
+ * app could not add to it. At runtime, checkNativePayload confirms only that
+ * MAS_NATIVE_EXECUTABLES are present.
+ */
 const run = promisify(execFile);
-const STORE_CERTIFICATE = 'certificate leaf[field.1.2.840.113635.100.6.1.9] exists';
-const SIGNING_REQUIREMENT = `=anchor apple generic and (certificate leaf[subject.OU] = "5B7Y53BF56" or certificate leaf[subject.OU] = "JXA5M4VK3V" or ${STORE_CERTIFICATE})`;
+const SIGNING_REQUIREMENT =
+  '=anchor apple generic and (certificate leaf[subject.OU] = "5B7Y53BF56" or certificate leaf[subject.OU] = "JXA5M4VK3V")';
 const COMMAND_OPTIONS = { timeout: 60_000, maxBuffer: 1024 * 1024 };
-// The only executables MAS ships. UV (MLX's Python installer) is deliberately absent.
-const REQUIRED = ['darwin-arm64/gezel-apple-fm', 'darwin-arm64-metal/gezel-llama-server'];
+/** The only executables MAS ships. UV (MLX's Python installer) is deliberately absent. */
+export const MAS_NATIVE_EXECUTABLES: readonly string[] = [
+  'darwin-arm64/gezel-apple-fm',
+  'darwin-arm64-metal/gezel-llama-server',
+];
+const REQUIRED = MAS_NATIVE_EXECUTABLES;
 const MAX_FILE = 2 * 1024 ** 3;
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -154,7 +166,6 @@ export async function verifyMasNativeFiles(
   options: {
     verifySeal: () => Promise<unknown>;
     verifySignature: (file: string, kind: MasNativeFile['kind']) => Promise<unknown>;
-    deliveredByStore: boolean;
   },
 ): Promise<void> {
   const app = appForRoot(root);
@@ -210,10 +221,7 @@ export async function verifyMasNativeFiles(
         digest.update(chunk);
       }
       const sha256 = digest.digest('hex');
-      if (
-        bytes !== info.size ||
-        (!options.deliveredByStore && (bytes !== pin.sizeBytes || sha256 !== pin.sha256))
-      )
+      if (bytes !== info.size || bytes !== pin.sizeBytes || sha256 !== pin.sha256)
         throw new Error('MAS native hash mismatch.');
       await options.verifySignature(file, pin.kind);
       observations.push({ file, info });
@@ -232,8 +240,7 @@ export async function verifyMasNativeFiles(
     if ((await readlink(alias)) !== links[logical] || (await realpath(alias)) !== resolved)
       throw new Error('MAS Frameworks alias changed.');
   }
-  // Apple re-signs delivered code. Only its authenticated complete seal
-  // permits changed byte hashes; local builds keep the exact recorded pins.
+  // The seal must still hold after every file was read against it.
   await options.verifySeal();
   for (const { file, info } of observations) {
     const current = await lstat(file);
@@ -295,31 +302,8 @@ export async function verifyMasNativePayload(root: string): Promise<{ reused: tr
   const pins = await import('@bendyline/gezel-inference/native-release');
   const value: unknown = JSON.parse(source);
   const manifest = parseMasNativeManifest(value, pins.NATIVE_ENGINE_RELEASE);
-  const verifyStoreSeal = () =>
-    run(
-      '/usr/bin/codesign',
-      [
-        '--verify',
-        '--deep',
-        '--strict',
-        '-R',
-        `=anchor apple generic and ${STORE_CERTIFICATE} and identifier "com.bendyline.docblocks"`,
-        app,
-      ],
-      COMMAND_OPTIONS,
-    );
-  let deliveredByStore = false;
-  try {
-    await verifyStoreSeal();
-    deliveredByStore = true;
-  } catch (error) {
-    // codesign exits 3 for a valid signature that fails a test requirement.
-    // Other failures must not downgrade store authentication to local mode.
-    if (!record(error) || error.code !== 3) throw error;
-  }
   await verifyMasNativeFiles(root, manifest, {
-    deliveredByStore,
-    verifySeal: deliveredByStore ? verifyStoreSeal : verifyApp,
+    verifySeal: verifyApp,
     verifySignature: async (file, kind) => {
       await run(
         '/usr/bin/codesign',

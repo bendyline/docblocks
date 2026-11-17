@@ -89,7 +89,8 @@ Set `masDev.provisioningProfile` to the development profile when qualifying;
   request through the bundled Metal engine. Startup, model selection and engine
   preparation never download executable code or Python packages.
 - Cancelling, disabling AI, and closing/reloading the renderer terminate owned
-  streams. Damaged or missing engines fail verification visibly.
+  streams. Missing engines, or engines from another release, fail the startup
+  check visibly and ask the person to reinstall.
 - The resulting app passes codesign verification and its native executables have
   exactly `com.apple.security.app-sandbox` and `com.apple.security.inherit` enabled.
 - `Contents/Helpers` holds only `gezel-apple-fm` and `gezel-llama-server` (plus

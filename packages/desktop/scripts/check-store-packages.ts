@@ -262,7 +262,8 @@ async function checkMas(buildNumber: string, artifactsDir: string): Promise<void
     );
     report('Contents/Helpers', masHelperViolations(entries));
 
-    // The same verifier the shipped app runs before it starts an engine.
+    // Where engine hashes, signatures and sandbox inheritance are verified. The
+    // shipped app checks only that its engines are present: Apple re-signs them.
     try {
       await verifyMasNativePayload(path.join(app, 'Contents', 'Resources', 'gezel-native'));
     } catch (error) {

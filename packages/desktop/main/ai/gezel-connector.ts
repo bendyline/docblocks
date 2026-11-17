@@ -20,9 +20,14 @@ import type {
   ProviderChatChunk,
   ProviderChatRequest,
 } from './ai-service.js';
-import type { GezelNativeHost } from './gezel-native-host.js';
-import { verifyMasNativePayload } from './gezel-mas-native.js';
-import { stagedNativeManifest, type NativeFileManifest } from './gezel-staged-native.js';
+import { DAMAGED_NATIVE_REASON, type GezelNativeHost } from './gezel-native-host.js';
+import { MAS_NATIVE_EXECUTABLES } from './gezel-mas-native.js';
+import {
+  checkNativePayload,
+  pinnedNativeManifest,
+  withoutUv,
+  type NativeFileManifest,
+} from './gezel-staged-native.js';
 import {
   gezelKnowledgeState,
   updateGezelKnowledge,
@@ -54,8 +59,8 @@ export interface GezelConnectorOptions {
   readonly standalone?: boolean;
   /** Test seam for {@link knowledgeRuntimeInstalled}. */
   readonly knowledgeRuntime?: () => boolean;
-  /** Test seam for {@link stagedNativeManifest}. */
-  readonly loadStagedManifest?: () => Promise<NativeFileManifest>;
+  /** Test seam for {@link pinnedNativeManifest}. */
+  readonly loadNativeManifest?: () => Promise<NativeFileManifest>;
 }
 
 /**
@@ -348,6 +353,7 @@ export class GezelConnector implements AiConnector {
         startService: async (input) => (await this.serviceModule()).startService(input),
         verifyNativeBinaries: async (input) => {
           if (
+            !hostNative ||
             !nativeBinDir ||
             input.candidates.length !== 1 ||
             input.candidates[0] !== nativeBinDir
@@ -356,25 +362,29 @@ export class GezelConnector implements AiConnector {
               reused: false,
               reason: 'Only the configured bundled native payload may be verified.',
             };
-          if (hostNative?.macAppStore) {
-            await verifyMasNativePayload(nativeBinDir);
-            return { reused: true, reason: 'Verified MAS native app seal.', nativeBinDir };
-          }
-          const verify = (await this.serviceModule()).verifyNativeBinaries;
-          if (!verify)
+          // Only that this is the expected release, complete. The operating
+          // system's code signing protects the installed app; packaging
+          // verifies hashes and signatures (see checkNativePayload).
+          try {
+            const pins = await (this.options.loadNativeManifest ?? pinnedNativeManifest)();
+            await checkNativePayload(nativeBinDir, {
+              release: pins.release,
+              ...(hostNative.macAppStore
+                ? { executables: MAS_NATIVE_EXECUTABLES }
+                : { manifest: hostNative.stagedWithoutUv ? withoutUv(pins) : pins }),
+            });
+            return {
+              reused: true,
+              reason: `Bundled native release ${pins.release} is complete.`,
+              nativeBinDir,
+            };
+          } catch (error) {
             throw new AiHostError(
               'runtime-missing',
-              'This Gezel service cannot verify bundled engines.',
+              hostNative.damagedPayloadReason ?? DAMAGED_NATIVE_REASON,
+              error instanceof Error ? error.message : String(error),
             );
-          // The SDK's minimal module shape omits Gezel's `manifest` option.
-          const options = {
-            ...input,
-            allowStandaloneMacPayload: hostNative?.allowStandaloneMacPayload,
-            ...(hostNative?.stagedWithoutUv
-              ? { manifest: await (this.options.loadStagedManifest ?? stagedNativeManifest)() }
-              : {}),
-          };
-          return verify(options);
+          }
         },
       },
     };
