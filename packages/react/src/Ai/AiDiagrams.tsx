@@ -469,17 +469,22 @@ function passageLabel(passage: Passage): string {
   return passage.heading ? `${clip(passage.heading, 28)}: ${text}` : text;
 }
 
-/** Where a new idea starts: the selected passage, else the first without an idea. */
+/**
+ * Where a new idea starts: the selected passage, else the first without an
+ * idea. Prose comes before markers such as a narration clip.
+ */
 function defaultPassage(
   anchors: readonly Passage[],
   ideas: readonly Idea[],
   selection: EditorSelectionInfo | null,
 ): Passage | null {
+  const prose = anchors.filter((anchor) => !anchor.marker);
   const selected = selection?.text.replace(/\s+/gu, ' ').trim().slice(0, 80) ?? '';
-  const holding = selected ? anchors.find((anchor) => anchor.plain.includes(selected)) : undefined;
+  const holding = selected ? prose.find((anchor) => anchor.plain.includes(selected)) : undefined;
   return (
     holding ??
-    anchors.find((anchor) => !ideas.some((idea) => idea.passage.text === anchor.text)) ??
+    prose.find((anchor) => !ideas.some((idea) => idea.passage.text === anchor.text)) ??
+    prose[0] ??
     anchors[0] ??
     null
   );
@@ -663,7 +668,11 @@ function PictureCard({
       {prompt && <p>{prompt}</p>}
       <div className="db-ai-review-excerpt">
         <span>After</span>
-        <blockquote>{clip(idea.passage.plain, 180)}</blockquote>
+        {idea.passage.marker ? (
+          <p className="db-ai-review-excerpt-marker">{idea.passage.plain}</p>
+        ) : (
+          <blockquote>{clip(idea.passage.plain, 180)}</blockquote>
+        )}
       </div>
 
       {idea.status === 'queued' && <p className="db-ai-note">Waiting…</p>}
@@ -1367,11 +1376,15 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
                   Drawing picture {Math.min(drawProgress.done + 1, drawProgress.total)} of{' '}
                   {drawProgress.total}…{designProgress ? ` ${designProgress}` : ''}
                 </span>
-                <progress
-                  max={drawProgress.total}
-                  value={drawProgress.done}
-                  aria-label="Pictures drawn so far"
-                />
+                {/* One picture has no "so far": the bar would sit empty until
+                    the run ends and the footer goes away. */}
+                {drawProgress.total > 1 && (
+                  <progress
+                    max={drawProgress.total}
+                    value={drawProgress.done}
+                    aria-label="Pictures drawn so far"
+                  />
+                )}
               </div>
               <button
                 type="button"

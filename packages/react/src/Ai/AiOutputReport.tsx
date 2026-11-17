@@ -92,13 +92,21 @@ function AiReportDialog({ feature, output, model, onClose }: AiReportDialogProps
       footerClassName="db-ai-report-footer"
       footer={
         <>
-          <button type="button" onClick={() => submit(buildAiOutputReportUrl)}>
+          <button
+            type="button"
+            className="db-git-secondary-btn"
+            onClick={() => submit(buildAiOutputReportUrl)}
+          >
             Open Public Issue on GitHub
           </button>
-          <button type="button" onClick={() => submit(buildAiOutputReportEmailUrl)}>
+          <button
+            type="button"
+            className="db-git-secondary-btn"
+            onClick={() => submit(buildAiOutputReportEmailUrl)}
+          >
             Send report e-mail
           </button>
-          <button type="button" onClick={onClose}>
+          <button type="button" className="db-git-secondary-btn" onClick={onClose}>
             Cancel
           </button>
         </>

@@ -134,16 +134,17 @@ export function AudioExportDialog({
       closeOnBackdrop={!busy}
       footer={
         state.phase === 'done' ? (
-          <button type="button" onClick={onClose}>
+          <button type="button" className="db-git-primary-btn" onClick={onClose}>
             Done
           </button>
         ) : (
           <>
-            <button type="button" onClick={close}>
+            <button type="button" className="db-git-secondary-btn" onClick={close}>
               {busy ? 'Stop' : 'Cancel'}
             </button>
             <button
               type="button"
+              className="db-git-primary-btn"
               disabled={busy || formats.length === 0 || (!narrated && !canSpeak)}
               onClick={() => void run()}
             >
