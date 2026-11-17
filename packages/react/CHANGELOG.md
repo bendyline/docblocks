@@ -1,3 +1,9 @@
+## @bendyline/docblocks-react [2.8.4](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-react@2.8.3...@bendyline/docblocks-react@2.8.4) (2026-11-17)
+
+### Bug Fixes
+
+* More mobile fixes ([#57](https://github.com/bendyline/docblocks/issues/57)) ([4e9f36f](https://github.com/bendyline/docblocks/commit/4e9f36f20779cea8357839bec6351b47bcf4b19a))
+
 ## @bendyline/docblocks-react [2.8.3](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-react@2.8.2...@bendyline/docblocks-react@2.8.3) (2026-11-17)
 
 ### Bug Fixes
