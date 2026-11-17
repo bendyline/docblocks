@@ -10,7 +10,7 @@ import type {
   MobileModelInventory,
   MobileProvider,
 } from '@bendyline/gezel/mobile-providers';
-import type { AiChatEvent, AiPreferences } from '@bendyline/docblocks/host';
+import type { AiChatEvent, AiPreferences, AiStatus } from '@bendyline/docblocks/host';
 import type { EmbeddingConnection } from '@bendyline/gezel-app-sdk/browser';
 import { createMobileAi } from '../src/ai/host';
 import { buildReviewRequest } from '../../react/src/Ai/ai-assistant';
@@ -105,6 +105,7 @@ function fixture(initial: Partial<AiPreferences> = {}, downloadRetryDelaysMs = [
     requestTimeoutMs: 40,
     downloadRetryDelaysMs,
     busyRetryDelaysMs: [1, 1, 1],
+    heldRetryDelaysMs: [1, 1, 1],
   });
   return {
     ...host,
@@ -309,6 +310,34 @@ describe('mobile AI through the Gezel App SDK', () => {
     assert.equal(f.ai.transcribe, undefined);
     assert.equal(f.ai.search, undefined);
     assert.equal(f.ai.images, undefined);
+  });
+  it('looks again when native briefly refuses the chosen model at start', async () => {
+    const f = fixture({ enabled: true, model: 'llama-cpp:fixture' });
+    // iOS shows the page before it marks the app active, and native refuses
+    // downloaded models until then.
+    Object.assign(f.providers[0], {
+      availability: 'unavailable',
+      reason: 'Reopen the app to use on-device AI.',
+    });
+    const seen: AiStatus[] = [];
+    f.ai.onStatus((next) => {
+      seen.push(next);
+      if (f.calls.includes('providers')) f.providers[0].availability = 'available';
+    });
+    const status = await f.ai.status();
+    assert.equal(status.kind === 'ready' && status.model?.id, 'llama-cpp:fixture');
+    // Never "ready, but nothing installed" on the way there.
+    assert.ok(!seen.some((next) => next.kind === 'ready' && !next.model));
+  });
+  it('settles a chosen model native keeps refusing as no model, then asks again', async () => {
+    const f = fixture({ enabled: true, model: 'llama-cpp:fixture' });
+    f.providers[0].availability = 'unavailable';
+    // Settings needs "ready" to offer a different model.
+    const refused = await f.ai.status();
+    assert.equal(refused.kind === 'ready' && refused.model, null);
+    f.providers[0].availability = 'available';
+    const later = await f.ai.status();
+    assert.equal(later.kind === 'ready' && later.model?.id, 'llama-cpp:fixture');
   });
   it('never silently substitutes a missing selected model', async () => {
     const f = fixture({ enabled: true, model: 'llama-cpp:gone' });
@@ -967,6 +996,35 @@ describe('mobile knowledge', () => {
     const calls = f.stateCalls();
     assert.ok((await f.ai.chat(request, () => {}).done).ok);
     assert.equal(f.stateCalls(), calls);
+    await f.ai.setPreferences({ enabled: false });
+  });
+
+  it('folds passages into the request’s own system message, which native requires first', async () => {
+    // A study summary carries a system prompt; the passages arrive as a
+    // second one, and native refused the pair as "Invalid conversation".
+    const f = withKnowledge();
+    let routed: Parameters<GezelRuntimePlugin['generate']>[0] | undefined;
+    f.runtime.generate = async (input) => {
+      routed = input;
+      return { text: 'A summary.', stopReason: 'stop' };
+    };
+    const result = await f.ai.chat(
+      {
+        purpose: 'study',
+        messages: [
+          { role: 'system', content: 'Summarize the document.' },
+          { role: 'user', content: 'The Panama Hotel opened in 1910.' },
+        ],
+      },
+      () => {},
+    ).done;
+    assert.ok(result.ok, JSON.stringify(result));
+    assert.deepEqual(
+      routed?.messages.map((message) => message.role),
+      ['system', 'user'],
+    );
+    assert.ok(routed?.messages[0]?.content.includes(passage.text));
+    assert.ok(routed?.messages[0]?.content.endsWith('Summarize the document.'));
     await f.ai.setPreferences({ enabled: false });
   });
 

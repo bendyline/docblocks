@@ -130,8 +130,6 @@
   --db-safe-right: env(safe-area-inset-right, 0px);
   --db-safe-bottom: env(safe-area-inset-bottom, 0px);
   --db-safe-left: env(safe-area-inset-left, 0px);
-  /* Written by useKeyboardInset while the on-screen keyboard is up. */
-  --db-keyboard-inset: 0px;
 
   /* Drawer. --db-drawer-progress is driven directly on the node during a
      swipe so the gesture costs no React renders. */
@@ -141,6 +139,14 @@
   --db-drawer-width: min(85vw, 400px);
   --db-drawer-progress: 0;
   --db-drawer-duration: 220ms;
+}
+
+/* How much of the page the on-screen keyboard covers. useKeyboardInset writes
+   the live value inline on <html>, so the default is bound on :root ONLY: a
+   second binding on .db-shell would shadow the live value for everything in
+   the shell, leaving the editor full height under the keyboard. */
+:root {
+  --db-keyboard-inset: 0px;
 }
 
 [data-db-pointer='coarse'] {
@@ -7182,6 +7188,13 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   font-size: 11px;
   line-height: 1.4;
   white-space: normal;
+}
+
+/* "Add a model in Settings…" opens Settings, so it reads as a link. */
+.db-ai-toolbar-status-action {
+  color: var(--db-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
 .db-ai-draft-dialog {
