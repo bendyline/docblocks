@@ -9753,6 +9753,8 @@ button.db-git-file-row:hover {
   background: var(--db-bg);
   color: var(--db-text);
   font: inherit;
+  /* Below 16px, iOS zooms the page when a field takes focus. */
+  font-size: var(--db-input-font-size);
 }
 .db-presentation [role='alert'] {
   color: var(--db-danger);
@@ -9762,12 +9764,82 @@ button.db-git-file-row:hover {
   line-height: 1.6;
   color: var(--db-text-secondary);
 }
-:root[data-db-width='compact'] .db-presentation-workspace {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 140px) minmax(0, 1fr);
+/* The slide picker stands in for the slide list in a small panel. */
+.db-presentation-picker {
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
 }
-:root[data-db-width='compact'] .db-presentation-beats {
-  max-height: 140px;
+.db-presentation-picker-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.db-presentation-picker-row select {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+.db-presentation-picker-row button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: max(var(--db-target-min), 36px);
+  padding: 0 8px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font-size: 16px;
+  cursor: pointer;
+}
+.db-presentation-picker-row button:hover:not(:disabled) {
+  background: var(--db-bg-hover);
+}
+.db-presentation-picker-row button:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 2px;
+}
+.db-presentation-picker-row button:disabled {
+  color: var(--db-text-muted);
+  cursor: default;
+}
+
+/* The designer sizes itself from its own panel, not from the shell's stamped
+   width: the VS Code webview mounts it with no shell to stamp one, and a short
+   window squeezes the two columns as badly as a narrow one does. The panel's
+   size never depends on its content (the full dialog sets both dimensions, and
+   the phone sheet is pinned to the window edges), so it can be a size
+   container. Below these sizes the list becomes the picker above, the columns
+   stack, and the dialog body scrolls as one instead of each column scrolling
+   in a sliver. */
+.db-dialog.db-presentation {
+  container: db-presentation / size;
+}
+@container db-presentation (max-width: 719px) or (max-height: 599px) {
+  .db-presentation-workspace {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .db-presentation-beats {
+    display: none;
+  }
+  .db-presentation-picker {
+    display: flex;
+  }
+  .db-presentation-detail {
+    overflow: visible;
+  }
+  .db-presentation-preview {
+    height: auto;
+    aspect-ratio: 16 / 9;
+    max-height: 50cqh;
+  }
 }
 
 /* ── Workspace search and quick-open ───────────────────────────── */

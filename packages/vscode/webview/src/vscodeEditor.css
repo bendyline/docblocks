@@ -51,6 +51,20 @@
   padding-bottom: 0;
 }
 
+/* Squisq's 24px face and 10px chevron read a size small beside VS Code's
+   toolbar glyphs. One pixel more on each keeps the chevron on whole pixels
+   (25px face − 2px border − 11px glyph = 6px each side); the face grows
+   upward from its underline-anchored bottom. */
+.db-vscode-editor .squisq-view-mode-trigger-face {
+  width: 25px;
+  height: 25px;
+}
+
+.db-vscode-editor .squisq-view-mode-trigger-face > svg {
+  width: 11px;
+  height: 11px;
+}
+
 /* VS Code's tighter heading metrics leave the properties chip just below the
    adjacent block-template control. Keep this correction webview-specific. */
 .db-vscode-editor .squisq-props-badge {
