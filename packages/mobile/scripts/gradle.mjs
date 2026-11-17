@@ -8,6 +8,10 @@ import process from 'node:process';
 // (HTTP 429) straight through an immediate retry. So a run that failed while
 // downloading is retried after a wait long enough for a rate limit to clear.
 // Any other failure, such as a compile or build-script error, fails at once.
+// The rate limit then outlasted all of these waits, so hosted CI jobs now
+// fetch Maven Central's artifacts from Google's mirror instead (see
+// .github/actions/maven-central-mirror); these retries remain for whatever
+// transient download failure is left.
 export const RETRY_DELAYS_SECONDS = [30, 90, 180];
 
 // Gradle's failure report names each dependency it could not fetch. Requiring

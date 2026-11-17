@@ -257,6 +257,10 @@ jobs:
           npx playwright install --with-deps chromium firefox webkit
           npm exec -w @bendyline/docblocks-cli -- playwright-core install chromium
 
+      # `npm run all` runs mobile:test:available, which builds with Gradle here.
+      - name: Use Google's Maven Central mirror
+        uses: ./.github/actions/maven-central-mirror
+
       - name: Run canonical quality gate
         run: xvfb-run -a npm run all
 
@@ -527,6 +531,9 @@ jobs:
           echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
           # Hosted images install the command-line tools without adding them to PATH.
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Use Google's Maven Central mirror
+        uses: ./.github/actions/maven-central-mirror
 
       # The Linux quality gate already ran the Android storage contract through
       # mobile:test:available. mobile:store rebuilds, checks, and syncs the web

@@ -1,0 +1,15 @@
+name: Use Google's Maven Central mirror
+description: >-
+  Route every Gradle build on this GitHub-hosted runner through Google's mirror
+  of Maven Central, which rate limits hosted runners (HTTP 429). Hosted runners
+  only: on a persistent self-hosted runner the init script would outlive the job.
+
+runs:
+  using: composite
+  steps:
+    - name: Install Gradle init script
+      shell: bash
+      run: |
+        init_d="${GRADLE_USER_HOME:-$HOME/.gradle}/init.d"
+        mkdir -p "$init_d"
+        cp "$GITHUB_ACTION_PATH/maven-central-mirror.gradle" "$init_d/"

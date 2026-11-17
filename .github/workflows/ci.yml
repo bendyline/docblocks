@@ -38,6 +38,10 @@ jobs:
           npx playwright install --with-deps chromium firefox webkit
           npm exec -w @bendyline/docblocks-cli -- playwright-core install chromium
 
+      # `npm run all` runs mobile:test:available, which builds with Gradle here.
+      - name: Use Google's Maven Central mirror
+        uses: ./.github/actions/maven-central-mirror
+
       # Keep local and CI assurance identical. Add mandatory build, validation,
       # or unit-test gates to the root `all` script rather than duplicating the
       # list in this workflow.
