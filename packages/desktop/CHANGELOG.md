@@ -1,3 +1,15 @@
+## docblocks-desktop [2.8.3](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.8.2...docblocks-desktop@2.8.3) (2026-11-17)
+
+### Bug Fixes
+
+* Various mobile fixes ([#56](https://github.com/bendyline/docblocks/issues/56)) ([9840a04](https://github.com/bendyline/docblocks/commit/9840a041913b3de56b7ca92a13dc2cf9739b60f0))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.8.3
+* **@bendyline/docblocks-react:** upgraded to 2.8.3
+
 ## docblocks-desktop [2.8.2](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.8.1...docblocks-desktop@2.8.2) (2026-11-16)
 
 ### Bug Fixes
