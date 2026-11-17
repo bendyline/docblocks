@@ -1,6 +1,6 @@
 {
   "name": "@bendyline/docblocks-react",
-  "version": "2.8.2",
+  "version": "2.8.3",
   "description": "React components for DocBlocks — file explorer, workspace picker, and editor shell",
   "license": "MIT",
   "author": "Bendyline",
@@ -90,7 +90,7 @@
     }
   },
   "dependencies": {
-    "@bendyline/docblocks": "2.8.2",
+    "@bendyline/docblocks": "2.8.3",
     "@bendyline/squisq": "2.13.18",
     "@bendyline/squisq-calc": "2.11.2",
     "@bendyline/squisq-editor-react": "2.13.27",
