@@ -40,7 +40,7 @@
     "@bendyline/docblocks-react": "2.8.3",
     "@bendyline/gezel": "1.3.3",
     "@bendyline/squisq": "2.13.18",
-    "@bendyline/squisq-editor-react": "2.13.27",
+    "@bendyline/squisq-editor-react": "2.13.28",
     "@happy-dom/global-registrator": "20.9.0"
   }
 }

@@ -29,7 +29,7 @@ import { Dialog } from '../components/Dialog.js';
 import { CloseIcon } from '../icons.js';
 import { useConfirmDialog } from '../components/useConfirmDialog.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
-import { unavailableSentence, useAiStatus } from './ai-status.js';
+import { unavailableSentence, useAiStatus, useLiveAiStatus } from './ai-status.js';
 import { AiDiagramDialog } from './AiDiagrams.js';
 import { AiGenerationStatus, type AiGenerationState } from './AiGenerationStatus.js';
 import { AiFactsIndicator, AiKnowledgeIndicator } from './AiKnowledgeIndicator.js';
@@ -78,6 +78,8 @@ export interface AiToolbarControlProps {
   readOnly?: boolean;
   openPanel: AiPanel | null;
   onOpenPanel: (panel: AiPanel) => void;
+  /** Opens Settings on AI, where a person with no model adds one. */
+  onOpenSettings?: () => void;
 }
 
 export interface AiReviewPanelProps {
@@ -90,6 +92,7 @@ export function AiToolbarControl({
   readOnly = false,
   openPanel,
   onOpenPanel,
+  onOpenSettings,
 }: AiToolbarControlProps) {
   const {
     activeView,
@@ -103,7 +106,7 @@ export function AiToolbarControl({
     selectionVersion,
     workspaceContainer,
   } = useEditorContext();
-  const status = useAiStatus(ai);
+  const { status, recheck } = useLiveAiStatus(ai);
   const [menuOpen, setMenuOpen] = useState(false);
   const [draftMode, setDraftMode] = useState<AiDraftMode | null>(null);
   const [capturedSelection, setCapturedSelection] = useState<EditorSelectionInfo | null>(null);
@@ -127,12 +130,19 @@ export function AiToolbarControl({
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [menuOpen]);
 
+  // This control lives as long as the shell; the menu asks again each time it
+  // opens rather than trust an answer the host may since have revised.
+  useEffect(() => {
+    if (menuOpen) recheck();
+  }, [menuOpen, recheck]);
+
   // The shell builds a new sidecar container for each document. A study
   // dialog belongs to the document it opened on, so switching documents
   // closes it, which cancels a run before it could save into the wrong one.
   useEffect(() => setStudyKind(null), [workspaceContainer]);
 
   const ready = status?.kind === 'ready' && status.model !== null;
+  const needsModel = status?.kind === 'ready' && status.model === null;
   // Images need the connection, not a chat model; the panel explains any
   // further step, such as allowing image generation in Gezel.
   const imagesOffered =
@@ -241,10 +251,25 @@ export function AiToolbarControl({
             aria-label="AI actions"
             onKeyDown={handleMenuKeyDown}
           >
-            {!ready && (
-              <div className="db-ai-toolbar-status" role="status">
+            {needsModel && onOpenSettings ? (
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                className="db-toolbar-menu-item db-ai-toolbar-status db-ai-toolbar-status-action"
+                onClick={() => {
+                  closeMenu(false);
+                  onOpenSettings();
+                }}
+              >
                 {unavailableSentence(status)}
-              </div>
+              </button>
+            ) : (
+              !ready && (
+                <div className="db-ai-toolbar-status" role="status">
+                  {unavailableSentence(status)}
+                </div>
+              )
             )}
             <button
               type="button"

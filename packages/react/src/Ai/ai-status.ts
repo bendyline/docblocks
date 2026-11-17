@@ -1,35 +1,57 @@
 /** The live AI status for a host, and how to explain a status that blocks AI. */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AiStatus, DocBlocksHostAiAPI } from '@bendyline/docblocks/host';
 
 export function useAiStatus(ai: DocBlocksHostAiAPI): AiStatus | null {
+  return useLiveAiStatus(ai).status;
+}
+
+/**
+ * The live AI status, plus `recheck` to ask the host again. A control that
+ * stays mounted for the app's life rechecks when it is about to show the
+ * status, so an answer the host has since revised never sticks.
+ */
+export function useLiveAiStatus(ai: DocBlocksHostAiAPI): {
+  status: AiStatus | null;
+  recheck: () => void;
+} {
   const [status, setStatus] = useState<AiStatus | null>(null);
-  useEffect(() => {
-    let active = true;
-    const unsubscribe = ai.onStatus((next) => {
-      if (active) setStatus(next);
-    });
-    void ai.status().then(
-      (initial) => {
-        if (active) setStatus((current) => current ?? initial);
-      },
-      () => {
-        if (active) {
-          setStatus({
-            kind: 'error',
-            error: { code: 'unknown', message: 'AI status is unavailable.' },
-            retryable: true,
-          });
-        }
-      },
+  /** The host this hook listens to; null once it stops listening. */
+  const listening = useRef<DocBlocksHostAiAPI | null>(null);
+  /** Counts pushed updates: one newer than a question outranks its answer. */
+  const pushes = useRef(0);
+
+  const ask = useCallback((host: DocBlocksHostAiAPI) => {
+    const asked = pushes.current;
+    const answer = (next: AiStatus) => {
+      if (listening.current === host && pushes.current === asked) setStatus(next);
+    };
+    void host.status().then(answer, () =>
+      answer({
+        kind: 'error',
+        error: { code: 'unknown', message: 'AI status is unavailable.' },
+        retryable: true,
+      }),
     );
+  }, []);
+
+  useEffect(() => {
+    listening.current = ai;
+    const unsubscribe = ai.onStatus((next) => {
+      if (listening.current !== ai) return;
+      pushes.current += 1;
+      setStatus(next);
+    });
+    ask(ai);
     return () => {
-      active = false;
+      if (listening.current === ai) listening.current = null;
       unsubscribe();
     };
-  }, [ai]);
-  return status;
+  }, [ai, ask]);
+
+  const recheck = useCallback(() => ask(ai), [ai, ask]);
+  return { status, recheck };
 }
 
 export function unavailableSentence(status: AiStatus | null): string {

@@ -1052,6 +1052,10 @@ export function DocBlocksShell({
     () => setSettingsRequest(({ count }) => ({ count: count + 1, section: 'narration' })),
     [],
   );
+  const openAiSettings = useCallback(
+    () => setSettingsRequest(({ count }) => ({ count: count + 1, section: 'ai' })),
+    [],
+  );
   // Squisq re-resolves a changed capability and cancels any session in
   // progress, so the provider must keep one identity for the bridge's life.
   const speechInput = useMemo(
@@ -6069,7 +6073,13 @@ export function DocBlocksShell({
                 onOpenWorkspaceSettings={
                   activeWorkspaceDescriptor ? handleOpenWorkspaceSettings : undefined
                 }
-                onDownloadAllWorkspaces={handleDownloadAllWorkspaces}
+                // A ZIP of what the browser holds. Where a host owns the
+                // workspaces (desktop, the phone apps) every document is
+                // already a file in a folder the user can see -- and a phone
+                // web view drops the blob download, so the item did nothing.
+                onDownloadAllWorkspaces={
+                  showBrowserStorageWarning ? handleDownloadAllWorkspaces : undefined
+                }
                 onRestoreBackup={
                   hostSupports('nativeWorkspaces')
                     ? undefined
@@ -6481,6 +6491,7 @@ export function DocBlocksShell({
                                         }
                                         openPanel={aiPanel}
                                         onOpenPanel={setAiPanel}
+                                        onOpenSettings={openAiSettings}
                                       />
                                     </Suspense>
                                   )}

@@ -432,6 +432,17 @@ export function AppMenu({
             </a>
             .
           </p>
+          {/* The browser build ships no AI features, so only native apps
+              credit the platform they run on. */}
+          {surface !== 'web' && (
+            <p>
+              AI features are built on the open{' '}
+              <a href="https://gezel.com/platform" target="_blank" rel="noopener noreferrer">
+                Gezel platform
+              </a>
+              .
+            </p>
+          )}
           {/* Only the browser build points at the desktop apps; desktop and
               mobile users are already running a native app. */}
           {surface === 'web' && (

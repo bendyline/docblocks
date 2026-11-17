@@ -17,6 +17,7 @@ import {
   abortableDelay,
   createEmbedding,
   knowledgeContext,
+  type ChatMessage,
   type EmbeddingConnection,
   type ModelDescriptor,
 } from '@bendyline/gezel-app-sdk/browser';
@@ -41,6 +42,8 @@ export interface MobileAiOptions {
   downloadRetryDelaysMs?: readonly number[];
   /** Waits before each retry of a call native refused while a model change held it. */
   busyRetryDelaysMs?: readonly number[];
+  /** Waits before each new look at a chosen model native briefly refused on start. */
+  heldRetryDelaysMs?: readonly number[];
 }
 const defaults: AiPreferences = { enabled: false, model: null, reviewMode: 'explicit' };
 const provider = { name: 'Gezel', version: '0.1.0', mode: 'hosted' as const };
@@ -53,6 +56,11 @@ const downloadRetryDelaysMs = [2_000, 5_000, 10_000, 20_000, 30_000];
 // Starting or resuming a download holds native admission while it checks the
 // saved bytes, which can take a while for a multi-gigabyte model.
 const busyRetryDelaysMs = [500, 1_000, 2_000, 4_000, 8_000, 15_000];
+// The page can see the app return before iOS marks it active, and native
+// refuses downloaded models until then ("Reopen the app to use on-device
+// AI."). A start in that gap must look again, not report that no model is
+// installed.
+const heldRetryDelaysMs = [250, 500, 1_000, 2_000];
 const tookTooLong = () =>
   new MobileAiError(
     'timeout',
@@ -78,6 +86,24 @@ async function pause(ms: number, signal: AbortSignal) {
 }
 /** Catalog names label a request's sources; reading them once per interval keeps chats quick. */
 const CATALOG_NAMES_MS = 30_000;
+/**
+ * `messages` with every system message folded into one leading message, as
+ * Gezel's desktop server folds them. Knowledge passages arrive as a system
+ * message ahead of the request's own, and the phone plugin, like Qwen's chat
+ * template, refuses a system message anywhere but first ("Invalid conversation").
+ */
+export function foldSystemMessages(messages: readonly ChatMessage[]): ChatMessage[] {
+  const systems: string[] = [];
+  const rest: ChatMessage[] = [];
+  for (const message of messages) {
+    if (message.role === 'system' && typeof message.content === 'string')
+      systems.push(message.content);
+    else rest.push(message);
+  }
+  return systems.length > 0
+    ? [{ role: 'system', content: systems.join('\n\n') }, ...rest]
+    : [...messages];
+}
 
 export function createMobileAi(options: MobileAiOptions) {
   let preferences = parseAiPreferences(options.readPreferences()) ?? defaults;
@@ -109,16 +135,16 @@ export function createMobileAi(options: MobileAiOptions) {
     status = next;
     for (const listener of listeners) notify(listener, next);
   };
+  const checking: AiStatus = {
+    kind: 'connecting',
+    step: 'preparing-model',
+    verificationCode: null,
+    progress: { phase: 'runtime', message: 'Checking on-device models…', percent: null },
+  };
   const embedding = createEmbedding({
     connect: options.load,
     onState: (state) => {
-      if (state === 'connecting')
-        update({
-          kind: 'connecting',
-          step: 'preparing-model',
-          verificationCode: null,
-          progress: { phase: 'runtime', message: 'Checking on-device models…', percent: null },
-        });
+      if (state === 'connecting') update(checking);
     },
   });
   // Gezel starts disabled; setting saved opt-in performs no native work.
@@ -132,16 +158,47 @@ export function createMobileAi(options: MobileAiOptions) {
         activeRequests: chat ? 1 : 0,
       });
   };
-  async function refresh() {
+  async function list() {
     const models = (await embedding.models.list()).filter((model) => offered(model.id));
     descriptors = models;
     choices = modelChoices(models, preferences.model);
+    return models;
+  }
+  async function refresh() {
+    const models = await list();
     ready();
     return models;
   }
+  /** Native lists the person's chosen downloaded model but refuses it for now. */
+  const chosenModelHeld = () => {
+    const id = preferences.model;
+    return (
+      id !== null &&
+      descriptors.some(
+        (model) =>
+          (model.id === id || model.aliases?.includes(id) === true) &&
+          model.preparation === 'app-download' &&
+          model.availability !== 'available',
+      )
+    );
+  };
+  /** Bumped by each start, so an earlier start's waits end without publishing. */
+  let starts = 0;
   async function start(): Promise<AiResult<AiStatus>> {
+    const current = ++starts;
+    const superseded = () => current !== starts || !preferences.enabled || suspended;
     try {
-      await refresh();
+      await list();
+      // Ready with no model reads as "nothing installed", so a chosen model
+      // native refuses at start gets a few more looks before that is said.
+      for (const delay of options.heldRetryDelaysMs ?? heldRetryDelaysMs) {
+        if (superseded() || !chosenModelHeld()) break;
+        update(checking);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        if (superseded()) break;
+        await list();
+      }
+      if (current === starts) ready();
       return { ok: true, value: status };
     } catch (error) {
       if (preferences.enabled && !suspended)
@@ -222,7 +279,12 @@ export function createMobileAi(options: MobileAiOptions) {
     },
     providerInstalled: async () => false,
     status: async () => {
-      if (preferences.enabled && !suspended && embedding.state !== 'ready') await start();
+      if (preferences.enabled && !suspended) {
+        if (embedding.state !== 'ready') await start();
+        // "No model" may be a list taken while native briefly refused the
+        // chosen one; a fresh list costs little and keeps that from sticking.
+        else if (status.kind === 'ready' && !status.model) await refresh().catch(() => undefined);
+      }
       return status;
     },
     onStatus: (listener) => {
@@ -449,7 +511,7 @@ export function createMobileAi(options: MobileAiOptions) {
             embedding.streamText(
               {
                 model: model.id,
-                messages: context.messages,
+                messages: foldSystemMessages(context.messages),
                 maxTokens,
                 // Sampling support comes from inventory, never a host/provider-name test.
                 ...(model.supported_options?.includes('temperature') &&
