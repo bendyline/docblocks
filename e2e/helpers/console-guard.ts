@@ -79,14 +79,17 @@ export const SHARED_ALLOWED_RUNTIME_ERRORS: readonly AllowedRuntimeError[] = [
     // promise, so the page instantiates both harper binaries itself (lints are
     // rebuilt there) with nothing to catch a failure. Under parallel load,
     // WebKit intermittently traps in the full binary's start function, harper's
-    // Rust `setup`. The worker that lints is a separate instance, so proofing
-    // still reports; only the dropped promise surfaces. Squisq never sees
-    // that promise, so the fix belongs in harper.js. Anchored on the frame in
-    // harper's prebundle (WebKit only runs against the dev server) because the
-    // text alone would also cover an IronCalc start failure.
+    // Rust `setup`, as unreachable code or as an out-of-bounds access. The
+    // worker that lints is a separate instance, so proofing still reports;
+    // only the dropped promise surfaces. Squisq never sees that promise, so
+    // the fix belongs in harper.js. Anchored on a frame in harper's prebundle
+    // (WebKit only runs against the dev server) because the text alone would
+    // also cover an IronCalc start failure. WebKit names either the glue's
+    // `__wbg_finalize_init` or, across the await, the BinaryModule `setup`
+    // that dropped the promise.
     reason: 'upstream: harper.js drops the promise for its page-side WASM setup',
     match:
-      /^Unhandled Promise Rejection: RuntimeError: Unreachable code should not be executed \(evaluating 'wasm(?:\$1)?\.__wbindgen_start\(\)'\)\n[\s\S]*?\bat __wbg_finalize_init(?:\$1)? \([^)\s]*\/node_modules\/\.vite\/deps\/harper__js\.js\?/u,
+      /^Unhandled Promise Rejection: RuntimeError: (?:Unreachable code should not be executed|Out of bounds memory access) \(evaluating 'wasm(?:\$1)?\.__wbindgen_start\(\)'\)\n[\s\S]*?\bat (?:__wbg_finalize_init(?:\$1)?|setup) \([^)\s]*\/node_modules\/\.vite\/deps\/harper__js\.js\?/u,
   },
   {
     // The same WebKit trap inside harper.js's lint worker (2.7 through 2.13):
@@ -155,7 +158,8 @@ export function collectRuntimeErrors(page: Page): () => readonly RuntimeError[] 
   page.on('pageerror', (error) => {
     collected.push({
       kind: 'pageerror',
-      text: error.stack ?? error.message,
+      // WebKit reports an error that has no stack trace with an empty `stack`.
+      text: error.stack || `${error.name}: ${error.message}`,
       location: '(uncaught)',
     });
   });

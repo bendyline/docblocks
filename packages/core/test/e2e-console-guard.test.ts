@@ -96,9 +96,13 @@ describe('E2E runtime-error guard', () => {
 
     it("allow only harper's page-side WASM start trap on WebKit", () => {
       // Shape of WebKit's report as Playwright relays it: message, then frames.
-      const trap = (variable: string, frames: readonly string[]) =>
+      const trap = (
+        variable: string,
+        frames: readonly string[],
+        kind = 'Unreachable code should not be executed',
+      ) =>
         [
-          'Unhandled Promise Rejection: RuntimeError: Unreachable code should not be executed ' +
+          `Unhandled Promise Rejection: RuntimeError: ${kind} ` +
             `(evaluating '${variable}.__wbindgen_start()')`,
           ...frames.map((frame) => `    at ${frame}`),
         ].join('\n');
@@ -122,14 +126,30 @@ describe('E2E runtime-error guard', () => {
           trap('wasm$1', [`__wbg_finalize_init$1 (${deps}/harper__js.js?v=1a2b3c4d:1366:26)`]),
         ),
       ).to.equal(true);
+      // Exact local burn-in texts: across the await WebKit names only the
+      // BinaryModule `setup` that dropped the promise, and the same trap also
+      // arrives as an out-of-bounds access.
+      const setup = `setup (${deps}/harper__js.js?v=83935d1f:3104:32)`;
+      expect(allowed(trap('wasm', [setup]))).to.equal(true);
+      expect(allowed(trap('wasm', [setup], 'Out of bounds memory access'))).to.equal(true);
       // IronCalc's glue reports the identical text; only the frame tells them apart.
       expect(
         allowed(
           trap('wasm', [`__wbg_finalize_init (${deps}/@ironcalc_wasm.js?v=1a2b3c4d:1940:5)`]),
         ),
       ).to.equal(false);
+      expect(
+        allowed(
+          trap(
+            'wasm',
+            [`setup (${deps}/@ironcalc_wasm.js?v=1a2b3c4d:2010:7)`],
+            'Out of bounds memory access',
+          ),
+        ),
+      ).to.equal(false);
       // Without a stack there is nothing to say whose start function trapped.
       expect(allowed(trap('wasm', []))).to.equal(false);
+      expect(allowed(trap('wasm', [], 'Out of bounds memory access'))).to.equal(false);
       // A trap while linting is not the setup failure, even inside harper.
       expect(
         allowed(

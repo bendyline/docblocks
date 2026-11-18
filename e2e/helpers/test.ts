@@ -11,6 +11,7 @@
  *   });
  */
 
+import { writeFile } from 'node:fs/promises';
 import { test as base, expect } from '@playwright/test';
 import {
   collectRuntimeErrors,
@@ -51,6 +52,15 @@ export const test = base.extend<RuntimeErrorFixtures>({
       if (testInfo.errors.length > 0) return;
       const unexpected = unexpectedRuntimeErrors(readErrors(), runtimeErrorAllowances);
       if (unexpected.length === 0) return;
+      // The message keeps one line per error. Keep each one whole, stack and
+      // fetched binaries included, since an allowance has to match all of it.
+      // A file (not a body) so list reporters print its path and CI uploads it.
+      const report = testInfo.outputPath('runtime-errors.json');
+      await writeFile(report, `${JSON.stringify(unexpected, null, 2)}\n`);
+      await testInfo.attach('runtime-errors.json', {
+        path: report,
+        contentType: 'application/json',
+      });
       throw new Error(formatRuntimeErrors(unexpected));
     },
     { auto: true },
