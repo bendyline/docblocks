@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import {
+  describeNetworkChange,
   isAllowedRuntimeError,
   unexpectedRuntimeErrors,
   formatRuntimeErrors,
@@ -96,9 +97,13 @@ describe('E2E runtime-error guard', () => {
 
     it("allow only harper's page-side WASM start trap on WebKit", () => {
       // Shape of WebKit's report as Playwright relays it: message, then frames.
-      const trap = (variable: string, frames: readonly string[]) =>
+      const trap = (
+        variable: string,
+        frames: readonly string[],
+        kind = 'Unreachable code should not be executed',
+      ) =>
         [
-          'Unhandled Promise Rejection: RuntimeError: Unreachable code should not be executed ' +
+          `Unhandled Promise Rejection: RuntimeError: ${kind} ` +
             `(evaluating '${variable}.__wbindgen_start()')`,
           ...frames.map((frame) => `    at ${frame}`),
         ].join('\n');
@@ -122,19 +127,68 @@ describe('E2E runtime-error guard', () => {
           trap('wasm$1', [`__wbg_finalize_init$1 (${deps}/harper__js.js?v=1a2b3c4d:1366:26)`]),
         ),
       ).to.equal(true);
+      // Exact local burn-in texts: across the await WebKit names only the
+      // BinaryModule `setup` that dropped the promise, and the same trap also
+      // arrives as an out-of-bounds access.
+      const setup = `setup (${deps}/harper__js.js?v=83935d1f:3104:32)`;
+      expect(allowed(trap('wasm', [setup]))).to.equal(true);
+      expect(allowed(trap('wasm', [setup], 'Out of bounds memory access'))).to.equal(true);
       // IronCalc's glue reports the identical text; only the frame tells them apart.
       expect(
         allowed(
           trap('wasm', [`__wbg_finalize_init (${deps}/@ironcalc_wasm.js?v=1a2b3c4d:1940:5)`]),
         ),
       ).to.equal(false);
+      expect(
+        allowed(
+          trap(
+            'wasm',
+            [`setup (${deps}/@ironcalc_wasm.js?v=1a2b3c4d:2010:7)`],
+            'Out of bounds memory access',
+          ),
+        ),
+      ).to.equal(false);
       // Without a stack there is nothing to say whose start function trapped.
       expect(allowed(trap('wasm', []))).to.equal(false);
+      expect(allowed(trap('wasm', [], 'Out of bounds memory access'))).to.equal(false);
       // A trap while linting is not the setup failure, even inside harper.
       expect(
         allowed(
           'Unhandled Promise Rejection: RuntimeError: Unreachable code should not be executed\n' +
             `    at lint (${deps}/harper__js.js?v=1a2b3c4d:900:3)`,
+        ),
+      ).to.equal(false);
+    });
+
+    it("allow only harper's page-side trap while rebuilding a lint on WebKit", () => {
+      const deps = 'http://localhost:5220/node_modules/.vite/deps';
+      const trap = (frame: string, kind = 'Out of bounds memory access') =>
+        `Unhandled Promise Rejection: RuntimeError: ${kind} ` +
+        `(evaluating 'wasm.lint_from_json(ptr0, len0)')\n    at ${frame}`;
+      const allowed = (text: string) =>
+        isAllowedRuntimeError(
+          { kind: 'pageerror', text, location: '(uncaught)' },
+          SHARED_ALLOWED_RUNTIME_ERRORS,
+        );
+
+      // Exact local burn-in text: WebKit drops the ?v= query from this frame.
+      expect(allowed(trap(`unknown (${deps}/harper__js.js:1505:36)`))).to.equal(true);
+      expect(allowed(trap(`unknown (${deps}/harper__js.js?v=83935d1f:1505:36)`))).to.equal(true);
+      // The same export in anyone else's glue is not harper's.
+      expect(allowed(trap(`unknown (${deps}/@ironcalc_wasm.js:1505:36)`))).to.equal(false);
+      // Without a stack there is nothing to say whose export trapped.
+      expect(
+        allowed(
+          "Unhandled Promise Rejection: RuntimeError: Out of bounds memory access (evaluating 'wasm.lint_from_json(ptr0, len0)')",
+        ),
+      ).to.equal(false);
+      // Another kind of trap there is a different failure.
+      expect(
+        allowed(
+          trap(
+            `unknown (${deps}/harper__js.js:1505:36)`,
+            'Unreachable code should not be executed',
+          ),
         ),
       ).to.equal(false);
     });
@@ -148,6 +202,11 @@ describe('E2E runtime-error guard', () => {
         isAllowedRuntimeError(consoleError(text, location), SHARED_ALLOWED_RUNTIME_ERRORS);
 
       expect(allowed(trap, worker)).to.equal(true);
+      // Building the linter traps the same way, as an out-of-bounds access (local burn-in text).
+      const setupTrap =
+        "Unhandled Promise Rejection: RuntimeError: Out of bounds memory access (evaluating 'wasm.linter_new(dialect)')";
+      expect(allowed(setupTrap, worker)).to.equal(true);
+      expect(allowed(setupTrap, 'http://localhost:5220/src/main.tsx:12:3')).to.equal(false);
       // The same trap reported by page code is not harper's worker.
       expect(allowed(trap, 'http://localhost:5220/src/main.tsx:12:3')).to.equal(false);
       // Another trap in the worker is a different failure.
@@ -199,6 +258,34 @@ describe('E2E runtime-error guard', () => {
       // The message has to say what to do next, since the reader is looking at
       // a test that failed without an assertion of its own.
       expect(message).to.contain('console-guard.ts');
+    });
+
+    it('names a network change the page lived through', () => {
+      // Exact local burn-in texts: a USB-tethered phone dropped off the bus.
+      const deps = 'http://localhost:5220/@fs/D:/gh/docblocks/node_modules';
+      const aborted = [
+        consoleError(
+          'Failed to load resource: net::ERR_NETWORK_CHANGED',
+          `${deps}/@bendyline/squisq-formats/dist/chunk-DXYWKZ52.js?v=83935d1f:0:0`,
+        ),
+        consoleError(
+          'Failed to load resource: net::ERR_NETWORK_CHANGED',
+          'http://localhost:5220/harper/harper_wasm_slim_bg.wasm:0:0',
+        ),
+      ];
+      const note = describeNetworkChange(aborted);
+      expect(note).to.contain('aborted 2 in-flight requests');
+      expect(note).to.contain('not a DocBlocks defect');
+      expect(formatRuntimeErrors(aborted)).to.contain(note);
+      // A network change is a cause to name, never an error to allow.
+      expect(unexpectedRuntimeErrors(aborted)).to.have.lengthOf(2);
+      // Any other failed request is not a network change.
+      const refused = [
+        consoleError('Failed to load resource: net::ERR_CONNECTION_REFUSED'),
+        consoleError('Failed to load resource: the server responded with a status of 404 ()'),
+      ];
+      expect(describeNetworkChange(refused)).to.equal(undefined);
+      expect(formatRuntimeErrors(refused)).to.not.contain('network change');
     });
 
     it('keeps a multi-line stack to one line per error', () => {

@@ -155,6 +155,9 @@ export async function buildVideoExportDoc(
   const projected = buildPreviewDoc(contentDoc, {
     documentTitle: documentTitleFromFileName(options.fileName ?? undefined),
     interleaveImages: !narrationOwnsTimeline,
+    // An untouched drawing or layout would spend a scene on an empty canvas;
+    // a take that owns the timeline keeps every block it was timed against.
+    omitUntouchedPlaceholders: !narrationOwnsTimeline,
   });
   const invalidPresentation = projected.diagnostics?.find(
     (diagnostic) => diagnostic.code === 'presentation-invalid',

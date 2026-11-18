@@ -342,6 +342,85 @@ describe('PresentationMaker hidden slides', () => {
   });
 });
 
+describe('PresentationMaker slide picker', () => {
+  it('offers the same slides as the list, for a panel too small to show it', async () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        createElement(EditorProvider, {
+          initialMarkdown: LONG,
+          children: createElement(PresentationMaker, { onClose: () => undefined }),
+        }),
+      );
+    });
+    try {
+      await settle();
+      const list = () =>
+        Array.from(
+          document.body.querySelectorAll<HTMLButtonElement>('.db-presentation-beats button'),
+        );
+      const picker = () =>
+        document.body.querySelector<HTMLSelectElement>('.db-presentation-picker select')!;
+      const step = (name: string) =>
+        document.body.querySelector<HTMLButtonElement>(
+          `.db-presentation-picker button[aria-label="${name}"]`,
+        )!;
+      const choose = async (value: string) =>
+        act(async () => {
+          picker().value = value;
+          picker().dispatchEvent(new Event('change', { bubbles: true }));
+        });
+      const preview = () =>
+        document.body.querySelector('.db-presentation-preview')?.getAttribute('aria-label') ?? '';
+      const count = list().length;
+      expect(count).to.be.greaterThan(2);
+      expect(picker().labels?.[0]?.textContent).to.equal('Slide');
+      expect(picker().options).to.have.length(count);
+      list().forEach((button, index) =>
+        expect(picker().options[index]!.textContent).to.match(
+          new RegExp(`^${index + 1}\\. ${escapeRegExp(button.title)} · `),
+        ),
+      );
+      expect(picker().value).to.equal('0');
+      expect(step('Previous slide').disabled).to.equal(true);
+
+      await choose('2');
+      expect(preview()).to.match(/^Slide 3:/);
+      expect(list()[2]!.getAttribute('aria-current')).to.equal('step');
+      await act(async () => step('Previous slide').click());
+      expect(preview()).to.match(/^Slide 2:/);
+      expect(picker().value).to.equal('1');
+
+      // The picker says what the list's tags say.
+      await act(async () =>
+        document.body
+          .querySelector<HTMLInputElement>(
+            '.db-presentation-detail > .db-presentation-toggle input',
+          )!
+          .click(),
+      );
+      await settle();
+      expect(picker().options[1]!.textContent).to.contain(' · Hidden');
+
+      await choose(String(count - 1));
+      expect(step('Next slide').disabled).to.equal(true);
+      await act(async () => list()[0]!.click());
+      expect(picker().value, 'follows a choice made in the list').to.equal('0');
+      await act(async () => step('Next slide').click());
+      expect(preview()).to.match(/^Slide 2 \(hidden\):/);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+});
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 const DIAGRAM = [
   '# Squiggly Square is a Swiss army knife for content',
   '',

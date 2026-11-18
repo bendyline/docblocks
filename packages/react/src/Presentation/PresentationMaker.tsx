@@ -51,6 +51,7 @@ import {
 } from '@bendyline/squisq/transform';
 import type { DocBlocksHostAiAPI } from '@bendyline/docblocks/host';
 import { Dialog } from '../components/Dialog.js';
+import { NextIcon, PreviousIcon } from '../icons.js';
 import { useAiStatus, unavailableSentence } from '../Ai/ai-status.js';
 import { AiReportButton } from '../Ai/AiOutputReport.js';
 import { refinePresentationPlan } from './presentation-ai.js';
@@ -177,6 +178,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
   const preview = usePreviewSettingsOptional();
   const originalTextId = useId();
   const layoutHelpId = useId();
+  const slidePickerId = useId();
   const [hints, setHints] = useState<PresentationHints>(
     () =>
       parsePresentationHints(parseMarkdown(markdownSource).frontmatter?.[PRESENTATION_HINTS_KEY]) ??
@@ -335,6 +337,36 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
   const section = beat && sectionAt(sections, beat.sourceStart);
   const hint = hints.blocks.find((item) => item.blockId === section?.blockId);
   const visual = projection?.blocks.find((block) => block.id === beat?.id);
+  // What the slide list and the small-screen picker both say about each slide.
+  const slideTags = !plan
+    ? []
+    : plan.beats.map((item) => {
+        const owner = sectionAt(sections, item.sourceStart);
+        const layout =
+          owner &&
+          aiEntries
+            .get(owner.blockId)
+            ?.get(plan.sourceText.slice(item.sourceStart, item.sourceEnd));
+        const active = progress?.active;
+        return {
+          layout: layoutLabel(item.layout, owner?.blockId),
+          suggested:
+            item.layout !== AUTHORED_PRESENTATION_LAYOUT &&
+            layout !== undefined &&
+            (layout !== 'image' || !!item.imageSrc),
+          pending:
+            !!active &&
+            active.sourceStart === item.sourceStart &&
+            active.sourceEnd === item.sourceEnd,
+        };
+      });
+  /** Select a slide by position; the person chose it, so stop following the AI run. */
+  const selectSlide = (index: number) => {
+    const next = plan?.beats[Math.max(0, Math.min(plan.beats.length - 1, index))];
+    if (!next) return;
+    follow.current = false;
+    setSelectedSourceStart(next.sourceStart);
+  };
   const handleSlideKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (
       event.defaultPrevented ||
@@ -355,12 +387,12 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
     if (!plan?.beats.length) return;
     event.preventDefault();
     event.stopPropagation();
-    follow.current = false;
     const nextIndex = Math.max(
       0,
       Math.min(plan.beats.length - 1, selectedIndex + (event.key === 'ArrowRight' ? 1 : -1)),
     );
-    setSelectedSourceStart(plan.beats[nextIndex].sourceStart);
+    selectSlide(nextIndex);
+    // Absent from the layout on a small screen, where the picker stands in.
     const button = slidesRef.current?.querySelectorAll('button')[nextIndex];
     button?.focus({ preventScroll: true });
     button?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -600,21 +632,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
         <div className="db-presentation-workspace">
           <nav ref={slidesRef} className="db-presentation-beats" aria-label="Presentation slides">
             {plan.beats.map((item, index) => {
-              const owner = sectionAt(sections, item.sourceStart);
-              const layout =
-                owner &&
-                aiEntries
-                  .get(owner.blockId)
-                  ?.get(plan.sourceText.slice(item.sourceStart, item.sourceEnd));
-              const suggested =
-                item.layout !== AUTHORED_PRESENTATION_LAYOUT &&
-                layout !== undefined &&
-                (layout !== 'image' || !!item.imageSrc);
-              const active = progress?.active;
-              const pending =
-                !!active &&
-                active.sourceStart === item.sourceStart &&
-                active.sourceEnd === item.sourceEnd;
+              const { layout, suggested, pending } = slideTags[index]!;
               return (
                 <button
                   type="button"
@@ -622,16 +640,13 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
                   className={item.hidden ? 'db-presentation-beat-hidden' : undefined}
                   aria-current={index === selectedIndex ? 'step' : undefined}
                   title={item.headline}
-                  onClick={() => {
-                    follow.current = false;
-                    setSelectedSourceStart(item.sourceStart);
-                  }}
+                  onClick={() => selectSlide(index)}
                 >
                   <span className="db-presentation-beat-title">
                     {index + 1}. {item.headline}
                   </span>
                   <span className="db-presentation-beat-tags">
-                    <small>{layoutLabel(item.layout, owner?.blockId)}</small>
+                    <small>{layout}</small>
                     {item.hidden && <small>Hidden</small>}
                     {pending ? (
                       <small className="db-presentation-beat-ai">
@@ -648,6 +663,50 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
               );
             })}
           </nav>
+          {/* Stands in for the list when the panel is too narrow or short for
+              two columns (the stylesheet decides, from the panel's own size). */}
+          <div className="db-presentation-picker">
+            <label htmlFor={slidePickerId}>Slide</label>
+            <div className="db-presentation-picker-row">
+              <button
+                type="button"
+                aria-label="Previous slide"
+                title="Previous slide"
+                disabled={selectedIndex === 0}
+                onClick={() => selectSlide(selectedIndex - 1)}
+              >
+                <PreviousIcon />
+              </button>
+              <select
+                id={slidePickerId}
+                value={selectedIndex}
+                onChange={(event) => selectSlide(Number(event.target.value))}
+              >
+                {plan.beats.map((item, index) => {
+                  const { layout, suggested, pending } = slideTags[index]!;
+                  const status = [
+                    layout,
+                    item.hidden && 'Hidden',
+                    pending ? 'Suggesting…' : suggested && 'Suggested by AI',
+                  ].filter(Boolean);
+                  return (
+                    <option key={item.id} value={index}>
+                      {`${index + 1}. ${item.headline} · ${status.join(' · ')}`}
+                    </option>
+                  );
+                })}
+              </select>
+              <button
+                type="button"
+                aria-label="Next slide"
+                title="Next slide"
+                disabled={selectedIndex >= plan.beats.length - 1}
+                onClick={() => selectSlide(selectedIndex + 1)}
+              >
+                <NextIcon />
+              </button>
+            </div>
+          </div>
           <div className="db-presentation-detail">
             <div
               className={`db-presentation-preview${beat.hidden ? ' db-presentation-preview-hidden' : ''}`}

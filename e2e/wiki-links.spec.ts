@@ -190,15 +190,15 @@ test('an HTML workspace default creates wiki pages outside-in beside the public 
   const modifier = await page.evaluate(() =>
     navigator.userAgent.includes('Macintosh') ? 'Meta' : 'Control',
   );
-  const appendBodyParagraph = async (text: string) => {
+  const appendBodyParagraphs = async (...paragraphs: string[]) => {
     await page.getByRole('tab', { name: 'Source', exact: true }).click();
     const monaco = page.locator('.monaco-editor').first();
     await expect(monaco).toBeVisible({ timeout: MONACO_COLD_LOAD_TIMEOUT });
     const input = monaco.locator('textarea');
     await input.press(`${modifier}+a`);
     await input.press('ArrowRight');
-    await page.keyboard.insertText(`\n${text}\n`);
-    await expect(monaco.locator('.view-lines')).toContainText(text);
+    await page.keyboard.insertText(`\n${paragraphs.join('\n\n')}\n`);
+    for (const text of paragraphs) await expect(monaco.locator('.view-lines')).toContainText(text);
     await page.getByRole('tab', { name: 'Write', exact: true }).click();
   };
   await page.keyboard.press('ControlOrMeta+KeyN');
@@ -211,13 +211,16 @@ test('an HTML workspace default creates wiki pages outside-in beside the public 
   // Seed a body link through Source, preserving the outside-in frontmatter.
   // A Write-view end shortcut can land beside the heading's inert badges and
   // turn this fixture into a heading link instead of the intended paragraph.
-  await appendBodyParagraph('[[reference/blah]]');
-  await expect(source.locator(':scope > h1 + p')).toHaveText('reference/blah');
+  // The link takes a second paragraph: a heading over one paragraph is only
+  // the cover's title and subtitle, so the slideshow draws that block as its
+  // cover, in plain text, and the deck would carry no link to follow.
+  await appendBodyParagraphs('Read the companion article.', '[[reference/blah]]');
+  await expect(source.locator(':scope > h1 + p + p')).toHaveText('reference/blah');
   await page.getByRole('button', { name: 'Create article: reference/blah', exact: true }).click();
   await expect(page).toHaveURL(/reference%2Fblah\.html$|reference\/blah\.html$/);
   const article = page.getByRole('textbox', { name: /^Edit \/?reference\/blah_files\/blah\.md$/ });
   await expect(article).toBeVisible();
-  await appendBodyParagraph('Saved through the HTML companion');
+  await appendBodyParagraphs('Saved through the HTML companion');
   await expect(article.locator(':scope > h1 + p')).toHaveText('Saved through the HTML companion');
   await page
     .locator('.db-tree-row[data-path="wiki-html.html"], .db-tree-row[data-path="/wiki-html.html"]')

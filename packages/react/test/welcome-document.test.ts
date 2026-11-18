@@ -46,6 +46,15 @@ describe('welcome document', () => {
     expect(DEVICE_FOLDER).to.include('[Get the desktop app]');
   });
 
+  it('describes the icon-only Insert and New File buttons by what they look like', () => {
+    // Neither button shows its name, so "Choose Insert" sends a reader hunting.
+    expect(BROWSER).to.include('Choose the **+** button (Insert) in the toolbar');
+    expect(BROWSER).to.include(
+      'Choose **New File**, the page with a plus sign above the file list',
+    );
+    expect(BROWSER).not.to.match(/Choose \*\*Insert\*\*/);
+  });
+
   it('uses valid, diverse presentation templates and a complete value-proposition diagram', () => {
     for (const content of Object.values(VARIANTS))
       expect(validateMarkdownSource(content).diagnostics).to.deep.equal([]);

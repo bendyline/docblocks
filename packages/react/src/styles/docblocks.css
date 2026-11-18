@@ -885,7 +885,7 @@
 .db-tree-loading,
 .db-tree-empty {
   padding: 12px 16px;
-  color: var(--db-text-placeholder);
+  color: var(--db-text-muted);
   font-size: 12px;
 }
 
@@ -1200,11 +1200,15 @@
   transform: rotate(180deg);
 }
 
+/* Shares the app menu's layer. On desktop the sidebar stops clipping so this
+   menu can cross into the editor pane, and there it must clear the first-run
+   welcome screen (`.db-welcome-gateway`, 60): at an equal z-index the screen
+   wins on document order and hides everything past the sidebar's edge. */
 .db-workspace-dropdown {
   position: absolute;
   left: 8px;
   top: 100%;
-  z-index: 60;
+  z-index: 70;
   min-width: calc(100% - 16px);
   max-width: min(320px, 90vw);
   background: var(--db-bg-raised);
@@ -1295,7 +1299,7 @@
 
 .db-workspace-type {
   font-size: 11px;
-  color: var(--db-text-placeholder);
+  color: var(--db-text-muted);
 }
 
 .db-workspace-details {
@@ -2021,7 +2025,7 @@ body.db-resizing-sidebar * {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--db-text-placeholder);
+  color: var(--db-text-muted);
   font-size: 14px;
 }
 
@@ -3632,7 +3636,7 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 }
 
 .db-folder-view-empty {
-  color: var(--db-text-placeholder);
+  color: var(--db-text-muted);
   font-size: 14px;
 }
 
@@ -3949,11 +3953,14 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   cursor: default;
 }
 
+/* Hints and empty states are information, not placeholders: muted text reads
+   at 4.5:1 or better on every surface in every palette; the placeholder token
+   (2.3:1 on the dark dialog) is for input placeholders and disabled items. */
 .db-export-hint {
   display: block;
   margin-top: 3px;
   font-size: 11px;
-  color: var(--db-text-placeholder);
+  color: var(--db-text-muted);
 }
 
 .db-export-hint--error {
@@ -9749,6 +9756,8 @@ button.db-git-file-row:hover {
   background: var(--db-bg);
   color: var(--db-text);
   font: inherit;
+  /* Below 16px, iOS zooms the page when a field takes focus. */
+  font-size: var(--db-input-font-size);
 }
 .db-presentation [role='alert'] {
   color: var(--db-danger);
@@ -9758,12 +9767,92 @@ button.db-git-file-row:hover {
   line-height: 1.6;
   color: var(--db-text-secondary);
 }
-:root[data-db-width='compact'] .db-presentation-workspace {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 140px) minmax(0, 1fr);
+/* The slide picker stands in for the slide list in a small panel. */
+.db-presentation-picker {
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
 }
-:root[data-db-width='compact'] .db-presentation-beats {
-  max-height: 140px;
+.db-presentation-picker-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.db-presentation-picker-row select {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-overflow: ellipsis;
+  /* WebKit lays out the chosen option's text at full width and counts it as
+     overflow of every ancestor, though the control clips what it draws, so a
+     long slide title scrolled the phone sheet sideways. `overflow` does not
+     reach that text; paint containment does. */
+  contain: paint;
+}
+.db-presentation-picker-row button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: max(var(--db-target-min), 36px);
+  padding: 0 8px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font-size: 16px;
+  cursor: pointer;
+}
+.db-presentation-picker-row button:hover:not(:disabled) {
+  background: var(--db-bg-hover);
+}
+.db-presentation-picker-row button:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 2px;
+}
+.db-presentation-picker-row button:disabled {
+  color: var(--db-text-muted);
+  cursor: default;
+}
+
+/* The designer sizes itself from its own panel, not from the shell's stamped
+   width: the VS Code webview mounts it with no shell to stamp one, and a short
+   window squeezes the two columns as badly as a narrow one does. The panel's
+   size never depends on its content (the full dialog sets both dimensions, and
+   the phone sheet is pinned to the window edges), so it can be a size
+   container. Below these sizes the list becomes the picker above, the columns
+   stack, and the dialog body scrolls as one instead of each column scrolling
+   in a sliver. The height is measured: a 460px panel left the columns 185px,
+   room for one slide in the list and the preview alone beside it, while a
+   540px panel (a 1366x768 laptop's browser) and a 600px one (the desktop app
+   on a 1024x768 screen) still show three slides, the preview and the layout
+   choices at once. The picker there hid all of that below one oversized
+   preview. */
+.db-dialog.db-presentation {
+  container: db-presentation / size;
+}
+@container db-presentation (max-width: 719px) or (max-height: 499px) {
+  .db-presentation-workspace {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .db-presentation-beats {
+    display: none;
+  }
+  .db-presentation-picker {
+    display: flex;
+  }
+  .db-presentation-detail {
+    overflow: visible;
+  }
+  .db-presentation-preview {
+    height: auto;
+    aspect-ratio: 16 / 9;
+    max-height: 50cqh;
+  }
 }
 
 /* ── Workspace search and quick-open ───────────────────────────── */

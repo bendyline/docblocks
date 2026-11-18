@@ -1,11 +1,12 @@
 import { expect } from 'chai';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
-import { verifyNativeBinaries } from '@bendyline/gezel-inference';
 import {
+  checkNativePayload,
+  pinnedNativeManifest,
   stagedNativeManifest,
   withoutUv,
   type NativeFileManifest,
@@ -31,7 +32,10 @@ const PINS: NativeFileManifest = {
       files: { 'gezel-apple-fm': pin('apple'), uv: pin('uv') },
       symlinks: {},
     },
-    'darwin-arm64-metal': { files: { 'gezel-llama-server': pin('llama') }, symlinks: {} },
+    'darwin-arm64-metal': {
+      files: { 'gezel-llama-server': pin('llama'), 'libggml.dylib': pin('ggml') },
+      symlinks: { 'libggml.1.dylib': 'libggml.dylib' },
+    },
     'linux-x64': { files: { 'gezel-service-host': pin('host'), uv: pin('uv') }, symlinks: {} },
   },
 };
@@ -42,20 +46,23 @@ describe('Gezel pins for a staged payload', () => {
     root = await mkdtemp(path.join(os.tmpdir(), 'docblocks-gezel-windows-'));
     await mkdir(path.join(root, 'win32-x64'));
     await mkdir(path.join(root, 'win32-x64-cpu'));
+    await writeFile(path.join(root, 'release.json'), JSON.stringify({ release: RELEASE }));
     await writeFile(path.join(root, 'win32-x64', 'gezel-service-host.exe'), 'host');
     await writeFile(path.join(root, 'win32-x64-cpu', 'gezel-llama-server.exe'), 'llama');
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
   });
-  const verify = (manifest: NativeFileManifest) =>
-    verifyNativeBinaries({
-      candidates: [root],
-      platform: 'win32',
-      arch: 'x64',
-      release: RELEASE,
-      manifest,
-    });
+  const check = (manifest: NativeFileManifest, platform: NodeJS.Platform = 'win32', arch = 'x64') =>
+    checkNativePayload(root, { release: RELEASE, manifest, platform, arch });
+  const reason = async (operation: Promise<unknown>) => {
+    try {
+      await operation;
+    } catch (error) {
+      return (error as Error).message;
+    }
+    throw new Error('expected rejection');
+  };
 
   it('drops only UV, on every platform, and leaves the pins it was given alone', () => {
     const pins = withoutUv(PINS);
@@ -72,18 +79,64 @@ describe('Gezel pins for a staged payload', () => {
     expect(PINS.platforms['darwin-arm64'].files).to.have.property('uv');
   });
 
-  it('accepts a staged payload that the full pin set rejects', async () => {
-    expect((await verify(PINS)).reason).to.contain('missing: uv.exe');
-    expect(await verify(withoutUv(PINS))).to.include({ reused: true });
+  it('accepts a complete staged payload that the full pin set rejects for its missing UV', async () => {
+    expect(await reason(check(PINS))).to.equal('missing: win32-x64/uv.exe');
+    await check(withoutUv(PINS));
   });
 
-  it('still rejects a uv.exe, and any other unpinned or changed file', async () => {
-    const pins = withoutUv(PINS);
-    await writeFile(path.join(root, 'win32-x64', 'uv.exe'), 'uv');
-    expect((await verify(pins)).reason).to.contain('unexpected: uv.exe');
-    await rm(path.join(root, 'win32-x64', 'uv.exe'));
+  it('confirms presence and size only: same-size bytes are the signature’s business', async () => {
     await writeFile(path.join(root, 'win32-x64', 'gezel-service-host.exe'), 'HOST');
-    expect((await verify(pins)).reason).to.contain('sha256 mismatch');
+    await check(withoutUv(PINS));
+  });
+
+  it('rejects another release, a missing or resized file, and an unpinned platform', async () => {
+    const pins = withoutUv(PINS);
+    await writeFile(path.join(root, 'release.json'), JSON.stringify({ release: '0.0.0' }));
+    expect(await reason(check(pins))).to.equal('engines are release 0.0.0; this build needs 0.0.1');
+    await rm(path.join(root, 'release.json'));
+    expect(await reason(check(pins))).to.contain('release.json is unreadable');
+    await writeFile(path.join(root, 'release.json'), JSON.stringify({ release: RELEASE }));
+    await writeFile(path.join(root, 'win32-x64', 'gezel-service-host.exe'), 'host, resized');
+    expect(await reason(check(pins))).to.equal('size mismatch: win32-x64/gezel-service-host.exe');
+    await writeFile(path.join(root, 'win32-x64', 'gezel-service-host.exe'), 'host');
+    await rm(path.join(root, 'win32-x64-cpu', 'gezel-llama-server.exe'));
+    expect(await reason(check(pins))).to.equal('missing: win32-x64-cpu/gezel-llama-server.exe');
+    expect(await reason(check(pins, 'linux', 'arm64'))).to.equal(
+      'no engines are pinned for linux-arm64',
+    );
+  });
+
+  it('rejects a redirected pinned symlink', async function () {
+    if (process.platform === 'win32') this.skip();
+    const metal = path.join(root, 'darwin-arm64-metal');
+    await mkdir(path.join(root, 'darwin-arm64'));
+    await mkdir(metal);
+    await writeFile(path.join(root, 'darwin-arm64', 'gezel-apple-fm'), 'apple');
+    await writeFile(path.join(metal, 'gezel-llama-server'), 'llama');
+    await writeFile(path.join(metal, 'libggml.dylib'), 'ggml');
+    await symlink('libggml.dylib', path.join(metal, 'libggml.1.dylib'));
+    const pins = withoutUv(PINS);
+    await check(pins, 'darwin', 'arm64');
+    await rm(path.join(metal, 'libggml.1.dylib'));
+    await symlink('gezel-llama-server', path.join(metal, 'libggml.1.dylib'));
+    expect(await reason(check(pins, 'darwin', 'arm64'))).to.equal(
+      'symlink changed: darwin-arm64-metal/libggml.1.dylib',
+    );
+  });
+
+  it('checks Mac App Store executables for presence at any size, under the same release', async () => {
+    const executables = [
+      'win32-x64/gezel-service-host.exe',
+      'win32-x64-cpu/gezel-llama-server.exe',
+    ];
+    const store = () => checkNativePayload(root, { release: RELEASE, executables });
+    await writeFile(path.join(root, 'win32-x64', 'gezel-service-host.exe'), 'host, re-signed');
+    await store();
+    await writeFile(path.join(root, 'win32-x64-cpu', 'gezel-llama-server.exe'), '');
+    expect(await reason(store())).to.equal('missing: win32-x64-cpu/gezel-llama-server.exe');
+    await writeFile(path.join(root, 'win32-x64-cpu', 'gezel-llama-server.exe'), 'llama');
+    await writeFile(path.join(root, 'release.json'), JSON.stringify({ release: '0.0.0' }));
+    expect(await reason(store())).to.contain('engines are release 0.0.0');
   });
 
   it("reads Gezel's own pins, which name UV for every platform DocBlocks ships", async () => {
@@ -98,6 +151,7 @@ describe('Gezel pins for a staged payload', () => {
         'utf8',
       ),
     ) as NativeFileManifest;
+    expect(await pinnedNativeManifest(require.resolve)).to.deep.equal(full);
     const pins = await stagedNativeManifest(require.resolve);
     expect(pins.release).to.be.a('string').and.not.equal('');
     for (const [key, uv] of [

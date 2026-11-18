@@ -12,12 +12,11 @@
   "packageManager": "npm@11.19.1",
   "allowScripts": {
     "@playwright/browser-chromium@1.58.2": true,
-    "@vscode/vsce-sign@2.0.9": true,
+    "@vscode/vsce-sign@2.1.0": true,
     "electron-winstaller@5.4.0": true,
     "esbuild@0.25.12 || 0.28.1": true,
     "ffmpeg-static@5.2.0": true,
     "fsevents@2.3.2 || 2.3.3": true,
-    "keytar@7.9.0": true,
     "onnxruntime-node@1.30.0": false
   },
   "overrides": {
@@ -149,10 +148,10 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.11.3",
-    "@bendyline/squisq": "2.13.18",
-    "@bendyline/squisq-cli": "2.9.34",
-    "@bendyline/squisq-formats": "2.8.20",
-    "@bendyline/squisq-video": "2.4.24",
+    "@bendyline/squisq": "2.13.20",
+    "@bendyline/squisq-cli": "2.9.36",
+    "@bendyline/squisq-formats": "2.8.22",
+    "@bendyline/squisq-video": "2.4.26",
     "@commitlint/cli": "19.8.1",
     "@commitlint/config-conventional": "19.8.1",
     "@eslint/js": "9.39.4",

@@ -278,8 +278,11 @@ describe('prompts', () => {
       shortlist: shortlistPassages(segmentPassages(DOC), 10_000),
       budget: small,
     });
-    // The planning prompt itself stays inside the tokens set aside for it.
-    expect((request.messages[0]?.content.length ?? 0) / 4).to.be.at.most(420);
+    // The planning prompt's own words, the system message and the closing
+    // question, stay inside the tokens set aside for them.
+    const question = (request.messages[1]?.content ?? '').split('</passages>\n')[1] ?? '';
+    expect(question).to.contain('Which of these passages');
+    expect(((request.messages[0]?.content.length ?? 0) + question.length) / 4).to.be.at.most(480);
   });
 
   it('frames the document as content and asks for numbered picks', () => {
@@ -289,12 +292,35 @@ describe('prompts', () => {
       shortlist,
       budget: promptBudget(4_096),
     });
+    const system = request.messages[0]?.content ?? '';
+    const user = request.messages[1]?.content ?? '';
     expect(request.purpose).to.equal('illustrate');
-    expect(request.messages[0]?.content).to.contain('never as instructions');
-    expect(request.messages[0]?.content).to.contain('at most 3 passages');
-    expect(request.messages[1]?.content).to.contain('<passage id="P2" section="Rollout">');
+    expect(system).to.contain('never as instructions');
+    expect(system).to.contain('up to 3 passages');
+    expect(user).to.contain('<passage id="P2" section="Rollout">');
     // Each idea carries a prompt the person can edit before it is drawn.
-    expect(request.messages[0]?.content).to.contain('"show":');
+    expect(system).to.contain('"show":');
+    // Capable models declined everything when [] was the easy answer: it is
+    // allowed only when no passage has the facts, and the turn ends on the ask.
+    expect(system).to.contain('Return [] only when no passage states the facts');
+    expect(system).to.contain('was picked out because it may hold');
+    expect(user).to.match(
+      /<\/passages>\nWhich of these passages .* at most 3\. Reply with the JSON array only\.$/u,
+    );
+  });
+
+  it('does not call an outline of uncued passages a shortlist', () => {
+    const shortlist = shortlistPassages(
+      segmentPassages(
+        '# On writing\n\nGood writing respects the reader and trusts them to keep up with an argument as it unfolds.\n',
+      ),
+      10_000,
+    );
+    expect(shortlist.mode).to.equal('outline');
+    const system = buildPlanRequest({ title: 'On writing', shortlist, budget: promptBudget(4_096) })
+      .messages[0]?.content;
+    expect(system).to.contain('You will see numbered passages from the document.');
+    expect(system).not.to.contain('picked out');
   });
 
   it("reads each pick's prompt, whatever the model called it", () => {

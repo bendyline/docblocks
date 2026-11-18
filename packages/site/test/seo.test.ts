@@ -104,6 +104,13 @@ describe('site SEO surface', () => {
     const policyDirectives = parseContentSecurityPolicy(html);
 
     expect(policyDirectives.get('default-src')).to.deep.equal(["'none'"]);
+    // Remote images only from the online video thumbnail host (YouTube posters).
+    expect(policyDirectives.get('img-src')).to.deep.equal([
+      "'self'",
+      'blob:',
+      'data:',
+      'https://i.ytimg.com',
+    ]);
     expect(policyDirectives.get('media-src')).to.deep.equal(["'self'", 'blob:', 'data:']);
     expect(policyDirectives.get('connect-src')).to.deep.equal(["'self'", 'blob:', 'data:']);
     // 'wasm-unsafe-eval' is the narrow WebAssembly grant, not an eval() grant:

@@ -351,6 +351,10 @@ test('workspace dropdown shows the full folder path', async ({ launchApp, worksp
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
   const canonicalWorkspaceDir = fs.realpathSync.native(workspaceDir);
+  // First launch settles behind the welcome screen. Opening the menu before
+  // then raced the first workspace load and lost the active row.
+  const gateway = window.locator('.db-welcome-gateway');
+  await expect(gateway).toBeVisible({ timeout: 30_000 });
 
   await window.locator('.db-workspace-picker-btn').click();
   const activeWorkspace = window.locator('.db-workspace-dropdown-item--active');
@@ -359,6 +363,22 @@ test('workspace dropdown shows the full folder path', async ({ launchApp, worksp
     'title',
     canonicalWorkspaceDir,
   );
+
+  // The welcome screen covers the editor pane, and the menu crosses into that
+  // pane. The part past the sidebar must stay on top; at an equal z-index the
+  // screen covered it from the sidebar's edge onward.
+  await expect(gateway).toBeVisible();
+  const overhang = await window.evaluate(() => {
+    const dropdown = document.querySelector('.db-workspace-dropdown');
+    const sidebar = document.querySelector('.db-shell-sidebar');
+    if (!dropdown || !sidebar) throw new Error('dropdown or sidebar missing');
+    const menu = dropdown.getBoundingClientRect();
+    const sidebarRight = sidebar.getBoundingClientRect().right;
+    const x = (sidebarRight + menu.right) / 2;
+    const hit = document.elementFromPoint(x, menu.top + menu.height / 2);
+    return { crosses: menu.right > sidebarRight + 8, onTop: dropdown.contains(hit) };
+  });
+  expect(overhang).toEqual({ crosses: true, onTop: true });
 });
 
 test('seeds Welcome.md on first launch', async ({ launchApp, workspaceDir }) => {

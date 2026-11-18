@@ -136,8 +136,8 @@ async function requirePrivateStoreReleaseWorkflow(relativePath: string): Promise
   }
 
   // One draft collects every store package: Microsoft Store, Mac App Store,
-  // Google Play, and App Store (iOS).
-  const storeBuilders = ['build-msix', 'build-mas', 'build-aab', 'build-ipa'];
+  // Google Play, App Store (iOS), and the Visual Studio Marketplace.
+  const storeBuilders = ['build-msix', 'build-mas', 'build-aab', 'build-ipa', 'build-vsix'];
   if (
     draftCreatorCount !== 1 ||
     draftAssetUploadCount !== storeBuilders.length ||
@@ -222,6 +222,67 @@ async function requirePrivateStoreReleaseWorkflow(relativePath: string): Promise
       )
     ) {
       throw new Error(`${relativePath}: ${uploader} must not check out or build the repository`);
+    }
+  }
+
+  requireDesktopVersionedVsix(relativePath, parsed.jobs, 'build-vsix');
+
+  // The Marketplace credential is minted, never stored: upload-vsix alone may
+  // trade a GitHub OIDC token for it. Publishing needs vsce, so this uploader
+  // may check out without persisting the token and install the lockfile with
+  // install scripts off, but it runs nothing else from npm.
+  const vsixUploader = parsed.jobs['upload-vsix'];
+  if (!isRecord(vsixUploader) || !Array.isArray(vsixUploader.steps)) {
+    throw new Error(`${relativePath}: upload-vsix is missing`);
+  }
+  const vsixUploaderNeeds = Array.isArray(vsixUploader.needs)
+    ? vsixUploader.needs
+    : [vsixUploader.needs];
+  if (!vsixUploaderNeeds.includes('preflight') || !vsixUploaderNeeds.includes('build-vsix')) {
+    throw new Error(`${relativePath}: upload-vsix must wait for preflight and build-vsix`);
+  }
+  if (!isRecord(vsixUploader.permissions) || vsixUploader.permissions['id-token'] !== 'write') {
+    throw new Error(`${relativePath}: upload-vsix needs id-token: write for Trusted Publishing`);
+  }
+  for (const step of vsixUploader.steps) {
+    if (!isRecord(step)) continue;
+    if (
+      typeof step.uses === 'string' &&
+      step.uses.startsWith('actions/checkout@') &&
+      (!isRecord(step.with) || step.with['persist-credentials'] !== false)
+    ) {
+      throw new Error(
+        `${relativePath}: upload-vsix must check out with persist-credentials: false`,
+      );
+    }
+    if (typeof step.run !== 'string') continue;
+    for (const line of step.run.split('\n')) {
+      const command = line.trim();
+      if (!/\b(npm|npx)\b/u.test(command)) continue;
+      if (
+        command === 'npm ci --ignore-scripts' ||
+        command.startsWith('npm exec -w docblocks-vscode -- vsce publish --oidc ')
+      ) {
+        continue;
+      }
+      throw new Error(
+        `${relativePath}: upload-vsix may only run npm ci --ignore-scripts and vsce publish --oidc: ${command}`,
+      );
+    }
+  }
+  if (isRecord(parsed.permissions) && 'id-token' in parsed.permissions) {
+    throw new Error(`${relativePath}: id-token may be granted only to upload-vsix`);
+  }
+  for (const [jobName, job] of Object.entries(parsed.jobs)) {
+    if (
+      jobName !== 'upload-vsix' &&
+      isRecord(job) &&
+      isRecord(job.permissions) &&
+      'id-token' in job.permissions
+    ) {
+      throw new Error(
+        `${relativePath}: id-token may be granted only to upload-vsix, not ${jobName}`,
+      );
     }
   }
 }
@@ -402,6 +463,64 @@ async function requireMatrixOsCoverage(relativePath: string): Promise<void> {
   }
 }
 
+/**
+ * The extension stays out of semantic-release, so every shipped VSIX (the
+ * public desktop release's and the Marketplace's) carries the desktop
+ * version, stamped at package time without rewriting the checkout.
+ */
+function requireDesktopVersionedVsix(
+  relativePath: string,
+  jobs: UnknownRecord,
+  jobName: string,
+): void {
+  const vscodeJob = jobs[jobName];
+  if (!isRecord(vscodeJob) || !Array.isArray(vscodeJob.steps)) {
+    throw new Error(`${relativePath}: ${jobName} has no steps`);
+  }
+  const vscodeCommands = vscodeJob.steps.flatMap((step) =>
+    isRecord(step) && typeof step.run === 'string' ? [step.run.trim()] : [],
+  );
+  const orderedCommands = vscodeCommands.join('\n');
+  const buildCore = orderedCommands.indexOf('npm run build:core');
+  const buildReact = orderedCommands.indexOf('npm run build:react');
+  const packageVscode = orderedCommands.indexOf('npm run package:vsix -w docblocks-vscode');
+  if (buildCore < 0 || buildReact <= buildCore || packageVscode <= buildReact) {
+    throw new Error(
+      `${relativePath}: ${jobName} must build core and React before packaging the extension`,
+    );
+  }
+  const vscodeVersionStep = vscodeJob.steps.find(
+    (step) => isRecord(step) && step.name === 'Read release version',
+  );
+  if (
+    !isRecord(vscodeVersionStep) ||
+    vscodeVersionStep.id !== 'version' ||
+    typeof vscodeVersionStep.run !== 'string' ||
+    !vscodeVersionStep.run.includes("require('./packages/desktop/package.json').version") ||
+    !vscodeVersionStep.run.includes('GITHUB_OUTPUT')
+  ) {
+    throw new Error(
+      `${relativePath}: ${jobName} must read the authoritative desktop release version`,
+    );
+  }
+  const vscodePackageStep = vscodeJob.steps.find(
+    (step) => isRecord(step) && step.name === 'Package VS Code extension',
+  );
+  if (
+    !isRecord(vscodePackageStep) ||
+    !isRecord(vscodePackageStep.env) ||
+    vscodePackageStep.env.RELEASE_VERSION !== '${{ steps.version.outputs.version }}' ||
+    typeof vscodePackageStep.run !== 'string' ||
+    !vscodePackageStep.run.includes('npm run package:vsix -w docblocks-vscode') ||
+    !vscodePackageStep.run.includes('"$RELEASE_VERSION"') ||
+    !vscodePackageStep.run.includes('--no-update-package-json')
+  ) {
+    throw new Error(
+      `${relativePath}: ${jobName} must stamp the desktop version into the VSIX without changing the checkout`,
+    );
+  }
+}
+
 async function requireDesktopReleasePackaging(relativePath: string): Promise<void> {
   const parsed: unknown = yaml.load(await readFile(path.join(repoRoot, relativePath), 'utf8'));
   if (!isRecord(parsed) || !isRecord(parsed.jobs)) {
@@ -429,52 +548,7 @@ async function requireDesktopReleasePackaging(relativePath: string): Promise<voi
     );
   }
 
-  const vscodeJob = parsed.jobs['build-vscode-vsix'];
-  if (!isRecord(vscodeJob) || !Array.isArray(vscodeJob.steps)) {
-    throw new Error(`${relativePath}: build-vscode-vsix has no steps`);
-  }
-  const vscodeCommands = vscodeJob.steps.flatMap((step) =>
-    isRecord(step) && typeof step.run === 'string' ? [step.run.trim()] : [],
-  );
-  const orderedCommands = vscodeCommands.join('\n');
-  const buildCore = orderedCommands.indexOf('npm run build:core');
-  const buildReact = orderedCommands.indexOf('npm run build:react');
-  const packageVscode = orderedCommands.indexOf('npm run package:vsix -w docblocks-vscode');
-  if (buildCore < 0 || buildReact <= buildCore || packageVscode <= buildReact) {
-    throw new Error(
-      `${relativePath}: build-vscode-vsix must build core and React before packaging the extension`,
-    );
-  }
-  const vscodeVersionStep = vscodeJob.steps.find(
-    (step) => isRecord(step) && step.name === 'Read release version',
-  );
-  if (
-    !isRecord(vscodeVersionStep) ||
-    vscodeVersionStep.id !== 'version' ||
-    typeof vscodeVersionStep.run !== 'string' ||
-    !vscodeVersionStep.run.includes("require('./packages/desktop/package.json').version") ||
-    !vscodeVersionStep.run.includes('GITHUB_OUTPUT')
-  ) {
-    throw new Error(
-      `${relativePath}: build-vscode-vsix must read the authoritative desktop release version`,
-    );
-  }
-  const vscodePackageStep = vscodeJob.steps.find(
-    (step) => isRecord(step) && step.name === 'Package VS Code extension',
-  );
-  if (
-    !isRecord(vscodePackageStep) ||
-    !isRecord(vscodePackageStep.env) ||
-    vscodePackageStep.env.RELEASE_VERSION !== '${{ steps.version.outputs.version }}' ||
-    typeof vscodePackageStep.run !== 'string' ||
-    !vscodePackageStep.run.includes('npm run package:vsix -w docblocks-vscode') ||
-    !vscodePackageStep.run.includes('"$RELEASE_VERSION"') ||
-    !vscodePackageStep.run.includes('--no-update-package-json')
-  ) {
-    throw new Error(
-      `${relativePath}: build-vscode-vsix must stamp the desktop version into the VSIX without changing the checkout`,
-    );
-  }
+  requireDesktopVersionedVsix(relativePath, parsed.jobs, 'build-vscode-vsix');
 
   const windowsJob = parsed.jobs['build-windows'];
   if (!isRecord(windowsJob) || !Array.isArray(windowsJob.steps)) {
@@ -815,7 +889,6 @@ async function main(): Promise<void> {
     '.github/workflows/desktop-release.yml': ['all'],
     // The iOS store job runs the Swift suite that the Linux gate cannot.
     '.github/workflows/store-release.yml': ['all', 'mobile:test:ios', 'mobile:store'],
-    '.github/workflows/vscode-release.yml': ['all'],
   };
   for (const [workflow, requirements] of Object.entries(workflowRequirements)) {
     const commands = await workflowCommands(workflow);

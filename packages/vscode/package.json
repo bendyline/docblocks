@@ -9,7 +9,7 @@
   },
   "version": "0.1.0",
   "license": "MIT",
-  "publisher": "bendyline",
+  "publisher": "Bendyline",
   "private": true,
   "repository": {
     "type": "git",
@@ -238,10 +238,10 @@
   "dependencies": {
     "@bendyline/docblocks": "*",
     "@bendyline/docblocks-react": "*",
-    "@bendyline/squisq": "2.13.18",
-    "@bendyline/squisq-editor-react": "2.13.28",
-    "@bendyline/squisq-formats": "2.8.20",
-    "@bendyline/squisq-react": "2.12.30",
+    "@bendyline/squisq": "2.13.20",
+    "@bendyline/squisq-editor-react": "2.13.30",
+    "@bendyline/squisq-formats": "2.8.22",
+    "@bendyline/squisq-react": "2.12.32",
     "@ironcalc/wasm": "0.8.4",
     "harper.js": "2.7.0",
     "jsonc-parser": "3.3.1"
@@ -251,7 +251,7 @@
     "@vitejs/plugin-react": "4.7.0",
     "@vscode/test-electron": "3.0.0",
     "@vscode/test-web": "0.0.80",
-    "@vscode/vsce": "3.9.2",
+    "@vscode/vsce": "4.1.0",
     "monaco-editor": "0.50.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",

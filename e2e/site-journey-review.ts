@@ -16,7 +16,7 @@
  *   $env:LIVE_UX_BASE_URL='https://docblocks.com'
  *   npx tsx e2e/site-journey-review.ts reports/journey
  *
- * Optional JOURNEY_PHASES=author,caret,shell,modes,looks,exports,render,import
+ * Optional JOURNEY_PHASES=author,caret,shell,modes,looks,exports,render,import,media,phone
  * (default all). `render` and `import` reuse the files `exports` saved, so a
  * later run may name them alone to re-render an existing output folder.
  *
@@ -33,8 +33,16 @@
  *   render   Exports rendered to PNG for review: PDF pages through pdf.js;
  *            Word and PowerPoint through LibreOffice when it is installed;
  *            HTML and EPUB in the browser; MP4 as a frame tile through FFmpeg.
- *   import   Drops the exported files back onto the file pane of a fresh
- *            profile, the only import path the web app has.
+ *   import   Brings the exported files back into a fresh profile: Markdown by
+ *            dropping it on the file pane, everything else through the Import
+ *            files button, timing the "Importing …" notice and the new row.
+ *   media    A voice memo (WAV) and a phone-style clip (MP4, made with FFmpeg
+ *            when it is installed) inserted through Image/Media, then the clip
+ *            editor: every tab, Find pauses, a cut, a crop, Apply, the
+ *            background render, Save edited copy, and the slideshow.
+ *   phone    A short document written on a 390 px touch phone: create, type,
+ *            Markdown shortcuts, Insert items each followed by typing, a tap
+ *            below the last one, Slides, Source and an export.
  *
  * Output: NNN-*.png, journey.json (steps, findings, health), authored.md,
  * downloads/, rendered/ and index.html, a contact sheet. Like the other
@@ -65,6 +73,8 @@ const SUPPORTED_PHASES = [
   'exports',
   'render',
   'import',
+  'media',
+  'phone',
 ] as const;
 type Phase = (typeof SUPPORTED_PHASES)[number];
 const PHASES = (process.env.JOURNEY_PHASES ?? SUPPORTED_PHASES.join(','))
@@ -168,9 +178,11 @@ async function shoot(page: Page, name: string, fullPage = false): Promise<string
   shotCounter += 1;
   const file = `${String(shotCounter).padStart(3, '0')}-${slug(name)}.png`;
   // Fonts that never finish loading must not cost the screenshot; the stall is
-  // reported by whichever step measured it.
+  // reported by whichever step measured it. `caret: 'initial'`: hiding the
+  // caret writes a style onto every contenteditable element, a DOM change the
+  // editor may react to — the screenshot must not disturb what it records.
   await page
-    .screenshot({ path: path.join(OUT_DIR, file), fullPage, timeout: 30_000 })
+    .screenshot({ path: path.join(OUT_DIR, file), fullPage, timeout: 30_000, caret: 'initial' })
     .catch((error: unknown) => {
       health.push({ step: currentStep, kind: 'screenshot', text: String(error).slice(0, 300) });
     });
@@ -260,8 +272,13 @@ const OVERFLOW_SCRIPT = `(() => {
   for (const dialog of document.querySelectorAll('[role="dialog"]')) {
     const rect = dialog.getBoundingClientRect();
     if (rect.width < 1) continue;
-    if (rect.right > innerWidth + 2 || rect.left < -2) found.push('dialog wider than the viewport');
-    if (rect.bottom > innerHeight + 2 || rect.top < -2) found.push('dialog taller than the viewport');
+    // A closed sheet stays mounted, hidden and slid off-screen (on phones,
+    // Squisq's Document navigation panel); only a dialog a person sees counts.
+    const style = getComputedStyle(dialog);
+    if (style.visibility === 'hidden' || style.display === 'none' || dialog.closest('[aria-hidden="true"], [inert]')) continue;
+    const label = dialog.getAttribute('aria-label') || dialog.className || 'dialog';
+    if (rect.right > innerWidth + 2 || rect.left < -2) found.push(String(label).slice(0, 40) + ' wider than the viewport');
+    if (rect.bottom > innerHeight + 2 || rect.top < -2) found.push(String(label).slice(0, 40) + ' taller than the viewport');
   }
   return found;
 })()`;
@@ -312,10 +329,17 @@ const STABILITY_START_SCRIPT = `(() => {
     if (!root) return;
     const hosts = Array.from(root.querySelectorAll('[class*="widget-host"], [class*="-host"]'));
     const text = root.textContent || '';
+    const undrawn = hosts.filter((host) => host.getBoundingClientRect().height <= 20);
     window.__journeySamples.push({
       t: Math.round(performance.now() - started),
       widgets: hosts.length,
-      drawn: hosts.filter((host) => host.getBoundingClientRect().height > 20).length,
+      drawn: hosts.length - undrawn.length,
+      // Which widgets are not drawn, and how tall each is: names the culprit.
+      undrawn: undrawn.map((host) => {
+        const kind = Array.from(host.classList).find((name) => name.endsWith('-host')) || host.className;
+        // Children 0 = an empty React root (remounted); more = drawn content at no height.
+        return kind + ':' + Math.round(host.getBoundingClientRect().height) + 'px:' + host.childElementCount;
+      }),
       pending: text.split('Rendering Mermaid diagram').length + text.split('Loading code editor').length - 2,
       height: Math.round(root.getBoundingClientRect().height),
     });
@@ -327,10 +351,85 @@ const STABILITY_STOP_SCRIPT = `(() => {
   clearInterval(window.__journeyTimer);
   return window.__journeySamples;
 })()`;
+/**
+ * Log, until drained, what happens to the Write document between samples:
+ * document-changing transactions (with their meta keys) and widget hosts
+ * mounted or removed. Explains a widget seen undrawn: rebuilt by an edit, or
+ * collapsed in place.
+ */
+const EDITOR_EVENTS_START_SCRIPT = `(() => {
+  const w = window;
+  w.__journeyEvents = [];
+  const started = performance.now();
+  const now = () => Math.round(performance.now() - started);
+  const root = document.querySelector('.ProseMirror');
+  if (!root) return false;
+  const editor = root.editor;
+  if (editor) {
+    editor.on('transaction', ({ transaction }) => {
+      if (!transaction.docChanged) return;
+      w.__journeyEvents.push({
+        t: now(),
+        kind: 'edit',
+        detail: transaction.steps.length + ' steps; meta ' + Object.keys(transaction.meta || {}).join(','),
+      });
+    });
+  }
+  const hostOf = (node) =>
+    node.nodeType === 1 ? Array.from(node.classList).find((name) => name.endsWith('-host')) : undefined;
+  new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        const host = hostOf(node);
+        if (host) w.__journeyEvents.push({ t: now(), kind: 'mount', detail: host });
+      }
+      for (const node of record.removedNodes) {
+        const host = hostOf(node);
+        if (host) w.__journeyEvents.push({ t: now(), kind: 'unmount', detail: host });
+      }
+    }
+  }).observe(root, { childList: true, subtree: true });
+  return Boolean(editor);
+})()`;
+/**
+ * Note in `window.__importNoticeAt` when an "Importing …" notice first shows.
+ * A fast import shows it for a few milliseconds, gone before a locator wait
+ * would start. Returns the page's clock at the start. (A string, like the
+ * other in-page scripts: tsx wraps named functions in a `__name` helper the
+ * page does not have.)
+ */
+const IMPORT_NOTICE_WATCH_SCRIPT = `(() => {
+  window.__importNoticeAt = null;
+  const started = Date.now();
+  const look = () => {
+    const shown = Array.from(document.querySelectorAll('.db-opening-notice')).some((node) =>
+      /^Importing /.test((node.textContent || '').trim()),
+    );
+    if (shown && window.__importNoticeAt === null) window.__importNoticeAt = Date.now();
+    return shown;
+  };
+  const observer = new MutationObserver(() => {
+    if (look()) observer.disconnect();
+  });
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+  setTimeout(() => observer.disconnect(), 60000);
+  return started;
+})()`;
+const EDITOR_EVENTS_DRAIN_SCRIPT = `(() => {
+  const events = window.__journeyEvents || [];
+  window.__journeyEvents = [];
+  return events;
+})()`;
+interface EditorEvent {
+  t: number;
+  kind: 'edit' | 'mount' | 'unmount';
+  detail: string;
+}
 interface StabilitySample {
   t: number;
   widgets: number;
   drawn: number;
+  undrawn: string[];
   pending: number;
   height: number;
 }
@@ -971,20 +1070,31 @@ async function authorPhase(page: Page, fixtures: { image: string; csv: string })
     // A document should be one height however far down it is scrolled. When
     // widgets out of view stop being drawn, everything below them moves up and
     // the page shifts under the reader.
-    const heights: Array<{ scrollTop: number; height: number; drawn: number; widgets: number }> =
-      [];
+    const heights: Array<{
+      scrollTop: number;
+      height: number;
+      drawn: number;
+      widgets: number;
+      undrawn: string[];
+      events: EditorEvent[];
+    }> = [];
+    const watching = (await page.evaluate(EDITOR_EVENTS_START_SCRIPT)) as boolean;
     while (screens < 30) {
       await pause(page, 600);
       screens += 1;
       await shoot(page, `write-screen-${String(screens).padStart(2, '0')}`);
       await page.evaluate(STABILITY_START_SCRIPT);
       const [sample] = (await page.evaluate(STABILITY_STOP_SCRIPT)) as StabilitySample[];
+      const events = (await page.evaluate(EDITOR_EVENTS_DRAIN_SCRIPT)) as EditorEvent[];
       if (sample) {
         heights.push({
           scrollTop: state.top,
           height: sample.height,
           drawn: sample.drawn,
           widgets: sample.widgets,
+          undrawn: sample.undrawn,
+          // What changed the document, or rebuilt widgets, since the last screen.
+          events: events.slice(0, 20),
         });
       }
       if (state.atEnd) break;
@@ -1000,7 +1110,7 @@ async function authorPhase(page: Page, fixtures: { image: string; csv: string })
         heights,
       );
     }
-    return { screens, heights };
+    return { screens, watching, heights };
   });
 }
 
@@ -1155,6 +1265,34 @@ async function caretPhase(page: Page, fixtures: { image: string; csv: string }):
         );
       }
       return { inserted: objectKinds, ...result, order: order.join(' | ') };
+    });
+  }
+  // The block objects above are checked for where typing lands. Pictures and
+  // embeds are checked for something simpler: that typing a caption straight
+  // after inserting one does not replace it (an inserted node left selected
+  // is replaced by the first key).
+  for (const plan of insertPlans(fixtures).filter((candidate) =>
+    ['image', 'online-video'].includes(candidate.key),
+  )) {
+    await step(`caret:type-after-${plan.key}`, page, async () => {
+      await scratchDocument(page, `typing after ${plan.key}`);
+      const media = () => page.locator('.ProseMirror img, .ProseMirror iframe').count();
+      await plan.insert(page);
+      await pause(page, 1200);
+      const before = await media();
+      const selected = await page.locator('.ProseMirror .ProseMirror-selectednode').count();
+      await type(page, 'A caption for it.');
+      await pause(page);
+      const after = await media();
+      await shoot(page, `caret-type-after-${plan.key}`);
+      if (before > 0 && after < before) {
+        find('high', 'authoring', `Typing straight after inserting ${plan.key} deleted it`, {
+          before,
+          after,
+          selectedAfterInsert: selected,
+        });
+      }
+      return { before, after, selectedAfterInsert: selected };
     });
   }
   await step('caret:return-to-document', page, async () => {
@@ -1900,16 +2038,47 @@ async function importPhase(
             .map((row) => row.replace(/(Now|\d+[smhd] ago)$/, '').trim())
             .filter(Boolean);
         const before = await names();
+        // Record the "Importing …" notice from inside the page: a fast import
+        // shows it for a few milliseconds, gone before a locator wait starts.
+        const pageStarted = (await page.evaluate(IMPORT_NOTICE_WATCH_SCRIPT)) as number;
         const started = Date.now();
-        await dropFile(page, '.db-file-explorer', file);
+        // Markdown goes in the way it always could, dropped on the file pane;
+        // everything else through the Import files button, the path a person
+        // who has not been told about dropping will take.
+        let via = 'drop';
+        if (extension !== 'md') {
+          const button = page.getByRole('button', { name: 'Import files', exact: true });
+          if (await button.isVisible().catch(() => false)) {
+            via = 'button';
+            const chooser = page.waitForEvent('filechooser', { timeout: 15_000 });
+            await button.click();
+            await (await chooser).setFiles(file);
+          } else {
+            find('medium', 'import', 'The file pane has no Import files button');
+          }
+        }
+        if (via === 'drop') await dropFile(page, '.db-file-explorer', file);
+        // How soon does the screen acknowledge the file? A conversion that shows
+        // nothing for many seconds reads as a drop that failed.
+        const noticeAt = async (): Promise<number | null> => {
+          const at = (await page.evaluate('window.__importNoticeAt')) as unknown;
+          return typeof at === 'number' ? at - pageStarted : null;
+        };
         // Converting a Word, PDF or PowerPoint file takes several seconds.
+        // Poll often: a slow poll would be counted as a slow import.
         let added: string[] = [];
+        let shotPending = false;
         while (Date.now() - started < 45_000) {
-          await pause(page, 1000);
           added = (await names()).filter((row) => !before.includes(row));
           if (added.length > 0) break;
+          if (!shotPending && (await noticeAt()) !== null) {
+            shotPending = true;
+            await shoot(page, `import-${extension}-pending`);
+          }
+          await page.waitForTimeout(200);
         }
         const arrivedMs = Date.now() - started;
+        const noticeMs = await noticeAt();
         const dialog = page.getByRole('dialog').last();
         const message = (await dialog.isVisible().catch(() => false))
           ? (await dialog.innerText()).replace(/\s+/g, ' ').slice(0, 800)
@@ -1920,17 +2089,23 @@ async function importPhase(
           find(
             'medium',
             'import',
-            `Dropping a .${extension} file on the file pane added nothing in 45 s`,
+            `Importing a .${extension} file (${via}) added nothing in 45 s`,
             {
               message,
             },
           );
         } else {
-          if (arrivedMs > 5000) {
+          if (noticeMs === null && arrivedMs > 1000) {
+            find(
+              'medium',
+              'import',
+              `An imported .${extension} file took ${(arrivedMs / 1000).toFixed(1)} s to appear in the file list with no "Importing …" notice meanwhile`,
+            );
+          } else if (arrivedMs > 5000) {
             find(
               'low',
               'import',
-              `A dropped .${extension} file took ${(arrivedMs / 1000).toFixed(0)} s to appear in the file list`,
+              `An imported .${extension} file took ${(arrivedMs / 1000).toFixed(0)} s to appear in the file list`,
             );
           }
           // Open what arrived and look at it.
@@ -1946,6 +2121,8 @@ async function importPhase(
         }
         const state = await documentState(page).catch(() => null);
         return {
+          via,
+          noticeMs,
           added,
           arrivedMs,
           message,
@@ -1954,6 +2131,608 @@ async function importPhase(
         };
       });
     }
+  } finally {
+    await context.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Phase: media
+// ---------------------------------------------------------------------------
+
+const MEDIA_DOCUMENT = 'Venue walkthrough';
+/** Bursts of 0.7 s with 1.3 s gaps: longer than Find pauses' 0.8 s default. */
+const MEDIA_SECONDS = 6;
+
+/**
+ * A 6 s, 48 kHz mono WAV that behaves like someone talking: a wavering tone in
+ * 0.7 s bursts with faint hiss between them, so Find pauses has three gaps to
+ * shorten and Clean up voice has noise to remove.
+ */
+function voiceMemoWav(): Buffer {
+  const rate = 48_000;
+  const samples = rate * MEDIA_SECONDS;
+  const buffer = Buffer.alloc(44 + samples * 2);
+  buffer.write('RIFF', 0, 'ascii');
+  buffer.writeUInt32LE(36 + samples * 2, 4);
+  buffer.write('WAVEfmt ', 8, 'ascii');
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(1, 22);
+  buffer.writeUInt32LE(rate, 24);
+  buffer.writeUInt32LE(rate * 2, 28);
+  buffer.writeUInt16LE(2, 32);
+  buffer.writeUInt16LE(16, 34);
+  buffer.write('data', 36, 'ascii');
+  buffer.writeUInt32LE(samples * 2, 40);
+  let seed = 7;
+  for (let index = 0; index < samples; index += 1) {
+    seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+    const t = index / rate;
+    const hiss = ((seed / 4294967296) * 2 - 1) * 0.006;
+    const voiced = t % 2 < 0.7 ? 0.35 * Math.sin(2 * Math.PI * 180 * t + 3 * Math.sin(10 * t)) : 0;
+    const value = Math.max(-1, Math.min(1, voiced + hiss));
+    buffer.writeInt16LE(Math.round(value * 32767), 44 + index * 2);
+  }
+  return buffer;
+}
+
+/**
+ * A phone-style clip: H.264 and AAC in MP4, a moving test pattern, and the
+ * same burst-and-pause audio. Needs FFmpeg; without it the video half of the
+ * phase is skipped rather than faked with a MediaRecorder WebM, which has no
+ * duration in its header and would test a different path.
+ */
+async function phoneClipMp4(file: string): Promise<boolean> {
+  try {
+    await execFileAsync(
+      'ffmpeg',
+      [
+        '-y',
+        '-v',
+        'error',
+        '-f',
+        'lavfi',
+        '-i',
+        `testsrc2=size=1280x720:rate=30:duration=${String(MEDIA_SECONDS)}`,
+        '-f',
+        'lavfi',
+        '-i',
+        `sine=frequency=220:sample_rate=48000:duration=${String(MEDIA_SECONDS)}`,
+        '-af',
+        "volume='if(lt(mod(t,2),0.7),0.5,0)':eval=frame",
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-preset',
+        'veryfast',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '96k',
+        '-shortest',
+        '-movflags',
+        '+faststart',
+        file,
+      ],
+      { timeout: 120_000 },
+    );
+    return existsSync(file);
+  } catch {
+    return false;
+  }
+}
+
+/** Duration of a media file in seconds through ffprobe, or null without it. */
+async function probeSeconds(file: string): Promise<number | null> {
+  try {
+    const { stdout } = await execFileAsync('ffprobe', [
+      '-v',
+      'error',
+      '-show_entries',
+      'format=duration',
+      '-of',
+      'default=nw=1:nk=1',
+      file,
+    ]);
+    const seconds = Number(stdout.trim());
+    return Number.isFinite(seconds) ? seconds : null;
+  } catch {
+    return null;
+  }
+}
+
+async function mediaPhase(browser: Browser): Promise<void> {
+  say('Phase: media');
+  await mkdir(FIXTURES, { recursive: true });
+  const wav = path.join(FIXTURES, 'walkthrough.wav');
+  await writeFile(wav, voiceMemoWav());
+  const mp4 = path.join(FIXTURES, 'venue-clip.mp4');
+  const haveMp4 = await phoneClipMp4(mp4);
+  if (!haveMp4) say('  (FFmpeg not available; the video clip is skipped)');
+  const clips = [
+    { kind: 'audio', file: wav, button: 'Edit audio', heading: 'Voice memo' },
+    ...(haveMp4 ? [{ kind: 'video', file: mp4, button: 'Edit clip', heading: 'Venue clip' }] : []),
+  ] as const;
+
+  const { context, page } = await newContext(browser);
+  try {
+    const created = await step('media:create', page, async () => {
+      await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' });
+      await waitForShell(page);
+      await page.getByRole('button', { name: 'Create a document', exact: true }).click();
+      await page.getByRole('textbox', { name: 'Document name', exact: true }).fill(MEDIA_DOCUMENT);
+      await page.getByRole('button', { name: 'Create', exact: true }).click();
+      await page.getByRole('dialog', { name: 'New document' }).waitFor({ state: 'hidden' });
+      await page.waitForFunction((name) => document.title.startsWith(name), MEDIA_DOCUMENT, {
+        timeout: 20_000,
+      });
+      await pause(page, 700);
+      await type(page, 'Notes recorded while walking the venue.');
+      await page.keyboard.press('Enter');
+      await pause(page);
+      return undefined;
+    });
+    if (!created) return;
+
+    for (const clip of clips) {
+      const editButton = () => page.getByRole('button', { name: clip.button, exact: true }).last();
+      const inserted = await step(`media:insert-${clip.kind}`, page, async () => {
+        await closeOverlays(page);
+        await type(page, `## ${clip.heading}`);
+        await page.keyboard.press('Enter');
+        const started = Date.now();
+        const chooser = page.waitForEvent('filechooser', { timeout: 15_000 });
+        await openInsert(page, 'Image/Media');
+        await (await chooser).setFiles(clip.file);
+        await editButton().waitFor({ state: 'attached', timeout: 30_000 });
+        const appearedMs = Date.now() - started;
+        await pause(page, 1200);
+        const visibleWithoutHover = await editButton().isVisible();
+        await shoot(page, `media-${clip.kind}-inserted`);
+        if (!visibleWithoutHover) {
+          find(
+            'low',
+            'media',
+            `${clip.button} is hidden until the ${clip.kind} is hovered or selected`,
+          );
+        }
+        return {
+          appearedMs,
+          visibleWithoutHover,
+          blocks: (await documentState(page)).blocks,
+        };
+      });
+      if (!inserted) continue;
+
+      await step(`media:edit-${clip.kind}`, page, async () => {
+        if (!(await editButton().isVisible())) {
+          await page.locator(`.ProseMirror ${clip.kind}`).last().hover();
+          await pause(page, 300);
+        }
+        await editButton().click();
+        const modal = page.getByTestId('media-edit-modal');
+        await modal.waitFor({ state: 'visible', timeout: 15_000 });
+        await pause(page, 800);
+        const tabCount = await modal.getByRole('tab').count();
+        const tabs: string[] = [];
+        for (let index = 0; index < tabCount; index++) {
+          const tab = modal.getByRole('tab').nth(index);
+          const label = (await tab.innerText()).trim();
+          tabs.push(label);
+          await tab.click();
+          await pause(page, 900);
+          await shoot(page, `media-${clip.kind}-tab-${label}`);
+          const overflow = (await page.evaluate(OVERFLOW_SCRIPT)) as string[];
+          if (overflow.length > 0) {
+            find('low', 'media', `${clip.kind} ${label} tab: ${overflow.join('; ')}`);
+          }
+        }
+
+        // Audio cleanup: the voice preset, so Apply starts a background render.
+        await modal.getByRole('tab').filter({ hasText: 'Audio cleanup' }).click();
+        await modal.getByRole('button', { name: 'Clean up voice', exact: true }).click();
+        await pause(page, 400);
+
+        // Cuts: the timeline must read the clip, and Find pauses must find the gaps.
+        await modal.getByRole('tab').filter({ hasText: 'Cuts' }).click();
+        const timeline = modal.getByLabel('Clip timeline');
+        const timelineMs = Date.now();
+        const timelineOk = await timeline
+          .waitFor({ state: 'visible', timeout: 30_000 })
+          .then(() => true)
+          .catch(() => false);
+        let cuts = 0;
+        let pauseNote = '';
+        if (!timelineOk) {
+          const status = await modal
+            .locator('.squisq-media-edit-timeline--empty')
+            .innerText({ timeout: 1000 })
+            .catch(() => '');
+          find('high', 'media', `The ${clip.kind} clip's cut timeline never appeared: "${status}"`);
+        } else {
+          await modal.getByRole('button', { name: 'Find pauses', exact: true }).click();
+          await pause(page, 300);
+          await modal
+            .getByRole('button', { name: 'Find pauses', exact: true })
+            .waitFor({ state: 'visible', timeout: 30_000 });
+          await pause(page, 600);
+          cuts = await modal.locator('ol.squisq-media-edit-cutlist > li').count();
+          pauseNote = await modal
+            .locator('.squisq-media-edit-cuts__pauses [role="status"]')
+            .innerText({ timeout: 1000 })
+            .catch(() => '');
+          await shoot(page, `media-${clip.kind}-pauses-found`);
+          if (cuts === 0) {
+            find(
+              'medium',
+              'media',
+              `Find pauses cut nothing from a ${clip.kind} clip with three 1.3 s silences`,
+              { pauseNote },
+            );
+          }
+        }
+
+        // Frame: a square crop, for video only.
+        let cropped = false;
+        const frameTab = modal.getByRole('tab').filter({ hasText: 'Frame' });
+        if (clip.kind === 'video' && (await frameTab.count()) > 0) {
+          await frameTab.click();
+          const square = modal.getByRole('button', { name: '1:1', exact: true });
+          await square.waitFor({ state: 'visible', timeout: 15_000 });
+          if (await square.isEnabled()) {
+            await square.click();
+            cropped = true;
+          } else {
+            find('medium', 'media', 'Frame: the crop aspects stay disabled for an MP4 clip');
+          }
+          await pause(page, 600);
+          await shoot(page, 'media-video-cropped');
+        }
+
+        const apply = modal.getByRole('button', { name: 'Apply', exact: true });
+        if (!(await apply.isEnabled())) {
+          find('high', 'media', `Apply stayed disabled after editing the ${clip.kind} clip`);
+          await modal.getByRole('button', { name: 'Cancel', exact: true }).click();
+          return { tabs, timelineOk, cuts, pauseNote, cropped, applied: false };
+        }
+        await apply.click();
+        await modal.waitFor({ state: 'hidden', timeout: 10_000 });
+        await pause(page, 800);
+        const edited = await editButton().getAttribute('data-edited');
+        await shoot(page, `media-${clip.kind}-applied`);
+        if (edited !== 'true') {
+          find('medium', 'media', `After Apply, ${clip.button} does not show the clip as edited`);
+        }
+        return {
+          tabs,
+          timelineMs: Date.now() - timelineMs,
+          timelineOk,
+          cuts,
+          pauseNote,
+          cropped,
+          applied: true,
+          edited,
+        };
+      });
+
+      await step(`media:render-${clip.kind}`, page, async () => {
+        // The cleanup renders in the background; reopening shows its status.
+        await closeOverlays(page);
+        if (!(await editButton().isVisible())) {
+          await page.locator(`.ProseMirror ${clip.kind}`).last().hover();
+        }
+        await editButton().click();
+        const modal = page.getByTestId('media-edit-modal');
+        await modal.waitFor({ state: 'visible', timeout: 15_000 });
+        const started = Date.now();
+        const status = modal.locator('.squisq-media-edit-status').first();
+        let text = '';
+        while (Date.now() - started < 150_000) {
+          text = (await status.innerText().catch(() => '')).trim();
+          if (/in use|failed/i.test(text)) break;
+          await pause(page, 1500);
+        }
+        const renderMs = Date.now() - started;
+        await shoot(page, `media-${clip.kind}-render-status`);
+        if (!/in use/i.test(text)) {
+          find(
+            /failed/i.test(text) ? 'high' : 'medium',
+            'media',
+            `The ${clip.kind} cleanup render did not finish in 150 s: "${text.slice(0, 160)}"`,
+          );
+        }
+
+        // Save edited copy: the file a person takes elsewhere.
+        const copyButton = modal.getByRole('button', { name: /^Save edited copy/ });
+        let copy: { name: string; seconds: number | null; bytes: number } | null = null;
+        if (await copyButton.isEnabled().catch(() => false)) {
+          const download = page.waitForEvent('download', { timeout: 180_000 }).catch(() => null);
+          await copyButton.click();
+          const saved = await download;
+          if (saved) {
+            const target = path.join(DOWNLOADS, `edited-${saved.suggestedFilename()}`);
+            await mkdir(DOWNLOADS, { recursive: true });
+            await saved.saveAs(target);
+            copy = {
+              name: saved.suggestedFilename(),
+              seconds: await probeSeconds(target),
+              bytes: (await stat(target)).size,
+            };
+            if (copy.seconds !== null && copy.seconds > MEDIA_SECONDS - 0.5) {
+              find(
+                'medium',
+                'media',
+                `The edited copy of the ${clip.kind} is ${copy.seconds.toFixed(1)} s: the cuts were not applied`,
+              );
+            }
+          } else {
+            const note = await modal.innerText().catch(() => '');
+            if (!/Saved /.test(note)) {
+              find('medium', 'media', `Save edited copy produced no file for the ${clip.kind}`);
+            }
+          }
+          await shoot(page, `media-${clip.kind}-copy-saved`);
+        } else {
+          find('low', 'media', `Save edited copy is disabled for the ${clip.kind} clip`);
+        }
+        await modal.getByRole('button', { name: 'Cancel', exact: true }).click();
+        return { renderMs, status: text.slice(0, 200), copy };
+      });
+    }
+
+    await step('media:slideshow', page, async () => {
+      await closeOverlays(page);
+      await chooseMode(page, 'Choose Use mode', 'Slideshow');
+      const slides = await walkSlides(page, 'media-slide', 8);
+      await showWrite(page);
+      return { slides };
+    });
+  } finally {
+    await context.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Phase: phone
+// ---------------------------------------------------------------------------
+
+const PHONE_DOCUMENT = 'Packing list';
+const PHONE_INSERTS: ReadonlyArray<{ item: string; then?: string }> = [
+  { item: 'Table' },
+  { item: 'Task List' },
+  { item: 'Chart', then: 'Insert Column chart' },
+  { item: 'Diagram' },
+  { item: 'Image/Media' },
+];
+
+/**
+ * The same kind of document written on a phone with touch: create, type,
+ * Markdown shortcuts, a few Insert items each followed by more typing, then
+ * Slides, Source and an export. The repository's adaptive specs check phone
+ * menus and dialogs against the dev server; this checks a whole sitting.
+ */
+async function phonePhase(
+  browser: Browser,
+  fixtures: { image: string; csv: string },
+): Promise<void> {
+  say('Phase: phone');
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 2,
+    isMobile: true,
+    hasTouch: true,
+    colorScheme: 'light',
+    locale: 'en-US',
+    acceptDownloads: true,
+    serviceWorkers: 'block',
+  });
+  const page = await context.newPage();
+  watch(page);
+  const layout = async (label: string): Promise<string[]> => {
+    const overflow = (await page.evaluate(OVERFLOW_SCRIPT)) as string[];
+    if (overflow.length > 0) find('medium', 'phone', `${label}: ${overflow.join('; ')}`);
+    return overflow;
+  };
+  try {
+    const created = await step('phone:create', page, async () => {
+      await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' });
+      await waitForShell(page);
+      await shoot(page, 'phone-welcome');
+      await page.getByRole('button', { name: 'Create a document', exact: true }).tap();
+      await page.getByRole('textbox', { name: 'Document name', exact: true }).fill(PHONE_DOCUMENT);
+      await shoot(page, 'phone-create-dialog');
+      await page.getByRole('button', { name: 'Create', exact: true }).tap();
+      await page.getByRole('dialog', { name: 'New document' }).waitFor({ state: 'hidden' });
+      const sentence = 'Things to bring for the offsite.';
+      await type(page, sentence);
+      await page.waitForFunction((name) => document.title.startsWith(name), PHONE_DOCUMENT, {
+        timeout: 20_000,
+      });
+      await pause(page, 800);
+      const state = await documentState(page);
+      const body = state.blocks
+        .slice(1)
+        .map((block) => block.text)
+        .join(' ');
+      if (!body.includes(sentence)) {
+        find(
+          'high',
+          'phone',
+          body
+            ? `Typing straight after Create on a phone kept only "${body.slice(0, 80)}"`
+            : 'Typing straight after Create on a phone was lost',
+        );
+      }
+      await shoot(page, 'phone-first-sentence');
+      return { blocks: state.blocks, focus: state.focus, overflow: await layout('editor') };
+    });
+    if (!created) return;
+
+    await step('phone:shortcuts', page, async () => {
+      await page.keyboard.press('Enter');
+      await type(page, '## Clothes');
+      await page.keyboard.press('Enter');
+      await type(page, '- Rain jacket');
+      await page.keyboard.press('Enter');
+      await type(page, 'Walking shoes');
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Enter');
+      await pause(page);
+      const kinds = (await documentState(page)).blocks.map((block) => block.kind.split('.')[0]);
+      if (!kinds.includes('h2') || !kinds.includes('ul')) {
+        find('medium', 'phone', 'Markdown shortcuts did not format on a phone', kinds);
+      }
+      await shoot(page, 'phone-shortcuts');
+      return { kinds };
+    });
+
+    let menuShot = false;
+    for (const { item, then } of PHONE_INSERTS) {
+      await step(`phone:insert-${slug(item)}`, page, async () => {
+        await closeOverlays(page);
+        const chooser =
+          item === 'Image/Media'
+            ? page.waitForEvent('filechooser', { timeout: 15_000 }).catch(() => null)
+            : null;
+        await page.getByRole('button', { name: 'Insert', exact: true }).first().tap();
+        await pause(page, 400);
+        if (!menuShot) {
+          menuShot = true;
+          await shoot(page, 'phone-insert-menu');
+          await layout('Insert menu');
+        }
+        await page.getByRole('menuitem', { name: item, exact: true }).tap();
+        if (then) {
+          await pause(page, 400);
+          await page.getByRole('menuitem', { name: then }).tap();
+        }
+        const imagesBefore = await page.locator('.ProseMirror img').count();
+        if (chooser) {
+          const picked = await chooser;
+          if (picked) await picked.setFiles(fixtures.image);
+          else find('medium', 'phone', 'Image/Media opened no file picker on a phone');
+        }
+        await pause(page, 1500);
+        if (chooser) {
+          // The picker can close happily and still insert nothing.
+          await page
+            .waitForFunction(
+              (before) => document.querySelectorAll('.ProseMirror img').length > before,
+              imagesBefore,
+              { timeout: 8_000 },
+            )
+            .catch(() =>
+              find('high', 'phone', 'Image/Media took the chosen picture but inserted nothing'),
+            );
+        }
+        const dialog = page.getByRole('dialog').last();
+        if (await dialog.isVisible().catch(() => false)) {
+          await shoot(page, `phone-${slug(item)}-dialog`);
+          await layout(`${item} dialog`);
+          await closeOverlays(page);
+        }
+        await shoot(page, `phone-${slug(item)}-inserted`);
+        // Carry on writing, as a person would after placing it.
+        const marker = `After the ${item.toLowerCase().replace('/media', '')}.`;
+        const before = await documentState(page);
+        const media = () => page.locator('.ProseMirror img, .ProseMirror iframe').count();
+        const mediaBefore = await media();
+        await type(page, marker);
+        await pause(page);
+        const after = await documentState(page);
+        const where = landing(after, marker);
+        // An inserted picture left node-selected is replaced by the first key.
+        if ((await media()) < mediaBefore) {
+          find('high', 'phone', `Typing straight after inserting ${item} deleted it`);
+        }
+        await shoot(page, `phone-${slug(item)}-typed`);
+        await layout(`after inserting ${item}`);
+        return {
+          landing: where,
+          focusBefore: before.focus,
+          blocks: after.blocks.slice(-6),
+        };
+      });
+    }
+
+    await step('phone:caret-below', page, async () => {
+      // The image is now the last block. Tap under it and type.
+      await closeOverlays(page);
+      await scrollDocument(page, 'bottom');
+      await pause(page, 300);
+      const last = await page.locator('.ProseMirror > *').last().boundingBox();
+      const box = await editor(page).boundingBox();
+      if (last && box) {
+        await page.touchscreen.tap(
+          box.x + 60,
+          Math.min(last.y + last.height + 24, (page.viewportSize()?.height ?? 844) - 60),
+        );
+      }
+      await pause(page, 400);
+      const marker = 'Tapped below the picture.';
+      await type(page, marker);
+      await pause(page);
+      const state = await documentState(page);
+      await shoot(page, 'phone-caret-below');
+      return { landing: landing(state, marker), blocks: state.blocks.slice(-4) };
+    });
+
+    await step('phone:slides', page, async () => {
+      await closeOverlays(page);
+      const tabs = page.getByRole('tablist', { name: 'Editor view' }).getByRole('tab');
+      await tabs.nth(2).tap();
+      await pause(page, 2500);
+      await shoot(page, 'phone-slides');
+      await layout('Slides');
+      const next = page.getByRole('button', { name: /^Next (build or )?slide$/ });
+      const labels: string[] = [];
+      for (let index = 0; index < 4; index++) {
+        if (!(await next.isEnabled().catch(() => false))) break;
+        await next.tap();
+        await pause(page, 900);
+        labels.push(await shoot(page, `phone-slide-${String(index + 2)}`));
+      }
+      return { shots: labels };
+    });
+
+    await step('phone:source', page, async () => {
+      const tabs = page.getByRole('tablist', { name: 'Editor view' }).getByRole('tab');
+      await tabs.nth(1).tap();
+      await page
+        .locator('.monaco-editor')
+        .first()
+        .waitFor({ state: 'visible', timeout: 45_000 })
+        .catch(() => find('medium', 'phone', 'Source view did not appear on a phone in 45 s'));
+      await pause(page, 1200);
+      await shoot(page, 'phone-source');
+      await layout('Source');
+      await tabs.nth(0).tap();
+      await pause(page, 1200);
+      return undefined;
+    });
+
+    await step('phone:export', page, async () => {
+      await closeOverlays(page);
+      await page.getByRole('button', { name: 'Export and share' }).tap();
+      await pause(page, 400);
+      await shoot(page, 'phone-export-menu');
+      await page.getByRole('menuitem', { name: 'Export document...' }).tap();
+      const dialog = page.getByRole('dialog', { name: 'Export Document' });
+      await dialog.waitFor({ state: 'visible', timeout: 15_000 });
+      await pause(page, 600);
+      await shoot(page, 'phone-export-dialog');
+      await layout('Export dialog');
+      const pending = page.waitForEvent('download', { timeout: 90_000 });
+      await dialog.getByRole('button', { name: /Save .* to Downloads/ }).tap();
+      const download = await pending;
+      await mkdir(DOWNLOADS, { recursive: true });
+      const target = path.join(DOWNLOADS, `phone-${download.suggestedFilename()}`);
+      await download.saveAs(target);
+      await closeOverlays(page);
+      return { file: download.suggestedFilename(), bytes: (await stat(target)).size };
+    });
   } finally {
     await context.close();
   }
@@ -2038,6 +2817,8 @@ async function main(): Promise<void> {
     }
     if (PHASES.includes('render')) await renderPhase(browser);
     if (PHASES.includes('import')) await importPhase(browser, fixtures);
+    if (PHASES.includes('media')) await mediaPhase(browser);
+    if (PHASES.includes('phone')) await phonePhase(browser, fixtures);
   } finally {
     await browser.close();
     const pageErrors = health.filter((entry) => entry.kind === 'pageerror');

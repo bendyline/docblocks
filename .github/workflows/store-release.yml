@@ -6,6 +6,7 @@
 #   - macOS:   signed .pkg for the Mac App Store (App Store Connect)
 #   - Android: .aab signed with the upload key, for Google Play (Play Console)
 #   - iOS:     App Store .ipa plus dSYMs, for App Store Connect
+#   - VS Code: .vsix for the Visual Studio Marketplace
 #
 # These are DIFFERENT from the public installers built by desktop-release.yml
 # and the unsigned review packages built by mobile-native.yml:
@@ -18,12 +19,21 @@
 #     needed.
 #   - With `publish: testing` (the default), separate upload jobs send the Mac
 #     App Store and iOS builds to TestFlight and the Android bundle to Play
-#     internal testing, reading them back from the draft. Nothing reaches
+#     internal testing, reading them back from the draft. None of those reach
 #     users or App Review from CI, and the Microsoft Store packages are always
 #     submitted by hand. The upload jobs hold the store credentials, so the
 #     build jobs' npm, Gradle, CocoaPods and electron-builder code never sees
 #     them, and a failed upload can be retried with "Re-run failed jobs"
 #     without rebuilding: a rerun keeps preflight's draft tag and build number.
+#   - The VS Code extension is the exception: the Visual Studio Marketplace
+#     has no testing track, so publishing it reaches everyone. It is therefore
+#     not covered by `publish`; it uploads only when the separate
+#     `publish_vscode` input is checked (off by default), and otherwise the
+#     VSIX is just attached to the draft.
+#     Its version is the desktop version, the stamp desktop-release.yml puts
+#     on the VSIX it attaches to the public release. The Marketplace accepts
+#     each version once, so until Release & Deploy bumps the desktop version a
+#     rerun skips the Marketplace (--skip-duplicate) rather than failing.
 #   - Versions are NOT stamped with a -build.N prerelease suffix; stores require
 #     a clean x.y.z version, which comes from packages/desktop/package.json for
 #     the Mac App Store build and packages/mobile/package.json for mobile. Both
@@ -63,7 +73,7 @@
 #                     Secrets: IOS_DISTRIBUTION_CERTIFICATE_BASE64,
 #                     IOS_DISTRIBUTION_CERTIFICATE_PASSWORD,
 #                     IOS_PROVISIONING_PROFILE_BASE64.
-#   Store uploads (publish: testing only):
+#   Store uploads (publish: testing, or publish_vscode for the Marketplace):
 #     App Store Connect: a Team Key with App Manager access, which covers macOS
 #                     and iOS. Secrets: APP_STORE_CONNECT_API_KEY_ID (10
 #                     characters), APP_STORE_CONNECT_API_ISSUER_ID (UUID),
@@ -76,6 +86,12 @@
 #                     plain text, not base64). Play's API cannot create the
 #                     first release: upload the first .aab to Internal testing
 #                     by hand.
+#     VS Code Marketplace: a publisher whose ID matches "publisher" in
+#                     packages/vscode/package.json, with a Trusted Publishing
+#                     policy for this repository's owner and name, workflow
+#                     store-release.yml, and no environment. No secret: the
+#                     upload job trades its GitHub OIDC token for a 15-minute
+#                     Marketplace credential.
 #   Store each file secret as single-line base64 (`base64 -i FILE`) unless
 #   noted otherwise.
 ##
@@ -98,18 +114,24 @@ on:
           - macos
           - android
           - ios
+          - vscode
       build_number:
         description: 'Optional override. Leave blank to use this run number; set it only if a store already holds a higher build.'
         required: false
         type: string
       publish:
-        description: 'testing: also send macOS and iOS to TestFlight and Android to Play internal testing. Windows is never uploaded.'
+        description: 'testing: also send macOS and iOS to TestFlight and Android to Play internal testing. Windows is never uploaded; VS Code has its own switch below.'
         required: true
         default: 'testing'
         type: choice
         options:
           - testing
           - none
+      publish_vscode:
+        description: 'Also publish the VS Code extension to the Marketplace. This is public: the Marketplace has no testing track. Off: the VSIX is only attached to the draft.'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -130,8 +152,10 @@ jobs:
       macos: ${{ steps.targets.outputs.macos }}
       android: ${{ steps.targets.outputs.android }}
       ios: ${{ steps.targets.outputs.ios }}
+      vscode: ${{ steps.targets.outputs.vscode }}
       build_number: ${{ steps.targets.outputs.build_number }}
       publish: ${{ steps.targets.outputs.publish }}
+      publish_vscode: ${{ steps.targets.outputs.publish_vscode }}
       # Every job attaches to, or reads from, this one draft. "Re-run failed
       # jobs" keeps a successful preflight's outputs, so a rerun builder or
       # uploader finds the draft the first attempt created; "Re-run all jobs"
@@ -145,6 +169,7 @@ jobs:
         env:
           TARGET: ${{ inputs.target }}
           PUBLISH: ${{ inputs.publish }}
+          PUBLISH_VSCODE: ${{ inputs.publish_vscode }}
           BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
           APPLE_MAS_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_MAS_CERTIFICATE_P12_BASE64 }}
           MAS_PROVISIONING_PROFILE_BASE64: ${{ secrets.MAS_PROVISIONING_PROFILE_BASE64 }}
@@ -161,7 +186,7 @@ jobs:
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           case "$TARGET" in
-            all) targets='windows macos android ios' ;;
+            all) targets='windows macos android ios vscode' ;;
             desktop) targets='windows macos' ;;
             mobile) targets='android ios' ;;
             *) targets="$TARGET" ;;
@@ -169,7 +194,9 @@ jobs:
           required=()
           app_store_upload=false
           play_upload=false
-          for target in windows macos android ios; do
+          # vscode needs no secret: its upload job uses Marketplace Trusted
+          # Publishing (OIDC).
+          for target in windows macos android ios vscode; do
             selected=false
             [[ " $targets " == *" $target "* ]] && selected=true
             echo "$target=$selected" >> "$GITHUB_OUTPUT"
@@ -222,6 +249,13 @@ jobs:
             status=1
           fi
           echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+          # The Marketplace upload is opt-in and independent of `publish`: it
+          # runs only when the VSIX is built and publish_vscode is checked.
+          publish_vscode=false
+          if [[ " $targets " == *" vscode "* ]] && [ "$PUBLISH_VSCODE" = true ]; then
+            publish_vscode=true
+          fi
+          echo "publish_vscode=$publish_vscode" >> "$GITHUB_OUTPUT"
           echo "draft_tag=store-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
           if [[ "$BUILD_NUMBER" =~ ^[1-9][0-9]{0,8}$ ]]; then
             echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
@@ -306,6 +340,8 @@ jobs:
             - Mobile version: `${{ steps.versions.outputs.mobile }}`
             - Build number (Mac App Store, App Store, Google Play): `${{ needs.preflight.outputs.build_number }}`
             - Sent to testers (TestFlight, Play internal testing): `${{ needs.preflight.outputs.publish }}`
+            - VS Code extension version (the desktop version): `${{ steps.versions.outputs.desktop }}`
+            - VS Code published to the Marketplace: `${{ needs.preflight.outputs.publish_vscode }}`
             - Source commit: `${{ github.sha }}`
             - Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
@@ -614,15 +650,92 @@ jobs:
           fail_on_unmatched_files: true
 
   # ──────────────────────────────────────────────────────────────────────────
-  # Store uploads (publish: testing). Each reads its verified package back from
-  # the private draft, so the store credentials never meet the build jobs, and
-  # "Re-run failed jobs" retries an upload without rebuilding. Nothing here
-  # reaches users or review: TestFlight builds go to testers once Apple has
-  # processed them, and Play internal testing is limited to its tester list.
+  # VS Code — Visual Studio Marketplace VSIX, stamped with the desktop version
+  # exactly as desktop-release.yml stamps the VSIX on the public release
+  # ──────────────────────────────────────────────────────────────────────────
+  build-vsix:
+    needs: [preflight, quality, create-draft-release]
+    if: ${{ needs.preflight.outputs.vscode == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Setup governed npm
+        uses: ./.github/actions/setup-npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build upstream packages
+        run: npm run build:core && npm run build:react
+
+      - name: Read release version
+        id: version
+        shell: bash
+        run: |
+          version="$(node --print "require('./packages/desktop/package.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Package VS Code extension
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: npm run package:vsix -w docblocks-vscode -- "$RELEASE_VERSION" --no-update-package-json
+
+      # The Trusted Publishing policy belongs to one publisher, and the
+      # Marketplace takes each version once: check both in the packed manifest.
+      - name: Verify VSIX identity and version
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          unzip -p "packages/vscode/docblocks-vscode-$RELEASE_VERSION.vsix" extension/package.json \
+            > "$RUNNER_TEMP/vsix-package.json"
+          node -e '
+            const packed = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+            const source = require("./packages/vscode/package.json");
+            const expected = { publisher: source.publisher, name: source.name, version: process.env.RELEASE_VERSION };
+            for (const [key, value] of Object.entries(expected)) {
+              if (packed[key] !== value) {
+                console.error(`::error::The VSIX ${key} is ${packed[key]}, expected ${value}`);
+                process.exit(1);
+              }
+            }
+            console.log(`VSIX: ${packed.publisher}.${packed.name} ${packed.version}`);
+          ' "$RUNNER_TEMP/vsix-package.json"
+
+      - name: Attach VSIX to private draft release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: ${{ needs.preflight.outputs.draft_tag }}
+          draft: true
+          files: packages/vscode/docblocks-vscode-${{ steps.version.outputs.version }}.vsix
+          fail_on_unmatched_files: true
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Store uploads (publish: testing; upload-vsix only with publish_vscode).
+  # Each reads its verified package back from the private draft, so the store
+  # credentials never meet the build jobs, and "Re-run failed jobs" retries an
+  # upload without rebuilding. Nothing here reaches users or review: TestFlight
+  # builds go to testers once Apple has processed them, and Play internal
+  # testing is limited to its tester list. The VS Code Marketplace is the
+  # exception (see the header), which is why it is a separate opt-in.
   #
   # contents: write is needed only because GitHub lists draft releases to
-  # tokens with push access. The token is passed to the download step alone,
-  # and no job checks out the repository, so later steps cannot use it.
+  # tokens with push access. The token is passed to the download step alone.
+  # Only upload-vsix checks out, without persisting the token, so later steps
+  # cannot use it.
   # ──────────────────────────────────────────────────────────────────────────
   upload-mas:
     name: Upload Mac App Store Build to TestFlight
@@ -776,3 +889,72 @@ jobs:
       - name: Remove temporary key
         if: always()
         run: rm -rf "$RUNNER_TEMP/app-store-connect"
+
+  # Marketplace Trusted Publishing: vsce trades this job's GitHub OIDC token for
+  # a 15-minute Marketplace credential, so no token is stored anywhere. This is
+  # the only job that may request an OIDC token. Unlike the other uploaders it
+  # needs one npm tool, vsce, so it installs from the lockfile (exact versions
+  # under the cooldown) with --ignore-scripts: no install script and no
+  # repository code runs here, only vsce itself. The checkout keeps no token.
+  upload-vsix:
+    name: Publish VS Code Extension to the Marketplace
+    needs: [preflight, build-vsix]
+    if: ${{ needs.preflight.outputs.publish_vscode == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Download VSIX from private draft
+        id: download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRAFT_TAG: ${{ needs.preflight.outputs.draft_tag }}
+        run: |
+          gh release download "$DRAFT_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'docblocks-vscode-*.vsix' --dir "$RUNNER_TEMP/store"
+          shopt -s nullglob
+          files=("$RUNNER_TEMP"/store/*.vsix)
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "::error::Expected one .vsix on $DRAFT_TAG, found ${#files[@]}"
+            exit 1
+          fi
+          echo "file=${files[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Setup governed npm
+        uses: ./.github/actions/setup-npm
+
+      - name: Install vsce from the lockfile
+        run: npm ci --ignore-scripts
+
+      # --skip-duplicate turns an already-published version into a no-op, so a
+      # rerun at an unchanged desktop version succeeds. The publisher's very
+      # first version may need a hand upload of this VSIX if the Marketplace
+      # refuses to create a new extension from an OIDC credential; rerun this
+      # job afterwards and it skips.
+      - name: Publish to the Visual Studio Marketplace
+        shell: bash
+        env:
+          VSIX: ${{ steps.download.outputs.file }}
+        run: |
+          npm exec -w docblocks-vscode -- vsce publish --oidc --packagePath "$VSIX" --skip-duplicate \
+            2>&1 | tee "$RUNNER_TEMP/vsce-publish.log"
+          if grep -q 'is already published' "$RUNNER_TEMP/vsce-publish.log"; then
+            echo "\`$(basename "$VSIX")\` was already on the **Visual Studio Marketplace**; nothing was published." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Published \`$(basename "$VSIX")\` to the **Visual Studio Marketplace**. It appears once the Marketplace finishes verifying it, usually within minutes." >> "$GITHUB_STEP_SUMMARY"
+          fi

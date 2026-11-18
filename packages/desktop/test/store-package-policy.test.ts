@@ -54,7 +54,7 @@ function appxManifest(
     .join('\n');
   return `<?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10">
-  <Identity Name="BendylineLLC.DocBlocks" ProcessorArchitecture="${architecture}" Publisher="CN=791A4319-B5A9-4402-928A-D644A8E3351D" Version="${version}" />
+  <Identity Name="5555BendylineLLC.DocBlocks" ProcessorArchitecture="${architecture}" Publisher="CN=4D81DFD3-C800-445F-8F6A-133341535B06" Version="${version}" />
   <Properties>
     <DisplayName>DocBlocks</DisplayName>
     <PublisherDisplayName>Bendyline, LLC</PublisherDisplayName>
@@ -75,8 +75,8 @@ ${declared}
 }
 
 const APPX = {
-  name: 'BendylineLLC.DocBlocks',
-  publisher: 'CN=791A4319-B5A9-4402-928A-D644A8E3351D',
+  name: '5555BendylineLLC.DocBlocks',
+  publisher: 'CN=4D81DFD3-C800-445F-8F6A-133341535B06',
   displayName: 'DocBlocks',
   publisherDisplayName: 'Bendyline, LLC',
   version: '2.7.8',

@@ -91,6 +91,13 @@ describe('VS Code webview content security policy', () => {
     expect(directives.get('frame-src')).to.deep.equal(ONLINE_VIDEO_FRAME_SOURCES);
   });
 
+  it('allows remote images only from the online video thumbnail hosts', () => {
+    // A YouTube embed's poster (slides, the rail) loads from i.ytimg.com.
+    const imgSrc = directives.get('img-src') ?? [];
+    const remote = imgSrc.filter((source) => source !== CSP_SOURCE && source.startsWith('https:'));
+    expect(remote).to.deep.equal(['https://i.ytimg.com']);
+  });
+
   it('lets the page read its own media (data:/blob: URLs) but nothing remote', () => {
     // Media edits fetch sources and render manifests the media bridge resolves
     // to data: URLs; nothing may widen fetches beyond the extension origin.

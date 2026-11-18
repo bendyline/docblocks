@@ -116,7 +116,8 @@ async function checkMsix(artifactsDir: string): Promise<void> {
     if (!listed.ok) fail(`Cannot list ${matches[0]}:\n  ${listed.output.trim()}`);
     report(matches[0], msixPayloadViolations(listed.stdout.split('\n')));
 
-    // The same check the shipped app runs before it starts an engine.
+    // Gezel's full check, hashes and signatures included. The shipped app
+    // confirms only that the release is complete (checkNativePayload).
     const unpacked = architecture === 'x64' ? 'win-unpacked' : `win-${architecture}-unpacked`;
     const engines = await verifyNativeBinaries({
       candidates: [path.join(artifactsDir, unpacked, 'resources', 'gezel-native')],
@@ -262,7 +263,8 @@ async function checkMas(buildNumber: string, artifactsDir: string): Promise<void
     );
     report('Contents/Helpers', masHelperViolations(entries));
 
-    // The same verifier the shipped app runs before it starts an engine.
+    // Where engine hashes, signatures and sandbox inheritance are verified. The
+    // shipped app checks only that its engines are present: Apple re-signs them.
     try {
       await verifyMasNativePayload(path.join(app, 'Contents', 'Resources', 'gezel-native'));
     } catch (error) {

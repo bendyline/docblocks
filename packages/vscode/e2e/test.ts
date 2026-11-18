@@ -13,6 +13,7 @@
 import { test as base, expect } from '@playwright/test';
 import {
   collectRuntimeErrors,
+  describeNetworkChange,
   formatRuntimeErrors,
   SHARED_ALLOWED_RUNTIME_ERRORS,
   unexpectedRuntimeErrors,
@@ -90,8 +91,13 @@ export const test = base.extend<RuntimeErrorFixtures>({
       await use();
 
       // A test that already failed reports its own cause; adding console noise
-      // on top buries it. The guard only speaks when nothing else did.
-      if (testInfo.errors.length > 0) return;
+      // on top buries it. The guard only speaks when nothing else did, or
+      // when the cause was a network change the assertion cannot name.
+      if (testInfo.errors.length > 0) {
+        const networkChange = describeNetworkChange(readErrors());
+        if (networkChange !== undefined) throw new Error(networkChange);
+        return;
+      }
       const unexpected = unexpectedRuntimeErrors(readErrors(), runtimeErrorAllowances);
       if (unexpected.length === 0) return;
       throw new Error(formatRuntimeErrors(unexpected));

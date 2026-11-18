@@ -82,17 +82,20 @@ export interface ExportConverterOverrides {
 /**
  * The host's diagram renderer, or Squisq's browser one. Given a page's theme,
  * its pictures take the theme's colors on its background, as Document mode
- * shows them; without one they are drawn for white paper.
+ * shows them; without one they are drawn for white paper. `background`
+ * overrides the paint behind them (`'transparent'` for slides).
  */
 async function diagramRendererFor(
   overrides: ExportConverterOverrides,
   theme?: Theme,
+  background?: string,
 ): Promise<DiagramRasterizer> {
   if (overrides.diagramRenderer) return overrides.diagramRenderer;
   const module = await import('@bendyline/squisq-react/diagram-pictures');
-  return module.createDiagramPictureRenderer(
-    theme ? { theme, background: theme.colors.background } : {},
-  );
+  return module.createDiagramPictureRenderer({
+    ...(theme ? { theme, background: theme.colors.background } : {}),
+    ...(background ? { background } : {}),
+  });
 }
 
 /**
@@ -109,11 +112,12 @@ async function pictureDiagrams(
   doc: MarkdownDocument,
   overrides: ExportConverterOverrides,
   kinds?: readonly ExportDiagramKind[] | 'all',
+  look: { theme?: Theme; background?: string } = {},
 ): Promise<RasterizedDiagrams> {
   try {
     const [{ rasterizeDiagrams, EXPORT_DIAGRAM_KINDS }, render] = await Promise.all([
       import('@bendyline/squisq-formats/diagrams'),
-      diagramRendererFor(overrides),
+      diagramRendererFor(overrides, look.theme, look.background),
     ]);
     return await rasterizeDiagrams(doc, render, {
       kinds: kinds === 'all' ? EXPORT_DIAGRAM_KINDS : kinds,
@@ -404,7 +408,7 @@ async function exportDocument(
       ? Promise.resolve({ docToPptx: converterOverrides.docToPptx })
       : import('@bendyline/squisq-formats/pptx');
     const [
-      { markdownToDoc },
+      { markdownToDoc, resolveThemeForDoc },
       { applyTransform, PRESENTATION_KEY },
       { buildPreviewDoc },
       { docToPptx },
@@ -429,7 +433,8 @@ async function exportDocument(
     const contentDoc = options.transformStyle
       ? applyTransform(baseDoc, options.transformStyle).doc
       : baseDoc;
-    const enrichedDoc = buildPreviewDoc(contentDoc);
+    // A drawing or layout still as Insert left it draws nothing worth a slide.
+    const enrichedDoc = buildPreviewDoc(contentDoc, { omitUntouchedPlaceholders: true });
     // The theme chosen in the dialog, even when it is the implicit Standard:
     // a transform otherwise substitutes its own suggested theme, and the
     // Documentary transform turned a white slideshow into a dark navy deck.
@@ -437,8 +442,14 @@ async function exportDocument(
     const images = mediaContainer ? await resolveImageData(doc, mediaContainer) : undefined;
     // Drawings, timelines and ASCII diagrams become native slide shapes;
     // Mermaid needs a picture, and an SVG island's or attached SVG's picture
-    // is the PNG fallback stored beside its vector art.
-    const { mermaid, svg } = await pictureDiagrams(doc, converterOverrides, ['mermaid', 'svg']);
+    // is the PNG fallback stored beside its vector art. Drawn in the deck's
+    // theme on a transparent background, as the slideshow draws them: a
+    // light picture on white sat in a white box on every dark slide.
+    const slideTheme = resolveThemeForDoc(enrichedDoc, enrichedDoc.themeId);
+    const { mermaid, svg } = await pictureDiagrams(doc, converterOverrides, ['mermaid', 'svg'], {
+      theme: slideTheme,
+      background: 'transparent',
+    });
     const svgAttachments = await pictureSvgAttachments(images ?? [], converterOverrides);
     const buf = await docToPptx(enrichedDoc, {
       themeId,

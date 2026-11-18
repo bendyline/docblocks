@@ -1,6 +1,9 @@
 import { expect } from 'chai';
 import path from 'node:path';
 import {
+  CONFIGURED_NATIVE_MISMATCH_REASON,
+  DAMAGED_NATIVE_REASON,
+  STALE_STAGED_NATIVE_REASON,
   UNSTAGED_NATIVE_REASON,
   resolveGezelNativeHost,
   stagedNativeBinDir,
@@ -10,7 +13,7 @@ describe('bundled Gezel host policy', () => {
   const appPath = path.resolve('/src/docblocks/packages/desktop');
   const packaged = { isPackaged: true, resourcesPath: '/resources', appPath, env: {} };
 
-  it('marks MAS engines for sandbox-aware signature verification', () => {
+  it('marks MAS engines, which Apple re-signs, for a presence-only check', () => {
     expect(
       resolveGezelNativeHost({
         ...packaged,
@@ -24,6 +27,7 @@ describe('bundled Gezel host policy', () => {
       distributionProfile: 'store',
       nativeBinDir: path.join('/resources', 'gezel-native'),
       canHost: true,
+      damagedPayloadReason: DAMAGED_NATIVE_REASON,
     });
   });
   it('pins packaged binaries to app resources and prohibits executable downloads', () => {
@@ -42,8 +46,8 @@ describe('bundled Gezel host policy', () => {
     ).to.deep.equal({
       nativeBinDir: path.join(resources, 'gezel-native'),
       distributionProfile: 'store',
-      allowStandaloneMacPayload: false,
       canHost: true,
+      damagedPayloadReason: DAMAGED_NATIVE_REASON,
       stagedWithoutUv: true,
     });
   });
@@ -65,8 +69,8 @@ describe('bundled Gezel host policy', () => {
     ).to.deep.equal({
       nativeBinDir: staged,
       distributionProfile: 'store',
-      allowStandaloneMacPayload: true,
       canHost: true,
+      damagedPayloadReason: STALE_STAGED_NATIVE_REASON,
       stagedWithoutUv: true,
     });
     // Unstaged: say how to fix it rather than letting Gezel fetch engines.
@@ -75,9 +79,9 @@ describe('bundled Gezel host policy', () => {
     ).to.deep.equal({
       nativeBinDir: staged,
       distributionProfile: 'store',
-      allowStandaloneMacPayload: true,
       canHost: false,
       unavailableReason: UNSTAGED_NATIVE_REASON,
+      damagedPayloadReason: STALE_STAGED_NATIVE_REASON,
       stagedWithoutUv: true,
     });
   });
@@ -109,7 +113,7 @@ describe('bundled Gezel host policy', () => {
         stagedWithoutUv: true,
       });
     }
-    // The Mac App Store package keeps its own seal, checked a different way.
+    // Apple re-signs the Mac App Store package, so only its executables are checked.
     expect(
       resolveGezelNativeHost({
         ...packaged,
@@ -134,6 +138,7 @@ describe('bundled Gezel host policy', () => {
       nativeBinDir: native,
       distributionProfile: 'store',
       canHost: true,
+      damagedPayloadReason: CONFIGURED_NATIVE_MISMATCH_REASON,
     });
     expect(() =>
       resolveGezelNativeHost({ ...source, env: { DOCBLOCKS_GEZEL_NATIVE_BIN_DIR: './engines' } }),
@@ -151,7 +156,6 @@ describe('bundled Gezel host policy', () => {
       }),
     ).to.deep.equal({
       distributionProfile: 'standard',
-      allowStandaloneMacPayload: true,
       canHost: true,
     });
   });

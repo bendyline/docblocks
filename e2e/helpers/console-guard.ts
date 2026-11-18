@@ -79,18 +79,23 @@ export const SHARED_ALLOWED_RUNTIME_ERRORS: readonly AllowedRuntimeError[] = [
     // promise, so the page instantiates both harper binaries itself (lints are
     // rebuilt there) with nothing to catch a failure. Under parallel load,
     // WebKit intermittently traps in the full binary's start function, harper's
-    // Rust `setup`. The worker that lints is a separate instance, so proofing
-    // still reports; only the dropped promise surfaces. Squisq never sees
-    // that promise, so the fix belongs in harper.js. Anchored on the frame in
-    // harper's prebundle (WebKit only runs against the dev server) because the
-    // text alone would also cover an IronCalc start failure.
+    // Rust `setup`, as unreachable code or as an out-of-bounds access. The
+    // worker that lints is a separate instance, so proofing can still report,
+    // until the page uses its own broken instance to rebuild a lint (the
+    // allowance after the worker's). Squisq never sees that promise, so
+    // the fix belongs in harper.js. Anchored on a frame in harper's prebundle
+    // (WebKit only runs against the dev server) because the text alone would
+    // also cover an IronCalc start failure. WebKit names either the glue's
+    // `__wbg_finalize_init` or, across the await, the BinaryModule `setup`
+    // that dropped the promise.
     reason: 'upstream: harper.js drops the promise for its page-side WASM setup',
     match:
-      /^Unhandled Promise Rejection: RuntimeError: Unreachable code should not be executed \(evaluating 'wasm(?:\$1)?\.__wbindgen_start\(\)'\)\n[\s\S]*?\bat __wbg_finalize_init(?:\$1)? \([^)\s]*\/node_modules\/\.vite\/deps\/harper__js\.js\?/u,
+      /^Unhandled Promise Rejection: RuntimeError: (?:Unreachable code should not be executed|Out of bounds memory access) \(evaluating 'wasm(?:\$1)?\.__wbindgen_start\(\)'\)\n[\s\S]*?\bat (?:__wbg_finalize_init(?:\$1)?|setup) \([^)\s]*\/node_modules\/\.vite\/deps\/harper__js\.js\?/u,
   },
   {
     // The same WebKit trap inside harper.js's lint worker (2.7 through 2.13):
-    // under parallel load the worker's WASM traps in `linter_lint`, and the
+    // under parallel load the worker's WASM traps in `linter_lint`, or as an
+    // out-of-bounds access in `linter_new` while it builds the linter, and the
     // worker runs each request in an async `processRequest` with no catch, so
     // the rejection is unhandled in the inlined blob: worker and no reply is
     // posted. WorkerLinter answers requests strictly in order, so proofing
@@ -101,8 +106,21 @@ export const SHARED_ALLOWED_RUNTIME_ERRORS: readonly AllowedRuntimeError[] = [
     // the blob: worker URL that reports it.
     reason: 'upstream: harper.js lint worker leaves a WebKit WASM trap unhandled',
     match:
-      /^Unhandled Promise Rejection: RuntimeError: access to a null reference \(evaluating 'wasm\.linter_lint\(/u,
+      /^Unhandled Promise Rejection: RuntimeError: (?:access to a null reference \(evaluating 'wasm\.linter_lint\(|Out of bounds memory access \(evaluating 'wasm\.linter_new\()/u,
     location: /^blob:http:\/\/localhost:\d+\/[0-9a-f-]{36}:\d+:\d+$/u,
+  },
+  {
+    // The same WebKit trap on the page while rebuilding a lint the worker
+    // sent back (harper.js 2.7 through 2.13): WorkerLinter's Serializer runs
+    // `Lint.from_json` on the page's own instance, in an onmessage `.then` with
+    // no catch, so the reply is never answered. The status then reads
+    // "✓ Proofing" while no finding ever arrives, and proofing stops for that
+    // page. Seen after the page's own start trapped. Upstream in harper.js,
+    // like the two above. Anchored on the export and a frame in harper's
+    // prebundle; WebKit drops the ?v= query from this frame.
+    reason: 'upstream: harper.js drops a WebKit WASM trap while rebuilding a lint on the page',
+    match:
+      /^Unhandled Promise Rejection: RuntimeError: Out of bounds memory access \(evaluating 'wasm\.lint_from_json\([^)]*\)'\)\n[\s\S]*?\bat \S+ \([^)\s]*\/node_modules\/\.vite\/deps\/harper__js\.js[?:]/u,
   },
   {
     // Chromium logs the network failure before any application code can see the
@@ -154,7 +172,8 @@ export function collectRuntimeErrors(page: Page): () => readonly RuntimeError[] 
   page.on('pageerror', (error) => {
     collected.push({
       kind: 'pageerror',
-      text: error.stack ?? error.message,
+      // WebKit reports an error that has no stack trace with an empty `stack`.
+      text: error.stack || `${error.name}: ${error.message}`,
       location: '(uncaught)',
     });
   });
@@ -186,14 +205,39 @@ export function unexpectedRuntimeErrors(
   return errors.filter((error) => !isAllowedRuntimeError(error, allowed));
 }
 
+/**
+ * Name a network change the page lived through, if it saw one.
+ *
+ * When the operating system reports an IP change (a VPN, a dock, Wi-Fi
+ * roaming, a USB-tethered phone dropping off the bus), Chromium aborts every
+ * in-flight request with `net::ERR_NETWORK_CHANGED`, the dev server on
+ * localhost included, and it has no switch to ignore the change. A page that
+ * loses its module requests that way never mounts, and the test then fails on
+ * an assertion that reads like a regression. This is never something to allow
+ * (the test really did not run), only something to say plainly.
+ */
+export function describeNetworkChange(errors: readonly RuntimeError[]): string | undefined {
+  const aborted = errors.filter((error) => error.text.includes('net::ERR_NETWORK_CHANGED')).length;
+  if (aborted === 0) return undefined;
+  return (
+    `The operating system reported a network change during this test, and Chromium ` +
+    `aborted ${aborted} in-flight ${aborted === 1 ? 'request' : 'requests'} ` +
+    '(net::ERR_NETWORK_CHANGED), localhost included. Something on this machine changed ' +
+    'its network: a VPN, a dock, Wi-Fi, or a USB-tethered phone. That is not a DocBlocks ' +
+    'defect. Steady the network and run the test again.'
+  );
+}
+
 /** Render the failure message a guarded test reports. */
 export function formatRuntimeErrors(errors: readonly RuntimeError[]): string {
   const lines = errors.map(
     (error) => `  [${error.kind}] ${error.text.split('\n')[0]}\n      at ${error.location}`,
   );
+  const networkChange = describeNetworkChange(errors);
   return (
     `The page reported ${errors.length} runtime ` +
     `${errors.length === 1 ? 'error' : 'errors'} that no assertion covered:\n${lines.join('\n')}\n\n` +
+    (networkChange ? `${networkChange}\n\n` : '') +
     'Fix the error, or add a narrowly scoped allowance with its reason to ' +
     'e2e/helpers/console-guard.ts.'
   );

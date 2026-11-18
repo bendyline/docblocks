@@ -30,6 +30,37 @@ function isWithin(root: string, directory: string): boolean {
   return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
+/** Where a first-party lock entry's install links to, when that is outside `root`. */
+function externalLinkTarget(root: string, key: string): string | undefined {
+  if (!/(?:^|\/)node_modules\/@bendyline\/[^/]+$/u.test(key)) return undefined;
+  const installed = path.join(root, key);
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(installed);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
+  if (!stat.isSymbolicLink()) return undefined;
+  const target = fs.realpathSync(installed);
+  return isWithin(root, target) ? undefined : target;
+}
+
+/**
+ * First-party packages linked to checkouts outside `root`, such as Squisq
+ * after `npm run link:squisq`. Bundles built while any is active resolve
+ * dependencies inside those checkouts, so they cannot match notices generated
+ * from package-lock.json.
+ */
+export function activeExternalLinks(root: string, rootLockKeys: readonly string[]): string[] {
+  root = fs.realpathSync(root);
+  const names = new Set<string>();
+  for (const key of rootLockKeys) {
+    if (externalLinkTarget(root, key)) names.add(key.split('node_modules/').at(-1)!);
+  }
+  return [...names].sort();
+}
+
 /** Only active first-party links can introduce another dependency lockfile. */
 export function linkedNoticePackages(
   root: string,
@@ -38,18 +69,8 @@ export function linkedNoticePackages(
   root = fs.realpathSync(root);
   const sources = new Map<string, LockSource>();
   for (const key of rootLockKeys) {
-    if (!/(?:^|\/)node_modules\/@bendyline\/[^/]+$/u.test(key)) continue;
-    const installed = path.join(root, key);
-    let stat: fs.Stats;
-    try {
-      stat = fs.lstatSync(installed);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
-      throw error;
-    }
-    if (!stat.isSymbolicLink()) continue;
-    const target = fs.realpathSync(installed);
-    if (isWithin(root, target)) continue;
+    const target = externalLinkTarget(root, key);
+    if (!target) continue;
     let directory = target;
     while (true) {
       const lockfile = path.join(directory, 'package-lock.json');

@@ -9,6 +9,8 @@
 import {
   ArrowDownAZ,
   BookOpen,
+  ChevronLeft,
+  ChevronRight,
   CircleCheck,
   Clock,
   Download,
@@ -125,4 +127,13 @@ export function BackupIcon() {
  */
 export function CloseIcon() {
   return <ShellIcon icon={X} size="1em" strokeWidth={2.25} />;
+}
+
+/** Step back or forward through a sequence, such as a deck's slides. */
+export function PreviousIcon() {
+  return <ShellIcon icon={ChevronLeft} />;
+}
+
+export function NextIcon() {
+  return <ShellIcon icon={ChevronRight} />;
 }

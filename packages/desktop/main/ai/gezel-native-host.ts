@@ -10,14 +10,15 @@ import {
 export interface GezelNativeHost {
   readonly nativeBinDir?: string;
   readonly distributionProfile: 'standard' | 'store';
-  readonly allowStandaloneMacPayload: boolean;
   readonly canHost: boolean;
   readonly unavailableReason?: string;
-  /** MAS payloads are re-signed and authenticated by the enclosing store app. */
+  /** What to tell the person when the engines are incomplete or from another release. */
+  readonly damagedPayloadReason?: string;
+  /** Apple re-signs a MAS payload, so only its release and executables are checked. */
   readonly macAppStore?: boolean;
   /**
    * Payloads DocBlocks staged itself have no UV, so they are checked against
-   * Gezel's pins less that file. A Mac App Store payload has its own seal.
+   * Gezel's pins less that file.
    */
   readonly stagedWithoutUv?: boolean;
 }
@@ -58,6 +59,15 @@ export function stagedNativeBinDir(
 export const UNSTAGED_NATIVE_REASON =
   'This development build has no staged engines for built-in AI and dictation. Run `npm run stage:gezel-native` in the DocBlocks repository, then restart DocBlocks.';
 
+export const DAMAGED_NATIVE_REASON =
+  'The AI engines that come with DocBlocks are missing or damaged. Reinstall DocBlocks to restore them.';
+
+export const STALE_STAGED_NATIVE_REASON =
+  'The engines staged for this development build do not match its Gezel release. Run `npm run stage:gezel-native` in the DocBlocks repository, then restart DocBlocks.';
+
+export const CONFIGURED_NATIVE_MISMATCH_REASON =
+  'The engines in DOCBLOCKS_GEZEL_NATIVE_BIN_DIR do not match the Gezel release this build pins.';
+
 export function resolveGezelNativeHost(input: GezelNativeHostInput): GezelNativeHost {
   const {
     isPackaged,
@@ -77,10 +87,10 @@ export function resolveGezelNativeHost(input: GezelNativeHostInput): GezelNative
       // All shipped builds use their bundled engines. Never repair a missing
       // payload by downloading executable code at runtime.
       distributionProfile: 'store',
-      allowStandaloneMacPayload: false,
       // The pinned native release has no Intel Mac engine archives.
       canHost: !unavailableReason && (platform !== 'darwin' || arch === 'arm64'),
       ...(unavailableReason ? { unavailableReason } : {}),
+      damagedPayloadReason: DAMAGED_NATIVE_REASON,
       ...(macAppStore ? { macAppStore: true } : { stagedWithoutUv: true }),
     };
   }
@@ -91,7 +101,7 @@ export function resolveGezelNativeHost(input: GezelNativeHostInput): GezelNative
   // Automated runs host Gezel without engines and never run a model, so they
   // stay independent of whatever the developer has staged.
   if (!configured && env.DOCBLOCKS_E2E_DEFAULT_ROOT) {
-    return { distributionProfile: 'standard', allowStandaloneMacPayload: true, canHost: true };
+    return { distributionProfile: 'standard', canHost: true };
   }
   // Like a shipped build: run the staged engines, and never download one.
   const nativeBinDir = configured || stagedNativeBinDir(appPath, platform, arch);
@@ -99,9 +109,11 @@ export function resolveGezelNativeHost(input: GezelNativeHostInput): GezelNative
   return {
     nativeBinDir,
     distributionProfile: 'store',
-    allowStandaloneMacPayload: true,
     canHost: staged,
     ...(staged ? {} : { unavailableReason: UNSTAGED_NATIVE_REASON }),
+    damagedPayloadReason: configured
+      ? CONFIGURED_NATIVE_MISMATCH_REASON
+      : STALE_STAGED_NATIVE_REASON,
     ...(configured ? {} : { stagedWithoutUv: true }),
   };
 }

@@ -32,7 +32,7 @@ export interface TypedWhileOpening {
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 /** A form field: typing there is meant for it, not for the new document. */
-function isFormField(element: Element | null): boolean {
+export function isFormField(element: Element | null): boolean {
   const tag = element?.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }

@@ -173,6 +173,21 @@ describe('adaptive styles', () => {
     expect(styles).to.match(/\.db-shell \{[^}]*touch-action: manipulation;/s);
   });
 
+  it('lays out the summarization designer from its own panel, not a stamped width', () => {
+    // The VS Code webview has no shell to stamp data-db-width, and a short
+    // window cramps the two columns as much as a narrow one.
+    expect(styles).to.match(
+      /\.db-dialog\.db-presentation \{[^}]*container: db-presentation \/ size;/s,
+    );
+    const block =
+      /@container db-presentation \(max-width: \d+px\) or \(max-height: \d+px\) \{(.*?)\n\}/s.exec(
+        styles,
+      )?.[1] ?? '';
+    expect(block).to.match(/\.db-presentation-beats \{\s*display: none;/);
+    expect(block).to.match(/\.db-presentation-picker \{\s*display: flex;/);
+    expect(styles).not.to.match(/\[data-db-width='compact'\] \.db-presentation/);
+  });
+
   it('agrees with the breakpoints TypeScript publishes', () => {
     // Guards the comment in the token block from drifting from the module.
     expect(DB_BREAKPOINTS.compactMax).to.equal(720);

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  activeExternalLinks,
   linkedNoticePackages,
   verifyLinkedNoticePackage,
 } from '../../../scripts/linked-notice-packages.js';
@@ -129,6 +130,26 @@ describe('third-party notices for linked packages', () => {
     const component = linkedNoticePackages(root, [key]).get('cytoscape@3.34.0')!;
     fs.rmSync(component.directory, { recursive: true });
     expect(() => verifyLinkedNoticePackage(component, 'cytoscape', '3.34.0')).to.throw('ENOENT');
+  });
+
+  it('names each first-party package linked outside the repository once', () => {
+    const nested = 'packages/react/node_modules/@bendyline/squisq';
+    const internal = 'node_modules/@bendyline/docblocks';
+    const thirdParty = 'node_modules/arbitrary-package';
+    expect(activeExternalLinks(root, [key, nested, internal, thirdParty])).to.deep.equal([]);
+
+    link();
+    link(nested);
+    link(thirdParty);
+    fs.mkdirSync(path.join(root, 'packages/core'), { recursive: true });
+    fs.symlinkSync(
+      path.join(root, 'packages/core'),
+      path.join(root, internal),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+    expect(activeExternalLinks(root, [key, nested, internal, thirdParty])).to.deep.equal([
+      '@bendyline/squisq',
+    ]);
   });
 
   it('rejects unsupported linked lockfiles', () => {
