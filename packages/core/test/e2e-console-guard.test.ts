@@ -148,6 +148,11 @@ describe('E2E runtime-error guard', () => {
         isAllowedRuntimeError(consoleError(text, location), SHARED_ALLOWED_RUNTIME_ERRORS);
 
       expect(allowed(trap, worker)).to.equal(true);
+      // Building the linter traps the same way, as an out-of-bounds access (local burn-in text).
+      const setupTrap =
+        "Unhandled Promise Rejection: RuntimeError: Out of bounds memory access (evaluating 'wasm.linter_new(dialect)')";
+      expect(allowed(setupTrap, worker)).to.equal(true);
+      expect(allowed(setupTrap, 'http://localhost:5220/src/main.tsx:12:3')).to.equal(false);
       // The same trap reported by page code is not harper's worker.
       expect(allowed(trap, 'http://localhost:5220/src/main.tsx:12:3')).to.equal(false);
       // Another trap in the worker is a different failure.

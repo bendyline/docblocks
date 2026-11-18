@@ -25,8 +25,30 @@ async function openWelcomeInSlideshow(page: Page): Promise<void> {
   await expect(tour.or(startWriting).first()).toBeVisible({ timeout: 30_000 });
   await ((await tour.count()) > 0 ? tour : startWriting).click();
   await expect(page.locator('.squisq-toolbar')).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { name: 'Choose Use mode', exact: true }).click();
-  await page.getByRole('menuitemradio', { name: 'Slideshow', exact: true }).click();
+  // The toolbar shows before the welcome document's hash navigation and, in
+  // single-pane, before the file drawer closes. Either can re-render it and
+  // close a mode menu opened in that gap, so settle first and confirm the
+  // switch rather than trusting one click.
+  await expect
+    .poll(() => decodeURIComponent(new URL(page.url()).hash), { timeout: 30_000 })
+    .toMatch(/\/Welcome\.md$/i);
+  if ((await shell.getAttribute('data-db-layout')) === 'single-pane')
+    await expect(shell).toHaveAttribute('data-db-drawer', 'closed');
+  const slideshowTab = page.getByRole('tab', { name: 'Slideshow', exact: true });
+  const slideshowItem = page.getByRole('menuitemradio', { name: 'Slideshow', exact: true });
+  await expect(async () => {
+    if (
+      (await slideshowTab.count()) > 0 &&
+      (await slideshowTab.getAttribute('aria-selected')) === 'true'
+    )
+      return;
+    if (!(await slideshowItem.isVisible()))
+      await page
+        .getByRole('button', { name: 'Choose Use mode', exact: true })
+        .click({ timeout: 2_000 });
+    await slideshowItem.click({ timeout: 2_000 });
+    await expect(slideshowTab).toHaveAttribute('aria-selected', 'true', { timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
 }
 
 /**

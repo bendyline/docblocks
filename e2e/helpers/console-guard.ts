@@ -90,7 +90,8 @@ export const SHARED_ALLOWED_RUNTIME_ERRORS: readonly AllowedRuntimeError[] = [
   },
   {
     // The same WebKit trap inside harper.js's lint worker (2.7 through 2.13):
-    // under parallel load the worker's WASM traps in `linter_lint`, and the
+    // under parallel load the worker's WASM traps in `linter_lint`, or as an
+    // out-of-bounds access in `linter_new` while it builds the linter, and the
     // worker runs each request in an async `processRequest` with no catch, so
     // the rejection is unhandled in the inlined blob: worker and no reply is
     // posted. WorkerLinter answers requests strictly in order, so proofing
@@ -101,7 +102,7 @@ export const SHARED_ALLOWED_RUNTIME_ERRORS: readonly AllowedRuntimeError[] = [
     // the blob: worker URL that reports it.
     reason: 'upstream: harper.js lint worker leaves a WebKit WASM trap unhandled',
     match:
-      /^Unhandled Promise Rejection: RuntimeError: access to a null reference \(evaluating 'wasm\.linter_lint\(/u,
+      /^Unhandled Promise Rejection: RuntimeError: (?:access to a null reference \(evaluating 'wasm\.linter_lint\(|Out of bounds memory access \(evaluating 'wasm\.linter_new\()/u,
     location: /^blob:http:\/\/localhost:\d+\/[0-9a-f-]{36}:\d+:\d+$/u,
   },
   {
