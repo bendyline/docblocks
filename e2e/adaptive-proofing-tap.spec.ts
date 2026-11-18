@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { ConsoleMessage, Page } from '@playwright/test';
 import { expect, test } from './helpers/test.js';
 
 /**
@@ -14,8 +14,109 @@ import { expect, test } from './helpers/test.js';
 const squiggle = (page: Page) => page.locator('.tiptap [data-proof-id]', { hasText: /^teh$/ });
 const card = (page: Page) => page.locator('.squisq-proof-tooltip');
 
-/** Open the welcome document in Write with a misspelling just under its title. */
+/** Fresh starts allowed when harper's engine crashes. */
+const ENGINE_ATTEMPTS = 3;
+
+/** A WASM trap as WebKit words it. */
+const WASM_TRAP = /RuntimeError: .*\(evaluating 'wasm(?:\$1)?\./u;
+
+/**
+ * Watch for harper's engine crashing. Under parallel load WebKit's WASM traps
+ * (upstream harper.js defects, allowed in console-guard.ts), and harper
+ * catches none of them, so the request in flight is never answered and
+ * proofing on that page stops for good: in the lint worker (its inlined blob:
+ * script) it stays at "Proofing…"; on the page, rebuilding a lint the worker
+ * sent, it reads "✓ Proofing" and draws nothing. The page's own copy failing
+ * to start is fatal only once the page uses it, so it alone ends no wait, but
+ * a test that fails after it starts over all the same.
+ */
+function watchEngine(page: Page) {
+  let crash: string | undefined;
+  let fatal: string | undefined;
+  const onConsole = (message: ConsoleMessage) => {
+    const text = message.text();
+    if (message.type() !== 'error' || !message.location().url.startsWith('blob:')) return;
+    if (!WASM_TRAP.test(text)) return;
+    crash ??= text;
+    fatal ??= text;
+  };
+  const onPageError = (error: Error) => {
+    const text = error.stack || `${error.name}: ${error.message}`;
+    if (!WASM_TRAP.test(text) || !text.includes('/harper__js.js')) return;
+    crash ??= text;
+    if (!text.includes('__wbindgen_start')) fatal ??= text;
+  };
+  page.on('console', onConsole);
+  page.on('pageerror', onPageError);
+  return {
+    crash: () => crash,
+    fatal: () => fatal,
+    stop: () => {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+    },
+  };
+}
+
+/** End a wait at once when the engine has crashed for good. */
+function throwIfCrashed(fatal: () => string | undefined): void {
+  const crashed = fatal();
+  if (crashed !== undefined) throw new Error(`harper's engine crashed: ${crashed}`);
+}
+
+/**
+ * Start over as a first visit would: no saved documents, no settings, so the
+ * welcome screen shows and the welcome document is unedited. A static file on
+ * the app's origin holds no database open, so nothing blocks the deletes.
+ */
+async function forgetEverything(page: Page): Promise<void> {
+  await page.goto('/THIRD_PARTY_NOTICES.txt');
+  await page.evaluate(async () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    const names = (await indexedDB.databases()).flatMap((db) => (db.name ? [db.name] : []));
+    await Promise.all(
+      names.map(
+        (name) =>
+          new Promise<void>((resolve, reject) => {
+            const request = indexedDB.deleteDatabase(name);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+          }),
+      ),
+    );
+  });
+}
+
+/**
+ * Open the welcome document in Write with a misspelling just under its title,
+ * and wait for its squiggle. When harper's worker crashes on the way, that
+ * page will never proof again, so start over on a fresh one: the test is about
+ * taps, and harper's crash is upstream's to fix.
+ */
 async function openWriteWithTypo(page: Page): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    const engine = watchEngine(page);
+    try {
+      if (attempt > 1) await forgetEverything(page);
+      await typeProbe(page);
+      await waitForSquiggle(page, engine.fatal);
+      return;
+    } catch (error) {
+      const crash = engine.crash();
+      if (crash === undefined || attempt === ENGINE_ATTEMPTS) throw error;
+      test.info().annotations.push({
+        type: 'harper engine crashed',
+        description: `Attempt ${attempt}: ${crash.split('\n')[0]} Started over on a fresh page.`,
+      });
+    } finally {
+      engine.stop();
+    }
+  }
+}
+
+/** Open the welcome document in Write and type a misspelling under its title. */
+async function typeProbe(page: Page): Promise<void> {
   await page.goto('/');
   await expect(page.locator('.db-shell')).toBeVisible();
   const tour = page.getByRole('button', { name: 'Tour the welcome document' });
@@ -92,15 +193,31 @@ async function openWriteWithTypo(page: Page): Promise<void> {
   await expect(editor.locator('p', { hasText: /^This is teh probe\.$/ })).toBeVisible();
   await expect(heading).not.toContainText('probe');
   await editor.blur();
+}
+
+/** Wait for the probe's squiggle to show and hold still. */
+async function waitForSquiggle(page: Page, fatal: () => string | undefined): Promise<void> {
   // Cold engine setup precedes the first squiggle. It takes about a second, so
   // "Proofing…" a minute on means it never will: harper's worker swallows a
   // failed start (a WebKit WASM trap, a failed fetch of the binary) and leaves
   // the page waiting. runtime-errors.json beside the failure holds the trap.
-  await expect(page.locator('.squisq-proof-status'), 'the proofing engine starts').toHaveText(
-    /^(✓ Proofing|\d+ issues?)$/,
-    { timeout: 60_000 },
-  );
-  await expect(squiggle(page)).toBeVisible({ timeout: 30_000 });
+  // A crash the page reports ends either wait at once.
+  const status = page.locator('.squisq-proof-status');
+  await expect
+    .poll(async () => (fatal() ? 'crashed' : ((await status.textContent()) ?? '').trim()), {
+      message: 'the proofing engine starts',
+      timeout: 60_000,
+    })
+    .toMatch(/^(✓ Proofing|\d+ issues?|crashed)$/u);
+  throwIfCrashed(fatal);
+  await expect
+    .poll(
+      async () =>
+        fatal() ? 'crashed' : (await squiggle(page).isVisible()) ? 'squiggled' : 'waiting',
+      { message: 'the probe is squiggled', timeout: 30_000 },
+    )
+    .toMatch(/^(squiggled|crashed)$/u);
+  throwIfCrashed(fatal);
   // The edit sets off more than one pass, and each re-issues the finding's id
   // and redraws its squiggle. A tap across a redraw lands on no squiggle, so
   // wait until the id holds for longer than the 450 ms lint debounce.

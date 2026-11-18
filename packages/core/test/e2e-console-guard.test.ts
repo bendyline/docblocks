@@ -160,6 +160,39 @@ describe('E2E runtime-error guard', () => {
       ).to.equal(false);
     });
 
+    it("allow only harper's page-side trap while rebuilding a lint on WebKit", () => {
+      const deps = 'http://localhost:5220/node_modules/.vite/deps';
+      const trap = (frame: string, kind = 'Out of bounds memory access') =>
+        `Unhandled Promise Rejection: RuntimeError: ${kind} ` +
+        `(evaluating 'wasm.lint_from_json(ptr0, len0)')\n    at ${frame}`;
+      const allowed = (text: string) =>
+        isAllowedRuntimeError(
+          { kind: 'pageerror', text, location: '(uncaught)' },
+          SHARED_ALLOWED_RUNTIME_ERRORS,
+        );
+
+      // Exact local burn-in text: WebKit drops the ?v= query from this frame.
+      expect(allowed(trap(`unknown (${deps}/harper__js.js:1505:36)`))).to.equal(true);
+      expect(allowed(trap(`unknown (${deps}/harper__js.js?v=83935d1f:1505:36)`))).to.equal(true);
+      // The same export in anyone else's glue is not harper's.
+      expect(allowed(trap(`unknown (${deps}/@ironcalc_wasm.js:1505:36)`))).to.equal(false);
+      // Without a stack there is nothing to say whose export trapped.
+      expect(
+        allowed(
+          "Unhandled Promise Rejection: RuntimeError: Out of bounds memory access (evaluating 'wasm.lint_from_json(ptr0, len0)')",
+        ),
+      ).to.equal(false);
+      // Another kind of trap there is a different failure.
+      expect(
+        allowed(
+          trap(
+            `unknown (${deps}/harper__js.js:1505:36)`,
+            'Unreachable code should not be executed',
+          ),
+        ),
+      ).to.equal(false);
+    });
+
     it("allow only harper's lint-worker WASM trap on WebKit", () => {
       // Exact CI text; WebKit names the worker by its blob: URL.
       const trap =

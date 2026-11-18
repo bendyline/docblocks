@@ -80,8 +80,9 @@ export const SHARED_ALLOWED_RUNTIME_ERRORS: readonly AllowedRuntimeError[] = [
     // rebuilt there) with nothing to catch a failure. Under parallel load,
     // WebKit intermittently traps in the full binary's start function, harper's
     // Rust `setup`, as unreachable code or as an out-of-bounds access. The
-    // worker that lints is a separate instance, so proofing still reports;
-    // only the dropped promise surfaces. Squisq never sees that promise, so
+    // worker that lints is a separate instance, so proofing can still report,
+    // until the page uses its own broken instance to rebuild a lint (the
+    // allowance after the worker's). Squisq never sees that promise, so
     // the fix belongs in harper.js. Anchored on a frame in harper's prebundle
     // (WebKit only runs against the dev server) because the text alone would
     // also cover an IronCalc start failure. WebKit names either the glue's
@@ -107,6 +108,19 @@ export const SHARED_ALLOWED_RUNTIME_ERRORS: readonly AllowedRuntimeError[] = [
     match:
       /^Unhandled Promise Rejection: RuntimeError: (?:access to a null reference \(evaluating 'wasm\.linter_lint\(|Out of bounds memory access \(evaluating 'wasm\.linter_new\()/u,
     location: /^blob:http:\/\/localhost:\d+\/[0-9a-f-]{36}:\d+:\d+$/u,
+  },
+  {
+    // The same WebKit trap on the page while rebuilding a lint the worker
+    // sent back (harper.js 2.7 through 2.13): WorkerLinter's Serializer runs
+    // `Lint.from_json` on the page's own instance, in an onmessage `.then` with
+    // no catch, so the reply is never answered. The status then reads
+    // "✓ Proofing" while no finding ever arrives, and proofing stops for that
+    // page. Seen after the page's own start trapped. Upstream in harper.js,
+    // like the two above. Anchored on the export and a frame in harper's
+    // prebundle; WebKit drops the ?v= query from this frame.
+    reason: 'upstream: harper.js drops a WebKit WASM trap while rebuilding a lint on the page',
+    match:
+      /^Unhandled Promise Rejection: RuntimeError: Out of bounds memory access \(evaluating 'wasm\.lint_from_json\([^)]*\)'\)\n[\s\S]*?\bat \S+ \([^)\s]*\/node_modules\/\.vite\/deps\/harper__js\.js[?:]/u,
   },
   {
     // Chromium logs the network failure before any application code can see the
