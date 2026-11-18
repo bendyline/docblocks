@@ -195,3 +195,8 @@ dependency-governance rules are unchanged.
 Run `npm run generate:notices` after changing linked dependencies or switching back
 to registry packages. Notices describe the current artifacts, so regenerate them
 against the published, pinned dependencies before preparing a registry-based release.
+
+The committed notices always describe the registry packages, because CI never links.
+`npm run check:notices` (and so `npm run all`) therefore skips the drift comparison
+while any first-party package is linked to a sibling checkout, names the active links,
+and leaves enforcement to CI. Unlink and rebuild to run it locally.

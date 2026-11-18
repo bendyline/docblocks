@@ -9783,6 +9783,11 @@ button.db-git-file-row:hover {
   flex: 1 1 auto;
   min-width: 0;
   text-overflow: ellipsis;
+  /* WebKit lays out the chosen option's text at full width and counts it as
+     overflow of every ancestor, though the control clips what it draws, so a
+     long slide title scrolled the phone sheet sideways. `overflow` does not
+     reach that text; paint containment does. */
+  contain: paint;
 }
 .db-presentation-picker-row button {
   display: inline-flex;

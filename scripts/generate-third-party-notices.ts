@@ -5,7 +5,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { format as formatWithPrettier } from 'prettier';
 import { excludedDesktopDependencies } from './desktop-runtime-policy.js';
-import { linkedNoticePackages, verifyLinkedNoticePackage } from './linked-notice-packages.js';
+import {
+  activeExternalLinks,
+  linkedNoticePackages,
+  verifyLinkedNoticePackage,
+} from './linked-notice-packages.js';
 import {
   normalizeNoticeText,
   noticeTextMatches,
@@ -757,8 +761,22 @@ async function expectedOutputs(): Promise<ReadonlyMap<string, string>> {
 }
 
 async function main(): Promise<void> {
+  const write = process.argv.includes('--write');
+  // The committed notices describe the registry packages in package-lock.json,
+  // and CI, which never links, holds them to that. Artifacts built with a
+  // sibling checkout linked bundle that checkout's dependency versions, so
+  // comparing them would fail every linked `npm run all` with drift no commit
+  // should contain. --write still describes whatever is built.
+  const links = write ? [] : activeExternalLinks(repoRoot, Object.keys(lockPackages));
+  if (links.length > 0) {
+    process.stdout.write(
+      `Third-party notice drift check skipped: ${links.join(', ')} ${links.length === 1 ? 'is' : 'are'} linked to a sibling checkout, so the built artifacts carry its dependency versions instead of package-lock.json's.\n` +
+        'CI checks the committed notices against the registry packages. To check them here, unlink (npm run unlink:squisq / unlink:gezel), rebuild, and rerun.\n',
+    );
+    return;
+  }
   const outputs = await expectedOutputs();
-  if (process.argv.includes('--write')) {
+  if (write) {
     for (const [relativePath, content] of outputs) {
       const absolutePath = path.join(repoRoot, relativePath);
       await mkdir(path.dirname(absolutePath), { recursive: true });

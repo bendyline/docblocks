@@ -29,12 +29,28 @@ async function openWelcomeInSlideshow(page: Page): Promise<void> {
   await page.getByRole('menuitemradio', { name: 'Slideshow', exact: true }).click();
 }
 
+/**
+ * A resize re-fits the preview toolbar over the next few frames: widening to a
+ * laptop first lays the toolbar out full width, then the shell shows its
+ * sidebar and the toolbar narrows again. The designer button can sit inline in
+ * one frame and in the closed overflow menu the next, so one visibility check
+ * picks the wrong path and the click then waits on a button that is gone.
+ * Retry the whole open until the dialog shows.
+ */
 async function openDesigner(page: Page) {
   const button = page.getByRole('button', { name: 'Summarization designer', exact: true });
-  if (!(await button.isVisible()))
-    await page.getByRole('button', { name: 'More preview settings' }).click();
-  await button.click();
+  const more = page.getByRole('button', { name: 'More preview settings', exact: true });
   const designer = page.getByRole('dialog', { name: 'Summarization designer', exact: true });
+  await expect(async () => {
+    if (await designer.isVisible()) return;
+    if (
+      !(await button.isVisible()) &&
+      (await more.getAttribute('aria-expanded', { timeout: 2_000 })) !== 'true'
+    )
+      await more.click({ timeout: 2_000 });
+    await button.click({ timeout: 2_000 });
+    await expect(designer).toBeVisible({ timeout: 5_000 });
+  }).toPass({ timeout: 30_000 });
   await expect(designer.getByRole('img', { name: /^Slide 1/ })).toBeVisible({ timeout: 30_000 });
   return designer;
 }
