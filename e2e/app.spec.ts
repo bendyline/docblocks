@@ -593,6 +593,12 @@ test.describe('File operations', () => {
     await page.getByRole('button', { name: 'New File' }).click();
     await page.locator('.db-new-item-input').fill('drag-me');
     await page.locator('.db-new-item-add').click();
+    // New File opens the document with the caret ready. Until it has, the
+    // file list is still settling: the form a New Folder click opens can
+    // close under the test as the creation finishes.
+    await expect(page.getByRole('textbox', { name: 'Edit drag-me.md', exact: true })).toBeFocused({
+      timeout: 30_000,
+    });
 
     await page.getByRole('button', { name: 'New Folder' }).click();
     await page.locator('.db-new-item-input').fill('drop-here');
@@ -600,6 +606,7 @@ test.describe('File operations', () => {
 
     const fileRow = page.locator('.db-tree-row', { hasText: 'drag-me' });
     const folderRow = page.locator('.db-tree-row', { hasText: 'drop-here' });
+    await expect(folderRow).toBeVisible();
     await fileRow.click();
     await fileRow.dragTo(folderRow);
 

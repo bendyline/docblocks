@@ -191,14 +191,39 @@ export function unexpectedRuntimeErrors(
   return errors.filter((error) => !isAllowedRuntimeError(error, allowed));
 }
 
+/**
+ * Name a network change the page lived through, if it saw one.
+ *
+ * When the operating system reports an IP change (a VPN, a dock, Wi-Fi
+ * roaming, a USB-tethered phone dropping off the bus), Chromium aborts every
+ * in-flight request with `net::ERR_NETWORK_CHANGED`, the dev server on
+ * localhost included, and it has no switch to ignore the change. A page that
+ * loses its module requests that way never mounts, and the test then fails on
+ * an assertion that reads like a regression. This is never something to allow
+ * (the test really did not run), only something to say plainly.
+ */
+export function describeNetworkChange(errors: readonly RuntimeError[]): string | undefined {
+  const aborted = errors.filter((error) => error.text.includes('net::ERR_NETWORK_CHANGED')).length;
+  if (aborted === 0) return undefined;
+  return (
+    `The operating system reported a network change during this test, and Chromium ` +
+    `aborted ${aborted} in-flight ${aborted === 1 ? 'request' : 'requests'} ` +
+    '(net::ERR_NETWORK_CHANGED), localhost included. Something on this machine changed ' +
+    'its network: a VPN, a dock, Wi-Fi, or a USB-tethered phone. That is not a DocBlocks ' +
+    'defect. Steady the network and run the test again.'
+  );
+}
+
 /** Render the failure message a guarded test reports. */
 export function formatRuntimeErrors(errors: readonly RuntimeError[]): string {
   const lines = errors.map(
     (error) => `  [${error.kind}] ${error.text.split('\n')[0]}\n      at ${error.location}`,
   );
+  const networkChange = describeNetworkChange(errors);
   return (
     `The page reported ${errors.length} runtime ` +
     `${errors.length === 1 ? 'error' : 'errors'} that no assertion covered:\n${lines.join('\n')}\n\n` +
+    (networkChange ? `${networkChange}\n\n` : '') +
     'Fix the error, or add a narrowly scoped allowance with its reason to ' +
     'e2e/helpers/console-guard.ts.'
   );

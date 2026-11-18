@@ -1,8 +1,6 @@
 import { useEffect } from 'react';
 import { useEditorContext } from '@bendyline/squisq-editor-react';
-
-/** Squisq's Write-view editor, as its context exposes it. */
-type Editor = NonNullable<ReturnType<typeof useEditorContext>['tiptapEditor']>;
+import { placeNewDocumentCaret } from './placeNewDocumentCaret.js';
 
 export interface NewDocumentCaretProps {
   /** Called once the caret is placed, or when there is nowhere to place it. */
@@ -13,18 +11,6 @@ export interface NewDocumentCaretProps {
    * placed; the text is then typed into the document.
    */
   takeTypedText?: () => string;
-}
-
-/** Type held keystrokes at the caret, one paragraph per line. */
-function typeIntoDocument(editor: Editor, text: string): void {
-  if (!text) return;
-  const chain = editor.chain().focus();
-  text.split('\n').forEach((line, index) => {
-    if (index > 0) chain.splitBlock();
-    // A text node, not a string: insertContent parses strings as HTML.
-    if (line) chain.insertContent({ type: 'text', text: line });
-  });
-  chain.run();
 }
 
 /**
@@ -52,26 +38,7 @@ export function NewDocumentCaret({ onPlaced, takeTypedText }: NewDocumentCaretPr
     // under the welcome screen's `inert` wrapper cannot take focus.
     const frame = requestAnimationFrame(() => {
       if (!tiptapEditor.isDestroyed && tiptapEditor.isEditable) {
-        tiptapEditor
-          .chain()
-          .command(({ tr, state }) => {
-            if (state.doc.lastChild?.type.name !== 'paragraph') {
-              tr.insert(state.doc.content.size, state.schema.nodes.paragraph.create());
-            }
-            // The empty line is where the caret starts, not an edit: nothing to
-            // undo, and nothing saved until the author types. Saved, it was a
-            // blank line that later edits in Source kept as an empty paragraph.
-            tr.setMeta('addToHistory', false).setMeta('preventUpdate', true);
-            return true;
-          })
-          .focus('end')
-          .run();
-        // Tiptap's focus command moves DOM focus a frame later. Take it now:
-        // taking the typed text stops holding keys, and a key pressed in that
-        // frame landed on the page and was lost ("Fat first words").
-        tiptapEditor.view.focus();
-        // Whatever was typed before the editor could take it.
-        typeIntoDocument(tiptapEditor, takeTypedText?.() ?? '');
+        placeNewDocumentCaret(tiptapEditor, () => takeTypedText?.() ?? '');
       } else {
         takeTypedText?.();
       }

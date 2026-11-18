@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import {
+  describeNetworkChange,
   isAllowedRuntimeError,
   unexpectedRuntimeErrors,
   formatRuntimeErrors,
@@ -224,6 +225,34 @@ describe('E2E runtime-error guard', () => {
       // The message has to say what to do next, since the reader is looking at
       // a test that failed without an assertion of its own.
       expect(message).to.contain('console-guard.ts');
+    });
+
+    it('names a network change the page lived through', () => {
+      // Exact local burn-in texts: a USB-tethered phone dropped off the bus.
+      const deps = 'http://localhost:5220/@fs/D:/gh/docblocks/node_modules';
+      const aborted = [
+        consoleError(
+          'Failed to load resource: net::ERR_NETWORK_CHANGED',
+          `${deps}/@bendyline/squisq-formats/dist/chunk-DXYWKZ52.js?v=83935d1f:0:0`,
+        ),
+        consoleError(
+          'Failed to load resource: net::ERR_NETWORK_CHANGED',
+          'http://localhost:5220/harper/harper_wasm_slim_bg.wasm:0:0',
+        ),
+      ];
+      const note = describeNetworkChange(aborted);
+      expect(note).to.contain('aborted 2 in-flight requests');
+      expect(note).to.contain('not a DocBlocks defect');
+      expect(formatRuntimeErrors(aborted)).to.contain(note);
+      // A network change is a cause to name, never an error to allow.
+      expect(unexpectedRuntimeErrors(aborted)).to.have.lengthOf(2);
+      // Any other failed request is not a network change.
+      const refused = [
+        consoleError('Failed to load resource: net::ERR_CONNECTION_REFUSED'),
+        consoleError('Failed to load resource: the server responded with a status of 404 ()'),
+      ];
+      expect(describeNetworkChange(refused)).to.equal(undefined);
+      expect(formatRuntimeErrors(refused)).to.not.contain('network change');
     });
 
     it('keeps a multi-line stack to one line per error', () => {
