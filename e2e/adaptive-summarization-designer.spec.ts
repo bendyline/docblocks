@@ -13,6 +13,9 @@ const SIZES = [
   { name: 'a VS Code editor pane', width: 590, height: 515, compact: true },
   { name: 'a phone in portrait', width: 390, height: 664, compact: true },
   { name: 'a phone in landscape', width: 844, height: 390, compact: true },
+  { name: 'a short, wide window', width: 1280, height: 480, compact: true },
+  // Short, but the columns still show slides, preview and layout at once.
+  { name: 'the desktop app on a 1024x768 screen', width: 1024, height: 728, compact: false },
   { name: 'a laptop window', width: 1280, height: 800, compact: false },
 ] as const;
 

@@ -65,12 +65,16 @@ export const test = base.extend<RuntimeErrorFixtures>({
 
       // A test that already failed reports its own cause; adding console noise
       // on top buries it. The guard only speaks when nothing else did, or
-      // when the cause was a network change the assertion cannot name.
+      // when the cause was a network change the assertion cannot name. It
+      // still files every error the page raised, allowed ones included: an
+      // engine trap the allowances excuse in a passing test is what explains
+      // a squiggle or a preview that never came.
       if (testInfo.errors.length > 0) {
-        const networkChange = describeNetworkChange(readErrors());
-        if (networkChange === undefined) return;
-        await attachRuntimeErrors(testInfo, readErrors());
-        throw new Error(networkChange);
+        const errors = readErrors();
+        if (errors.length > 0) await attachRuntimeErrors(testInfo, errors);
+        const networkChange = describeNetworkChange(errors);
+        if (networkChange !== undefined) throw new Error(networkChange);
+        return;
       }
       const unexpected = unexpectedRuntimeErrors(readErrors(), runtimeErrorAllowances);
       if (unexpected.length === 0) return;

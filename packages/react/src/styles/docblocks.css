@@ -9823,11 +9823,16 @@ button.db-git-file-row:hover {
    the phone sheet is pinned to the window edges), so it can be a size
    container. Below these sizes the list becomes the picker above, the columns
    stack, and the dialog body scrolls as one instead of each column scrolling
-   in a sliver. */
+   in a sliver. The height is measured: a 460px panel left the columns 185px,
+   room for one slide in the list and the preview alone beside it, while a
+   540px panel (a 1366x768 laptop's browser) and a 600px one (the desktop app
+   on a 1024x768 screen) still show three slides, the preview and the layout
+   choices at once. The picker there hid all of that below one oversized
+   preview. */
 .db-dialog.db-presentation {
   container: db-presentation / size;
 }
-@container db-presentation (max-width: 719px) or (max-height: 599px) {
+@container db-presentation (max-width: 719px) or (max-height: 499px) {
   .db-presentation-workspace {
     display: flex;
     flex: none;

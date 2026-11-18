@@ -195,12 +195,17 @@ jobs:
         if: runner.os != 'Linux'
         run: npm run test:e2e:desktop
 
+      # CI runs the `github` reporter alone, which writes no HTML report: the
+      # traces and Electron process logs are in test-results/.
       - name: Upload Playwright report
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: ${{ !cancelled() }}
         with:
           name: desktop-playwright-report-${{ matrix.os }}
-          path: packages/desktop/playwright-report/
+          path: |
+            packages/desktop/playwright-report/
+            packages/desktop/test-results/
+          if-no-files-found: ignore
           retention-days: 14
 
   e2e:

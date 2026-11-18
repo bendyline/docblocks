@@ -92,8 +92,15 @@ async function openWriteWithTypo(page: Page): Promise<void> {
   await expect(editor.locator('p', { hasText: /^This is teh probe\.$/ })).toBeVisible();
   await expect(heading).not.toContainText('probe');
   await editor.blur();
-  // Cold engine setup precedes the first squiggle.
-  await expect(squiggle(page)).toBeVisible({ timeout: 60_000 });
+  // Cold engine setup precedes the first squiggle. It takes about a second, so
+  // "Proofing…" a minute on means it never will: harper's worker swallows a
+  // failed start (a WebKit WASM trap, a failed fetch of the binary) and leaves
+  // the page waiting. runtime-errors.json beside the failure holds the trap.
+  await expect(page.locator('.squisq-proof-status'), 'the proofing engine starts').toHaveText(
+    /^(✓ Proofing|\d+ issues?)$/,
+    { timeout: 60_000 },
+  );
+  await expect(squiggle(page)).toBeVisible({ timeout: 30_000 });
   // The edit sets off more than one pass, and each re-issues the finding's id
   // and redraws its squiggle. A tap across a redraw lands on no squiggle, so
   // wait until the id holds for longer than the 450 ms lint debounce.
