@@ -314,9 +314,11 @@ test('grants capture only to the trusted renderer and exposes only working prese
 test('starts hosted AI from the packaged signed native payload', async ({ launchPackagedApp }) => {
   // The fixture's empty Gezel home makes the standalone app absent. This
   // exercises both ESM runtime packages, native verification and SDK hosting
-  // from the production app.asar with its hardened Electron fuses.
-  // Local macOS smoke apps are ad-hoc signed and correctly fail the required
-  // enclosing-app notarization check; release builds retain that check.
+  // from the production app.asar with its hardened Electron fuses. The startup
+  // check confirms only that the pinned engine release is complete (see
+  // checkNativePayload), so an ad-hoc signed macOS smoke app hosts too: the
+  // operating system enforces signing for installed apps, and packaging
+  // verifies the engines' hashes and signatures.
   const packaged = await launchPackagedApp();
   await packaged.window.waitForSelector('.db-shell', { timeout: 30_000 });
   await packaged.window.evaluate(async () => {
@@ -333,18 +335,7 @@ test('starts hosted AI from the packaged signed native payload', async ({ launch
         }),
       { timeout: 60_000 },
     )
-    .toMatchObject(
-      process.platform === 'darwin'
-        ? {
-            kind: 'error',
-            error: {
-              code: 'runtime-missing',
-              detail: expect.stringContaining('parent app signature/notarization rejected'),
-            },
-          }
-        : { kind: 'ready', provider: { name: 'Gezel', mode: 'hosted' } },
-    );
-  if (process.platform === 'darwin') return;
+    .toMatchObject({ kind: 'ready', provider: { name: 'Gezel', mode: 'hosted' } });
   // The hosted service finds the Transformers.js runtime it embeds catalog
   // queries with, so knowledge catalogs are offered rather than refused.
   const knowledge = await packaged.window.evaluate(async () => {

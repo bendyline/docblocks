@@ -48,7 +48,7 @@ The pins move to Gezel's next patch releases: `@bendyline/gezel-capacitor` `1.1.
 - Typecheck and `npm test` passed, including the connector's consent tests against App SDK `1.2.2`. Dependency governance, the shipped-dependency audit and `mobile:check` (after both syncs) passed.
 - `mobile:test:ios:ai` passed on an iPhone 17 simulator: write, review and illustrate streamed from synthetic weights through llama.cpp with progress phases, and Apple Foundation Models reported available.
 - `mobile:test:android:ai` passed its fixture, Settings opt-in/catalog and streaming checks on the arm64 API 36 emulator. Settings rated Qwen 3.5 0.8B "fits in memory", which needs the runtime's new `physicalMemoryBytes`, and the runtime logged its memory-based context sizing. After printing its success line the harness did not exit (one pending Node timer) and was stopped by hand.
-- The packaged desktop smoke staged and verified native-v0.1.63. On macOS the local ad-hoc build correctly reports the notarization refusal, so hosted generation was not exercised there. The real-engine speech and image tests were skipped because no local models were present.
+- The packaged desktop smoke staged and verified native-v0.1.63. On macOS the local ad-hoc build correctly reports the notarization refusal, so hosted generation was not exercised there. (Since November 17 the startup check no longer requires a notarized app, so ad-hoc macOS builds host AI too, and the smoke test expects it.) The real-engine speech and image tests were skipped because no local models were present.
 - Not run: `npm run all`, `mobile:package`, a physical-device run (where memory warnings actually occur) and real-model downloads.
 
 **Memory-aware model downloads — November 12, 2026**

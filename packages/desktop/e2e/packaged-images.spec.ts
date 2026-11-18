@@ -141,8 +141,6 @@ test.describe('real image generation', () => {
     !real || !imageModelDir,
     'Set DOCBLOCKS_E2E_REAL_IMAGES=1 and DOCBLOCKS_E2E_IMAGE_MODEL_DIR.',
   );
-  // Local macOS builds are ad-hoc signed, which hosted AI correctly refuses.
-  test.skip(process.platform === 'darwin', 'Hosted AI needs a notarized macOS build.');
 
   test('Generate image renders on the bundled engine and inserts the PNG beside the document', async ({
     launchPackagedApp,

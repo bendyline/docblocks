@@ -147,15 +147,23 @@ types alone does not enable it in an already installed service. The connector
 also validates the extension when using the current SDK's pass-through stream
 parser.
 
-After AI opt-in, the hosted service checks the complete native file set, SHA-256
-hashes, symlinks, and platform signatures against its own source-bundled pins,
-using the directory supplied as the SDK's `host.nativeBinDir` before the service
-starts. Every packaged build uses `distributionProfile: 'store'`, so missing or invalid engines
-fail visibly instead of triggering executable downloads. Model weights remain
-data downloads initiated by **Add model**. Source builds use the same profile:
-`npm run stage:gezel-native` stages this machine's engines into
+After AI opt-in, and before the service starts, DocBlocks checks the engines in
+the directory it supplies as the SDK's `host.nativeBinDir`. They must be the
+native release this build's Gezel pins, and complete: every pinned file at its
+pinned size, plus the pinned symlinks. A Mac App Store build, which Apple
+re-signs, checks only that its two executables are present. This startup check
+deliberately skips hashes and signatures (`checkNativePayload` in
+`main/ai/gezel-staged-native.ts`). The operating system's code signing
+protects an installed app, and a check inside the same app could not add to
+it. Gezel's packaging helper verifies the archives against its pins when they
+are staged. The Microsoft Store and Mac App Store packages are verified again
+before upload, hashes and signatures included (`scripts/check-store-packages.ts`).
+Every packaged build uses `distributionProfile: 'store'`, so missing or invalid
+engines fail visibly instead of triggering executable downloads. Model weights
+remain data downloads initiated by **Add model**. Source builds use the same
+profile: `npm run stage:gezel-native` stages this machine's engines into
 `dist/gezel-native/<os>-<arch>` with the packaging helper, and the app runs
-them with the same verification, without requiring a notarized enclosing app.
+them after the same check.
 An absolute `DOCBLOCKS_GEZEL_NATIVE_BIN_DIR` points it at another staged
 payload. A source build never downloads an engine at runtime; `dev` warns when
 the staged payload is missing or older than the installed service's pin.
