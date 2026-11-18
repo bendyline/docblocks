@@ -62,7 +62,7 @@ export function getEditorHtml(webview: vscode.Webview, extensionUri: vscode.Uri)
       style-src ${webview.cspSource} 'unsafe-inline';
       script-src ${webview.cspSource} 'nonce-${nonce}' 'wasm-unsafe-eval';
       font-src ${webview.cspSource} data:;
-      img-src ${webview.cspSource} blob: data:;
+      img-src ${webview.cspSource} blob: data: https://i.ytimg.com;
       media-src blob: data:;
       connect-src ${webview.cspSource} blob: data:;
       worker-src ${webview.cspSource} blob:;

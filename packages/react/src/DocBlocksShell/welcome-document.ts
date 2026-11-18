@@ -66,7 +66,8 @@ export function welcomeDocumentContent({
     '## Write the way you already do {[list]}',
     '',
     '- Type to add text, and use the toolbar for headings, lists, and bold or italic text.',
-    '- Choose **Insert** in the toolbar to add a table, a checklist, a chart, a diagram, or a picture.',
+    // Insert and New File are icon buttons: say what to look for.
+    '- Choose the **+** button (Insert) in the toolbar to add a table, a checklist, a chart, a diagram, or a picture.',
     '- Choose **Source** to see the Markdown text behind this page. Both views edit the same document.',
     '',
     '## One document, many ways to share it {[diagram]}',
@@ -100,7 +101,7 @@ export function welcomeDocumentContent({
     '',
     '## Make your own {[list]}',
     '',
-    '1. Choose **New File** above the file list and give it a name.',
+    '1. Choose **New File**, the page with a plus sign above the file list, and give it a name.',
     '2. Write a heading and a few sentences.',
     '3. Choose **Slideshow** to present it, or **Export** to share it.',
     '',

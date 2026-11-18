@@ -88,7 +88,9 @@
           </div>
           <p class="section-copy">
             HTML ZIP, EPUB, MP4, and GIF are export-only; every other format opens as well as
-            exports. AI agents can ask the DocBlocks MCP server for this list with
+            exports. The web and desktop editors export directly to every format marked Yes; Excel,
+            CSV, DBK bundles, and GIF export from the DocBlocks CLI and MCP server. AI agents can
+            ask the DocBlocks MCP server for this list with
             <code>list_formats</code>, and the
             <a href="https://github.com/bendyline/docblocks/blob/main/docs/cli.md">CLI reference</a>
             covers every option.
@@ -141,13 +143,13 @@
               <tr>
                 <td>Excel (XLSX)</td>
                 <td class="yes">Yes</td>
-                <td class="yes">Yes</td>
+                <td class="yes">CLI &amp; MCP</td>
                 <td>Structured spreadsheet content</td>
               </tr>
               <tr>
                 <td>CSV</td>
                 <td class="yes">Yes</td>
-                <td class="yes">Yes</td>
+                <td class="yes">CLI &amp; MCP</td>
                 <td>Tabular data interchange</td>
               </tr>
               <tr>
@@ -171,7 +173,7 @@
               <tr>
                 <td>DocBlocks bundle (DBK)</td>
                 <td class="yes">Yes</td>
-                <td class="yes">Yes</td>
+                <td class="yes">CLI &amp; MCP</td>
                 <td>A zip file that contains markdown plus media assets</td>
               </tr>
               <tr>
@@ -183,7 +185,7 @@
               <tr>
                 <td>GIF</td>
                 <td class="no">No</td>
-                <td class="yes">Yes</td>
+                <td class="yes">CLI &amp; MCP</td>
                 <td>Short animated output</td>
               </tr>
             </tbody>
@@ -197,8 +199,8 @@
             <h3>Visual export</h3>
             <p>
               Export common document formats, EPUB, and MP4 video from the web or desktop editor
-              without leaving your document. Animated GIF comes from the CLI and MCP server, which
-              use the FFmpeg installed on your computer.
+              without leaving your document. Spreadsheets, CSV, DBK bundles, and animated GIF come
+              from the CLI and MCP server, which use the FFmpeg installed on your computer for GIF.
             </p>
           </article>
           <article class="card">

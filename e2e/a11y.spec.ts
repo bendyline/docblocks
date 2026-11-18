@@ -219,6 +219,38 @@ test.describe('a11y - application dialogs', () => {
     ).toBe(0);
   });
 
+  // The scan above only ever saw the light palette; in dark mode the dialog's
+  // hint text sat at 2.34:1 through three live reviews.
+  test('no WCAG A/AA violations in the Export dialog in dark mode', async ({ page }, info) => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await waitForShell(page);
+    await page.getByRole('button', { name: 'Export and share' }).click();
+    await page.getByRole('menuitem', { name: 'Export document...' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Export Document' });
+    await expect(dialog).toBeVisible();
+    // Prove the scan sees the dark palette rather than passing on the light one.
+    const luminance = await dialog.evaluate((element) => {
+      let node: Element | null = element;
+      while (node) {
+        const match = /rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)/.exec(
+          getComputedStyle(node).backgroundColor,
+        );
+        if (match && Number(match[4] ?? 1) > 0) {
+          return (Number(match[1]) + Number(match[2]) + Number(match[3])) / 3;
+        }
+        node = node.parentElement;
+      }
+      return 255;
+    });
+    expect(luminance, 'the Export dialog renders dark').toBeLessThan(80);
+
+    const violations = await scanAndReport(page, info, 'export-dialog-dark');
+    expect(
+      violations.length,
+      `${violations.length} violation(s) in the dark Export dialog:\n${formatViolations(violations)}`,
+    ).toBe(0);
+  });
+
   test('no WCAG A/AA violations in the Share dialog', async ({ page }, info) => {
     await waitForShell(page);
     await page.getByRole('button', { name: 'Export and share' }).click();

@@ -880,21 +880,32 @@ try {
         await editor.locator('th, td').first().click();
         await page.getByRole('button', { name: 'Insert' }).click();
         await page.getByRole('menuitem', { name: 'Task List' }).click();
+        const checkboxes = () =>
+          editor.locator('th, td').first().locator('input[type="checkbox"]').count();
         const before = await editor.locator('th, td').first().innerText();
+        // Task List inserts one empty item (it inserted three placeholders
+        // before 2.8): count what is there rather than a fixed number.
+        const checkboxesBefore = await checkboxes();
         await page.screenshot({ path: path.join(output, 'table-cell-list-before.png') });
         const markdown = await readSource(page);
         await page.getByRole('tab', { name: 'Write', exact: true }).click();
         const after = await editor.locator('th, td').first().innerText();
-        expect(
-          await editor.locator('th, td').first().locator('input[type="checkbox"]').count(),
-        ).toBe(3);
+        const checkboxesAfter = await checkboxes();
         await capture(page, 'table-cell-list', false);
         await writeFile(
           path.join(output, 'table-cell-list-detail.json'),
-          JSON.stringify({ before, after, markdown }, null, 2),
+          JSON.stringify({ before, after, checkboxesBefore, checkboxesAfter, markdown }, null, 2),
         );
+        expect(checkboxesBefore, 'a task list in the cell').toBeGreaterThanOrEqual(1);
+        expect(checkboxesAfter, 'task items after Source and back').toBe(checkboxesBefore);
         expect(markdown).not.toMatch(/Task 1\s*Task 2/);
-        return { before, after, markdown: markdown.slice(0, 400) };
+        return {
+          before,
+          after,
+          checkboxesBefore,
+          checkboxesAfter,
+          markdown: markdown.slice(0, 400),
+        };
       });
       await step('long-document-typing', page, async () => {
         await createDocument(page, 'long-review', 'Long document check.');
