@@ -611,6 +611,12 @@ export interface DocBlocksShellProps {
   /** Whether presentation may enter the browser/Electron Fullscreen API. */
   allowPresentationFullscreen?: boolean;
   /**
+   * Whether Narrate offers Pop out, which floats the prompter in a
+   * picture-in-picture or popup window. Disable it where no float can outlive
+   * the app's own screen, such as the mobile WebViews.
+   */
+  allowNarratePopOut?: boolean;
+  /**
    * True once the app has been fully cached for offline use (browser PWA
    * hosts). Shown to the user once as a passive notice.
    */
@@ -1006,6 +1012,7 @@ export function DocBlocksShell({
   allowDictation = allowRecording,
   allowPresentationWindow = true,
   allowPresentationFullscreen = true,
+  allowNarratePopOut = true,
   offlineReady = false,
   onStartupSettled,
   firstRunGreeting,
@@ -6407,6 +6414,7 @@ export function DocBlocksShell({
                               speechInput={allowDictation ? speechInput : null}
                               allowPresentationWindow={allowPresentationWindow}
                               allowPresentationFullscreen={allowPresentationFullscreen}
+                              allowNarratePopOut={allowNarratePopOut}
                               documentLinkProvider={documentLinkProvider}
                               workspaceContainer={versionsContainer ?? undefined}
                               allowVersioning={selectedImage === undefined && effectiveVersioning}
@@ -6463,16 +6471,8 @@ export function DocBlocksShell({
                                     )
                                   : undefined
                               }
-                              toolbarSlotRight={
+                              toolbarSlotQuickTools={
                                 <>
-                                  {newDocumentCaretPath === selectedFile && (
-                                    <Suspense fallback={null}>
-                                      <NewDocumentCaret
-                                        onPlaced={clearNewDocumentCaret}
-                                        takeTypedText={takeTypedWhileOpening}
-                                      />
-                                    </Suspense>
-                                  )}
                                   {canFind && (
                                     <FindButton
                                       active={findMode}
@@ -6480,6 +6480,23 @@ export function DocBlocksShell({
                                       shortcutLabel={findShortcut}
                                     />
                                   )}
+                                  {/* Restore split view -- offered only where the
+                          viewport can actually hold both panes. Pinning is
+                          persisted, so an iPad user sets it once. */}
+                                  {canRestoreSplitView && (
+                                    <button
+                                      className="db-restore-split"
+                                      onClick={() => updateSidebarPreference('pinned')}
+                                      aria-label="Restore split view"
+                                      title="Restore split view"
+                                    >
+                                      <SplitViewIcon />
+                                    </button>
+                                  )}
+                                </>
+                              }
+                              toolbarSlotDocumentActions={
+                                <>
                                   {ai && (
                                     <Suspense fallback={null}>
                                       <AiToolbarControl
@@ -6524,19 +6541,6 @@ export function DocBlocksShell({
                                       )}
                                     </Suspense>
                                   )}
-                                  {/* Restore split view -- offered only where the
-                          viewport can actually hold both panes. Pinning is
-                          persisted, so an iPad user sets it once. */}
-                                  {canRestoreSplitView && (
-                                    <button
-                                      className="db-restore-split"
-                                      onClick={() => updateSidebarPreference('pinned')}
-                                      aria-label="Restore split view"
-                                      title="Restore split view"
-                                    >
-                                      <SplitViewIcon />
-                                    </button>
-                                  )}
                                   {git.repo && (
                                     <Suspense fallback={null}>
                                       <GitToolbarControl selectedFile={selectedFile} />
@@ -6557,6 +6561,16 @@ export function DocBlocksShell({
                                     {...(speech ? { speech } : {})}
                                   />
                                 </>
+                              }
+                              toolbarSlotRight={
+                                newDocumentCaretPath === selectedFile ? (
+                                  <Suspense fallback={null}>
+                                    <NewDocumentCaret
+                                      onPlaced={clearNewDocumentCaret}
+                                      takeTypedText={takeTypedWhileOpening}
+                                    />
+                                  </Suspense>
+                                ) : undefined
                               }
                             />
                           </EditorErrorBoundary>

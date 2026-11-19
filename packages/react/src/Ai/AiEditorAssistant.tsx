@@ -29,6 +29,7 @@ import { Dialog } from '../components/Dialog.js';
 import { CloseIcon } from '../icons.js';
 import { useConfirmDialog } from '../components/useConfirmDialog.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
+import { useDocumentActionMenu } from '../components/useDocumentActionMenu.js';
 import { unavailableSentence, useAiStatus, useLiveAiStatus } from './ai-status.js';
 import { AiDiagramDialog } from './AiDiagrams.js';
 import { AiGenerationStatus, type AiGenerationState } from './AiGenerationStatus.js';
@@ -113,8 +114,22 @@ export function AiToolbarControl({
   const [diagramSelection, setDiagramSelection] = useState<EditorSelectionInfo | null>(null);
   const [studyKind, setStudyKind] = useState<StudyAidKind | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const { menuRef, triggerRef, handleMenuKeyDown, handleTriggerKeyDown, closeMenu } =
-    useMenuKeyboard(menuOpen, setMenuOpen);
+  const {
+    menuRef,
+    triggerRef,
+    handleMenuKeyDown,
+    handleTriggerKeyDown,
+    closeMenu: closeInlineMenu,
+  } = useMenuKeyboard(menuOpen, setMenuOpen);
+  const offered =
+    editorMode === 'markdown' && !(status?.kind === 'unavailable' && status.reason === 'opt-out');
+  const { folded, itemsShown, closeMenu, foldedItems } = useDocumentActionMenu(
+    offered ? { id: 'docblocks-ai', label: 'AI', icon: <SparklesGlyph />, submenu: true } : null,
+    rootRef,
+    menuOpen,
+    setMenuOpen,
+    closeInlineMenu,
+  );
 
   // The view and counter are reactive invalidators for this imperative snapshot.
   void activeView;
@@ -133,8 +148,8 @@ export function AiToolbarControl({
   // This control lives as long as the shell; the menu asks again each time it
   // opens rather than trust an answer the host may since have revised.
   useEffect(() => {
-    if (menuOpen) recheck();
-  }, [menuOpen, recheck]);
+    if (itemsShown) recheck();
+  }, [itemsShown, recheck]);
 
   // The shell builds a new sidecar container for each document. A study
   // dialog belongs to the document it opened on, so switching documents
@@ -195,12 +210,7 @@ export function AiToolbarControl({
   }
   useEditorContextMenuItems(contextMenuItems);
 
-  if (
-    editorMode !== 'markdown' ||
-    (status?.kind === 'unavailable' && status.reason === 'opt-out')
-  ) {
-    return null;
-  }
+  if (!offered) return null;
 
   const editableSelection = !readOnly && ready ? selection : null;
   // Study aids leave the document alone but save beside it, so they need
@@ -226,22 +236,145 @@ export function AiToolbarControl({
     setCapturedSelection(null);
   };
 
+  // The same items fill the control's own dropdown and, when Squisq has
+  // folded the document actions, its row's submenu there.
+  const menuItems = (
+    <>
+      {needsModel && onOpenSettings ? (
+        <button
+          type="button"
+          role="menuitem"
+          tabIndex={-1}
+          className="db-toolbar-menu-item db-ai-toolbar-status db-ai-toolbar-status-action"
+          onClick={() => {
+            closeMenu(false);
+            onOpenSettings();
+          }}
+        >
+          {unavailableSentence(status)}
+        </button>
+      ) : (
+        !ready && (
+          <div className="db-ai-toolbar-status" role="status">
+            {unavailableSentence(status)}
+          </div>
+        )
+      )}
+      <button
+        type="button"
+        role="menuitem"
+        tabIndex={-1}
+        className="db-toolbar-menu-item"
+        disabled={!canCompose}
+        onClick={() => openDraft('compose')}
+      >
+        Add content…
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        tabIndex={-1}
+        className="db-toolbar-menu-item"
+        disabled={!canRewrite}
+        onClick={() => openDraft('rewrite')}
+      >
+        Rewrite selection…
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        tabIndex={-1}
+        className="db-toolbar-menu-item"
+        disabled={!ready || readOnly}
+        onClick={() => {
+          closeMenu(false);
+          onOpenPanel('review');
+        }}
+      >
+        {openPanel === 'review' ? 'Show document review' : 'Review document…'}
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        tabIndex={-1}
+        className="db-toolbar-menu-item"
+        disabled={!ready || readOnly || layoutMode !== 'document'}
+        onClick={() => {
+          closeMenu(false);
+          onOpenPanel('illustrate');
+        }}
+      >
+        {openPanel === 'illustrate' ? 'Show illustrations' : 'Illustrate document…'}
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        tabIndex={-1}
+        className="db-toolbar-menu-item"
+        disabled={!editableSelection}
+        onClick={openDiagram}
+      >
+        Insert diagram…
+      </button>
+      {ai.images && (
+        <button
+          type="button"
+          role="menuitem"
+          tabIndex={-1}
+          className="db-toolbar-menu-item"
+          disabled={!imagesOffered}
+          onClick={openImages}
+        >
+          {openPanel === 'images' ? 'Show image generation' : 'Generate image…'}
+        </button>
+      )}
+      <div className="db-toolbar-menu-divider" role="separator" />
+      {STUDY_AID_KINDS.map((kind) => (
+        <button
+          key={kind}
+          type="button"
+          role="menuitem"
+          tabIndex={-1}
+          className="db-toolbar-menu-item"
+          disabled={!canStudy}
+          onClick={() => {
+            closeMenu(false);
+            setStudyKind(kind);
+          }}
+        >
+          {STUDY_AID_LABELS[kind].menu}
+        </button>
+      ))}
+      {ready && !selection && (
+        <div className="db-ai-toolbar-status">Switch to Write or Source to edit with AI.</div>
+      )}
+      {ready && selection && !selection.empty && !canRewrite && (
+        <div className="db-ai-toolbar-status">The selection is too long to rewrite.</div>
+      )}
+      {ready && layoutMode !== 'document' && (
+        <div className="db-ai-toolbar-status">Switch to the Document layout to illustrate.</div>
+      )}
+    </>
+  );
+
   return (
     <>
       <div className="db-toolbar-menu db-ai-toolbar" ref={rootRef}>
-        <button
-          ref={triggerRef}
-          type="button"
-          className={`squisq-toolbar-button db-ai-toolbar-trigger${openPanel ? ' squisq-toolbar-button--active' : ''}`}
-          onClick={() => setMenuOpen((open) => !open)}
-          onKeyDown={handleTriggerKeyDown}
-          aria-label="AI actions"
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          data-tooltip="AI actions"
-        >
-          <SparklesGlyph />
-        </button>
+        {!folded && (
+          <button
+            ref={triggerRef}
+            type="button"
+            className={`squisq-toolbar-button db-ai-toolbar-trigger${openPanel ? ' squisq-toolbar-button--active' : ''}`}
+            onClick={() => setMenuOpen((open) => !open)}
+            onKeyDown={handleTriggerKeyDown}
+            aria-label="AI actions"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            data-tooltip="AI actions"
+          >
+            <SparklesGlyph />
+          </button>
+        )}
 
         {menuOpen && (
           <div
@@ -251,124 +384,10 @@ export function AiToolbarControl({
             aria-label="AI actions"
             onKeyDown={handleMenuKeyDown}
           >
-            {needsModel && onOpenSettings ? (
-              <button
-                type="button"
-                role="menuitem"
-                tabIndex={-1}
-                className="db-toolbar-menu-item db-ai-toolbar-status db-ai-toolbar-status-action"
-                onClick={() => {
-                  closeMenu(false);
-                  onOpenSettings();
-                }}
-              >
-                {unavailableSentence(status)}
-              </button>
-            ) : (
-              !ready && (
-                <div className="db-ai-toolbar-status" role="status">
-                  {unavailableSentence(status)}
-                </div>
-              )
-            )}
-            <button
-              type="button"
-              role="menuitem"
-              tabIndex={-1}
-              className="db-toolbar-menu-item"
-              disabled={!canCompose}
-              onClick={() => openDraft('compose')}
-            >
-              Add content…
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              tabIndex={-1}
-              className="db-toolbar-menu-item"
-              disabled={!canRewrite}
-              onClick={() => openDraft('rewrite')}
-            >
-              Rewrite selection…
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              tabIndex={-1}
-              className="db-toolbar-menu-item"
-              disabled={!ready || readOnly}
-              onClick={() => {
-                closeMenu(false);
-                onOpenPanel('review');
-              }}
-            >
-              {openPanel === 'review' ? 'Show document review' : 'Review document…'}
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              tabIndex={-1}
-              className="db-toolbar-menu-item"
-              disabled={!ready || readOnly || layoutMode !== 'document'}
-              onClick={() => {
-                closeMenu(false);
-                onOpenPanel('illustrate');
-              }}
-            >
-              {openPanel === 'illustrate' ? 'Show illustrations' : 'Illustrate document…'}
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              tabIndex={-1}
-              className="db-toolbar-menu-item"
-              disabled={!editableSelection}
-              onClick={openDiagram}
-            >
-              Insert diagram…
-            </button>
-            {ai.images && (
-              <button
-                type="button"
-                role="menuitem"
-                tabIndex={-1}
-                className="db-toolbar-menu-item"
-                disabled={!imagesOffered}
-                onClick={openImages}
-              >
-                {openPanel === 'images' ? 'Show image generation' : 'Generate image…'}
-              </button>
-            )}
-            <div className="db-toolbar-menu-divider" role="separator" />
-            {STUDY_AID_KINDS.map((kind) => (
-              <button
-                key={kind}
-                type="button"
-                role="menuitem"
-                tabIndex={-1}
-                className="db-toolbar-menu-item"
-                disabled={!canStudy}
-                onClick={() => {
-                  closeMenu(false);
-                  setStudyKind(kind);
-                }}
-              >
-                {STUDY_AID_LABELS[kind].menu}
-              </button>
-            ))}
-            {ready && !selection && (
-              <div className="db-ai-toolbar-status">Switch to Write or Source to edit with AI.</div>
-            )}
-            {ready && selection && !selection.empty && !canRewrite && (
-              <div className="db-ai-toolbar-status">The selection is too long to rewrite.</div>
-            )}
-            {ready && layoutMode !== 'document' && (
-              <div className="db-ai-toolbar-status">
-                Switch to the Document layout to illustrate.
-              </div>
-            )}
+            {menuItems}
           </div>
         )}
+        {foldedItems(menuItems, 'db-ai-toolbar-menu')}
       </div>
 
       {draftMode && capturedSelection && (

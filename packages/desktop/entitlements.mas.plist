@@ -14,6 +14,10 @@
     - network.client            outbound network for any fetch the app makes
     - device.camera             the recorder's camera capture
     - device.audio-input        the recorder's microphone capture
+    - print                     the system print dialog (Use › Print)
+
+  Without print, the sandbox answers every print with "This application does
+  not support printing" instead of the print dialog.
 
   Without the two device.* keys the sandbox does not refuse capture outright —
   getUserMedia still resolves — it just delivers black frames and silence, so
@@ -46,6 +50,8 @@
   <key>com.apple.security.device.camera</key>
   <true/>
   <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <key>com.apple.security.print</key>
   <true/>
 </dict>
 </plist>

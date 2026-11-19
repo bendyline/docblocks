@@ -28,6 +28,7 @@ import {
   type FakeGezel,
   type FakeGezelOptions,
 } from './fake-gezel.js';
+import { openDocumentAction } from '../../../e2e/helpers/toolbar.js';
 
 const DOCUMENT = [
   '# Team wiki migration',
@@ -95,7 +96,7 @@ async function undo(window: Page, editor: Locator): Promise<void> {
 }
 
 async function openAiMenuItem(window: Page, name: string): Promise<void> {
-  await window.getByRole('button', { name: 'AI actions' }).click();
+  await openDocumentAction(window, 'AI');
   const item = window.getByRole('menuitem', { name });
   await expect(item).toBeEnabled();
   await item.click();

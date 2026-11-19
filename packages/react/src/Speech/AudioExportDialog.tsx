@@ -9,6 +9,7 @@ import type { DocBlocksHostSpeechAPI } from '@bendyline/docblocks/host';
 import type { AudioFileFormat } from '@bendyline/squisq-video-react/encoder';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import { Dialog } from '../components/Dialog.js';
+import { useScreenWakeLock } from '../hooks/screen-wake-lock.js';
 import {
   AUDIO_FORMAT_LABELS,
   audioExportFilename,
@@ -65,6 +66,7 @@ export function AudioExportDialog({
   }, []);
 
   const busy = state.phase === 'working';
+  useScreenWakeLock(busy);
 
   const run = async () => {
     const controller = new AbortController();

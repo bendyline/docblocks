@@ -1,5 +1,5 @@
 import { expect, test } from './helpers/test.js';
-import { showWriteView } from './helpers/toolbar.js';
+import { closeDocumentActionMenus, openDocumentAction, showWriteView } from './helpers/toolbar.js';
 
 test.describe('mobile web-editor ship readiness', () => {
   test.use({ viewport: { width: 390, height: 844 } });
@@ -27,8 +27,16 @@ test.describe('mobile web-editor ship readiness', () => {
     await expect(page.locator('.squisq-toolbar')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole('button', { name: 'Show file list' })).toBeVisible();
 
-    const exportAndShare = page.getByRole('button', { name: 'Export and share' });
-    await expect(exportAndShare).toBeVisible({ timeout: 20_000 });
+    // Export sits with the other document actions, which fold into one
+    // Document actions menu when the row runs short. Either way it is reachable.
+    await expect(
+      page
+        .locator('.squisq-toolbar')
+        .getByRole('button', { name: 'Export and share' })
+        .or(page.getByRole('button', { name: 'Document actions', exact: true }))
+        .filter({ visible: true })
+        .first(),
+    ).toBeVisible({ timeout: 20_000 });
 
     await showWriteView(page);
 
@@ -79,13 +87,13 @@ test.describe('mobile web-editor ship readiness', () => {
     expect(overflowBounds!.x + overflowBounds!.width).toBeLessThanOrEqual(390);
     await moreActions.click();
 
-    await exportAndShare.click();
+    await openDocumentAction(page, 'Export');
     await expect(page.getByRole('menuitem', { name: 'Export document...' })).toBeVisible();
     await expect(
       page.getByRole('menuitem', { name: 'Share link with content embedded...' }),
     ).toBeVisible();
 
-    await exportAndShare.click();
+    await closeDocumentActionMenus(page);
     await page.getByRole('button', { name: 'Show file list' }).click();
     await expect(page.getByRole('complementary', { name: 'Workspace and files' })).toBeVisible();
   });

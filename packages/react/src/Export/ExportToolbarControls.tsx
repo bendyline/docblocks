@@ -53,6 +53,7 @@ import { loadTransformStyleSummaries, type ExportSummaryOption } from './transfo
 import { buildVideoExportDoc, videoExportFileBaseName } from './video-export-doc.js';
 import { Dialog } from '../components/Dialog.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
+import { useDocumentActionMenu } from '../components/useDocumentActionMenu.js';
 
 const ExportDialog = lazy(() =>
   import('./ExportDialog.js').then((module) => ({ default: module.ExportDialog })),
@@ -314,8 +315,31 @@ export function ExportToolbarControls({
   const [quickDestinationPending, setQuickDestinationPending] = useState(false);
   const destinationRequestRef = useRef(0);
   const menuContainerRef = useRef<HTMLDivElement>(null);
-  const { menuRef, triggerRef, handleMenuKeyDown, handleTriggerKeyDown, closeMenu } =
-    useMenuKeyboard(menuOpen, setMenuOpen);
+  const {
+    menuRef,
+    triggerRef,
+    handleMenuKeyDown,
+    handleTriggerKeyDown,
+    closeMenu: closeInlineMenu,
+  } = useMenuKeyboard(menuOpen, setMenuOpen);
+  // Folded into Squisq's document actions, the menu's row drills into the
+  // same items; the single-button form's row opens the dialog directly.
+  const openDialogRef = useRef<() => void>(() => {});
+  const { folded, itemsShown, closeMenu, foldedItems } = useDocumentActionMenu(
+    trigger === 'button'
+      ? {
+          id: 'docblocks-export',
+          label: 'Export',
+          icon: <ExportGlyph />,
+          disabled: exporting,
+          onSelect: () => openDialogRef.current(),
+        }
+      : { id: 'docblocks-export', label: 'Export', icon: <ShareGlyph />, submenu: true },
+    trigger === 'button' ? triggerRef : menuContainerRef,
+    menuOpen,
+    setMenuOpen,
+    closeInlineMenu,
+  );
 
   const lastOptions = loadLastExportOptions();
   const quickDestinationKey = lastOptions ? JSON.stringify([selectedFile, lastOptions]) : null;
@@ -367,14 +391,14 @@ export function ExportToolbarControls({
   }, [closeMenu, menuOpen]);
 
   useEffect(() => {
-    if (menuOpen) return;
+    if (itemsShown) return;
     setQuickDestination(null);
     setQuickDestinationPending(false);
-  }, [menuOpen]);
+  }, [itemsShown]);
 
   useEffect(() => {
     if (
-      !menuOpen ||
+      !itemsShown ||
       lastOptions?.format !== 'pptx' ||
       !lastOptions.transformStyle ||
       transformSummaries.length > 0
@@ -394,10 +418,10 @@ export function ExportToolbarControls({
     return () => {
       cancelled = true;
     };
-  }, [lastOptions?.format, lastOptions?.transformStyle, menuOpen, transformSummaries.length]);
+  }, [lastOptions?.format, lastOptions?.transformStyle, itemsShown, transformSummaries.length]);
 
   useEffect(() => {
-    if (!menuOpen || !destinationAdapter || !quickDestinationKey) return;
+    if (!itemsShown || !destinationAdapter || !quickDestinationKey) return;
 
     const quickOptions = loadLastExportOptions();
     if (!quickOptions) return;
@@ -420,7 +444,7 @@ export function ExportToolbarControls({
     return () => {
       cancelled = true;
     };
-  }, [destinationAdapter, menuOpen, quickDestinationKey, selectedFile]);
+  }, [destinationAdapter, itemsShown, quickDestinationKey, selectedFile]);
 
   const handleToggleMenu = useCallback(() => {
     if (!menuOpen && destinationAdapter) {
@@ -455,6 +479,7 @@ export function ExportToolbarControls({
     setDialogOpen(true);
     void refreshDestination(dialogInitial);
   }, [closeMenu, dialogInitial, refreshDestination]);
+  openDialogRef.current = handleOpenDialog;
 
   const handleCloseDialog = useCallback(() => {
     setDialogOpen(false);
@@ -777,6 +802,122 @@ export function ExportToolbarControls({
       : 'destination'
     : 'downloads';
 
+  // The same items fill the control's own dropdown and, when Squisq has
+  // folded the document actions, its row's submenu there.
+  const menuItems = (
+    <>
+      {lastOptions && (
+        <button
+          type="button"
+          role="menuitem"
+          tabIndex={-1}
+          className="db-toolbar-menu-item"
+          onClick={() => void handleQuickExport()}
+          disabled={exporting || (Boolean(destinationAdapter) && !quickDestinationTarget)}
+          title={
+            quickDestinationTarget
+              ? quickLabel(
+                  lastOptions,
+                  transformSummaries,
+                  quickSaveMode,
+                  destinationAdapter?.pickBeforeSave
+                    ? undefined
+                    : quickDestinationTarget.displayPath,
+                )
+              : undefined
+          }
+        >
+          {quickDestinationTarget
+            ? quickLabel(
+                lastOptions,
+                transformSummaries,
+                quickSaveMode,
+                destinationAdapter?.pickBeforeSave ? undefined : quickDestinationTarget.displayPath,
+              )
+            : quickLabel(lastOptions, transformSummaries, quickSaveMode) +
+              (destinationAdapter
+                ? quickDestinationPending
+                  ? ' (finding destination...)'
+                  : ' (destination unavailable)'
+                : '')}
+        </button>
+      )}
+      <button
+        type="button"
+        role="menuitem"
+        tabIndex={-1}
+        className="db-toolbar-menu-item"
+        onClick={handleOpenDialog}
+      >
+        Export document...
+      </button>
+      {destinationAdapter?.shareBlob && (
+        <button
+          type="button"
+          role="menuitem"
+          tabIndex={-1}
+          className="db-toolbar-menu-item"
+          onClick={() => {
+            setFileShare(true);
+            closeMenu(true);
+            setExportError(null);
+            setDialogOpen(true);
+          }}
+        >
+          Share file...
+        </button>
+      )}
+      <button
+        type="button"
+        role="menuitem"
+        tabIndex={-1}
+        className="db-toolbar-menu-item"
+        onClick={handleOpenShareDialog}
+      >
+        Share link with content embedded...
+      </button>
+      {showVideoExport && (
+        <>
+          <div className="db-toolbar-menu-divider" role="separator" />
+          <button
+            type="button"
+            role="menuitem"
+            tabIndex={-1}
+            className="db-toolbar-menu-item"
+            onClick={() => void handleOpenVideoModal('mp4')}
+          >
+            Export video...
+          </button>
+          {speech && (
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
+              className="db-toolbar-menu-item"
+              onClick={() => {
+                closeMenu(true);
+                setAudioDialogOpen(true);
+              }}
+            >
+              Export audio...
+            </button>
+          )}
+          {showAnimatedGifExport && (
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
+              className="db-toolbar-menu-item"
+              onClick={() => void handleOpenVideoModal('gif')}
+            >
+              Export animated gif...
+            </button>
+          )}
+        </>
+      )}
+    </>
+  );
+
   return (
     <>
       {initialSharedMode && <SharedModeInitializer mode={initialSharedMode} />}
@@ -784,7 +925,7 @@ export function ExportToolbarControls({
         <button
           ref={triggerRef}
           type="button"
-          className="squisq-toolbar-button db-toolbar-export-trigger"
+          className={`squisq-toolbar-button db-toolbar-export-trigger${folded ? ' squisq-toolbar-button--overflowed' : ''}`}
           onClick={handleOpenDialog}
           disabled={exporting}
           aria-label="Export document"
@@ -793,142 +934,36 @@ export function ExportToolbarControls({
           <ExportGlyph />
         </button>
       ) : (
-        <div className="db-toolbar-menu" ref={menuContainerRef}>
-          <button
-            ref={triggerRef}
-            type="button"
-            className="db-toolbar-menu-trigger"
-            onClick={handleToggleMenu}
-            onKeyDown={handleTriggerKeyDown}
-            aria-label="Export and share"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            title="Export and share"
-          >
-            <ShareGlyph />
-            <span className="db-toolbar-menu-trigger-label">Export</span>
-          </button>
+        <div className="db-toolbar-menu db-export-toolbar" ref={menuContainerRef}>
+          {!folded && (
+            <button
+              ref={triggerRef}
+              type="button"
+              className="db-toolbar-menu-trigger"
+              onClick={handleToggleMenu}
+              onKeyDown={handleTriggerKeyDown}
+              aria-label="Export and share"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              title="Export and share"
+            >
+              <ShareGlyph />
+              <span className="db-toolbar-menu-trigger-label">Export</span>
+            </button>
+          )}
 
           {menuOpen && (
             <div
               ref={menuRef}
               className="db-toolbar-menu-dropdown db-export-toolbar-menu-dropdown"
               role="menu"
+              aria-label="Export and share"
               onKeyDown={handleMenuKeyDown}
             >
-              {lastOptions && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  tabIndex={-1}
-                  className="db-toolbar-menu-item"
-                  onClick={() => void handleQuickExport()}
-                  disabled={exporting || (Boolean(destinationAdapter) && !quickDestinationTarget)}
-                  title={
-                    quickDestinationTarget
-                      ? quickLabel(
-                          lastOptions,
-                          transformSummaries,
-                          quickSaveMode,
-                          destinationAdapter?.pickBeforeSave
-                            ? undefined
-                            : quickDestinationTarget.displayPath,
-                        )
-                      : undefined
-                  }
-                >
-                  {quickDestinationTarget
-                    ? quickLabel(
-                        lastOptions,
-                        transformSummaries,
-                        quickSaveMode,
-                        destinationAdapter?.pickBeforeSave
-                          ? undefined
-                          : quickDestinationTarget.displayPath,
-                      )
-                    : quickLabel(lastOptions, transformSummaries, quickSaveMode) +
-                      (destinationAdapter
-                        ? quickDestinationPending
-                          ? ' (finding destination...)'
-                          : ' (destination unavailable)'
-                        : '')}
-                </button>
-              )}
-              <button
-                type="button"
-                role="menuitem"
-                tabIndex={-1}
-                className="db-toolbar-menu-item"
-                onClick={handleOpenDialog}
-              >
-                Export document...
-              </button>
-              {destinationAdapter?.shareBlob && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  tabIndex={-1}
-                  className="db-toolbar-menu-item"
-                  onClick={() => {
-                    setFileShare(true);
-                    closeMenu(true);
-                    setExportError(null);
-                    setDialogOpen(true);
-                  }}
-                >
-                  Share file...
-                </button>
-              )}
-              <button
-                type="button"
-                role="menuitem"
-                tabIndex={-1}
-                className="db-toolbar-menu-item"
-                onClick={handleOpenShareDialog}
-              >
-                Share link with content embedded...
-              </button>
-              {showVideoExport && (
-                <>
-                  <div className="db-toolbar-menu-divider" role="separator" />
-                  <button
-                    type="button"
-                    role="menuitem"
-                    tabIndex={-1}
-                    className="db-toolbar-menu-item"
-                    onClick={() => void handleOpenVideoModal('mp4')}
-                  >
-                    Export video...
-                  </button>
-                  {speech && (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      tabIndex={-1}
-                      className="db-toolbar-menu-item"
-                      onClick={() => {
-                        closeMenu(true);
-                        setAudioDialogOpen(true);
-                      }}
-                    >
-                      Export audio...
-                    </button>
-                  )}
-                  {showAnimatedGifExport && (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      tabIndex={-1}
-                      className="db-toolbar-menu-item"
-                      onClick={() => void handleOpenVideoModal('gif')}
-                    >
-                      Export animated gif...
-                    </button>
-                  )}
-                </>
-              )}
+              {menuItems}
             </div>
           )}
+          {foldedItems(menuItems, 'db-export-toolbar-menu-dropdown')}
         </div>
       )}
 

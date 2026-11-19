@@ -18,6 +18,7 @@ import { MemoryContentContainer } from '@bendyline/squisq/storage';
 import { containerToZip, zipToContainer } from '@bendyline/squisq-formats/container';
 import { getPartBinary, openPackage } from '@bendyline/squisq-formats/ooxml';
 import { deriveWorkspaceId } from '../main/workspace-id.js';
+import { openDocumentAction } from '../../../e2e/helpers/toolbar.js';
 
 test('boots and renders the shell', async ({ launchApp }) => {
   const { window } = await launchApp();
@@ -60,7 +61,7 @@ test('supports hosted players and offers MP4 but not GIF export', async ({ launc
   expect(await window.evaluate(() => globalThis.crossOriginIsolated)).toBe(false);
 
   await tourWelcome(window);
-  await window.getByRole('button', { name: 'Export and share' }).click();
+  await openDocumentAction(window, 'Export');
 
   // The GPL-2.0 ffmpeg.wasm core is no longer packaged in the renderer, so no
   // host supplies an `ffmpegWasm` config and the GIF entry must not render.
@@ -395,7 +396,7 @@ test('export dialog exposes a remembered native target control', async ({ launch
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
   await tourWelcome(window);
-  await window.locator('.db-toolbar-menu-trigger').click();
+  await openDocumentAction(window, 'Export');
   await window.getByRole('menuitem', { name: 'Export document...' }).click();
 
   const exportTarget = window.getByLabel('Export to');
@@ -415,7 +416,7 @@ test('exports Markdown, opens it in DocBlocks, and remembers the open preference
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
   await tourWelcome(window);
 
-  await window.locator('.db-toolbar-menu-trigger').click();
+  await openDocumentAction(window, 'Export');
   await window.getByRole('menuitem', { name: 'Export document...' }).click();
   const dialog = window.getByRole('dialog', { name: 'Export Document' });
   await dialog.getByRole('radio', { name: 'Markdown' }).click();
@@ -435,7 +436,7 @@ test('exports Markdown, opens it in DocBlocks, and remembers the open preference
   await expect(window).toHaveTitle('exported-about - DocBlocks');
 
   await window.reload();
-  await window.getByRole('button', { name: 'Export and share' }).click();
+  await openDocumentAction(window, 'Export');
   await window.getByRole('menuitem', { name: 'Export document...' }).click();
   await expect(window.getByRole('checkbox', { name: 'Open in app after saving' })).toBeChecked();
 });
@@ -451,7 +452,7 @@ test('exports Word with the welcome diagram drawn as a picture, not ASCII art', 
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
   await tourWelcome(window);
 
-  await window.locator('.db-toolbar-menu-trigger').click();
+  await openDocumentAction(window, 'Export');
   await window.getByRole('menuitem', { name: 'Export document...' }).click();
   const dialog = window.getByRole('dialog', { name: 'Export Document' });
   await dialog.getByRole('radio', { name: 'Word' }).click();

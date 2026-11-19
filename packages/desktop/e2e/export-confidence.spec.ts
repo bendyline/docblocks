@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { deriveWorkspaceId } from '../main/workspace-id.js';
 import { expect, test, tourWelcome } from './fixtures.js';
+import { openDocumentAction } from '../../../e2e/helpers/toolbar.js';
 
 test('opens the confirmed saved export on request without automatic open', async ({
   launchApp,
@@ -26,7 +27,7 @@ test('opens the confirmed saved export on request without automatic open', async
   );
   const { window } = await launchApp();
   await tourWelcome(window);
-  await window.getByRole('button', { name: 'Export and share' }).click();
+  await openDocumentAction(window, 'Export');
   await window.getByRole('menuitem', { name: 'Export document...' }).click();
   const dialog = window.getByRole('dialog', { name: 'Export Document' });
   await dialog.getByRole('radio', { name: 'Markdown' }).click();

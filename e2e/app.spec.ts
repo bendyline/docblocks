@@ -414,11 +414,12 @@ test.describe('DocBlocks App', () => {
     ).toBeVisible();
     const newFileButton = toolbar.getByRole('button', { name: 'New File' });
     const newFolderButton = toolbar.getByRole('button', { name: 'New Folder' });
-    // Shell glyphs are Lucide outlines at one stroke weight (icons.tsx).
-    const newFileIcon = newFileButton.locator('svg.lucide-file-plus');
+    // Shell glyphs are Lucide outlines at one stroke weight (icons.tsx). New
+    // File and New Folder wear a corner sparkle, so neither reads as Import.
+    const newFileIcon = newFileButton.locator('svg.lucide-file-sparkle');
     await expect(newFileIcon).toBeVisible();
     await expect(newFileIcon).toHaveAttribute('stroke-width', '1.75');
-    await expect(newFolderButton.locator('svg.lucide-folder-plus')).toBeVisible();
+    await expect(newFolderButton.locator('svg.lucide-folder-sparkle')).toBeVisible();
 
     await expect(page.locator('.db-ws-settings-btn svg.lucide-settings-2')).toBeVisible();
   });
@@ -1334,7 +1335,7 @@ test.describe('Workspace picker', () => {
     const dropdown = page.locator('.db-workspace-dropdown');
     const newWorkspace = dropdown.getByRole('button', { name: 'New Workspace' });
     await expect(newWorkspace).toBeVisible();
-    await expect(newWorkspace.locator('svg.lucide-folder-plus')).toBeVisible();
+    await expect(newWorkspace.locator('svg.lucide-folder-sparkle')).toBeVisible();
   });
 
   test('dropdown closes on outside click', async ({ page }) => {

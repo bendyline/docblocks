@@ -375,6 +375,49 @@ test.describe('adaptive shell on a phone', () => {
     }
   });
 
+  test('folds the document actions into one drill-down menu behind a single divider', async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
+    await openWelcomeDocument(page);
+
+    const group = page.getByRole('group', { name: 'Document actions' });
+    await expect(group).toHaveAttribute('data-toolbar-folded', 'true');
+    // The quick tools stay on the row.
+    await expect(page.getByRole('button', { name: 'Find in document' })).toBeVisible();
+    await expect(page.locator('.squisq-toolbar > .squisq-view-menu')).toBeVisible();
+    // One divider, the group's, drawn before all of the document actions;
+    // Export no longer draws its own.
+    await expect(group.locator(':scope > .squisq-toolbar-separator')).toBeVisible();
+    expect(
+      await group
+        .locator('.db-export-toolbar')
+        .evaluate((element) => getComputedStyle(element).borderLeftWidth),
+    ).toBe('0px');
+    await expect(page.getByRole('button', { name: 'Export and share' })).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Document actions' }).click();
+    const menu = page.getByRole('menu', { name: 'Document actions' });
+    await expect(menu.getByRole('menuitem', { name: 'Document settings' })).toBeVisible();
+    await menu.getByRole('menuitem', { name: 'Export' }).click();
+
+    const exportMenu = page.getByRole('menu', { name: 'Export' });
+    await expect(
+      exportMenu.getByRole('menuitem', { name: /back to document actions/ }),
+    ).toBeVisible();
+    const exportDocument = exportMenu.getByRole('menuitem', { name: 'Export document...' });
+    await expect(exportDocument).toBeVisible();
+    const viewport = page.viewportSize();
+    const box = await exportMenu.boundingBox();
+    if (!viewport || !box) throw new Error('Export submenu is not laid out');
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
+
+    await exportDocument.click();
+    await expect(page.locator('.squisq-toolbar-document-menu')).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: /export/i })).toBeVisible();
+  });
+
   test('keeps the document controls on one row in a Use mode, with Export on screen', async ({
     page,
   }, testInfo) => {
@@ -383,18 +426,22 @@ test.describe('adaptive shell on a phone', () => {
     await page.locator('.squisq-toolbar-use-tab .squisq-toolbar-view-tab').click();
     await expect(page.locator('.squisq-toolbar > .squisq-preview-controls')).toBeVisible();
 
-    const exportTrigger = page.getByRole('button', { name: 'Export and share', exact: true });
+    // The document actions stay folded, as they were in Write: their menu's
+    // trigger ends the row and reaches Export.
+    const trigger = page.getByRole('button', { name: 'Document actions', exact: true });
     const viewport = page.viewportSize();
     if (!viewport) throw new Error('no viewport');
-    const triggerBox = await exportTrigger.boundingBox();
-    if (!triggerBox) throw new Error('Export trigger not laid out');
-    // Export ends its row at the right edge rather than starting a row alone.
+    const triggerBox = await trigger.boundingBox();
+    if (!triggerBox) throw new Error('Document actions trigger not laid out');
+    // The row ends at the right edge rather than starting a row alone.
     expect(viewport.width - (triggerBox.x + triggerBox.width)).toBeLessThanOrEqual(2);
     const viewMenu = await page.locator('.squisq-toolbar > .squisq-view-menu').boundingBox();
     expect(viewMenu?.y).toBe(triggerBox.y);
 
-    await exportTrigger.click();
-    const menu = await page.locator('.db-toolbar-menu-dropdown').boundingBox();
+    await trigger.click();
+    await page.getByRole('menuitem', { name: 'Export' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Export document...' })).toBeVisible();
+    const menu = await page.locator('.squisq-toolbar-document-menu').boundingBox();
     if (!menu) throw new Error('Export menu did not open');
     expect(menu.x).toBeGreaterThanOrEqual(0);
     expect(menu.x + menu.width).toBeLessThanOrEqual(viewport.width + 1);

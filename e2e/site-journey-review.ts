@@ -2715,7 +2715,17 @@ async function phonePhase(
 
     await step('phone:export', page, async () => {
       await closeOverlays(page);
-      await page.getByRole('button', { name: 'Export and share' }).tap();
+      // A phone row folds the document actions into one Document actions menu.
+      const folded = page.getByRole('button', { name: 'Document actions', exact: true });
+      if (await folded.isVisible()) {
+        await folded.tap();
+        await page
+          .locator('.squisq-toolbar-document-menu')
+          .getByRole('menuitem', { name: 'Export', exact: true })
+          .tap();
+      } else {
+        await page.getByRole('button', { name: 'Export and share' }).tap();
+      }
       await pause(page, 400);
       await shoot(page, 'phone-export-menu');
       await page.getByRole('menuitem', { name: 'Export document...' }).tap();

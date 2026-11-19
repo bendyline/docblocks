@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { useEditorContext } from '@bendyline/squisq-editor-react/shell';
+import { useEditorContext, useToolbarDocumentAction } from '@bendyline/squisq-editor-react/shell';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import { docToPptx } from '@bendyline/squisq-formats/pptx';
 import { readFrontmatterThemeId } from '@bendyline/squisq/markdown';
@@ -117,6 +117,20 @@ export function VscodeExportButton({
     setDialogOpen(true);
     void refreshDestination(dialogInitial);
   }, [dialogInitial, refreshDestination, selectedFile]);
+
+  // One of Squisq's toolbar document actions: on a narrow toolbar the button
+  // folds into the Document actions menu, whose Export row opens the dialog.
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const { folded } = useToolbarDocumentAction(
+    {
+      id: 'docblocks-export',
+      label: 'Export',
+      icon: <ExportGlyph />,
+      disabled: exporting,
+      onSelect: handleOpenDialog,
+    },
+    buttonRef,
+  );
 
   const handleCloseDialog = useCallback(() => {
     destinationRequestRef.current += 1;
@@ -253,8 +267,9 @@ export function VscodeExportButton({
   return (
     <>
       <button
+        ref={buttonRef}
         type="button"
-        className="squisq-toolbar-button db-toolbar-export-trigger"
+        className={`squisq-toolbar-button db-toolbar-export-trigger${folded ? ' squisq-toolbar-button--overflowed' : ''}`}
         onClick={handleOpenDialog}
         disabled={exporting}
         aria-label="Export document"

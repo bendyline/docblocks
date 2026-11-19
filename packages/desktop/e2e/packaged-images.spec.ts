@@ -22,6 +22,7 @@ import path from 'node:path';
 import type { Locator, Page } from '@playwright/test';
 import type { AiImageAccess, AiImageModel, AiModelInfo } from '@bendyline/docblocks/host';
 import { expect, test } from './packaged-fixtures.js';
+import { openDocumentAction } from '../../../e2e/helpers/toolbar.js';
 
 const real = process.env.DOCBLOCKS_E2E_REAL_IMAGES === '1';
 const imageModelDir = process.env.DOCBLOCKS_E2E_IMAGE_MODEL_DIR?.trim();
@@ -130,7 +131,7 @@ async function openDocument(window: Page, name: string, readyText: string): Prom
 }
 
 async function openAiMenuItem(window: Page, name: string): Promise<void> {
-  await window.getByRole('button', { name: 'AI actions' }).click();
+  await openDocumentAction(window, 'AI');
   const item = window.getByRole('menuitem', { name });
   await expect(item).toBeEnabled();
   await item.click();

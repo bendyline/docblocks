@@ -12,6 +12,7 @@ import type { AudioFileEncoder, AudioFileFormat } from '@bendyline/squisq-video-
 import type { MediaClip, MediaProvider } from '@bendyline/squisq/schemas';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import { buildVideoExportDoc } from '../Export/video-export-doc.js';
+import { synthesizeResumably, watchPageInterruptions } from './resumable-synthesis.js';
 import { planSpeech } from './speakable-text.js';
 
 export const AUDIO_FORMAT_LABELS: Readonly<Record<AudioFileFormat, string>> = {
@@ -96,7 +97,11 @@ export async function exportNarrationAudio(input: {
   }
 }
 
-/** Narrate the document with the narration voice, straight into the encoder. */
+/**
+ * Narrate the document with the narration voice, straight into the encoder.
+ * If the app leaves the screen partway, narration continues where it stopped
+ * once the app is back.
+ */
 export async function exportSpokenAudio(input: {
   readonly markdown: string;
   readonly speech: DocBlocksHostSpeechAPI;
@@ -109,24 +114,25 @@ export async function exportSpokenAudio(input: {
   const plan = await planSpeech(input.markdown);
   if (plan.segments.length === 0) throw new Error('There is nothing to read aloud.');
   const encoder = await encoderFor(input.format, 24_000, 1);
+  const signal = input.signal ?? new AbortController().signal;
+  const page = watchPageInterruptions(document);
   try {
     let appending: Promise<void> = Promise.resolve();
     for (const [index, segment] of plan.segments.entries()) {
-      if (input.signal?.aborted) break;
+      if (signal.aborted) break;
       input.onProgress?.(index, plan.segments.length);
-      const handle = synthesize({ text: segment.text }, (event) => {
-        if (event.kind !== 'chunk') return;
-        const samples = new Float32Array(event.chunk.pcm);
-        appending = appending.then(() => encoder.append([samples]));
+      // A stop the listener did not ask for (the app left the screen) resumes
+      // here rather than ending the file early.
+      await synthesizeResumably({
+        text: segment.text,
+        synthesize,
+        page,
+        signal,
+        onChunk: (chunk) => {
+          const samples = new Float32Array(chunk.pcm);
+          appending = appending.then(() => encoder.append([samples]));
+        },
       });
-      const onAbort = () => handle.cancel();
-      input.signal?.addEventListener('abort', onAbort, { once: true });
-      const result = await handle.done;
-      input.signal?.removeEventListener('abort', onAbort);
-      if (!result.ok) {
-        if (result.error.code === 'cancelled') break;
-        throw new Error(result.error.message);
-      }
     }
     await appending;
     input.onProgress?.(plan.segments.length, plan.segments.length);
@@ -134,5 +140,7 @@ export async function exportSpokenAudio(input: {
   } catch (error) {
     await encoder.cancel().catch(() => undefined);
     throw error;
+  } finally {
+    page.dispose();
   }
 }

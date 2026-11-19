@@ -44,7 +44,7 @@
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>DocBlocks uses the camera only when you choose Take Photo or Video to add a picture or clip to a document.</string>
+	<string>DocBlocks uses the camera only while you take a photo, record a video, or record a narration to add to a document.</string>
 	<key>NSUbiquitousContainers</key>
 	<dict>
 		<key>iCloud.com.bendyline.docblocks</key>
@@ -58,7 +58,7 @@
 		</dict>
 	</dict>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>DocBlocks uses the microphone only while you dictate, which is transcribed on this device, or to record sound for a video you take to add to a document.</string>
+	<string>DocBlocks uses the microphone only while you dictate, which is transcribed on this device, or while you record audio, video, or a narration to add to a document.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>DocBlocks adds an image or video to your photo library only when you choose to save an export there.</string>
 	<key>UIApplicationSceneManifest</key>

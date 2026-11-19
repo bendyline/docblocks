@@ -6,6 +6,10 @@
  *
  * Audio streams straight into Squisq's encoder as each sentence arrives, so a
  * long document never sits in memory as raw float samples.
+ *
+ * The screen stays on while it runs. If the app leaves the screen anyway (the
+ * power button, another app), a phone stops speech; generation then waits
+ * and picks up after the last sentence it heard once the app is back.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -14,13 +18,21 @@ import {
   buildNarrationSavePlan,
   executeNarrationSave,
 } from '@bendyline/squisq-editor-react/teleprompter';
-import type { DocBlocksHostSpeechAPI, SpeechSynthesisHandle } from '@bendyline/docblocks/host';
+import type { DocBlocksHostSpeechAPI } from '@bendyline/docblocks/host';
+import { useScreenWakeLock } from '../hooks/screen-wake-lock.js';
+import { synthesizeResumably, watchPageInterruptions } from './resumable-synthesis.js';
 import { planSpeech } from './speakable-text.js';
 import { buildTtsAlignment, spokenSpanForChunk, type SpokenSpan } from './tts-narration.js';
 
 export type GenerateNarrationState =
   | { readonly phase: 'idle' }
-  | { readonly phase: 'generating'; readonly done: number; readonly total: number }
+  | {
+      readonly phase: 'generating';
+      readonly done: number;
+      readonly total: number;
+      /** The app left the screen partway; this part continues where it stopped. */
+      readonly resuming: boolean;
+    }
   | { readonly phase: 'saving' }
   | { readonly phase: 'done'; readonly durationSec: number }
   | { readonly phase: 'error'; readonly message: string };
@@ -52,40 +64,32 @@ export function useGenerateNarration(speech: DocBlocksHostSpeechAPI): GenerateNa
   const [state, setState] = useState<GenerateNarrationState>({ phase: 'idle' });
   const sourceRef = useRef(markdownSource);
   sourceRef.current = markdownSource;
-  const run = useRef<{ cancelled: boolean; handle: SpeechSynthesisHandle | null } | null>(null);
+  const run = useRef<AbortController | null>(null);
+  useScreenWakeLock(state.phase === 'generating' || state.phase === 'saving');
 
   const cancel = useCallback(() => {
-    if (run.current) {
-      run.current.cancelled = true;
-      run.current.handle?.cancel();
-      run.current = null;
-    }
+    run.current?.abort();
+    run.current = null;
     setState({ phase: 'idle' });
   }, []);
 
-  useEffect(
-    () => () => {
-      if (run.current) {
-        run.current.cancelled = true;
-        run.current.handle?.cancel();
-      }
-    },
-    [],
-  );
+  useEffect(() => () => run.current?.abort(), []);
 
   const generate = useCallback(() => {
     const synthesize = speech.synthesize;
     if (!synthesize || !mediaProvider || run.current) return;
-    const current = { cancelled: false, handle: null as SpeechSynthesisHandle | null };
+    const current = new AbortController();
+    const { signal } = current;
     run.current = current;
-    setState({ phase: 'generating', done: 0, total: 1 });
+    const page = watchPageInterruptions(document);
+    setState({ phase: 'generating', done: 0, total: 1, resuming: false });
 
     void (async () => {
       const [plan, { createAudioFileEncoder }] = await Promise.all([
         planSpeech(sourceRef.current),
         import('@bendyline/squisq-video-react/encoder'),
       ]);
-      if (current.cancelled) return;
+      if (signal.aborted) return;
       if (plan.segments.length === 0) throw new Error('There is nothing to narrate yet.');
       const encoder = await createAudioFileEncoder({
         format: 'opus-webm',
@@ -97,24 +101,35 @@ export function useGenerateNarration(speech: DocBlocksHostSpeechAPI): GenerateNa
         let elapsed = 0;
         // Appends are ordered: each waits for the one before it.
         let appending: Promise<void> = Promise.resolve();
+        const total = plan.segments.length;
         for (const [index, segment] of plan.segments.entries()) {
-          if (current.cancelled) return;
-          setState({ phase: 'generating', done: index, total: plan.segments.length });
-          const handle = synthesize({ text: segment.text }, (event) => {
-            if (event.kind !== 'chunk' || current.cancelled) return;
-            const { chunk } = event;
-            spans.push(spokenSpanForChunk(chunk, segment, elapsed));
-            elapsed += chunk.durationSec;
-            const samples = new Float32Array(chunk.pcm);
-            appending = appending.then(() => encoder.append([samples]));
+          if (signal.aborted) return;
+          setState({ phase: 'generating', done: index, total, resuming: false });
+          let resuming = false;
+          await synthesizeResumably({
+            text: segment.text,
+            synthesize,
+            page,
+            signal,
+            onInterrupted: () => {
+              resuming = true;
+              setState({ phase: 'generating', done: index, total, resuming: true });
+            },
+            onChunk: (chunk) => {
+              if (resuming) {
+                resuming = false;
+                setState({ phase: 'generating', done: index, total, resuming: false });
+              }
+              spans.push(spokenSpanForChunk(chunk, segment, elapsed));
+              elapsed += chunk.durationSec;
+              const samples = new Float32Array(chunk.pcm);
+              appending = appending.then(() => encoder.append([samples]));
+            },
           });
-          current.handle = handle;
-          const result = await handle.done;
-          if (current.cancelled) return;
-          if (!result.ok) throw new Error(result.error.message);
+          if (signal.aborted) return;
         }
         await appending;
-        if (current.cancelled) return;
+        if (signal.aborted) return;
         setState({ phase: 'saving' });
         const audio = await encoder.finish();
         const savePlan = buildNarrationSavePlan({
@@ -137,20 +152,22 @@ export function useGenerateNarration(speech: DocBlocksHostSpeechAPI): GenerateNa
             bumpMediaRevision,
           },
         );
-        if (current.cancelled) return;
+        if (signal.aborted) return;
         run.current = null;
         setState({ phase: 'done', durationSec: elapsed });
       } finally {
-        if (current.cancelled) await encoder.cancel().catch(() => undefined);
+        if (signal.aborted) await encoder.cancel().catch(() => undefined);
       }
-    })().catch((error: unknown) => {
-      if (current.cancelled) return;
-      run.current = null;
-      setState({
-        phase: 'error',
-        message: error instanceof Error ? error.message : 'Generating narration failed.',
-      });
-    });
+    })()
+      .catch((error: unknown) => {
+        if (signal.aborted) return;
+        run.current = null;
+        setState({
+          phase: 'error',
+          message: error instanceof Error ? error.message : 'Generating narration failed.',
+        });
+      })
+      .finally(() => page.dispose());
   }, [bumpMediaRevision, mediaProvider, setMarkdownSource, speech, workspaceContainer]);
 
   const reset = useCallback(() => {

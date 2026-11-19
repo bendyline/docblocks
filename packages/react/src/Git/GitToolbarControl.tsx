@@ -5,13 +5,16 @@
  * small dropdown: view working-tree changes, per-file history, and "Open
  * on <host>" when a web remote is known. A dot overlay marks the selected
  * file as modified. Null-renders without a git context, a repository, or a
- * selected file. Deliberately has no editor dependency.
+ * selected file. Deliberately has no editor-context dependency; it joins
+ * Squisq's toolbar document actions, folding into their menu on a narrow
+ * row, when it renders in that slot.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { useGitContext } from './GitContext.js';
 import { isFileDirty } from './git-status.js';
 import { useMenuKeyboard } from './useMenuKeyboard.js';
+import { useDocumentActionMenu } from '../components/useDocumentActionMenu.js';
 
 export interface GitToolbarControlProps {
   /** Currently selected file path (slash-prefixed), or null. */
@@ -23,8 +26,21 @@ export function GitToolbarControl({ selectedFile }: GitToolbarControlProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   /** Wraps trigger + menu — the outside-click hit test, not the menu itself. */
   const rootRef = useRef<HTMLDivElement>(null);
-  const { menuRef, triggerRef, handleMenuKeyDown, handleTriggerKeyDown, closeMenu } =
-    useMenuKeyboard(menuOpen, setMenuOpen);
+  const {
+    menuRef,
+    triggerRef,
+    handleMenuKeyDown,
+    handleTriggerKeyDown,
+    closeMenu: closeInlineMenu,
+  } = useMenuKeyboard(menuOpen, setMenuOpen);
+  const offered = Boolean(git?.repo && selectedFile);
+  const { folded, closeMenu, foldedItems } = useDocumentActionMenu(
+    offered ? { id: 'docblocks-git', label: 'Git', icon: <BranchGlyph />, submenu: true } : null,
+    rootRef,
+    menuOpen,
+    setMenuOpen,
+    closeInlineMenu,
+  );
 
   // Close on outside click (same pointerdown pattern as ExportToolbarControls).
   useEffect(() => {
@@ -57,22 +73,61 @@ export function GitToolbarControl({ selectedFile }: GitToolbarControlProps) {
     git.openOnRemote(selectedFile);
   };
 
+  // The same items fill the control's own dropdown and, when Squisq has
+  // folded the document actions, its row's submenu there.
+  const menuItems = (
+    <>
+      <button
+        type="button"
+        role="menuitem"
+        tabIndex={-1}
+        className="db-toolbar-menu-item"
+        disabled={!dirty}
+        onClick={openDiff}
+      >
+        View changes
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        tabIndex={-1}
+        className="db-toolbar-menu-item"
+        onClick={openHistory}
+      >
+        File history…
+      </button>
+      {git.remoteWeb && (
+        <button
+          type="button"
+          role="menuitem"
+          tabIndex={-1}
+          className="db-toolbar-menu-item"
+          onClick={openOnRemote}
+        >
+          Open on {git.remoteWeb.host}
+        </button>
+      )}
+    </>
+  );
+
   return (
     <div className="db-toolbar-menu" ref={rootRef}>
-      <button
-        ref={triggerRef}
-        type="button"
-        className="squisq-toolbar-button db-git-toolbar-trigger"
-        onClick={() => setMenuOpen((prev) => !prev)}
-        onKeyDown={handleTriggerKeyDown}
-        aria-label={label}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        data-tooltip={label}
-      >
-        <BranchGlyph />
-        {dirty && <span className="db-git-toolbar-dot" aria-hidden="true" />}
-      </button>
+      {!folded && (
+        <button
+          ref={triggerRef}
+          type="button"
+          className="squisq-toolbar-button db-git-toolbar-trigger"
+          onClick={() => setMenuOpen((prev) => !prev)}
+          onKeyDown={handleTriggerKeyDown}
+          aria-label={label}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          data-tooltip={label}
+        >
+          <BranchGlyph />
+          {dirty && <span className="db-git-toolbar-dot" aria-hidden="true" />}
+        </button>
+      )}
 
       {menuOpen && (
         <div
@@ -82,38 +137,10 @@ export function GitToolbarControl({ selectedFile }: GitToolbarControlProps) {
           aria-label={label}
           onKeyDown={handleMenuKeyDown}
         >
-          <button
-            type="button"
-            role="menuitem"
-            tabIndex={-1}
-            className="db-toolbar-menu-item"
-            disabled={!dirty}
-            onClick={openDiff}
-          >
-            View changes
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            tabIndex={-1}
-            className="db-toolbar-menu-item"
-            onClick={openHistory}
-          >
-            File history…
-          </button>
-          {git.remoteWeb && (
-            <button
-              type="button"
-              role="menuitem"
-              tabIndex={-1}
-              className="db-toolbar-menu-item"
-              onClick={openOnRemote}
-            >
-              Open on {git.remoteWeb.host}
-            </button>
-          )}
+          {menuItems}
         </div>
       )}
+      {foldedItems(menuItems)}
     </div>
   );
 }

@@ -24,6 +24,7 @@ import {
   parsePresentationHints,
   PRESENTATION_HINTS_KEY,
 } from '@bendyline/squisq/transform';
+import { openDocumentAction } from '../../../e2e/helpers/toolbar.js';
 
 const SCRIPT = `# Give your ideas a voice
 
@@ -139,7 +140,7 @@ test('designs dynamic slides from the Summarize toolbar and exports a timed MP4'
     await window.locator('.db-tree-row[data-path$="launch.md"]').click();
     const editor = window.locator('.squisq-editor-content [contenteditable="true"]').first();
     await editor.focus();
-    await window.getByRole('button', { name: 'AI actions' }).click();
+    await openDocumentAction(window, 'AI');
     await window.getByRole('menuitem', { name: 'Add content…' }).click();
     const compose = window.getByRole('dialog', { name: 'Add content with AI' });
     await compose
@@ -151,7 +152,7 @@ test('designs dynamic slides from the Summarize toolbar and exports a timed MP4'
     await expect(compose.getByRole('button', { name: 'Insert', exact: true })).toBeEnabled();
     await compose.getByRole('button', { name: 'Insert', exact: true }).click();
     await expect(editor).toContainText('One document carries');
-    await window.getByRole('button', { name: 'Speech' }).click();
+    await openDocumentAction(window, 'Speech');
     await window.getByRole('menuitem', { name: 'Generate narration…' }).click();
     const generate = window.getByRole('dialog', { name: 'Generate narration' });
     await generate.getByRole('button', { name: 'Generate', exact: true }).click();
@@ -328,7 +329,7 @@ test('designs dynamic slides from the Summarize toolbar and exports a timed MP4'
       return support.supported === true;
     });
     const openVideoExport = async () => {
-      await window.getByRole('button', { name: 'Export and share' }).click();
+      await openDocumentAction(window, 'Export');
       await window.getByRole('menuitem', { name: 'Export video...' }).click();
       const dialog = window.getByRole('dialog', { name: 'Export Video', exact: true });
       await dialog.locator('summary', { hasText: 'Advanced options' }).click();

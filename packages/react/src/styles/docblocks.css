@@ -2134,10 +2134,11 @@ body.db-resizing-sidebar * {
 }
 
 /* The compact editor uses two deliberate toolbar rows: navigation/views on
-   top and actions below. The second row keeps versioning, document settings,
-   Files, and DocBlocks' Export and share control at its right; Squisq's
-   formatting actions fill whatever width is left over and spill the remainder
-   into its measured More menu. */
+   top and actions below. The second row keeps the quick tools (dictation,
+   view options, Find) and the document actions (settings through Export) at
+   its right; Squisq's formatting actions fill whatever width is left over and
+   spill the remainder into its measured More menu, and on a phone the
+   document actions fold into their own Document actions menu. */
 .db-shell--mobile .squisq-toolbar {
   min-height: 88px;
   flex-wrap: wrap;
@@ -2173,12 +2174,20 @@ body.db-resizing-sidebar * {
 
 .db-shell--mobile .squisq-toolbar-overflow,
 .db-shell--mobile .squisq-toolbar > .squisq-toolbar-button,
-.db-shell--mobile .squisq-toolbar > .db-toolbar-menu {
+.db-shell--mobile .squisq-toolbar > .db-toolbar-menu,
+.db-shell--mobile .squisq-toolbar-document-actions > .db-toolbar-menu {
   flex: 0 0 auto;
   /* Hang the menu from the full-width toolbar, like the overflow menu below:
      from its own trigger's right edge, a trigger that wraps to the start of a
      row opens its menu off the left of the screen. */
   position: static;
+}
+
+/* The Attachments toggle opens no menu, and Squisq pins its file-count badge
+   to it with `position: relative`. Static would hand the badge's containing
+   block to the toolbar, landing the count on the row's last button (Export). */
+.db-shell--mobile .squisq-toolbar > .squisq-toolbar-files-toggle {
+  position: relative;
 }
 
 .db-shell--mobile .db-toolbar-menu-dropdown {
@@ -3858,6 +3867,26 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   height: 1px;
   background: var(--db-border);
   margin: 4px 0;
+}
+
+/* In Squisq's document-actions group (AI, speech, Git, Export behind Document
+   settings) the divider is the group's own, drawn once before the whole
+   group, so the menu buttons give up the one Export used to draw. Folded,
+   their triggers are gone and these roots hold only dialogs and the
+   read-aloud transport. The doubled class outranks the compact rule above. */
+.squisq-toolbar-document-actions > .db-toolbar-menu.db-toolbar-menu {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: 0;
+}
+
+.squisq-toolbar-document-actions .db-toolbar-menu-trigger {
+  margin-left: 2px;
+}
+
+/* That divider keeps the look of the one it replaces. */
+.db-shell .squisq-toolbar-document-actions > .squisq-toolbar-separator {
+  background: var(--db-border);
 }
 
 /* ── Export Dialog ───────────────────────────────────────────── */
@@ -6079,10 +6108,15 @@ html:has(.db-shell[data-theme='dark'])
    borders, text, and interaction colors as our other shell menus. The
    contextual template/transition controls need explicit treatment too,
    since they bring their own Squisq surfaces into the popover. */
-html:has(.db-shell) .squisq-toolbar-overflow-menu {
+html:has(.db-shell) .squisq-toolbar-overflow-menu,
+html:has(.db-shell) .squisq-toolbar-document-menu {
   background: var(--db-bg-raised);
   border-color: var(--db-border);
   box-shadow: 0 4px 12px var(--db-shadow);
+}
+
+html:has(.db-shell) .squisq-toolbar-document-menu-divider {
+  background: var(--db-border);
 }
 
 html:has(.db-shell) .squisq-toolbar-overflow-menu--up {

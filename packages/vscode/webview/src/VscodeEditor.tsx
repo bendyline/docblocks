@@ -545,24 +545,24 @@ export function VscodeEditor() {
               <PresentationMaker onClose={onClose} />
             </Suspense>
           )}
-          toolbarSlotRight={
-            <>
-              <FindButton
-                active={findMode}
-                onActiveChange={setFindMode}
-                shortcutLabel={findShortcut}
+          toolbarSlotQuickTools={
+            <FindButton
+              active={findMode}
+              onActiveChange={setFindMode}
+              shortcutLabel={findShortcut}
+            />
+          }
+          toolbarSlotDocumentActions={
+            <Suspense fallback={null}>
+              <VscodeExportButton
+                selectedFile={fileName}
+                mediaContainer={exportBridge.contentContainer}
+                saveBlob={exportBridge.saveBlob}
+                resolveExportTarget={exportBridge.resolveExportTarget}
+                pickExportTarget={exportBridge.pickExportTarget}
+                defaultThemeId={workspaceDefaultThemeId}
               />
-              <Suspense fallback={null}>
-                <VscodeExportButton
-                  selectedFile={fileName}
-                  mediaContainer={exportBridge.contentContainer}
-                  saveBlob={exportBridge.saveBlob}
-                  resolveExportTarget={exportBridge.resolveExportTarget}
-                  pickExportTarget={exportBridge.pickExportTarget}
-                  defaultThemeId={workspaceDefaultThemeId}
-                />
-              </Suspense>
-            </>
+            </Suspense>
           }
         />
       </Suspense>

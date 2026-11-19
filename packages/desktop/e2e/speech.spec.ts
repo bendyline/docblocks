@@ -13,6 +13,7 @@ import { NATIVE_ENGINE_RELEASE } from '@bendyline/gezel-inference/native-release
 
 import { expect, test } from './fixtures.js';
 import { installFakeSpeechModels, writeFakeMicrophoneWav } from './fake-speech.js';
+import { openDocumentAction } from '../../../e2e/helpers/toolbar.js';
 
 const DOCUMENT = ['# Field notes', '', 'The first paragraph is already here.', ''].join('\n');
 
@@ -157,7 +158,7 @@ test('reads the document aloud through the narration utility', async ({
   expect(await speechStatus(window)).toMatchObject({ tts: { state: 'ready' } });
   await openDocument(window, workspaceDir);
 
-  await window.getByRole('button', { name: 'Speech' }).click();
+  await openDocumentAction(window, 'Speech');
   await window.getByRole('menuitem', { name: 'Read aloud' }).click();
   const transport = window.getByRole('group', { name: 'Reading aloud' });
   await expect(transport).toBeVisible();
@@ -221,7 +222,7 @@ test('generates narration into the document folder and exports it as audio', asy
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
   const { file } = await openDocument(window, workspaceDir);
 
-  await window.getByRole('button', { name: 'Speech' }).click();
+  await openDocumentAction(window, 'Speech');
   await window.getByRole('menuitem', { name: 'Generate narration…' }).click();
   const generate = window.getByRole('dialog', { name: 'Generate narration' });
   await generate.getByRole('button', { name: 'Generate' }).click();
@@ -257,7 +258,7 @@ test('generates narration into the document folder and exports it as audio', asy
   expect(sidecar.bookmarks[0]!.time).toBeCloseTo(0.1, 6);
 
   // Export the narration as audio through the remembered target.
-  await window.getByRole('button', { name: 'Export and share' }).click();
+  await openDocumentAction(window, 'Export');
   await window.getByRole('menuitem', { name: 'Export audio...' }).click();
   const exportDialog = window.getByRole('dialog', { name: 'Export audio' });
   await expect(exportDialog).toContainText('narration track');

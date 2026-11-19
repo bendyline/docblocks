@@ -14,6 +14,8 @@ public class DocBlocksMobilePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicke
         CAPPluginMethod(name: "openExternal", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "writeText", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "exportFile", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "printPage", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setKeepAwake", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "takeOpenRequests", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "pickFolder", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "forgetFolder", returnType: CAPPluginReturnPromise)
@@ -28,6 +30,7 @@ public class DocBlocksMobilePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicke
     private var exportStaging: ExportStaging?
     private var exportCall: CAPPluginCall?
     private var exportToken: String?
+    private var stagedPrint: StagedPagePrinter?
     private var registry: WorkspaceRegistry?
     private var folderCall: CAPPluginCall?
     private var startupError: Error?
@@ -54,7 +57,15 @@ public class DocBlocksMobilePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicke
         } catch { startupError = error }
         // The container lookup can block, so it runs on the storage queue; bootstrap waits behind it.
         queue.async { self.connectCloud() }
+        NotificationCenter.default.addObserver(self, selector: #selector(letScreenSleep), name: UIApplication.didEnterBackgroundNotification, object: nil)
     }
+    /// Keeps the screen on while the page holds a screen wake lock (wake-lock.ts), so auto-lock does not cut long work short.
+    @objc func setKeepAwake(_ call: CAPPluginCall) {
+        guard Set(call.options.keys) == ["on"], let on = call.getBool("on") else { call.reject("Invalid wake lock request."); return }
+        DispatchQueue.main.async { UIApplication.shared.isIdleTimerDisabled = on; call.resolve() }
+    }
+    /// In the background the page has released its locks; a page that stopped responding must not keep the screen on when the app returns.
+    @objc private func letScreenSleep() { UIApplication.shared.isIdleTimerDisabled = false }
     private func connectCloud() {
         guard let storage, FileManager.default.ubiquityIdentityToken != nil,
               let container = FileManager.default.url(forUbiquityContainerIdentifier: Self.cloudContainer) else { return }
@@ -153,10 +164,21 @@ public class DocBlocksMobilePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicke
                 try staging.cancel(id); call.resolve()
             case "finish":
                 guard Set(request.keys) == ["op", "transferId", "action"], let id = request["transferId"] as? String, let action = request["action"] as? String,
-                      ["save", "share"].contains(action), exportCall == nil, folderCall == nil, let controller = bridge?.viewController else { throw StorageFailure("busy") }
+                      ["save", "share", "print"].contains(action), exportCall == nil, folderCall == nil, let controller = bridge?.viewController else { throw StorageFailure("busy") }
+                let assets = (bridge as? CapacitorBridge)?.webViewAssetHandler
+                guard action != "print" || assets != nil else { throw StorageFailure("corrupt") }
                 let url = try staging.finish(id)
                 exportCall = call; exportToken = id
-                if action == "save" {
+                if action == "print", let assets {
+                    // The staged page is the editor's text document, which it shows in a frame;
+                    // WKWebView prints only a top-level page, so it loads in one of its own.
+                    let printer = StagedPagePrinter(page: url, assets: assets); stagedPrint = printer
+                    let release = { self.stagedPrint?.close(); self.stagedPrint = nil }
+                    printer.load(in: controller.view) { formatter in
+                        guard let formatter else { release(); self.failSheet("The document could not be printed."); return }
+                        self.presentPrint(formatter, jobName: url.deletingPathExtension().lastPathComponent, from: controller, closed: release)
+                    }
+                } else if action == "save" {
                     let picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true); picker.delegate = self
                     controller.present(picker, animated: true)
                 } else {
@@ -176,6 +198,40 @@ public class DocBlocksMobilePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicke
     private func finishExport(_ outcome: String) {
         let call = exportCall; exportCall = nil; exportToken = nil
         call?.resolve(["outcome": outcome])
+    }
+    private func failSheet(_ message: String, _ error: Error? = nil) {
+        let call = exportCall; exportCall = nil; exportToken = nil
+        call?.reject(message, nil, error)
+    }
+    /// WKWebView ignores window.print(); the page's print() (print.ts) comes here instead.
+    @objc func printPage(_ call: CAPPluginCall) {
+        guard Set(call.options.keys) == ["jobName"], let jobName = call.getString("jobName"), !jobName.isEmpty, jobName.utf16.count <= 255 else { call.reject("Invalid print request."); return }
+        DispatchQueue.main.async {
+            guard self.exportCall == nil, self.folderCall == nil, let webView = self.bridge?.webView, let controller = self.bridge?.viewController else { call.reject("Close the current dialog first."); return }
+            self.exportCall = call
+            // WebKit lays the page out under its print styles for the dialog.
+            self.presentPrint(webView.viewPrintFormatter(), jobName: jobName, from: controller)
+        }
+    }
+    /// The system print dialog for `formatter`; resolves the pending sheet call when it closes.
+    private func presentPrint(_ formatter: UIPrintFormatter, jobName: String, from controller: UIViewController, closed: (() -> Void)? = nil) {
+        let printer = UIPrintInteractionController.shared
+        let info = UIPrintInfo(dictionary: nil)
+        info.outputType = .general; info.jobName = jobName
+        printer.printInfo = info
+        printer.printFormatter = formatter
+        let finished: UIPrintInteractionController.CompletionHandler = { _, completed, error in
+            closed?()
+            if let error { self.failSheet("Printing failed.", error) } else { self.finishExport(completed ? "printed" : "cancelled") }
+        }
+        let presented: Bool
+        if UIDevice.current.userInterfaceIdiom == .pad, let view = controller.view {
+            let anchor = CGRect(x: view.bounds.midX, y: view.safeAreaInsets.top, width: 1, height: 1)
+            presented = printer.present(from: anchor, in: view, animated: true, completionHandler: finished)
+        } else {
+            presented = printer.present(animated: true, completionHandler: finished)
+        }
+        if !presented { closed?(); failSheet("The print dialog could not be opened.") }
     }
     public func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
         if let call = folderCall { folderCall = nil; call.resolve(["workspace": NSNull()]) }
@@ -253,6 +309,57 @@ private final class PackagedEditorBoundary: NSObject, WKScriptMessageHandler, WK
     }
     override func responds(to selector: Selector!) -> Bool { super.responds(to: selector) || original.responds(to: selector) }
     override func forwardingTarget(for selector: Selector!) -> Any? { original.responds(to: selector) ? original : super.forwardingTarget(for: selector) }
+}
+
+/// Loads a staged page in a hidden web view of its own, for printing. JavaScript is off,
+/// nothing persists, and the app's own files (fonts, icons) load as the editor's frame loaded
+/// them, through Capacitor's asset handler.
+private final class StagedPagePrinter: NSObject, WKNavigationDelegate, WKURLSchemeHandler {
+    private static let address = URL(string: "capacitor://localhost/__docblocks-print.html")!
+    private let page: URL
+    private let assets: WKURLSchemeHandler
+    private var webView: WKWebView?
+    private var loaded: ((UIPrintFormatter?) -> Void)?
+    init(page: URL, assets: WKURLSchemeHandler) { self.page = page; self.assets = assets }
+    func load(in host: UIView, _ loaded: @escaping (UIPrintFormatter?) -> Void) {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+        configuration.setURLSchemeHandler(self, forURLScheme: "capacitor")
+        let view = WKWebView(frame: host.bounds, configuration: configuration)
+        // In the window, so WebKit loads and lays it out; hidden, so it is never seen.
+        view.isHidden = true; view.isUserInteractionEnabled = false
+        view.navigationDelegate = self
+        host.addSubview(view)
+        webView = view; self.loaded = loaded
+        view.load(URLRequest(url: Self.address))
+    }
+    func close() {
+        webView?.stopLoading(); webView?.navigationDelegate = nil; webView?.removeFromSuperview(); webView = nil
+        finish(nil)
+    }
+    private func finish(_ formatter: UIPrintFormatter?) {
+        guard let loaded else { return }
+        self.loaded = nil; loaded(formatter)
+    }
+    func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
+        guard task.request.url == Self.address else { assets.webView(webView, start: task); return }
+        do {
+            let data = try Data(contentsOf: page, options: .mappedIfSafe)
+            task.didReceive(HTTPURLResponse(url: Self.address, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/html; charset=utf-8"])!)
+            task.didReceive(data); task.didFinish()
+        } catch { task.didFailWithError(error) }
+    }
+    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {
+        if task.request.url != Self.address { assets.webView(webView, stop: task) }
+    }
+    /// The staged page only; its links and frames never navigate anywhere.
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        decisionHandler(action.request.url == Self.address || action.request.url?.scheme == "about" ? .allow : .cancel)
+    }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { finish(webView.viewPrintFormatter()) }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { finish(nil) }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { finish(nil) }
 }
 
 enum IncomingDocuments {
