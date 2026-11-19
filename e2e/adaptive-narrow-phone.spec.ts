@@ -24,26 +24,31 @@ async function openWelcomeDocument(page: Page): Promise<void> {
   await expect(shell).toHaveAttribute('data-db-drawer', 'closed');
 }
 
-/** Descendants of `container` (and the container) reaching outside `bounds` or the screen. */
+/**
+ * Descendants of `container` (and the container) reaching outside `bounds` or the screen.
+ *
+ * The frame and its descendants are measured in one pass. A popover can still
+ * be settling as it opens (Version history widens when its list finishes
+ * loading), and a frame read a moment before its contents made every
+ * full-width child look like it spilled.
+ */
 async function spillsOutside(container: Locator, bounds?: Locator): Promise<string[]> {
-  const frame = await (bounds ?? container).boundingBox();
-  if (!frame) throw new Error('container not laid out');
-  return container.evaluate(
-    (root, edges) => {
-      const viewport = document.documentElement.clientWidth;
-      const left = Math.max(edges.x, 0);
-      const right = Math.min(edges.x + edges.width, viewport);
-      return [root, ...root.querySelectorAll<HTMLElement>('*')]
-        .filter((node) => {
-          const rect = node.getBoundingClientRect();
-          return (
-            rect.width > 0 && rect.height > 0 && (rect.left < left - 1 || rect.right > right + 1)
-          );
-        })
-        .map((node) => `${node.tagName.toLowerCase()}.${String(node.className).split(' ')[0]}`);
-    },
-    { x: frame.x, width: frame.width },
-  );
+  const boundsHandle = bounds ? await bounds.elementHandle() : null;
+  return container.evaluate((root, boundsElement) => {
+    const edges = (boundsElement ?? root).getBoundingClientRect();
+    if (edges.width === 0 && edges.height === 0) throw new Error('container not laid out');
+    const viewport = document.documentElement.clientWidth;
+    const left = Math.max(edges.left, 0);
+    const right = Math.min(edges.right, viewport);
+    return [root, ...root.querySelectorAll<HTMLElement>('*')]
+      .filter((node) => {
+        const rect = node.getBoundingClientRect();
+        return (
+          rect.width > 0 && rect.height > 0 && (rect.left < left - 1 || rect.right > right + 1)
+        );
+      })
+      .map((node) => `${node.tagName.toLowerCase()}.${String(node.className).split(' ')[0]}`);
+  }, boundsHandle);
 }
 
 test.describe('Chrome on a 360px phone', () => {
