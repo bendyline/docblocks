@@ -55,8 +55,11 @@ async function toolbarControls(page: Page) {
       .filter((child) => child.getBoundingClientRect().top < (viewTabsRect?.bottom ?? 0) - 1)
       .map((child) => child.className.toString());
     const toolbarRect = toolbar.getBoundingClientRect();
-    const exportRect = toolbar
-      .querySelector('[aria-label="Export and share"]')
+    // The row ends in the document actions: Export, or the Document actions
+    // menu it folds into on a short row.
+    const exportRect = [...toolbar.querySelectorAll('[data-toolbar-item="documentActions"] button')]
+      .filter(visible)
+      .at(-1)
       ?.getBoundingClientRect();
     return {
       formatting: [
@@ -84,9 +87,7 @@ test.describe('editor toolbar on a narrow desktop viewport', () => {
     await expect(page.locator('.db-shell')).toHaveClass(/db-shell--desktop-toolbar-wrapped/);
     // The export control is lazy-loaded and renders nothing until its chunk
     // arrives; measure the second row only once it is there.
-    await expect(
-      page.locator('.squisq-toolbar').getByRole('button', { name: 'Export and share' }),
-    ).toBeVisible();
+    await expect(page.locator('.squisq-toolbar .db-export-toolbar')).toBeAttached();
 
     const controls = await toolbarControls(page);
     // The view tabs claim a row of their own, which is what pushes the

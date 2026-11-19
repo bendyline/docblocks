@@ -31,7 +31,8 @@ if platform == 'ios':
     assert 'GezelOfflineSpeechPlugin' in config['packageClassList'], 'Missing offline speech plugin'
     speech = app / 'Frameworks/GezelSpeech.framework'
     assert (speech / 'GezelSpeech').is_file() and (speech / 'PrivacyInfo.xcprivacy').is_file(), 'Missing embedded speech runtime'
-    assert info.get('NSMicrophoneUsageDescription'), 'Missing microphone purpose for dictation'
+    assert info.get('NSMicrophoneUsageDescription'), 'Missing microphone purpose for dictation and recording'
+    assert info.get('NSCameraUsageDescription'), 'Missing camera purpose for recording'
     assert b'DocBlocksAiSmoke' not in (app / 'App').read_bytes(), 'Test runner shipped in release'
 else:
     with zipfile.ZipFile(artifact) as archive:
@@ -50,7 +51,8 @@ else:
         for library in ['libGezelSpeech.so', 'libonnxruntime.so']:
             assert native_prefix + library in archive.namelist(), 'Missing packaged speech runtime'
         manifest = archive.read('base/manifest/AndroidManifest.xml' if artifact.endswith('.aab') else 'AndroidManifest.xml')
-        assert b'RECORD_AUDIO' in manifest or 'RECORD_AUDIO'.encode('utf-16le') in manifest, 'Missing microphone permission for dictation'
+        for permission in ['RECORD_AUDIO', 'android.permission.CAMERA']:
+            assert permission.encode() in manifest or permission.encode('utf-16le') in manifest, 'Missing ' + permission + ' for dictation and recording'
         # AAPT binary XML and bundle protobuf retain string values in UTF-8 or UTF-16.
         for forbidden in ['MANAGE_EXTERNAL_STORAGE', 'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE', 'com.bendyline.docblocks.mobile.tests']:
             assert forbidden.encode() not in manifest and forbidden.encode('utf-16le') not in manifest, forbidden

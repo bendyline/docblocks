@@ -3,6 +3,8 @@ import { native } from './native';
 import { installMobileAi } from './ai';
 import { installMobileSpeech } from './speech';
 import { routeExternalLinks } from './external-links';
+import { installNativePrint } from './print';
+import { installNativeWakeLock } from './wake-lock';
 import { ensureStorageChosen } from './storage-welcome';
 import {
   encodeMobileBytes,
@@ -93,7 +95,8 @@ export async function installMobileHost(): Promise<void> {
       },
       share: async (filename, data) => {
         const outcome = await exportBytes(filename, data, 'share');
-        if (outcome === 'saved') throw new Error('Unexpected native share outcome.');
+        if (outcome === 'saved' || outcome === 'printed')
+          throw new Error('Unexpected native share outcome.');
         return outcome;
       },
     },
@@ -127,6 +130,18 @@ export async function installMobileHost(): Promise<void> {
   };
   (globalThis as typeof globalThis & { docBlocksHost: DocBlocksHostAPI }).docBlocksHost = host;
   routeExternalLinks(openExternal);
+  installNativeWakeLock((on) => native.setKeepAwake({ on }));
+  installNativePrint(
+    {
+      printPage: async (jobName) => {
+        parseMobileExportOutcome(await native.printPage({ jobName }));
+      },
+      printDocument: async (jobName, html) => {
+        await exportBytes(`${jobName}.html`, new TextEncoder().encode(html), 'print');
+      },
+    },
+    reportPrintError,
+  );
   window.addEventListener('pagehide', () => {
     mobileAi?.suspend();
     mobileSpeech?.suspend();
@@ -163,7 +178,7 @@ export async function installMobileHost(): Promise<void> {
 async function exportBytes(
   filename: string,
   data: ArrayBuffer | Uint8Array,
-  action: 'save' | 'share',
+  action: 'save' | 'share' | 'print',
 ) {
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
   const send = (request: MobileExportRequest) =>
@@ -184,6 +199,10 @@ async function exportBytes(
   } finally {
     await send({ op: 'cancel', transferId });
   }
+}
+
+function reportPrintError(error: unknown) {
+  window.alert(error instanceof Error ? error.message : 'The document could not be printed.');
 }
 
 function reportImportError(error: unknown) {

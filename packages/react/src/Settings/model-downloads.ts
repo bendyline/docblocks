@@ -10,6 +10,7 @@ import type {
   SpeechModelInfo,
   SpeechProgress,
 } from '@bendyline/docblocks/host';
+import { holdScreenWakeLock } from '../hooks/screen-wake-lock.js';
 
 interface DownloadHandle<Value> {
   readonly done: Promise<
@@ -60,6 +61,8 @@ class ModelDownload<Item, Progress> {
     const operation = {};
     this.operation = operation;
     this.publish({ ...this.snapshot, active: { item, progress: null }, failure: null });
+    // A phone pauses downloads when the app leaves the screen, so keep it on.
+    const releaseWakeLock = holdScreenWakeLock();
     try {
       const handle = start((progress) => {
         if (this.operation === operation)
@@ -80,6 +83,7 @@ class ModelDownload<Item, Progress> {
         },
       });
     } finally {
+      releaseWakeLock();
       this.handle = null;
       this.operation = null;
       this.publish({ ...this.snapshot, active: null, completed: this.snapshot.completed + 1 });

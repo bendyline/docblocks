@@ -15,6 +15,7 @@ import {
   type DocBlocksHostSpeechAPI,
 } from '@bendyline/docblocks/host';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
+import { useDocumentActionMenu } from '../components/useDocumentActionMenu.js';
 import { GenerateNarrationDialog } from './GenerateNarrationDialog.js';
 import { useReadAloud, type ReadAloud } from './useReadAloud.js';
 import { useSpeechStatus } from './useSpeechStatus.js';
@@ -68,8 +69,23 @@ export function SpeechToolbarControl({
   const [menuOpen, setMenuOpen] = useState(false);
   const [narrationOpen, setNarrationOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const { menuRef, triggerRef, handleMenuKeyDown, handleTriggerKeyDown, closeMenu } =
-    useMenuKeyboard(menuOpen, setMenuOpen);
+  const {
+    menuRef,
+    triggerRef,
+    handleMenuKeyDown,
+    handleTriggerKeyDown,
+    closeMenu: closeInlineMenu,
+  } = useMenuKeyboard(menuOpen, setMenuOpen);
+  const offered = editorMode === 'markdown' && Boolean(speech.synthesize);
+  const { folded, closeMenu, foldedItems } = useDocumentActionMenu(
+    offered
+      ? { id: 'docblocks-speech', label: 'Speech', icon: <SpeakerGlyph />, submenu: true }
+      : null,
+    rootRef,
+    menuOpen,
+    setMenuOpen,
+    closeInlineMenu,
+  );
   const sourceRef = useRef(markdownSource);
   sourceRef.current = markdownSource;
 
@@ -96,30 +112,111 @@ export function SpeechToolbarControl({
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [menuOpen]);
 
-  if (editorMode !== 'markdown' || !speech.synthesize) return null;
+  if (!offered) return null;
 
   const ttsReady = status?.tts.state === 'ready';
   const { state } = readAloud;
   const active = state.phase === 'loading' || state.phase === 'reading';
 
+  // The same items fill the control's own dropdown and, when Squisq has
+  // folded the document actions, its row's submenu there.
+  const menuItems = (
+    <>
+      {status && !ttsReady && (
+        <div className="db-ai-toolbar-status" role="status">
+          {status.tts.reason ?? 'Narration is not ready.'}
+        </div>
+      )}
+      {active ? (
+        <button
+          type="button"
+          role="menuitem"
+          tabIndex={-1}
+          className="db-toolbar-menu-item"
+          onClick={() => {
+            closeMenu(false);
+            readAloud.stop();
+          }}
+        >
+          Stop reading
+        </button>
+      ) : (
+        <button
+          type="button"
+          role="menuitem"
+          tabIndex={-1}
+          className="db-toolbar-menu-item"
+          disabled={!ttsReady}
+          onClick={() => {
+            closeMenu(false);
+            readCurrent();
+          }}
+        >
+          {hasSelection ? 'Read selection aloud' : 'Read aloud'}
+        </button>
+      )}
+      <button
+        type="button"
+        role="menuitem"
+        tabIndex={-1}
+        className="db-toolbar-menu-item"
+        disabled={!ttsReady || readOnly}
+        onClick={() => {
+          closeMenu(false);
+          setNarrationOpen(true);
+        }}
+      >
+        Generate narration…
+      </button>
+      {status && status.tts.state === 'download-required' && (
+        <button
+          type="button"
+          role="menuitem"
+          tabIndex={-1}
+          className="db-toolbar-menu-item"
+          onClick={() => {
+            closeMenu(false);
+            onOpenSettings();
+          }}
+        >
+          Download voices…
+        </button>
+      )}
+      {state.phase === 'error' && (
+        <div className="db-ai-toolbar-status db-settings-ai-error" role="alert">
+          {state.message}
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div className="db-toolbar-menu db-speech-toolbar" ref={rootRef}>
-      <button
-        ref={triggerRef}
-        type="button"
-        className={`squisq-toolbar-button${active ? ' squisq-toolbar-button--active' : ''}`}
-        onClick={() => setMenuOpen((open) => !open)}
-        onKeyDown={handleTriggerKeyDown}
-        aria-label="Speech"
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        data-tooltip="Speech"
-      >
-        <SpeakerGlyph />
-      </button>
+      {!folded && (
+        <button
+          ref={triggerRef}
+          type="button"
+          className={`squisq-toolbar-button${active ? ' squisq-toolbar-button--active' : ''}`}
+          onClick={() => setMenuOpen((open) => !open)}
+          onKeyDown={handleTriggerKeyDown}
+          aria-label="Speech"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          data-tooltip="Speech"
+        >
+          <SpeakerGlyph />
+        </button>
+      )}
 
+      {/* Transient: it stays on the row while Squisq has the document
+          actions folded, and stays out of the measurement that folds them. */}
       {active && (
-        <div className="db-speech-transport" role="group" aria-label="Reading aloud">
+        <div
+          className="db-speech-transport"
+          role="group"
+          aria-label="Reading aloud"
+          data-toolbar-transient=""
+        >
           <button
             type="button"
             className="squisq-toolbar-button"
@@ -189,73 +286,10 @@ export function SpeechToolbarControl({
           aria-label="Speech"
           onKeyDown={handleMenuKeyDown}
         >
-          {status && !ttsReady && (
-            <div className="db-ai-toolbar-status" role="status">
-              {status.tts.reason ?? 'Narration is not ready.'}
-            </div>
-          )}
-          {active ? (
-            <button
-              type="button"
-              role="menuitem"
-              tabIndex={-1}
-              className="db-toolbar-menu-item"
-              onClick={() => {
-                closeMenu(false);
-                readAloud.stop();
-              }}
-            >
-              Stop reading
-            </button>
-          ) : (
-            <button
-              type="button"
-              role="menuitem"
-              tabIndex={-1}
-              className="db-toolbar-menu-item"
-              disabled={!ttsReady}
-              onClick={() => {
-                closeMenu(false);
-                readCurrent();
-              }}
-            >
-              {hasSelection ? 'Read selection aloud' : 'Read aloud'}
-            </button>
-          )}
-          <button
-            type="button"
-            role="menuitem"
-            tabIndex={-1}
-            className="db-toolbar-menu-item"
-            disabled={!ttsReady || readOnly}
-            onClick={() => {
-              closeMenu(false);
-              setNarrationOpen(true);
-            }}
-          >
-            Generate narration…
-          </button>
-          {status && status.tts.state === 'download-required' && (
-            <button
-              type="button"
-              role="menuitem"
-              tabIndex={-1}
-              className="db-toolbar-menu-item"
-              onClick={() => {
-                closeMenu(false);
-                onOpenSettings();
-              }}
-            >
-              Download voices…
-            </button>
-          )}
-          {state.phase === 'error' && (
-            <div className="db-ai-toolbar-status db-settings-ai-error" role="alert">
-              {state.message}
-            </div>
-          )}
+          {menuItems}
         </div>
       )}
+      {foldedItems(menuItems, 'db-speech-toolbar-menu')}
       {narrationOpen && (
         <GenerateNarrationDialog speech={speech} onClose={() => setNarrationOpen(false)} />
       )}

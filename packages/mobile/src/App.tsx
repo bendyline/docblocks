@@ -27,12 +27,26 @@ createRoot(document.getElementById('root')!).render(
       // Native listings re-read every file beneath each folder, so index
       // only once quick-open, search, or the link picker asks for it.
       workspaceIndex="on-demand"
-      // Camera and screen recording are not qualified on native WebViews.
-      // Dictation is: it records only between taps of the microphone button,
-      // under the app's declared microphone permission, and transcribes on
-      // the device.
-      allowRecording={false}
-      allowDictation
+      // Recording, document narration and dictation use the microphone and
+      // camera under the app's declared permissions, and capture only while
+      // the person records. Both WebViews lack a screen picker, so Squisq's
+      // recorder offers no Screen source here. Recordings stay in the
+      // document's folder; dictation transcribes on the device.
+      allowRecording
+      // Present fills the app canvas and nothing else. Neither WebView opens
+      // the synchronized audience window (window.open returns null), and the
+      // app already owns the whole screen, so Full screen only does harm:
+      // Android cancels element fullscreen as it starts, and iOS shows WebKit's
+      // "capacitor://localhost… is in full screen" banner, then leaves the
+      // shell inset by stale safe areas after it exits. It is the only
+      // fullscreen request in the app. With one destination left, the split
+      // button's menu disappears.
+      allowPresentationWindow={false}
+      allowPresentationFullscreen={false}
+      // Narrate's Pop out has no float to offer either: neither WebView opens
+      // popups, and the prompter stops drawing once the app is backgrounded,
+      // so a picture-in-picture video goes blank.
+      allowNarratePopOut={false}
       // index.html's launch splash covers the shell until it has restored the
       // last document, so its interim states never flash past.
       onStartupSettled={dismissSplash}

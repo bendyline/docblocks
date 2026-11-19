@@ -101,7 +101,7 @@ export function welcomeDocumentContent({
     '',
     '## Make your own {[list]}',
     '',
-    '1. Choose **New File**, the page with a plus sign above the file list, and give it a name.',
+    '1. Choose **New File**, the page with a sparkle above the file list, and give it a name.',
     '2. Write a heading and a few sentences.',
     '3. Choose **Slideshow** to present it, or **Export** to share it.',
     '',

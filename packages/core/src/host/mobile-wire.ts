@@ -359,8 +359,14 @@ const mobileExportRequests = {
       data: base64.max(Math.ceil(MOBILE_STORAGE_LIMITS.chunkBytes / 3) * 4),
     })
     .strict(),
+  // `print` opens the system print dialog on a staged standalone HTML page
+  // (mobile's print.ts); the other two hand the file to a picker or sheet.
   finish: z
-    .object({ op: z.literal('finish'), transferId: id, action: z.enum(['save', 'share']) })
+    .object({
+      op: z.literal('finish'),
+      transferId: id,
+      action: z.enum(['save', 'share', 'print']),
+    })
     .strict(),
   cancel: z.object({ op: z.literal('cancel'), transferId: id }).strict(),
 };
@@ -373,11 +379,11 @@ export function parseMobileExportRequest(input: MobileExportRequest): MobileExpo
 export function parseMobileExportToken(input: unknown): string {
   return z.object({ transferId: id }).strict().parse(input).transferId;
 }
-export function parseMobileExportOutcome(
-  input: unknown,
-): 'saved' | 'shared' | 'presented' | 'cancelled' {
+/** How a native picker, share sheet or print dialog closed. */
+export type MobileExportOutcome = 'saved' | 'shared' | 'presented' | 'printed' | 'cancelled';
+export function parseMobileExportOutcome(input: unknown): MobileExportOutcome {
   return z
-    .object({ outcome: z.enum(['saved', 'shared', 'presented', 'cancelled']) })
+    .object({ outcome: z.enum(['saved', 'shared', 'presented', 'printed', 'cancelled']) })
     .strict()
     .parse(input).outcome;
 }

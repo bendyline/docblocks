@@ -24,7 +24,9 @@ test('keeps toolbar controls outside the native caption button area', async ({ l
   await expect.poll(() => window.evaluate(() => globalThis.innerWidth)).toBeLessThan(1_000);
   await expect(window.locator('.db-shell')).toHaveClass(/db-shell--desktop-toolbar-wrapped/);
   await showWriteView(toolbar);
-  await expect(toolbar.getByRole('button', { name: 'Export and share' })).toBeVisible();
+  // The row ends in the document actions; Export's chunk is lazy, so wait for
+  // it before measuring. Folded or not, the group's last button ends the row.
+  await expect(toolbar.locator('.db-export-toolbar')).toBeAttached();
 
   const geometry = await toolbar.evaluate((element) => {
     const toolbarRect = element.getBoundingClientRect();
@@ -47,8 +49,9 @@ test('keeps toolbar controls outside the native caption button area', async ({ l
           right: rect.right,
         };
       });
-    const exportRect = element
-      .querySelector('[aria-label="Export and share"]')
+    const exportRect = [...element.querySelectorAll('[data-toolbar-item="documentActions"] button')]
+      .filter((button) => button.getBoundingClientRect().width > 0)
+      .at(-1)
       ?.getBoundingClientRect();
     const editorHeaderBorder = editorHeader
       ? Number.parseFloat(getComputedStyle(editorHeader).borderBottomWidth)
@@ -132,7 +135,9 @@ test('keeps the compact toolbar visible after the sidebar is collapsed', async (
   const shell = window.locator('.db-shell');
   await expect(shell).toHaveClass(/db-shell--mobile/);
   await expect(window.locator('.db-shell-sidebar')).not.toBeVisible();
-  await expect(toolbar.getByRole('button', { name: 'Export and share' })).toBeVisible();
+  // The row ends in the document actions; Export's chunk is lazy, so wait for
+  // it before measuring. Folded or not, the group's last button ends the row.
+  await expect(toolbar.locator('.db-export-toolbar')).toBeAttached();
   await expect(
     toolbar.locator('.squisq-toolbar-actions .squisq-toolbar-button').first(),
   ).toBeVisible();
@@ -146,8 +151,9 @@ test('keeps the compact toolbar visible after the sidebar is collapsed', async (
     const actionRect = element
       .querySelector('.squisq-toolbar-actions .squisq-toolbar-button')
       ?.getBoundingClientRect();
-    const exportRect = element
-      .querySelector('[aria-label="Export and share"]')
+    const exportRect = [...element.querySelectorAll('[data-toolbar-item="documentActions"] button')]
+      .filter((button) => button.getBoundingClientRect().width > 0)
+      .at(-1)
       ?.getBoundingClientRect();
     return {
       devicePixelRatio: globalThis.devicePixelRatio,

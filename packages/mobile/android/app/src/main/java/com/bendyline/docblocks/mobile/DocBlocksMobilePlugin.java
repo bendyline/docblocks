@@ -27,6 +27,8 @@ public class DocBlocksMobilePlugin extends Plugin {
     private ExportStaging exportStaging;
     private String exportToken;
     private Path exportPath;
+    /** Whether the system print dialog is up; one at a time. */
+    private volatile boolean printing;
     private final ExecutorService queue = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(32));
     private void submit(PluginCall call, Runnable action) {
         try { queue.execute(action); }
@@ -220,11 +222,23 @@ public class DocBlocksMobilePlugin extends Plugin {
                     String id = requiredString(request, "transferId", 256); if (id.equals(exportToken)) throw new IllegalStateException("Picker is active"); exportStaging.cancel(id); call.resolve(); break;
                 case "finish":
                     keys(request, "op", "transferId", "action");
-                    if (exportToken != null || pickingFolder) throw new IllegalStateException("Picker is active");
+                    if (exportToken != null || pickingFolder || printing) throw new IllegalStateException("Picker is active");
                     String transfer = requiredString(request, "transferId", 256), action = requiredString(request, "action", 8);
-                    if (!Arrays.asList("save", "share").contains(action)) throw new IllegalArgumentException();
+                    if (!Arrays.asList("save", "share", "print").contains(action)) throw new IllegalArgumentException();
                     Path path = exportStaging.finish(transfer);
-                    if (action.equals("share")) {
+                    if (action.equals("print")) {
+                        // The staged page is the editor's text document, which it shows in a frame.
+                        // It stays staged (cancel is refused) until the dialog closes.
+                        printing = true; exportToken = transfer;
+                        String jobName = path.getFileName().toString().replaceFirst("\\.html$", "");
+                        NativePrint.Failed failed = error -> { printing = false; exportToken = null; call.reject("The document could not be printed.", error); };
+                        getActivity().runOnUiThread(() -> {
+                            try {
+                                NativePrint.printStaged(getActivity(), getBridge(), path, jobName,
+                                    printed -> { printing = false; exportToken = null; call.resolve(new JSObject().put("outcome", printed ? "printed" : "cancelled")); }, failed);
+                            } catch (RuntimeException e) { failed.run(e); }
+                        });
+                    } else if (action.equals("share")) {
                         Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", path.toFile());
                         Intent intent = new Intent(Intent.ACTION_SEND).setType(mime(path)).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                         intent.setClipData(ClipData.newRawUri("DocBlocks export", uri));
@@ -273,6 +287,34 @@ public class DocBlocksMobilePlugin extends Plugin {
     private static int requiredNumber(JSObject value, String key, int max) {
         Object raw = value.opt(key); if (!(raw instanceof Number)) throw new IllegalArgumentException(); double number = ((Number)raw).doubleValue();
         if (!Double.isFinite(number) || number != Math.rint(number) || number < 0 || number > max) throw new IllegalArgumentException(); return (int)number;
+    }
+    /** Android WebView ignores window.print(); the page's print() (print.ts) comes here instead. */
+    @PluginMethod public void printPage(PluginCall call) {
+        String jobName = call.getString("jobName");
+        if (call.getData().length() != 1 || jobName == null || jobName.isEmpty() || jobName.length() > 255) { call.reject("Invalid print request."); return; }
+        if (printing || exportToken != null || pickingFolder) { call.reject("Close the current dialog first."); return; }
+        printing = true;
+        getActivity().runOnUiThread(() -> {
+            // WebView lays the page out under its print styles for the dialog.
+            try { NativePrint.print(getActivity(), getBridge().getWebView(), jobName, printed -> { printing = false; call.resolve(new JSObject().put("outcome", printed ? "printed" : "cancelled")); }); }
+            catch (RuntimeException e) { printing = false; call.reject("The print dialog could not be opened.", e); }
+        });
+    }
+    /** Keeps the screen on while the page holds a screen wake lock (wake-lock.ts), so auto-lock does not cut long work short. */
+    @PluginMethod public void setKeepAwake(PluginCall call) {
+        Boolean on = call.getBoolean("on");
+        if (call.getData().length() != 1 || on == null) { call.reject("Invalid wake lock request."); return; }
+        getActivity().runOnUiThread(() -> { keepScreenOn(on); call.resolve(); });
+    }
+    /**
+     * Fully off screen, the page has released its locks; a page that stopped responding must not keep the screen on
+     * when the app returns. Not on pause: a share sheet or print dialog pauses the app while the page stays visible.
+     */
+    @Override protected void handleOnStop() { keepScreenOn(false); }
+    private void keepScreenOn(boolean on) {
+        android.view.Window window = getActivity().getWindow();
+        if (on) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
     @PluginMethod public void backUnhandled(PluginCall call) {
         if (call.getData().length() != 0) { call.reject("Invalid Back request."); return; }

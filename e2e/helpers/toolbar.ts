@@ -134,3 +134,48 @@ export async function openInsertMenu(page: Page): Promise<void> {
   await inline.click();
   await expect(page.locator('.squisq-insert-menu').first()).toBeVisible();
 }
+
+/** Each document action's own toolbar button, by accessible name. */
+const DOCUMENT_ACTION_BUTTONS = {
+  AI: 'AI actions',
+  Speech: 'Speech',
+  Git: 'Git actions',
+  Export: 'Export and share',
+} as const;
+
+/**
+ * Open the menu of one of the toolbar's document actions (AI, Speech, Git or
+ * Export) wherever the toolbar put it: behind its own button, or behind its
+ * row in the Document actions menu Squisq folds them all into when the row
+ * runs short. The caller then picks a `menuitem` as usual.
+ *
+ * As with the Attachments toggle, there is no settled moment to wait for: a
+ * new toolbar lays every control out, then folds the group a measure pass
+ * later, so a button can pass a check and be gone before the click lands.
+ * Each attempt clicks on a short limit and the next one looks again.
+ */
+export async function openDocumentAction(
+  page: Page,
+  action: keyof typeof DOCUMENT_ACTION_BUTTONS,
+): Promise<void> {
+  const toolbar = page.locator('.squisq-toolbar');
+  const button = toolbar.getByRole('button', { name: DOCUMENT_ACTION_BUTTONS[action] });
+  const folded = toolbar.getByRole('button', { name: 'Document actions', exact: true });
+  const foldedMenu = page.locator('.squisq-toolbar-document-menu');
+  const open = page
+    .getByRole('menu', { name: DOCUMENT_ACTION_BUTTONS[action] })
+    .or(page.locator(`.squisq-toolbar-document-menu[aria-label="${action}"]`))
+    .first();
+  const timeout = 2_000;
+
+  await expect(async () => {
+    if (await open.isVisible()) return;
+    if (await button.isVisible()) {
+      await button.click({ timeout });
+    } else {
+      if (!(await foldedMenu.isVisible())) await folded.click({ timeout });
+      await foldedMenu.getByRole('menuitem', { name: action, exact: true }).click({ timeout });
+    }
+    await expect(open).toBeVisible({ timeout });
+  }).toPass({ timeout: 30_000 });
+}

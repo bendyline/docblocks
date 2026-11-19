@@ -283,6 +283,19 @@ describe('mobile speech host', () => {
     assert.ok(calls.includes('cancel'));
   });
 
+  it('refuses to start narration off screen, and starts again once back', async () => {
+    const { host, speech, calls } = fixture({
+      installed: [{ id: 'kokoro-82m-v1.0', files: KOKORO_FILES }],
+    });
+    host.suspend();
+    const refused = await speech.synthesize!({ text: 'Hello world.' }, () => {}).done;
+    assert.equal(!refused.ok && refused.error.code, 'cancelled');
+    assert.ok(!calls.some((call) => call.startsWith('synthesize')));
+    host.resume();
+    const result = await speech.synthesize!({ text: 'Hello world.' }, () => {}).done;
+    assert.ok(result.ok);
+  });
+
   it('validates and persists preferences', async () => {
     const { speech, saved } = fixture();
     await assert.rejects(speech.setPreferences({ speed: 9 }), TypeError);

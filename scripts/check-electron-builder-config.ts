@@ -175,6 +175,11 @@ function requireBundledGezelEngines(): void {
   if (!/<key>com\.apple\.security\.network\.server<\/key>\s*<true\s*\/>/u.test(entitlements)) {
     failConfigPolicy('MAS must permit bundled inference engines to listen on loopback.');
   }
+  // The sandbox refuses printing without it ("This application does not
+  // support printing") rather than showing the print dialog.
+  if (!/<key>com\.apple\.security\.print<\/key>\s*<true\s*\/>/u.test(entitlements)) {
+    failConfigPolicy('MAS must grant com.apple.security.print for the print dialog.');
+  }
   if (
     !isRecord(config.mas.extendInfo) ||
     config.mas.extendInfo.ITSAppUsesNonExemptEncryption !== false

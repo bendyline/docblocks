@@ -149,7 +149,7 @@
   "devDependencies": {
     "@axe-core/playwright": "4.11.3",
     "@bendyline/squisq": "2.13.20",
-    "@bendyline/squisq-cli": "2.9.36",
+    "@bendyline/squisq-cli": "2.9.37",
     "@bendyline/squisq-formats": "2.8.22",
     "@bendyline/squisq-video": "2.4.26",
     "@commitlint/cli": "19.8.1",

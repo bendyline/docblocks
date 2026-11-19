@@ -15,6 +15,7 @@ import {
   ProgressivePlayer,
   type ProgressivePlayerSnapshot,
 } from './progressive-player.js';
+import { useScreenWakeLock } from '../hooks/screen-wake-lock.js';
 import { planSpeech, type SpeechSegmentPlan } from './speakable-text.js';
 
 export type ReadAloudState =
@@ -139,6 +140,8 @@ function segmentAt(current: Session, snapshot: ProgressivePlayerSnapshot): numbe
 export function useReadAloud(speech: DocBlocksHostSpeechAPI | undefined): ReadAloud {
   const [state, setState] = useState<ReadAloudState>({ phase: 'idle' });
   const session = useRef<Session | null>(null);
+  // Listening is playback: keep the screen on unless the listener paused.
+  useScreenWakeLock(state.phase === 'loading' || (state.phase === 'reading' && state.playing));
 
   const stop = useCallback(() => {
     const current = session.current;

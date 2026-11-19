@@ -100,6 +100,8 @@ export function createMobileSpeechHost(options: MobileSpeechHostOptions) {
   const listeners = new Set<(status: SpeechStatus) => void>();
   const active = new Set<AbortController>();
   let installing: string | undefined;
+  /** Off screen: speech already started was stopped, and none starts until resume. */
+  let suspended = false;
 
   const info = (model: MobileSpeechModel, installed: boolean): SpeechModelInfo => ({
     id: model.id,
@@ -316,6 +318,8 @@ export function createMobileSpeechHost(options: MobileSpeechHostOptions) {
         const request = parseSpeechSynthesizeRequest(raw);
         if (!request)
           return finish({ code: 'invalid-request', message: 'There is nothing to read aloud.' });
+        // Native would stop it anyway; callers that resume wait for the screen.
+        if (suspended) return finish({ code: 'cancelled', message: 'Speech stopped.' });
         active.add(controller);
         try {
           const engine = await speech();
@@ -370,8 +374,12 @@ export function createMobileSpeechHost(options: MobileSpeechHostOptions) {
     speech: api,
     /** Leaving the screen stops speech; native code also stops and frees its models. */
     suspend() {
+      suspended = true;
       for (const controller of active) controller.abort();
     },
-    resume: publish,
+    resume() {
+      suspended = false;
+      publish();
+    },
   };
 }

@@ -49,9 +49,7 @@ describe('welcome document', () => {
   it('describes the icon-only Insert and New File buttons by what they look like', () => {
     // Neither button shows its name, so "Choose Insert" sends a reader hunting.
     expect(BROWSER).to.include('Choose the **+** button (Insert) in the toolbar');
-    expect(BROWSER).to.include(
-      'Choose **New File**, the page with a plus sign above the file list',
-    );
+    expect(BROWSER).to.include('Choose **New File**, the page with a sparkle above the file list');
     expect(BROWSER).not.to.match(/Choose \*\*Insert\*\*/);
   });
 

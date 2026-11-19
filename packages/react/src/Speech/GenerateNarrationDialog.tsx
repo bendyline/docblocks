@@ -81,7 +81,8 @@ export function GenerateNarrationDialog({ speech, onClose }: GenerateNarrationDi
             <div className="db-settings-ai-download-progress" role="status">
               <progress max={state.total} value={state.done} aria-label="Narration progress" />
               <span>
-                Generating part {Math.min(state.done + 1, state.total)} of {state.total}…
+                {state.resuming ? 'Continuing' : 'Generating'} part{' '}
+                {Math.min(state.done + 1, state.total)} of {state.total}…
               </span>
             </div>
           )}

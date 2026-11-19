@@ -14,12 +14,11 @@ import {
   CircleCheck,
   Clock,
   Download,
+  createLucideIcon,
   Ellipsis,
-  FilePlus,
   Folder,
   FolderOpen,
   FileUp,
-  FolderPlus,
   FolderTree,
   PanelLeft,
   Pin,
@@ -29,6 +28,38 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
+
+/**
+ * Lucide's sparkle at 0.45 scale, centered on (17.75, 6.25): the upper-right
+ * corner of New File and New Folder. A plus there read too close to Import's
+ * arrow at phone size; a sparkle in the corner says "new" without one.
+ */
+const CORNER_SPARKLE =
+  'M17.308 2.116a0.45 0.45 0 0 1 0.885 0l0.473 2.501a0.9 0.9 0 0 0 0.717 0.717' +
+  'l2.501 0.473a0.45 0.45 0 0 1 0 0.885l-2.501 0.473a0.9 0.9 0 0 0-0.717 0.717' +
+  'l-0.473 2.501a0.45 0.45 0 0 1-0.885 0l-0.473-2.501a0.9 0.9 0 0 0-0.717-0.717' +
+  'l-2.501-0.473a0.45 0.45 0 0 1 0-0.885l2.501-0.473a0.9 0.9 0 0 0 0.717-0.717z';
+
+/** A page whose upper-right corner gives way to the sparkle. */
+const FileSparkle = createLucideIcon('FileSparkle', [
+  ['path', { d: 'M12 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8', key: 'page' }],
+  ['path', { d: CORNER_SPARKLE, key: 'sparkle' }],
+]);
+
+/**
+ * A folder whose upper-right corner gives way to the sparkle. The tab is a
+ * little narrower than Lucide's Folder so it ends clear of the sparkle.
+ */
+const FolderSparkle = createLucideIcon('FolderSparkle', [
+  [
+    'path',
+    {
+      d: 'M22 11v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h2.43a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.69.9',
+      key: 'folder',
+    },
+  ],
+  ['path', { d: CORNER_SPARKLE, key: 'sparkle' }],
+]);
 
 /** Slightly over 1em: Lucide draws inside a 2px margin on its 24px grid. */
 const ICON_SIZE = '1.15em';
@@ -48,11 +79,11 @@ function ShellIcon({
 }
 
 export function NewFileIcon() {
-  return <ShellIcon icon={FilePlus} />;
+  return <ShellIcon icon={FileSparkle} />;
 }
 
 export function NewFolderIcon() {
-  return <ShellIcon icon={FolderPlus} />;
+  return <ShellIcon icon={FolderSparkle} />;
 }
 
 export function ImportFilesIcon() {

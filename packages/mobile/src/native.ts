@@ -8,6 +8,10 @@ export interface MobilePlugin {
   request(options: { request: MobileFsRequest }): Promise<unknown>;
   openExternal(options: { url: string }): Promise<void>;
   writeText(options: { text: string }): Promise<void>;
+  /** Opens the system print dialog on the app's own page (`{ outcome }`). */
+  printPage(options: { jobName: string }): Promise<unknown>;
+  /** Keeps the screen on while true. Native turns it off when the app leaves the screen. */
+  setKeepAwake(options: { on: boolean }): Promise<void>;
   backUnhandled(): Promise<void>;
   takeOpenRequests(): Promise<unknown>;
   pickFolder(): Promise<unknown>;

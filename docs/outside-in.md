@@ -155,8 +155,9 @@ element:
   unchanged. The content sits between `<!-- squisq:content -->` markers, so
   re-importing a generated page imports only the content.
 
-A page chooses its template in **Document settings** (the gear in the
-editor toolbar): the **Page template** field lists the workspace default,
+A page chooses its template in **Document settings** (the file-and-gear icon
+among the editor toolbar's document actions, or in their **Document actions**
+menu on a narrow toolbar): the **Page template** field lists the workspace default,
 None, and every page template DocBlocks finds in the workspace. It appears for
 editable static Web pages and imported pages, not interactive ones. The choice
 is stored in the companion frontmatter, where it can also be written by hand:
