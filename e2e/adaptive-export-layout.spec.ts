@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from './helpers/test.js';
-import { selectWriteMode, showWriteView } from './helpers/toolbar.js';
+import { openDocumentAction, selectWriteMode, showWriteView } from './helpers/toolbar.js';
 
 async function openWelcome(page: Page) {
   await page.goto('/');
@@ -54,7 +54,7 @@ for (const width of [320, 390, 412]) {
     await page.setViewportSize({ width, height: 844 });
     await expect(page.locator('.squisq-block-preview-panel')).toBeHidden();
 
-    await page.getByRole('button', { name: 'Export and share', exact: true }).click();
+    await openDocumentAction(page, 'Export');
     await page.getByRole('menuitem', { name: 'Export video...', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Export Video', exact: true });
     await expectFits(dialog);

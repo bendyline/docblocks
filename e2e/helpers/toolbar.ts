@@ -179,3 +179,49 @@ export async function openDocumentAction(
     await expect(open).toBeVisible({ timeout });
   }).toPass({ timeout: 30_000 });
 }
+
+/** Squisq's own document actions, each a single command rather than a menu. */
+type SquisqDocumentAction = 'Document settings' | 'Custom layouts' | 'Version history';
+
+/**
+ * Run one of Squisq's own document actions wherever the toolbar put it: its
+ * button in the document-actions group, or its row in the folded Document
+ * actions menu. Retried on short limits for the same reason as
+ * `openDocumentAction`; `opened` is what the action shows, and confirms it ran.
+ */
+export async function chooseDocumentAction(
+  page: Page,
+  action: SquisqDocumentAction,
+  opened: Locator,
+): Promise<void> {
+  const toolbar = page.locator('.squisq-toolbar');
+  const group = toolbar.locator('.squisq-toolbar-document-actions');
+  const button = group.getByRole('button', { name: action, exact: true });
+  const folded = toolbar.getByRole('button', { name: 'Document actions', exact: true });
+  const foldedMenu = page.locator('.squisq-toolbar-document-menu');
+  const timeout = 2_000;
+
+  await expect(async () => {
+    if (await opened.isVisible()) return;
+    if (await button.isVisible()) {
+      await button.click({ timeout });
+    } else {
+      if (!(await foldedMenu.isVisible())) await folded.click({ timeout });
+      await foldedMenu.getByRole('menuitem', { name: action, exact: true }).click({ timeout });
+    }
+    await expect(opened).toBeVisible({ timeout });
+  }).toPass({ timeout: 30_000 });
+}
+
+/**
+ * Close a document action's menu, wherever it opened. Escape closes a
+ * control's own dropdown; in the folded menu the first Escape steps back from
+ * a control's items to the top level and the next one closes it.
+ */
+export async function closeDocumentActionMenus(page: Page): Promise<void> {
+  const menus = page.locator('.squisq-toolbar-document-menu, .db-toolbar-menu-dropdown');
+  await expect(async () => {
+    if ((await menus.filter({ visible: true }).count()) > 0) await page.keyboard.press('Escape');
+    await expect(menus.filter({ visible: true })).toHaveCount(0, { timeout: 1_000 });
+  }).toPass({ timeout: 10_000 });
+}

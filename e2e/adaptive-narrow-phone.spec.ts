@@ -1,5 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from './helpers/test.js';
+import { chooseDocumentAction } from './helpers/toolbar.js';
 
 /**
  * Chrome that ran off a 360px phone, found by the affordance crawl's overflow
@@ -74,9 +75,8 @@ test.describe('Chrome on a 360px phone', () => {
 
   test('keeps version history on screen', async ({ page }) => {
     await openWelcomeDocument(page);
-    await page.getByRole('button', { name: 'Version history', exact: true }).click();
     const popover = page.getByRole('dialog', { name: 'Version history' });
-    await expect(popover).toBeVisible();
+    await chooseDocumentAction(page, 'Version history', popover);
     expect(await spillsOutside(popover)).toEqual([]);
   });
 

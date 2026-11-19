@@ -13,7 +13,7 @@ import { MemoryContentContainer } from '@bendyline/squisq/storage';
 import { containerToZip, zipToContainer } from '@bendyline/squisq-formats/container';
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
-import { openInsertMenu, showWriteView } from './helpers/toolbar.js';
+import { chooseDocumentAction, openInsertMenu, showWriteView } from './helpers/toolbar.js';
 import { collectRuntimeErrors, unexpectedRuntimeErrors } from './helpers/console-guard.js';
 import { readWorkspaceBackup } from '../packages/core/src/workspace/backup.js';
 
@@ -366,11 +366,8 @@ for (const width of [320, 390]) {
     await newDocument(page, `phone-layout-${width}`);
     await page.setViewportSize({ width, height: 844 });
     await page.getByRole('treeitem', { name: new RegExp(`^phone-layout-${width}`) }).click();
-    const more = page.locator('.squisq-toolbar-overflow-trigger');
-    await more.click();
-    await page.getByRole('button', { name: 'Custom layouts', exact: true }).last().click();
     const dialog = page.getByRole('dialog', { name: 'Custom layouts', exact: true });
-    await expect(dialog).toBeVisible();
+    await chooseDocumentAction(page, 'Custom layouts', dialog);
     const designer = dialog.locator('.squisq-template-designer-panel');
     await expect
       .poll(() => designer.evaluate((element) => element.clientWidth))
