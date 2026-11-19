@@ -1,3 +1,14 @@
+## @bendyline/docblocks-cli [2.8.4](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-cli@2.8.3...@bendyline/docblocks-cli@2.8.4) (2026-11-19)
+
+### Bug Fixes
+
+* Small fixes from app review ([#58](https://github.com/bendyline/docblocks/issues/58)) ([aaa110c](https://github.com/bendyline/docblocks/commit/aaa110c88548234431c2d24c3d1323a16b22b945))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.8.4
+
 ## @bendyline/docblocks-cli [2.8.3](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-cli@2.8.2...@bendyline/docblocks-cli@2.8.3) (2026-11-17)
 
 ### Bug Fixes
