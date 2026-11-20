@@ -1,6 +1,7 @@
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
 import { MONACO_COLD_LOAD_TIMEOUT } from './helpers/editor-regression.js';
+import { showSourceView, showWriteView } from './helpers/toolbar.js';
 
 test('wiki completion drills into folders in Write and Source and preserves friendly names', async ({
   page,
@@ -81,7 +82,7 @@ test('wiki completion drills into folders in Write and Source and preserves frie
   for (let i = 0; i < 5; i++) await editor.press('Backspace');
   await expect(original).toBeVisible();
 
-  await page.locator('[data-view="raw"]').click();
+  await showSourceView(page);
   const monaco = page.locator('.monaco-editor').first();
   await expect(monaco).toBeVisible({ timeout: MONACO_COLD_LOAD_TIMEOUT });
   await monaco.locator('textarea').focus();
@@ -104,7 +105,7 @@ test('wiki completion drills into folders in Write and Source and preserves frie
     '[[reference/Alpha|Edited friendly name]]',
   );
   await expect(monaco.locator('.view-lines')).toContainText('[[reference/Alpha|Friendly article]]');
-  await page.locator('[data-view="wysiwyg"]').click();
+  await showWriteView(page);
   await page
     .getByRole('button', { name: 'Open article: Friendly article (reference/Alpha)', exact: true })
     .click();
@@ -118,12 +119,12 @@ test('wiki link editing can change a target and clear its friendly name', async 
   await page.getByRole('textbox', { name: 'New file name' }).press('Enter');
   const editor = page.getByRole('textbox', { name: /^Edit \/?wiki-edit\.md$/ });
   await expect(editor).toBeVisible({ timeout: 15_000 });
-  await page.locator('[data-view="raw"]').click();
+  await showSourceView(page);
   const monaco = page.locator('.monaco-editor').first();
   await expect(monaco).toBeVisible({ timeout: MONACO_COLD_LOAD_TIMEOUT });
   await monaco.locator('textarea').focus();
   await page.keyboard.insertText('**[[first|Old name]]** and [[second|Keep me]]');
-  await page.locator('[data-view="wysiwyg"]').click();
+  await showWriteView(page);
   const original = page.getByRole('button', {
     name: 'Create article: Old name (first)',
     exact: true,
@@ -157,7 +158,7 @@ test('wiki link editing can change a target and clear its friendly name', async 
   await expect(
     page.getByRole('button', { name: 'Create article: Keep me (second)', exact: true }),
   ).toBeVisible();
-  await page.locator('[data-view="raw"]').click();
+  await showSourceView(page);
   await expect(monaco).toBeVisible({ timeout: MONACO_COLD_LOAD_TIMEOUT });
   await expect(monaco.locator('.view-lines')).toContainText(
     '**[[reference/third.html]]** and [[second|Keep me]]',
@@ -191,7 +192,7 @@ test('an HTML workspace default creates wiki pages outside-in beside the public 
     navigator.userAgent.includes('Macintosh') ? 'Meta' : 'Control',
   );
   const appendBodyParagraphs = async (...paragraphs: string[]) => {
-    await page.getByRole('tab', { name: 'Source', exact: true }).click();
+    await showSourceView(page);
     const monaco = page.locator('.monaco-editor').first();
     await expect(monaco).toBeVisible({ timeout: MONACO_COLD_LOAD_TIMEOUT });
     const input = monaco.locator('textarea');
@@ -199,7 +200,7 @@ test('an HTML workspace default creates wiki pages outside-in beside the public 
     await input.press('ArrowRight');
     await page.keyboard.insertText(`\n${paragraphs.join('\n\n')}\n`);
     for (const text of paragraphs) await expect(monaco.locator('.view-lines')).toContainText(text);
-    await page.getByRole('tab', { name: 'Write', exact: true }).click();
+    await showWriteView(page);
   };
   await page.keyboard.press('ControlOrMeta+KeyN');
   const dialog = page.getByRole('dialog', { name: 'New document' });

@@ -1,5 +1,6 @@
 import type { FrameLocator, Page } from '@playwright/test';
 import { expect, test } from './test.js';
+import { showSource } from './view-tabs.js';
 
 const fixturePath = 'test-fixtures/test-doc.md';
 const exportFixturePath = 'test-fixtures/test-doc-export.md';
@@ -172,7 +173,10 @@ test.describe('VS Code web and UX integration', () => {
     await expect(editor.locator('.squisq-wysiwyg-editor')).toBeVisible();
     await expect(editor.locator('.squisq-raw-editor-container')).toHaveCount(0);
     expect(optionalRuntimeRequests).toEqual([]);
-    await expect(editor.getByRole('tab', { name: /source/i })).toBeVisible();
+    // Source is offered in the Write mode menu beside the Write tab.
+    await expect(
+      editor.getByRole('button', { name: 'Choose Write mode', exact: true }),
+    ).toBeVisible();
     const previewTab = editor.locator('[role="tab"][data-view="preview"]');
     await expect(previewTab).toBeVisible();
     await expect(previewTab).toHaveAccessibleName('Slideshow');
@@ -197,7 +201,7 @@ test.describe('VS Code web and UX integration', () => {
     await expect(insertMenu.getByRole('menuitem', { name: 'Record media' })).toHaveCount(0);
     await editor.locator('body').press('Escape');
 
-    await editor.getByRole('tab', { name: /source/i }).click();
+    await showSource(editor);
     await expect(editor.locator('.monaco-editor')).toBeVisible({ timeout: 15_000 });
     await expect
       .poll(() => optionalRuntimeRequests.some((url) => /\/assets\/monaco-/u.test(url)))

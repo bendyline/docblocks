@@ -131,6 +131,14 @@ DBK conflicts stage the complete external bundle until the user chooses a
 branch: Keep mine preserves the complete local tree, while Reload external
 atomically replaces markdown and media together.
 
+The shell looks at the file under the open document in one place,
+`useExternalDocumentObserver`, on every surface: on watch events where the
+provider has them, whenever the app comes back (`subscribeRevalidationSignal`:
+focus, visibility, resume, network return, first input after a quiet spell),
+and on a heartbeat where native storage cannot watch. Its observation sequence
+must outlive effect re-runs, because the session ignores a sequence it has
+already seen. Do not add a second observer or a separate freshness timer.
+
 ### `FileSystemProviderV2` is the storage correctness boundary
 
 `packages/core/src/filesystem/v2.ts` defines the byte-authoritative contract.
@@ -631,7 +639,10 @@ Native contract tests use real Swift and Java storage. Android device conformanc
 against a test-only DocumentsProvider in the isolated `.tests` app; it requires an
 explicit device ID. See `packages/mobile/README.md` for build, package, and device commands.
 No test may clear the personal app's documents. Mobile provider atomicity is process-scoped,
-with best-effort durability and no watcher; resume re-observes the active document.
+with best-effort durability and no watcher yet; the open document is re-checked on
+return and on a 20-second heartbeat. iOS asks iCloud for the current version before it
+reads or changes a file it knows is out of date (`CloudState` in `native/ios`), and
+refuses a change for a bounded time rather than save over old content.
 
 Mobile AI implements the existing optional `host.ai` seam through Gezel's Capacitor
 App SDK in `packages/mobile/src/ai`. Keep native engines in the upstream SDK,

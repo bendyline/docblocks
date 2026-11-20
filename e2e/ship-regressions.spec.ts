@@ -13,7 +13,12 @@ import { MemoryContentContainer } from '@bendyline/squisq/storage';
 import { containerToZip, zipToContainer } from '@bendyline/squisq-formats/container';
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
-import { chooseDocumentAction, openInsertMenu, showWriteView } from './helpers/toolbar.js';
+import {
+  chooseDocumentAction,
+  openInsertMenu,
+  showSourceView,
+  showWriteView,
+} from './helpers/toolbar.js';
 import { collectRuntimeErrors, unexpectedRuntimeErrors } from './helpers/console-guard.js';
 import { readWorkspaceBackup } from '../packages/core/src/workspace/backup.js';
 
@@ -207,9 +212,9 @@ test('task lists in table cells survive Source, Write, save, and reload', async 
   await page.getByRole('treeitem', { name: /^table-round-trip/ }).click();
   await expect(cell.locator('input[type="checkbox"]').first()).toBeChecked();
   for (let i = 0; i < 2; i++) {
-    await page.getByRole('tab', { name: 'Source', exact: true }).click();
+    await showSourceView(page);
     await expect(page.locator('.monaco-editor')).toBeVisible({ timeout: 45_000 });
-    await page.getByRole('tab', { name: 'Write', exact: true }).click();
+    await showWriteView(page);
     await expect(cell.locator('input[type="checkbox"]')).toHaveCount(3);
     await expect(cell.locator('input[type="checkbox"]').first()).toBeChecked();
   }

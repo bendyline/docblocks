@@ -55,7 +55,9 @@ async function openDesigner(page: Page) {
     await summarize.getByRole('radio', { name: 'Custom', exact: true }).check({ timeout: 2_000 });
     await expect(designer).toBeVisible({ timeout: 5_000 });
   }).toPass({ timeout: 30_000 });
-  await expect(designer.getByRole('img', { name: /^Slide 1/ })).toBeVisible({ timeout: 30_000 });
+  // The inline designer stays mounted across a resize and keeps the slide the
+  // previous step left selected, so wait for any slide's preview, not Slide 1.
+  await expect(designer.getByRole('img', { name: /^Slide \d+/ })).toBeVisible({ timeout: 30_000 });
   return { summarize, designer };
 }
 

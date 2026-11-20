@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import { MONACO_COLD_LOAD_TIMEOUT } from './helpers/editor-regression.js';
 import { openInitializedSite } from './helpers/site.js';
 import { expect, test } from './helpers/test.js';
+import { showSourceView } from './helpers/toolbar.js';
 
 /**
  * A Web page whose page template is missing still saves its Markdown, and the
@@ -22,9 +23,7 @@ async function openPageSource(page: Page) {
   await expect(page.getByRole('textbox', { name: /^Edit \/?hello_files\/hello\.md$/ })).toBeVisible(
     { timeout: 30_000 },
   );
-  const sourceTab = page.getByRole('tab', { name: 'Source', exact: true });
-  await sourceTab.click();
-  await expect(sourceTab).toHaveAttribute('aria-selected', 'true');
+  await showSourceView(page);
 }
 
 test('saves the Markdown and warns when a Web page names a missing page template', async ({

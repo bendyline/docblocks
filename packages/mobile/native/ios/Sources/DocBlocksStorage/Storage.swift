@@ -25,7 +25,14 @@ public final class Storage {
     private var cloudRoots: Set<String> = []
     private var activeCloud = false
     private static let evicted = FileAttributeKey("DocBlocksNotDownloaded")
+    /// A local copy exists, but iCloud holds a newer version that has not arrived yet.
+    private static let stale = FileAttributeKey("DocBlocksStale")
     private static let downloading = "This file is still downloading from iCloud. Try again in a moment."
+    private static let newerVersion = "A newer version of this file is still downloading from iCloud. Try again in a moment."
+    private let cloud: CloudState
+    private let waits: CloudWaits
+    /// When a change to a stale file was first refused, by path.
+    private var staleSince: [String: Date] = [:]
     private var instances: [String: String] = [:]
     private struct Transfer {
         let owner: String
@@ -40,7 +47,8 @@ public final class Storage {
     private var transfers: [String: Transfer] = [:]
     private var dead = false
 
-    public init(roots: [String: URL]) throws {
+    public init(roots: [String: URL], cloud: CloudState = SystemCloudState(), waits: CloudWaits = CloudWaits()) throws {
+        self.cloud = cloud; self.waits = waits
         self.roots = roots.mapValues { $0.standardizedFileURL.resolvingSymlinksInPath() }
         for root in self.roots.values {
             let attrs = try fm.attributesOfItem(atPath: root.path)
@@ -166,7 +174,13 @@ public final class Storage {
         catch { let e = error as NSError; if !(e.domain == NSCocoaErrorDomain && [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(e.code)) { throw error } }
         guard activeCloud else { return found }
         if found != nil {
-            if found?[.type] as? FileAttributeType == .typeRegular, (try? URL(fileURLWithPath: url.path).resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey]))?.ubiquitousItemDownloadingStatus == .notDownloaded { found?[Self.evicted] = true }
+            if found?[.type] as? FileAttributeType == .typeRegular {
+                switch cloud.freshness(of: url) {
+                case .notDownloaded: found?[Self.evicted] = true
+                case .stale: found?[Self.stale] = true
+                default: break
+                }
+            }
             return found
         }
         // iCloud represents a file that is not downloaded as a hidden ".name.icloud" stub.
@@ -184,33 +198,62 @@ public final class Storage {
         guard name.hasPrefix("."), name.hasSuffix(".icloud"), name.count > 8 else { return nil }
         return String(name.dropFirst().dropLast(7))
     }
-    /// Downloads a file before its content is read, replaced, moved or removed. This runs before
+    private enum Purpose { case read, change }
+    /// Brings a file up to date before its content is read, replaced, moved or removed. This runs before
     /// root coordination is taken, because iCloud writes the download with coordination of its own.
-    private func materialize(_ url: URL) throws {
-        guard try attributes(url)?[Self.evicted] != nil else { return }
-        try fm.startDownloadingUbiquitousItem(at: url)
-        let deadline = Date().addingTimeInterval(15)
+    private func materialize(_ url: URL, for purpose: Purpose) throws {
+        guard let attrs = try attributes(url) else { return }
+        if attrs[Self.evicted] != nil {
+            try cloud.startDownloading(url)
+            let deadline = Date().addingTimeInterval(waits.notDownloaded)
+            repeat {
+                Thread.sleep(forTimeInterval: waits.poll)
+                if cloud.downloadFailed(for: url) { throw StorageFailure("busy", "This file could not be downloaded from iCloud. Check your connection and try again.") }
+                if try attributes(url)?[Self.evicted] == nil { return }
+            } while Date() < deadline
+            throw StorageFailure("busy", Self.downloading)
+        }
+        guard attrs[Self.stale] != nil else { staleSince.removeValue(forKey: url.path); return }
+        // iCloud holds a newer version. Ask for it and give it a moment to arrive.
+        try? cloud.startDownloading(url)
+        let deadline = Date().addingTimeInterval(purpose == .read ? waits.staleRead : waits.staleChange)
+        var offline = false
         repeat {
-            Thread.sleep(forTimeInterval: 0.1)
-            let fresh = URL(fileURLWithPath: url.path)
-            if (try? fresh.resourceValues(forKeys: [.ubiquitousItemDownloadingErrorKey]))?.ubiquitousItemDownloadingError != nil { throw StorageFailure("busy", "This file could not be downloaded from iCloud. Check your connection and try again.") }
-            if try attributes(fresh)?[Self.evicted] == nil { return }
+            Thread.sleep(forTimeInterval: waits.poll)
+            offline = cloud.downloadFailed(for: url)
+            if offline { break }
+            if try attributes(url)?[Self.stale] == nil { staleSince.removeValue(forKey: url.path); return }
         } while Date() < deadline
-        throw StorageFailure("busy", Self.downloading)
+        // Opening the local copy beats refusing to open the document; a later check picks up the newer one.
+        if purpose == .read { return }
+        // With no way to fetch the newer version, diverging is unavoidable and iCloud keeps both.
+        if offline { staleSince.removeValue(forKey: url.path); return }
+        // Changing it now would be based on old content. Refuse for a bounded time, never indefinitely.
+        let first = staleSince[url.path] ?? Date()
+        if Date().timeIntervalSince(first) >= waits.staleGrace { staleSince.removeValue(forKey: url.path); return }
+        staleSince[url.path] = first
+        throw StorageFailure("busy", Self.newerVersion)
     }
     private func prefetch(_ r: [String: Any], _ root: URL) throws {
-        let path: String?
+        let path: String?, purpose: Purpose?
         switch r["op"] as? String {
-        case "readBegin", "remove": path = r["path"] as? String
-        case "move": path = r["oldPath"] as? String
+        case "readBegin": path = r["path"] as? String; purpose = .read
+        case "remove": path = r["path"] as? String; purpose = .change
+        case "move": path = r["oldPath"] as? String; purpose = .change
         case "writeFinish":
             guard let token = r["transferId"] as? String, let transfer = transfers[token], transfer.owner == r["instanceId"] as? String else { return }
-            path = transfer.path
+            path = transfer.path; purpose = .change
+        // A status check never waits, but it does ask iCloud to bring a stale file up to date.
+        case "stat": path = r["path"] as? String; purpose = nil
         default: return
         }
         // Invalid paths are rejected by dispatch with their usual errors.
         guard let path, !path.isEmpty, let url = try? resolve(root, path) else { return }
-        try materialize(url)
+        guard let purpose else {
+            if (try? attributes(url))?[Self.stale] != nil { try? cloud.startDownloading(url) }
+            return
+        }
+        try materialize(url, for: purpose)
     }
     /// Keeps each losing iCloud version as a visible sibling instead of letting sync choose silently.
     private func preserveConflicts(_ root: URL, _ path: String) throws {
@@ -277,7 +320,7 @@ public final class Storage {
         var entry: [String: Any] = ["path": path, "name": path.isEmpty ? "" : url.lastPathComponent, "lastModified": iso.string(from: date), "kind": kind == .typeRegular ? "file" : "directory"]
         if kind == .typeRegular, attrs[Self.evicted] != nil {
             // Listing never downloads; content is fetched when the file is opened or changed.
-            if includeBytes { try? fm.startDownloadingUbiquitousItem(at: url); throw StorageFailure("busy", "Some files are still downloading from iCloud. Try again in a moment.") }
+            if includeBytes { try? cloud.startDownloading(url); throw StorageFailure("busy", "Some files are still downloading from iCloud. Try again in a moment.") }
             let size = (attrs[.size] as? NSNumber)?.intValue ?? 0
             guard size <= Self.fileBytes else { throw StorageFailure("quota-exceeded") }
             entry["size"] = size; entry["version"] = "icloud-" + hash(Data("\(size):\(date.timeIntervalSince1970)".utf8))
@@ -422,6 +465,9 @@ public final class Storage {
             }
             transfers.removeValue(forKey: token)
             guard transfer.data.count == transfer.size else { throw StorageFailure("corrupt") }
+            // Keep any versions iCloud set aside before adding another. A failure here leaves them
+            // with iCloud for the next read to keep, so it never blocks the save.
+            if activeCloud, let target = try? resolve(root, transfer.path), (try? attributes(target)) != nil { try? preserveConflicts(root, transfer.path) }
             return try write(root, transfer.path, transfer.data, transfer.options)
         case "mkdir":
             try exact(r, ["op", "instanceId", "path", "options"])

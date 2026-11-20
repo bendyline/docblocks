@@ -25,6 +25,7 @@
 
 import type { Frame, Page } from '@playwright/test';
 import { expect, test } from './test.js';
+import { showSource } from './view-tabs.js';
 
 declare global {
   interface Window {
@@ -216,7 +217,7 @@ test.describe('DocBlocks webview theme parity', () => {
       timeout: 15_000,
     });
 
-    await frame.getByRole('tab', { name: /source/i }).click();
+    await showSource(frame);
     const sourceEditor = frame.locator('.squisq-raw-editor-container .monaco-editor');
     await expect(sourceEditor).toBeVisible({ timeout: 15_000 });
     await expect(sourceEditor).toHaveClass(/\bvs-dark\b/);
@@ -231,7 +232,7 @@ test.describe('DocBlocks webview theme parity', () => {
     const shell = frame.locator('.db-shell[data-theme]');
     await expect(shell).toHaveAttribute('data-theme', 'light', { timeout: 15_000 });
 
-    await frame.getByRole('tab', { name: /source/i }).click();
+    await showSource(frame);
     const sourceEditor = frame.locator('.squisq-raw-editor-container .monaco-editor');
     await expect(sourceEditor).toBeVisible({ timeout: 15_000 });
     await expect(sourceEditor).toHaveClass(/(?:^|\s)vs(?:\s|$)/);

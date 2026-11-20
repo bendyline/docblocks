@@ -1,6 +1,7 @@
 import { expect, test } from './helpers/test.js';
 import { MONACO_COLD_LOAD_TIMEOUT } from './helpers/editor-regression.js';
 import { openInitializedSite } from './helpers/site.js';
+import { showSourceView, showWriteView } from './helpers/toolbar.js';
 
 test('shows image upload progress, embeds durable media, and replaces broken image glyphs', async ({
   page,
@@ -72,9 +73,7 @@ test('shows image upload progress, embeds durable media, and replaces broken ima
   await drop.dispose();
 
   // The source contains a portable durable reference, and no upload marker.
-  const sourceTab = page.getByRole('tab', { name: 'Source', exact: true });
-  await sourceTab.click();
-  await expect(sourceTab).toHaveAttribute('aria-selected', 'true');
+  await showSourceView(page);
   const lines = page.locator('.monaco-editor .view-lines');
   // Source shows a busy plain textarea until this page's first Monaco mount
   // finishes loading, which routinely outlasts the default expect timeout.
@@ -93,7 +92,7 @@ test('shows image upload progress, embeds durable media, and replaces broken ima
   await page.keyboard.insertText('# Missing image\n\n![Example photo](missing-photo.png)\n');
   await expect(lines).toContainText('![Example photo](missing-photo.png)');
   await expect(lines).not.toContainText('dropped-photo.png');
-  await page.locator('[data-view="wysiwyg"]').click();
+  await showWriteView(page);
   const failed = editor.getByRole('img', { name: 'Image unavailable: Example photo' });
   await expect(failed).toBeVisible();
   await expect(editor.locator('img')).toHaveCount(0);

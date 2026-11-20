@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { MONACO_COLD_LOAD_TIMEOUT } from './helpers/editor-regression.js';
 import { expect, test } from './helpers/test.js';
+import { showSourceView, showWriteView } from './helpers/toolbar.js';
 
 test.use({ actionTimeout: 15_000 });
 
@@ -18,11 +19,11 @@ test('confirms a document download and previews the rendered video before saving
   // Seed exact export content without depending on rich-text caret navigation:
   // Ctrl+End followed by Enter could put the body inside the heading on Linux.
   const body = 'Menu refresh: one draft and two revisions. Fixed fee: $1,200.';
-  await page.getByRole('tab', { name: 'Source', exact: true }).click();
+  await showSourceView(page);
   await page.locator('.monaco-editor .view-lines').click({ timeout: MONACO_COLD_LOAD_TIMEOUT });
   await page.keyboard.press('ControlOrMeta+A');
   await page.keyboard.insertText(`# Client proposal\n\n${body}\n`);
-  await page.getByRole('tab', { name: 'Write', exact: true }).click();
+  await showWriteView(page);
   await expect(editor.getByRole('heading', { level: 1 })).toHaveText('Client proposal');
   await expect(editor.locator('p')).toHaveText(body);
 

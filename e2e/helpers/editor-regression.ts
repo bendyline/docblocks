@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { showWriteView } from './toolbar.js';
+import { showSourceView, showWriteView } from './toolbar.js';
 
 /** Audit the integrated editor too: upstream exclusions hide host regressions. */
 export async function scanEditorControls(page: Page, electron = false): Promise<void> {
@@ -61,7 +61,7 @@ export const MONACO_COLD_LOAD_TIMEOUT = 30_000;
 
 /** Initialize Markdown first, load suggestions, then mount another Monaco editor. */
 export async function exerciseDeferredMonaco(page: Page): Promise<void> {
-  await page.getByRole('tab', { name: 'Source', exact: true }).click();
+  await showSourceView(page);
   const source = page.locator('[data-testid="raw-editor"] textarea.inputarea');
   await expect(source).toBeVisible({ timeout: MONACO_COLD_LOAD_TIMEOUT });
   const modifier = await page.evaluate(() =>
@@ -72,7 +72,7 @@ export async function exerciseDeferredMonaco(page: Page): Promise<void> {
     '# Monaco regression\n\n```javascript\nconst marker = 42;\nconsole.log(marker);\n```\n',
   );
   for (let cycle = 0; cycle < 2; cycle++) {
-    await page.getByRole('tab', { name: 'Write', exact: true }).click();
+    await showWriteView(page);
     const inset = page.locator('.tiptap .monaco-editor');
     await expect(inset).toBeVisible();
     await expect(inset).toContainText('const marker = 42;');
@@ -86,8 +86,8 @@ export async function exerciseDeferredMonaco(page: Page): Promise<void> {
     await input.press('Control+Space');
     await expect(inset.locator('.suggest-widget.visible')).toBeVisible();
     await page.keyboard.press('Escape');
-    await page.getByRole('tab', { name: 'Source', exact: true }).click();
+    await showSourceView(page);
     await expect(page.locator('[data-testid="raw-editor"]')).toContainText('console.log(marker);');
   }
-  await page.getByRole('tab', { name: 'Write', exact: true }).click();
+  await showWriteView(page);
 }

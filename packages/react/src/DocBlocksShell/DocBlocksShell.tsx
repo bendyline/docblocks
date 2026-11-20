@@ -2,6 +2,10 @@ import { dismissTopmostDialog } from '../components/dialog-stack.js';
 import type { AiPanel } from '../Ai/AiEditorAssistant.js';
 import type { HostFileSystemProvider } from '@bendyline/docblocks/filesystem/host';
 import { prepareHostLifecycle } from './host-lifecycle.js';
+import {
+  readStableFileSnapshot,
+  useExternalDocumentObserver,
+} from './useExternalDocumentObserver.js';
 import { createPresentationAssistant } from '../Presentation/presentation-assistant.js';
 /**
  * DocBlocksShell -- top-level layout component.
@@ -816,41 +820,6 @@ async function removePinnedProviderFile(
   return true;
 }
 
-async function readStableFileSnapshot(
-  provider: FileSystemProvider,
-  path: string,
-): Promise<{ content: string | null; version: string | null; lastModified: string | null }> {
-  const providerV2 = getFileSystemProviderV2(provider);
-  if (providerV2) {
-    const read = await providerV2.readFile(parseWorkspacePath(path));
-    return {
-      content: read
-        ? decodeUtf8Text(read.data, {
-            label: 'The document',
-            path: parseWorkspacePath(path),
-          })
-        : null,
-      version: read?.entry.version ?? null,
-      lastModified: read?.entry.lastModified ?? null,
-    };
-  }
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const before = await provider.stat(path);
-    const content = await provider.readFile(path);
-    const after = await provider.stat(path);
-    const unchanged = before?.lastModified === after?.lastModified && before?.size === after?.size;
-    const existenceMatches = (content !== null) === (after !== null);
-    if (unchanged && existenceMatches) {
-      return {
-        content,
-        version: after ? `${after.lastModified}:${after.size}` : null,
-        lastModified: after?.lastModified ?? null,
-      };
-    }
-  }
-  throw new Error('The file kept changing while DocBlocks was reading it.');
-}
-
 async function sha256Hex(data: ArrayBuffer): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', data);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -961,6 +930,8 @@ async function createHostProviderFromWorkspace(
 // than spending 44px of chrome on a toolbar that was still mostly usable.
 const DESKTOP_TOOLBAR_WRAP_WIDTH = 900;
 const WEB_TOOLBAR_WRAP_WIDTH = 700;
+/** How often an open document is re-checked on storage that cannot report changes. */
+const UNWATCHED_DOCUMENT_HEARTBEAT_MS = 20_000;
 
 function FolderGlyph() {
   return (
@@ -3336,103 +3307,24 @@ export function DocBlocksShell({
       : null;
   }, [selectedFile, selectedManagedOutput, workspaceOutputsResult]);
 
-  // React to external file changes watched by the Electron host (chokidar).
-  useEffect(() => {
-    if (!provider) return;
-    const providerV2 = getFileSystemProviderV2(provider);
-    const lifecycle = maybeGetDocBlocksHost()?.lifecycle;
-    if (
-      !providerV2 ||
-      (!providerV2.capabilities.watch && !lifecycle?.onResume && !managedOutputRefreshToken)
-    )
-      return;
-    const watchedFile = selectedSourceFile ?? selectedFile;
-    if (!watchedFile || !documentSnapshot.targetKey || selectedImage) return;
-    const targetKey = documentSnapshot.targetKey;
-    let disposed = false;
-    let reading = false;
-    let rerun = false;
-    let observationSequence = 0;
-
-    const drainWatcherReads = async () => {
-      if (reading) {
-        rerun = true;
-        return;
-      }
-      reading = true;
-      try {
-        do {
-          rerun = false;
-          const sequence = ++observationSequence;
-          const external = await readStableFileSnapshot(provider, watchedFile);
-          if (disposed) return;
-          const result = documentSession.observeExternal({
-            targetKey,
-            sequence,
-            content: external.content,
-            version: external.version,
-          });
-          if (result === 'applied') {
-            // observeExternal increments the session generation. The editor
-            // remount key and content both derive from that snapshot.
-          }
-        } while (rerun && !disposed);
-      } catch (error: unknown) {
-        if (!disposed)
-          showToast(
-            'error',
-            error instanceof Error
-              ? 'Could not check the current file: ' + error.message
-              : 'Could not check the current file.',
-          );
-      } finally {
-        reading = false;
-        if (rerun && !disposed) void drainWatcherReads();
-      }
-    };
-
-    const subscription = providerV2.capabilities.watch
-      ? providerV2.watch(
-          (event) => {
-            if (event.type === 'overflow') {
-              void drainWatcherReads();
-              return;
-            }
-            const changedCurrent = sameProviderPath(event.path, watchedFile);
-            const changedDestination =
-              event.destinationPath !== null &&
-              sameProviderPath(event.destinationPath, watchedFile);
-            if (changedCurrent || changedDestination) void drainWatcherReads();
-          },
-          {
-            onError: () => {
-              // Re-read the active file on watcher failure. The session decides
-              // whether the result is a clean update or an external conflict.
-              void drainWatcherReads();
-            },
-          },
-        )
-      : null;
-    const stopResume = lifecycle?.onResume?.(() => {
-      void drainWatcherReads();
-    });
-    void subscription?.ready.catch(() => undefined);
-    if (managedOutputRefreshToken) void drainWatcherReads();
-    return () => {
-      disposed = true;
-      stopResume?.();
-      void subscription?.dispose();
-    };
-  }, [
+  // Keep the open document in step with the file underneath it: watch events
+  // where the provider has them, and a re-check whenever the app comes back.
+  // The applied result needs no handling here: observeExternal increments the
+  // session generation, and the editor remount key and content derive from it.
+  const reportDocumentCheckFailed = useCallback(() => {
+    showToast('error', 'Could not check this document for changes made elsewhere.');
+  }, [showToast]);
+  useExternalDocumentObserver({
     provider,
-    selectedFile,
-    selectedSourceFile,
-    selectedImage,
-    managedOutputRefreshToken,
-    documentSession,
-    documentSnapshot.targetKey,
-    showToast,
-  ]);
+    path: selectedImage ? null : (selectedSourceFile ?? selectedFile),
+    targetKey: documentSnapshot.targetKey,
+    session: documentSession,
+    refreshToken: managedOutputRefreshToken,
+    // Storage on a phone or tablet reports no changes by itself, and a synced
+    // folder can change while the app stays open.
+    heartbeatMs: hostSupports('nativeWorkspaces') ? UNWATCHED_DOCUMENT_HEARTBEAT_MS : null,
+    onCheckFailed: reportDocumentCheckFailed,
+  });
 
   const transitionAwayFromDocument = useCallback(
     async (requestId: number): Promise<boolean> => {

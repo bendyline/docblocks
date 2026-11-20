@@ -7,10 +7,38 @@ import { expect } from './test.js';
  * next, so only click when another view is selected. `data-view` is the
  * stable hook: the tab's label follows the Write mode (Write, Blocks,
  * Timeline).
+ *
+ * Write and Source share the first tab, which shows whichever of the two was
+ * chosen last. From Source there is no Write tab to click, so press its
+ * shortcut, which returns to Write in the layout it was in.
  */
 export async function showWriteView(scope: Page | Locator): Promise<void> {
   const tab = scope.locator('[role="tab"][data-view="wysiwyg"]');
+  const source = scope.locator('[role="tab"][data-view="raw"]');
+  if ((await tab.count()) === 0 && (await source.count()) > 0) {
+    await source.press('ControlOrMeta+Shift+Digit1');
+  }
   if ((await tab.getAttribute('aria-selected')) !== 'true') await tab.click();
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+}
+
+/**
+ * Switch to Source. It is chosen from the Write mode menu, after which the
+ * first tab reads Source and carries `data-view="raw"`; from Use, that tab
+ * returns to it.
+ */
+export async function showSourceView(page: Page): Promise<void> {
+  const tab = page.locator('[role="tab"][data-view="raw"]');
+  if ((await tab.count()) > 0) {
+    if ((await tab.getAttribute('aria-selected')) !== 'true') await tab.click();
+  } else {
+    await page.getByRole('button', { name: 'Choose Write mode', exact: true }).click();
+    const item = page
+      .getByRole('menu', { name: 'Write mode', exact: true })
+      .getByRole('menuitemradio', { name: 'Source', exact: true });
+    await item.click();
+    await expect(item).toBeHidden();
+  }
   await expect(tab).toHaveAttribute('aria-selected', 'true');
 }
 
