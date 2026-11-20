@@ -1,3 +1,9 @@
+## @bendyline/docblocks [2.8.5](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@2.8.4...@bendyline/docblocks@2.8.5) (2026-11-20)
+
+### Bug Fixes
+
+* improve mobile media workflows ([#59](https://github.com/bendyline/docblocks/issues/59)) ([7b22838](https://github.com/bendyline/docblocks/commit/7b22838f4e97dbe62e3a23a4f64515d1a8b01f6a))
+
 ## @bendyline/docblocks [2.8.4](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@2.8.3...@bendyline/docblocks@2.8.4) (2026-11-19)
 
 ### Bug Fixes
