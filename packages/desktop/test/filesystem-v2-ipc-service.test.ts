@@ -173,4 +173,75 @@ describe('FileSystemV2IpcService transport', () => {
     expect(rootWrite.error.code).to.equal('invalid-path');
     expect(await fs.readdir(rootPath)).to.deep.equal([]);
   });
+
+  describe('folder listings', () => {
+    async function fill(count: number): Promise<void> {
+      for (let start = 0; start < count; start += 500) {
+        await Promise.all(
+          Array.from({ length: Math.min(500, count - start) }, (_, n) =>
+            fs.writeFile(path.join(rootPath, `n${start + n}.md`), ''),
+          ),
+        );
+      }
+    }
+
+    function value<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T {
+      if (!result.ok) throw new Error(`Expected success, got ${JSON.stringify(result.error)}`);
+      return result.value;
+    }
+
+    function code(result: { ok: boolean; error?: { code: string } }): string | null {
+      return result.ok ? null : (result.error?.code ?? null);
+    }
+
+    it('pages a listing to its end and keeps it to its owner', async () => {
+      await fill(4_500);
+      value(await service.open('owner-a', request, rootPath));
+      const root = parseWorkspacePath('');
+      let step = value(await service.beginEnumerate('owner-a', request.instanceId, root));
+      const cursor = step.cursor;
+      expect(cursor).to.be.a('string');
+      expect(
+        code(await service.continueEnumerate('owner-b', request.instanceId, cursor!)),
+      ).to.equal('closed');
+
+      let total = step.page.entries.length;
+      while (step.cursor !== null) {
+        step = value(await service.continueEnumerate('owner-a', request.instanceId, step.cursor));
+        total += step.page.entries.length;
+      }
+      expect(total).to.equal(4_500);
+      expect(
+        code(await service.continueEnumerate('owner-a', request.instanceId, cursor!)),
+      ).to.equal('closed');
+    });
+
+    it('releases a listing closed early, caps open listings, and ends them with the provider', async () => {
+      await fill(2_100);
+      value(await service.open('owner-a', request, rootPath));
+      const root = parseWorkspacePath('');
+      const cursors: string[] = [];
+      for (let n = 0; n < 4; n++) {
+        const step = value(await service.beginEnumerate('owner-a', request.instanceId, root));
+        cursors.push(step.cursor!);
+      }
+      expect(code(await service.beginEnumerate('owner-a', request.instanceId, root))).to.equal(
+        'busy',
+      );
+      value(await service.closeEnumerate('owner-a', request.instanceId, cursors[0]!));
+      value(await service.closeEnumerate('owner-a', request.instanceId, cursors[0]!));
+      expect(
+        code(await service.continueEnumerate('owner-a', request.instanceId, cursors[0]!)),
+      ).to.equal('closed');
+      expect(
+        value(await service.beginEnumerate('owner-a', request.instanceId, root)).cursor,
+      ).to.be.a('string');
+
+      value(await service.dispose('owner-a', request.instanceId));
+      value(await service.open('owner-a', request, rootPath));
+      expect(
+        code(await service.continueEnumerate('owner-a', request.instanceId, cursors[1]!)),
+      ).to.equal('closed');
+    });
+  });
 });

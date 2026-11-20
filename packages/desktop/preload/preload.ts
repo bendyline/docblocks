@@ -137,6 +137,11 @@ const fsV2Api: DocBlocksHostFsV2API = {
   stat: (instanceId, p) => ipcRenderer.invoke('fs:v2:stat', instanceId, p),
   readFile: (instanceId, p) => ipcRenderer.invoke('fs:v2:readFile', instanceId, p),
   readDirectory: (instanceId, p) => ipcRenderer.invoke('fs:v2:readDirectory', instanceId, p),
+  beginEnumerate: (instanceId, p) => ipcRenderer.invoke('fs:v2:beginEnumerate', instanceId, p),
+  continueEnumerate: (instanceId, cursor) =>
+    ipcRenderer.invoke('fs:v2:continueEnumerate', instanceId, cursor),
+  closeEnumerate: (instanceId, cursor) =>
+    ipcRenderer.invoke('fs:v2:closeEnumerate', instanceId, cursor),
   writeFile: (instanceId, p, data, options) =>
     ipcRenderer.invoke('fs:v2:writeFile', instanceId, p, data, options),
   createDirectory: (instanceId, p, options) =>

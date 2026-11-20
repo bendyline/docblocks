@@ -369,6 +369,36 @@ describe('mobile AI through the Gezel App SDK', () => {
     assert.equal((await f.ai.status()).kind, 'error');
     assert.ok(!f.calls.includes('generate'));
   });
+  it('lets a reply that keeps streaming run past the stall timeout', async () => {
+    // The fixture's stall timeout is 40 ms; this reply streams for about 150 ms.
+    const f = fixture({ enabled: true });
+    const pieces = [
+      'One ',
+      'two ',
+      'three ',
+      'four ',
+      'five ',
+      'six ',
+      'seven ',
+      'eight ',
+      'nine ',
+      'ten.',
+    ];
+    f.runtime.generate = async (input) => {
+      for (const piece of pieces) {
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        f.emit(input.requestId, piece);
+      }
+      return { text: pieces.join(''), stopReason: 'stop' };
+    };
+    const result = await f.ai.chat(request, () => {}).done;
+    assert.ok(result.ok, JSON.stringify(result));
+    if (result.ok) {
+      assert.equal(result.value.finishReason, 'stop');
+      assert.equal(result.value.text, pieces.join(''));
+    }
+  });
+
   for (const action of ['cancel', 'disable', 'background', 'timeout'] as const) {
     it(`settles exactly once and cancels native work on ${action}`, async () => {
       const f = fixture({ enabled: true });

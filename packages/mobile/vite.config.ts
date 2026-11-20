@@ -144,7 +144,14 @@ export default defineConfig({
         find: `@bendyline/docblocks/filesystem/${backend}`,
         replacement: path.resolve(__dirname, `../core/src/filesystem/${backend}.ts`),
       })),
-      ...['filesystem', 'workspace', 'host', 'document'].map((entry) => ({
+      ...[
+        'filesystem',
+        'workspace',
+        'workspace-index',
+        'workspace-settings',
+        'host',
+        'document',
+      ].map((entry) => ({
         find: new RegExp(`^@bendyline/docblocks/${entry}$`),
         replacement: path.resolve(__dirname, `../core/src/${entry}/index.ts`),
       })),

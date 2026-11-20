@@ -4,7 +4,29 @@
  */
 
 export { createWorkspaceIndex } from './workspace-index.js';
-export { buildLiteralMatcher, buildSnippet } from './search.js';
+export {
+  createMemoryEngine,
+  type EngineAnalysis,
+  type EngineSearchDocument,
+  type EngineSearchOptions,
+  type StoredDocument,
+  type WorkspaceIndexEngine,
+} from './engine.js';
+export {
+  LIVE_ENGINE_PAYLOAD_FORMAT,
+  createLiveIndexEngine,
+  type LiveIndexEngine,
+  type LiveIndexLike,
+  type LivePassageHit,
+} from './live-engine.js';
+export { analyzeDocumentBytes, type AnalyzedDocument, type DocumentIdentity } from './analyze.js';
+export {
+  buildLiteralMatcher,
+  buildSnippet,
+  searchDocuments,
+  type SearchableDocument,
+} from './search.js';
+export type { SearchText } from './search-text.js';
 export { fuzzyMatch, fuzzyMatchTokens, fuzzyTokens, type FuzzyMatch } from './fuzzy.js';
 export {
   WORKSPACE_INDEX_LIMITS,

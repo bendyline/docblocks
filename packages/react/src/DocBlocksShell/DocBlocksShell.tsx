@@ -24,6 +24,7 @@ import type {
   CalcEngineFactory,
   EditorColorScheme,
   EditorView,
+  FindRequest,
   NavigationSheetPanel,
   ProofingCapability,
   ProofingIgnoreStore,
@@ -330,6 +331,7 @@ import { useShellShortcuts, type ShellShortcutHandlers } from './useShellShortcu
 import { findShortcutLabel, isApplePlatform, shortcutLabel } from './keyboard-shortcuts.js';
 import type { QuickOpenItem, QuickOpenPin } from '../QuickOpen/quick-open-ranking.js';
 import type { WorkspaceSearchOpenRequest } from '../WorkspaceSearch/WorkspaceSearchPanel.js';
+import { findRequestForSearchOpen } from '../WorkspaceSearch/search-find-request.js';
 import { FindButton } from '../components/FindButton.js';
 import { focusFindInput } from '../components/find-input.js';
 import { DocumentConflictBanner, DocumentConflictNotice } from './DocumentConflictBanner.js';
@@ -1667,13 +1669,40 @@ export function DocBlocksShell({
     useState<EditableShellDocument['managedOutput']>(undefined);
   const [pageTemplateWarning, setPageTemplateWarning] = useState<PageTemplateWarning | null>(null);
   // Squisq's find bar is controlled here so Ctrl/Cmd+F, the toolbar button and
-  // the desktop Edit menu all drive one state. Each document starts closed.
+  // the desktop Edit menu all drive one state. Each document starts closed,
+  // except one opened from a workspace search result: Find opens on that hit.
   const [findMode, setFindMode] = useState(false);
   const findModeRef = useRef(findMode);
   findModeRef.current = findMode;
+  const [searchFind, setSearchFind] = useState<{
+    readonly path: string;
+    readonly request: FindRequest;
+  } | null>(null);
+  const searchFindRef = useRef(searchFind);
+  searchFindRef.current = searchFind;
   useEffect(() => {
+    const pending = searchFindRef.current;
+    if (pending !== null && selectedFile !== null && sameProviderPath(pending.path, selectedFile)) {
+      setFindMode(true);
+      return;
+    }
     setFindMode(false);
+    setSearchFind(null);
   }, [selectedFile]);
+  // Closing Find ends a search hit's request, so reopening it starts fresh.
+  const handleFindModeChange = useCallback((active: boolean) => {
+    setFindMode(active);
+    if (!active) setSearchFind(null);
+  }, []);
+  const editorFindRequest = useMemo(
+    () =>
+      searchFind !== null &&
+      selectedFile !== null &&
+      sameProviderPath(searchFind.path, selectedFile)
+        ? searchFind.request
+        : null,
+    [searchFind, selectedFile],
+  );
   // Squisq's phone-width outline and previews sheet, held here so it closes
   // with the document, and when the drawer covers it: left open underneath,
   // it would take the next Back press meant for the drawer.
@@ -4773,10 +4802,21 @@ export function DocBlocksShell({
     [activeWorkspaceId, handleSelect, handlePinnedDocumentSelect, pinnedDocumentItems],
   );
   const handleSearchOpen = useCallback(
-    (request: WorkspaceSearchOpenRequest) => {
-      void handleSelect(request.path, 'file');
+    (open: WorkspaceSearchOpenRequest) => {
+      // On a phone, Squisq's find toolbar replaces the one holding "Show file
+      // list", which would strand the person away from their results. There
+      // the document opens as before, without Find.
+      const request = singlePane ? null : findRequestForSearchOpen(open);
+      setSearchFind(request === null ? null : { path: open.path, request });
+      // Another document opens Find once it is selected (the effect above);
+      // the open one stays put in handleSelect, so its Find opens here.
+      const openFile = selectedFileRef.current;
+      if (request !== null && openFile !== null && sameProviderPath(openFile, open.path)) {
+        setFindMode(true);
+      }
+      void handleSelect(open.path, 'file');
     },
-    [handleSelect],
+    [handleSelect, singlePane],
   );
 
   const handleEditorLinkClick = useCallback(
@@ -6422,7 +6462,8 @@ export function DocBlocksShell({
                               viewPreferences={editorViewPreferences}
                               onViewPreferencesChange={handleViewPreferencesChange}
                               findMode={findMode}
-                              onFindModeChange={setFindMode}
+                              onFindModeChange={handleFindModeChange}
+                              findRequest={editorFindRequest}
                               navigationSheet={navigationSheet}
                               onNavigationSheetChange={setNavigationSheet}
                               versionBasename={
@@ -6467,7 +6508,7 @@ export function DocBlocksShell({
                                   {canFind && (
                                     <FindButton
                                       active={findMode}
-                                      onActiveChange={setFindMode}
+                                      onActiveChange={handleFindModeChange}
                                       shortcutLabel={findShortcut}
                                     />
                                   )}

@@ -56,6 +56,14 @@ test('preload exposes the complete typed host and reaches representative IPC han
           instanceId: string,
           path: string,
         ): Promise<{ ok: boolean; value?: unknown[] }>;
+        beginEnumerate(
+          instanceId: string,
+          path: string,
+        ): Promise<{
+          ok: boolean;
+          value?: { cursor: string | null; page: { entries: { path: string }[] } };
+        }>;
+        closeEnumerate(instanceId: string, cursor: string): Promise<{ ok: boolean }>;
         dispose(instanceId: string): Promise<{ ok: boolean }>;
       };
       workspaces: {
@@ -88,6 +96,15 @@ test('preload exposes the complete typed host and reaches representative IPC han
     const root = opened.ok
       ? await typedHost.fsV2.readDirectory(instanceId, '')
       : { ok: false, value: undefined };
+    // The recursive metadata listing crosses the same bridge in pages.
+    const enumerated = opened.ok
+      ? await typedHost.fsV2.beginEnumerate(instanceId, '')
+      : { ok: false, value: undefined };
+    const enumerateCursor = enumerated.value?.cursor ?? null;
+    const enumerateClosed =
+      enumerateCursor === null
+        ? { ok: true }
+        : await typedHost.fsV2.closeEnumerate(instanceId, enumerateCursor);
     const disposed = opened.ok ? await typedHost.fsV2.dispose(instanceId) : { ok: false };
 
     const rejected: string[] = [];
@@ -131,6 +148,13 @@ test('preload exposes the complete typed host and reaches representative IPC han
       roundTrip,
       opened,
       root,
+      enumerated: {
+        ok: enumerated.ok,
+        entries: Array.isArray(enumerated.value?.page.entries)
+          ? enumerated.value.page.entries.length
+          : -1,
+      },
+      enumerateClosed,
       disposed,
       rejected,
       git: await typedHost.git.capabilities(),
@@ -174,9 +198,12 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'writeFile',
   ]);
   expect(contract.methods.fsV2).toEqual([
+    'beginEnumerate',
     'beginRead',
     'beginWrite',
+    'closeEnumerate',
     'closeTransfer',
+    'continueEnumerate',
     'createDirectory',
     'dispose',
     'finishWrite',
@@ -309,6 +336,9 @@ test('preload exposes the complete typed host and reaches representative IPC han
   expect(contract.roundTrip).toBe('# IPC contract\n');
   expect(contract.opened.ok).toBe(true);
   expect(contract.root.ok).toBe(true);
+  expect(contract.enumerated.ok).toBe(true);
+  expect(contract.enumerated.entries).toBeGreaterThanOrEqual(0);
+  expect(contract.enumerateClosed.ok).toBe(true);
   expect(contract.disposed.ok).toBe(true);
   expect(contract.rejected).toEqual([
     'external',

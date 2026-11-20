@@ -2246,28 +2246,11 @@ body.db-resizing-sidebar * {
   width: 24px;
 }
 
-/* The compact layout puts Squisq's overflow trigger part-way along the second
-   row, wherever the formatting buttons stop. Its desktop right-aligned
-   placement would hang the menu off-canvas from there, so anchor the mobile
-   popover to the full-width toolbar instead. The trigger's own wrapper must
-   not be the containing block: an offset from it moves with the trigger, and
-   once Squisq kept Insert inline the trigger moved right and the menu ran
-   89px off a 390px screen. */
-.db-shell--mobile .squisq-toolbar {
-  position: relative;
-}
-
-.db-shell--mobile .squisq-toolbar-overflow {
-  position: static;
-}
-
-html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
-  right: auto !important;
-  left: max(4px, env(safe-area-inset-left)) !important;
-  max-width: calc(100vw - 8px);
-  max-height: calc(100dvh - 96px);
-  overflow-y: auto;
-}
+/* No placement override for Squisq's overflow menu here. Squisq portals it to
+   the body and positions it from the trigger's viewport rect (right-aligned
+   under the "···" button, clamped 8px inside the viewport, flipped above
+   when there is more room there). An `!important` left edge used to pin it
+   to the screen's left side, so on iPad it opened far from the trigger. */
 
 /* A wide sidebar or a narrow window can leave the editor pane too small for
    the view tabs, formatting controls, and host controls to share one row —
@@ -2457,8 +2440,11 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   font-size: 12px;
 }
 
-/* In folder/empty views, the back button sits as a standalone bar */
+/* In folder/empty views, the back button sits as a standalone bar. Its 12px
+   inline padding, 24px icon, and 6px gap set the column the folder header and
+   rows below align to (see Folder View). */
 .db-folder-view > .db-mobile-back {
+  margin-bottom: 12px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--db-border);
   border-radius: 0;
@@ -3618,12 +3604,15 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   overflow-y: auto;
 }
 
+/* Header, rows, and the phone back button share one column: a 24px icon slot
+   inset 12px, then the label 6px after it. Backgrounds and the divider keep
+   the pane's outer edge. */
 .db-folder-view-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   margin-bottom: 16px;
-  padding-bottom: 12px;
+  padding: 0 12px 12px;
   border-bottom: 1px solid var(--db-border);
 }
 
@@ -3658,7 +3647,7 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 .db-folder-view-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 8px 12px;
   border-radius: 4px;
   cursor: pointer;
@@ -3673,6 +3662,8 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 .db-folder-view-item-icon {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  width: 24px;
   flex-shrink: 0;
   color: var(--db-text-secondary);
 }

@@ -180,6 +180,8 @@ export type {
 export {
   ELECTRON_FILE_SYSTEM_V2_CAPABILITIES,
   FILE_SYSTEM_TRANSFER_LIMITS,
+  FILE_SYSTEM_ENUMERATION_LIMITS,
+  type HostFileSystemEnumerationStep,
   type HostFileSystemReadTransfer,
   type DocBlocksHostFsV2API,
   type HostFileSystemV2OpenRequest,

@@ -18,6 +18,7 @@ import {
 } from '@bendyline/docblocks/host';
 
 import { NodeWorkspaceFileSystemV2 } from './node-workspace-filesystem-v2.js';
+import { FileSystemEnumerations } from './filesystem-enumerations.js';
 import { FileSystemTransfers } from './filesystem-transfers.js';
 
 interface ProviderRecord {
@@ -40,6 +41,7 @@ export class FileSystemV2IpcService {
   private readonly openings = new Map<string, Promise<ProviderRecord>>();
   private readonly closedOwners = new Set<string>();
   private readonly transfers = new FileSystemTransfers();
+  private readonly enumerations = new FileSystemEnumerations();
 
   public constructor(
     private readonly providerFactory: FileSystemV2ProviderFactory = (request, rootPath) =>
@@ -102,6 +104,27 @@ export class FileSystemV2IpcService {
     return this.withProvider(ownerId, instanceId, 'list', itemPath, null, (provider) =>
       provider.readDirectory(itemPath),
     );
+  }
+
+  public beginEnumerate(ownerId: string, instanceId: string, itemPath: WorkspacePath) {
+    return this.withProvider(ownerId, instanceId, 'list', itemPath, null, (provider) =>
+      this.enumerations.begin(ownerId, instanceId, provider, itemPath),
+    );
+  }
+
+  public continueEnumerate(ownerId: string, instanceId: string, cursor: string) {
+    return this.result('list', null, null, async () => {
+      validateIdentifier(cursor, 'folder listing');
+      this.requireRecord(ownerId, instanceId, 'list');
+      return this.enumerations.next(ownerId, instanceId, cursor);
+    });
+  }
+
+  public closeEnumerate(ownerId: string, instanceId: string, cursor: string) {
+    return this.result('list', null, null, async () => {
+      await this.enumerations.close(ownerId, instanceId, cursor);
+      return null;
+    });
   }
 
   public beginRead(ownerId: string, instanceId: string, itemPath: WorkspacePath) {
@@ -279,6 +302,7 @@ export class FileSystemV2IpcService {
       if (!record) return null;
       this.records.delete(key);
       await this.transfers.dispose(ownerId, instanceId);
+      await this.enumerations.dispose(ownerId, instanceId);
       await Promise.all([...record.subscriptions.values()].map((item) => item.dispose()));
       record.subscriptions.clear();
       await record.provider.dispose();
@@ -299,6 +323,7 @@ export class FileSystemV2IpcService {
       records.map(async ([key, record]) => {
         this.records.delete(key);
         await this.transfers.dispose(ownerId, record.request.instanceId);
+        await this.enumerations.dispose(ownerId, record.request.instanceId);
         await record.provider.dispose();
       }),
     );

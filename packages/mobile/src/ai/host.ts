@@ -37,6 +37,7 @@ export interface MobileAiOptions {
   load(): Promise<EmbeddingConnection>;
   readPreferences(): unknown;
   writePreferences(preferences: AiPreferences): void;
+  /** Longest wait for the next delta or progress event before a chat times out. */
   requestTimeoutMs?: number;
   /** Waits before each retry of an interrupted download that saved no new bytes. */
   downloadRetryDelaysMs?: readonly number[];
@@ -467,10 +468,17 @@ export function createMobileAi(options: MobileAiOptions) {
               model?.unavailable_reason ??
                 'Choose an available on-device model in Settings → AI assistance.',
             );
-          timeout = setTimeout(() => {
-            timedOut = true;
-            controller.abort();
-          }, options.requestTimeoutMs ?? 180_000);
+          // A stall limit, not a total: a long reply on a phone or iPad streams
+          // for minutes, and a flat limit cut healthy drafts off mid-sentence.
+          // Each delta or progress event re-arms it, as desktop's watchdog does.
+          const arm = () => {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => {
+              timedOut = true;
+              controller.abort();
+            }, options.requestTimeoutMs ?? 180_000);
+          };
+          arm();
           const maxTokens = Math.min(
             request.maxTokens ??
               (request.purpose === 'write'
@@ -536,6 +544,11 @@ export function createMobileAi(options: MobileAiOptions) {
                     const progress = parseAiChatProgress(event.progress);
                     if (progress) emit({ kind: 'progress', progress });
                   }
+                  if (
+                    (event.type === 'delta' || event.type === 'progress') &&
+                    !controller.signal.aborted
+                  )
+                    arm();
                 },
               },
             );

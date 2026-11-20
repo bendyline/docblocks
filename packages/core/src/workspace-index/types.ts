@@ -1,6 +1,7 @@
 import type { FileSystemProviderCapabilities, FileSystemProviderV2 } from '../filesystem/v2.js';
 import type { WorkspacePath } from '../filesystem/workspace-path.js';
 import type { CatalogDocumentFormat, CatalogOutlineEntry } from '../workspace-settings/catalog.js';
+import type { WorkspaceIndexEngine } from './engine.js';
 
 /**
  * What the index reads from. Only read methods are reachable, so the index
@@ -12,6 +13,8 @@ export type WorkspaceIndexSource = Pick<
 > & {
   readonly capabilities?: Pick<FileSystemProviderCapabilities, 'watch'>;
   readonly watch?: FileSystemProviderV2['watch'];
+  /** Used for listing when present; without it the index walks `readDirectory`. */
+  readonly enumerate?: FileSystemProviderV2['enumerate'];
 };
 
 export interface WorkspaceIndexLimits {
@@ -53,6 +56,11 @@ export interface WorkspaceIndexOptions {
   readonly minRefreshIntervalMs?: number;
   /** Window that coalesces bursts of change notifications; default 50 ms. */
   readonly changeCoalesceMs?: number;
+  /**
+   * Where analysis results and their text are kept and searched. Default:
+   * in memory for the session. The index disposes the engine with itself.
+   */
+  readonly engine?: WorkspaceIndexEngine;
 }
 
 export type WorkspaceIndexPhase = 'idle' | 'listing' | 'analyzing' | 'ready' | 'error' | 'disposed';

@@ -205,6 +205,24 @@ export interface FileSystemWatchSubscription {
 }
 
 /**
+ * One page of a recursive metadata listing (`FileSystemProviderV2.enumerate`).
+ * Entries come parents first, each folder's children in canonical order.
+ *
+ * An enumerated entry's `version` is derived from metadata only (size and
+ * modification time): it changes when those do, and it is not comparable
+ * with the content versions `stat`, `readDirectory` and `readFile` return.
+ */
+export interface FileSystemEnumerationPage {
+  readonly entries: readonly FileSystemEntrySnapshot[];
+  /** Folders that were listed as entries but could not be read; their contents are unknown. */
+  readonly unreadable: readonly WorkspacePath[];
+}
+
+export interface FileSystemEnumerateOptions {
+  readonly signal?: AbortSignal;
+}
+
+/**
  * Correctness-first filesystem contract. Every logical path has exactly one
  * kind and one byte payload; conditional writes and lifecycle disposal are
  * mandatory rather than optional provider extensions.
@@ -238,6 +256,20 @@ export interface FileSystemProviderV2 {
   ): Promise<FileSystemEntrySnapshot>;
 
   snapshot(): Promise<FileSystemSnapshot>;
+  /**
+   * Optional. Every entry beneath `path` (not `path` itself), recursively, in
+   * pages, from metadata alone: it never reads or hashes a file and never
+   * downloads an online-only one, so it costs a directory read per folder.
+   * Names `isIgnoredWorkspaceEntryName` hides are neither listed nor entered;
+   * companion folders (`*_files`) and the Squisq runtime folder are listed
+   * but not entered. A provider without a cheap recursive listing leaves it
+   * out, or throws `not-supported` from the first page (an older host
+   * bridge); callers then walk `readDirectory`.
+   */
+  enumerate?(
+    path: WorkspacePath,
+    options?: FileSystemEnumerateOptions,
+  ): AsyncIterable<FileSystemEnumerationPage>;
   /**
    * Always returns a disposable subscription. When `capabilities.watch` is
    * false, `ready` rejects with `FsError('not-supported')` and `onError`

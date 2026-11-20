@@ -75,6 +75,8 @@ export type {
   FileSystemWatchErrorListener,
   FileSystemWatchOptions,
   FileSystemWatchSubscription,
+  FileSystemEnumerationPage,
+  FileSystemEnumerateOptions,
 } from './v2.js';
 export { parseFileSystemVersion, tryParseFileSystemVersion } from './v2.js';
 export {

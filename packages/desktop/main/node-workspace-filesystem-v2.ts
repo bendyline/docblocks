@@ -4,8 +4,10 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
   FsError,
+  SQUISQ_RUNTIME_DIRECTORY_NAME,
   WORKSPACE_ROOT,
   fsErrorFromUnknown,
+  isCompanionDirectoryName,
   isIgnoredWorkspaceEntryName,
   isMarkdownFileName,
   parseFileSystemVersion,
@@ -19,6 +21,8 @@ import {
   type FileSystemEntryReadIssue,
   type FileSystemEntryWatchEvent,
   type FileSystemEntrySnapshot,
+  type FileSystemEnumerateOptions,
+  type FileSystemEnumerationPage,
   type FileSystemFileRead,
   type FileSystemFileSnapshot,
   type FileSystemMoveOptions,
@@ -41,6 +45,7 @@ import {
 } from '@bendyline/docblocks/filesystem';
 import {
   ELECTRON_FILE_SYSTEM_V2_CAPABILITIES,
+  FILE_SYSTEM_ENUMERATION_LIMITS,
   FILE_SYSTEM_TRANSFER_LIMITS,
   HOST_WIRE_LIMITS,
 } from '@bendyline/docblocks/host';
@@ -386,6 +391,119 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
       snapshots.sort(compareSnapshots);
       return Object.freeze(snapshots);
     });
+  }
+
+  /**
+   * Metadata-only recursive listing (`FileSystemProviderV2.enumerate`). It
+   * never opens a file, so it neither hashes content nor downloads an
+   * online-only placeholder. Each folder is read under the root lock on its
+   * own, so a long listing holds a save up for one directory read at most.
+   */
+  public async *enumerate(
+    path: WorkspacePath,
+    options: FileSystemEnumerateOptions = {},
+  ): AsyncGenerator<FileSystemEnumerationPage> {
+    const root = this.canonical(path);
+    const pageSize = FILE_SYSTEM_ENUMERATION_LIMITS.pageEntries;
+    const queue: WorkspacePath[] = [root];
+    const visited = new Set<string>();
+    const entries: FileSystemEntrySnapshot[] = [];
+    const unreadable: WorkspacePath[] = [];
+    let total = 0;
+    let yielded = false;
+    while (queue.length > 0) {
+      options.signal?.throwIfAborted();
+      const folder = queue.shift()!;
+      let listed: MetadataListing;
+      try {
+        listed = await this.execute('list', folder, null, () =>
+          this.listMetadata(folder, folder === root, visited),
+        );
+      } catch (error: unknown) {
+        if (folder === root) throw error;
+        // Gone since its parent was read, or outside the workspace: not "unreadable".
+        const code = error instanceof FsError ? error.code : null;
+        if (!ENUMERATION_SKIPPED_CODES.has(code)) unreadable.push(folder);
+        continue;
+      }
+      total += listed.entries.length;
+      if (total > ENUMERATION_ENTRY_LIMIT) {
+        throw this.error('quota-exceeded', 'list', root, 'Folder listing exceeds the entry limit.');
+      }
+      entries.push(...listed.entries);
+      queue.push(...listed.descend);
+      while (entries.length + unreadable.length >= pageSize) {
+        const folders = unreadable.splice(0, pageSize);
+        yield { entries: entries.splice(0, pageSize - folders.length), unreadable: folders };
+        yielded = true;
+      }
+    }
+    if (entries.length > 0 || unreadable.length > 0 || !yielded) {
+      yield { entries: entries.splice(0), unreadable: unreadable.splice(0) };
+    }
+  }
+
+  /** One folder's children from metadata, and the folders to enter next. */
+  private async listMetadata(
+    folder: WorkspacePath,
+    isRoot: boolean,
+    visited: Set<string>,
+  ): Promise<MetadataListing> {
+    if (isRoot) {
+      const kind = await this.nativeKind(folder, 'list');
+      if (kind === null) throw this.error('not-found', 'list', folder, 'Directory not found.');
+      if (kind !== 'directory') {
+        throw this.error('type-mismatch', 'list', folder, 'Expected a directory, found a file.');
+      }
+    }
+    const abs = await this.resolveRead(folder, 'list');
+    // A symbolic link back to a folder already listed would never end.
+    const real = await fs.realpath(abs);
+    if (visited.has(real)) return { entries: [], descend: [] };
+    visited.add(real);
+    const children = (await fs.readdir(abs, { withFileTypes: true }))
+      .filter((child) => !isIgnoredWorkspaceEntryName(child.name))
+      .sort((left, right) => compareText(left.name, right.name));
+    const observed = await Promise.all(
+      children.map(async (child): Promise<FileSystemEntrySnapshot | null> => {
+        let childPath: WorkspacePath;
+        let stat: BigIntStats;
+        try {
+          childPath = workspacePathJoin(folder, child.name);
+          // A link is followed only where it stays inside the workspace.
+          const target = child.isSymbolicLink()
+            ? await this.roots.resolvePhysical(this.rootPath, childPath)
+            : path.join(abs, child.name);
+          stat = await fs.stat(target, { bigint: true });
+        } catch {
+          return null; // Vanished, outside the workspace, or an unusable name.
+        }
+        const common = {
+          path: childPath,
+          name: child.name,
+          version: versionForMetadata(stat),
+          lastModified: stat.mtime.toISOString(),
+        };
+        if (stat.isDirectory()) return { kind: 'directory', size: null, ...common };
+        if (!stat.isFile()) return null;
+        return {
+          kind: 'file',
+          size: Number(stat.size),
+          ...common,
+          ...(this.isOnlineOnly(stat) ? { onlineOnly: true as const } : {}),
+        };
+      }),
+    );
+    const entries = observed.filter((entry): entry is FileSystemEntrySnapshot => entry !== null);
+    const descend = entries
+      .filter(
+        (entry) =>
+          entry.kind === 'directory' &&
+          !isCompanionDirectoryName(entry.name) &&
+          entry.name !== SQUISQ_RUNTIME_DIRECTORY_NAME,
+      )
+      .map((entry) => entry.path);
+    return { entries, descend };
   }
 
   /** Capture a stable large file into a main-owned spool with bounded memory. */
@@ -2097,6 +2215,32 @@ function copyBytes(data: ArrayBuffer | Uint8Array): ArrayBuffer {
   const copy = new Uint8Array(source.byteLength);
   copy.set(source);
   return copy.buffer as ArrayBuffer;
+}
+
+interface MetadataListing {
+  readonly entries: readonly FileSystemEntrySnapshot[];
+  readonly descend: readonly WorkspacePath[];
+}
+
+/** A whole-workspace metadata listing stops past this many entries. */
+const ENUMERATION_ENTRY_LIMIT = 1_000_000;
+
+/** Folder failures that mean "not part of this listing" rather than "could not read". */
+const ENUMERATION_SKIPPED_CODES: ReadonlySet<FsErrorCode | null> = new Set<FsErrorCode | null>([
+  'not-found',
+  'type-mismatch',
+  'path-escape',
+  'invalid-path',
+]);
+
+/**
+ * A version from metadata alone (inode, size, modification time): it moves
+ * whenever any of them does, without reading the file. Not comparable with
+ * the content versions the rest of this provider returns.
+ */
+function versionForMetadata(stat: BigIntStats): FileSystemVersion {
+  const kind = stat.isDirectory() ? 'd' : 'f';
+  return parseFileSystemVersion(`meta:${kind}:${stat.ino}:${stat.size}:${stat.mtimeNs}`);
 }
 
 function compareSnapshots(left: FileSystemEntrySnapshot, right: FileSystemEntrySnapshot): number {
