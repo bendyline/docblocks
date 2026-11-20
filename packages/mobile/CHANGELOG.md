@@ -1,3 +1,15 @@
+## docblocks-mobile [1.1.6](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.1.5...docblocks-mobile@1.1.6) (2026-11-20)
+
+### Bug Fixes
+
+* improve mobile media workflows ([#59](https://github.com/bendyline/docblocks/issues/59)) ([7b22838](https://github.com/bendyline/docblocks/commit/7b22838f4e97dbe62e3a23a4f64515d1a8b01f6a))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.8.5
+* **@bendyline/docblocks-react:** upgraded to 2.8.6
+
 ## docblocks-mobile [1.1.5](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.1.4...docblocks-mobile@1.1.5) (2026-11-19)
 
 ### Bug Fixes
