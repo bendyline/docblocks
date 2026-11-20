@@ -14,7 +14,8 @@ import type {
 } from '@bendyline/docblocks/workspace-index';
 import { HighlightedText } from '../components/HighlightedText.js';
 import { FilesIcon } from '../icons.js';
-import { useWorkspaceSearch } from './useWorkspaceSearch.js';
+import { matchedWord } from './ranked-results.js';
+import { useWorkspaceSearch, type WorkspaceSearchMode } from './useWorkspaceSearch.js';
 
 export interface WorkspaceSearchOpenRequest {
   readonly path: string;
@@ -33,6 +34,8 @@ export interface WorkspaceSearchPanelProps {
   readonly focusRequest: number;
   readonly onOpen: (request: WorkspaceSearchOpenRequest) => void;
   readonly onShowFiles: () => void;
+  /** Semantic search's coverage, while Best matches also ranks by meaning. */
+  readonly semantic?: { readonly total: number; readonly embedded: number } | null;
 }
 
 type Row =
@@ -60,6 +63,8 @@ function statusText(
   query: string,
   result: WorkspaceSearchResult | null,
   searching: boolean,
+  mode: WorkspaceSearchMode,
+  semantic: WorkspaceSearchPanelProps['semantic'],
 ): string {
   if (!index) return 'Search is not available for this workspace.';
   if (status.error) return status.error;
@@ -74,6 +79,14 @@ function statusText(
   }
   if (!result) return searching ? 'Searching…' : '';
   if (result.totalDocuments === 0) return `No results.${indexing}`;
+  if (mode === 'ranked') {
+    // Word matches are always complete; meaning fills in as passages are prepared.
+    const meaning =
+      semantic && semantic.total > 0 && semantic.embedded < semantic.total
+        ? ` Matching by meaning in ${Math.floor((semantic.embedded / semantic.total) * 100)}% so far.`
+        : '';
+    return `${plural(result.totalMatches, 'passage')} in ${plural(result.totalDocuments, 'document')}, best first.${meaning}${indexing}`;
+  }
   const found = `${plural(result.totalMatches, 'result')} in ${plural(result.totalDocuments, 'document')}`;
   const shown =
     result.truncated && result.documents.length < result.totalDocuments
@@ -96,16 +109,20 @@ export function WorkspaceSearchPanel({
   focusRequest,
   onOpen,
   onShowFiles,
+  semantic = null,
 }: WorkspaceSearchPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const [text, setText] = useState('');
   const [matchCase, setMatchCase] = useState(false);
   const [wholeWord, setWholeWord] = useState(false);
+  const [bestMatches, setBestMatches] = useState(false);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  // Ranking needs the index's full-text store; without it the toggle is not offered.
+  const mode: WorkspaceSearchMode = bestMatches && status.ranked === true ? 'ranked' : 'literal';
   const query = useMemo(() => ({ text, matchCase, wholeWord }), [text, matchCase, wholeWord]);
-  const { result, searching } = useWorkspaceSearch(index, status.generation, query);
+  const { result, searching } = useWorkspaceSearch(index, status.generation, query, mode);
 
   useEffect(() => {
     if (focusRequest === 0) return;
@@ -116,7 +133,7 @@ export function WorkspaceSearchPanel({
   // A new query starts with every document expanded.
   useEffect(() => {
     setCollapsed(new Set());
-  }, [text, matchCase, wholeWord]);
+  }, [text, matchCase, wholeWord, mode]);
 
   const rows = useMemo<Row[]>(() => {
     const flat: Row[] = [];
@@ -144,7 +161,16 @@ export function WorkspaceSearchPanel({
   };
 
   const open = (document: WorkspaceSearchDocument, match: WorkspaceSearchLineMatch | null) =>
-    onOpen({ path: document.path, match, query: text, matchCase, wholeWord });
+    mode === 'ranked'
+      ? // Find lands on the word the passage matched; ranking ignores case and word edges.
+        onOpen({
+          path: document.path,
+          match,
+          query: matchedWord(match ?? document.matches[0] ?? null, text),
+          matchCase: false,
+          wholeWord: false,
+        })
+      : onOpen({ path: document.path, match, query: text, matchCase, wholeWord });
 
   const toggle = (path: string, expand?: boolean) =>
     setCollapsed((current) => {
@@ -195,7 +221,13 @@ export function WorkspaceSearchPanel({
   const documentCount = result?.documents.length ?? 0;
 
   return (
-    <section className="db-search-panel" hidden={hidden} aria-label="Search workspace">
+    <section
+      className="db-search-panel"
+      hidden={hidden}
+      aria-label="Search workspace"
+      data-search-mode={mode}
+      data-index-persistence={status.persistence ?? 'memory'}
+    >
       <div className="db-explorer-toolbar">
         <span className="db-explorer-title">Search</span>
         <div className="db-explorer-actions">
@@ -233,6 +265,7 @@ export function WorkspaceSearchPanel({
           aria-pressed={matchCase}
           aria-label="Match case"
           title="Match case"
+          disabled={mode === 'ranked'}
           onClick={() => setMatchCase((value) => !value)}
         >
           Aa
@@ -243,13 +276,26 @@ export function WorkspaceSearchPanel({
           aria-pressed={wholeWord}
           aria-label="Match whole word"
           title="Match whole word"
+          disabled={mode === 'ranked'}
           onClick={() => setWholeWord((value) => !value)}
         >
           ab
         </button>
+        {status.ranked === true && (
+          <button
+            type="button"
+            className="db-search-toggle db-search-toggle--ranked"
+            aria-pressed={mode === 'ranked'}
+            aria-label="Best matches"
+            title="Best matches: the passages that best fit your words, wherever they are"
+            onClick={() => setBestMatches((value) => !value)}
+          >
+            ≈
+          </button>
+        )}
       </div>
       <p className="db-search-status" role="status">
-        {statusText(index, status, text, result, searching)}
+        {statusText(index, status, text, result, searching, mode, semantic)}
       </p>
       <div
         className="db-search-results"

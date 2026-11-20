@@ -243,6 +243,21 @@ export interface AiChatRequest {
    * end up in its output.
    */
   readonly knowledgeCitations?: boolean;
+  /**
+   * Passages from the person's own workspace, found by meaning for this
+   * request. The host offers them to the model beside its knowledge
+   * catalogs' passages, under the same budget and citation numbering.
+   */
+  readonly workspacePassages?: readonly AiWorkspacePassage[];
+}
+
+/** One workspace passage offered as evidence; see {@link AiChatRequest.workspacePassages}. */
+export interface AiWorkspacePassage {
+  /** `knowledge://local/<catalog>/<path>#line=a-b`, the citation grammar. */
+  readonly uri: string;
+  /** The note's title, with the headings above the passage. */
+  readonly title: string;
+  readonly text: string;
 }
 
 export interface AiChatCompletion {

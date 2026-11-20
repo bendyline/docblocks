@@ -58,6 +58,10 @@ extraResources:
     to: THIRD_PARTY_NOTICES.txt
   - from: dist/gezel-native/${os}-${arch}
     to: gezel-native
+  # Semantic search's embedding model (embedding-model.json), staged and
+  # digest-checked by beforePack. Read-only data; never downloaded at runtime.
+  - from: dist/embedding-model
+    to: embedding-model
 
 # Stage the target architecture from the installed Gezel inference package's release
 # pins before copying resources. No executable download happens in the app.

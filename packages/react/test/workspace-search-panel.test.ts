@@ -60,6 +60,7 @@ describe('WorkspaceSearchPanel', () => {
     index: WorkspaceIndex,
     opened: WorkspaceSearchOpenRequest[],
     hidden = false,
+    semantic: { total: number; embedded: number } | null = null,
   ) {
     await act(async () => {
       root.render(
@@ -70,6 +71,7 @@ describe('WorkspaceSearchPanel', () => {
           focusRequest: 1,
           onOpen: (request: WorkspaceSearchOpenRequest) => opened.push(request),
           onShowFiles: () => undefined,
+          semantic,
         }),
       );
     });
@@ -191,5 +193,107 @@ describe('WorkspaceSearchPanel', () => {
       first.dispose();
       second.dispose();
     }
+  });
+
+  describe('best matches', () => {
+    /** An index whose engine ranks passages: the literal index plus a canned `find`. */
+    function rankingIndex(index: WorkspaceIndex, calls: string[]): WorkspaceIndex {
+      return Object.assign(Object.create(index) as WorkspaceIndex, {
+        getStatus: () => ({ ...index.getStatus(), ranked: true, persistence: 'persistent' }),
+        find: async (query: string) => {
+          calls.push(query);
+          return [
+            {
+              path: 'garden.md',
+              title: 'Garden notes',
+              headingPath: ['Garden notes', 'Pests'],
+              lineStart: 5,
+              lineEnd: 7,
+              snippet: 'Aphids gather under the leaves',
+              ranges: [[0, 6]] as const,
+              score: 3,
+            },
+            {
+              path: 'kitchen.md',
+              title: 'Kitchen',
+              headingPath: [],
+              lineStart: 3,
+              lineEnd: 3,
+              snippet: 'no aphids in the pantry',
+              ranges: [[3, 9]] as const,
+              score: 1,
+            },
+          ];
+        },
+      });
+    }
+
+    it('is not offered when the index cannot rank', async () => {
+      const index = await analyzedIndex({ 'garden.md': '# Garden\n' });
+      try {
+        await render(index, []);
+        expect(container.querySelector('button[aria-label="Best matches"]')).to.equal(null);
+        expect(container.querySelector('section')?.getAttribute('data-index-persistence')).to.equal(
+          'memory',
+        );
+      } finally {
+        index.dispose();
+      }
+    });
+
+    it('lists ranked passages best first and opens one with Find on its matched word', async () => {
+      const literal = await analyzedIndex({
+        'garden.md': '# Garden notes\n\n## Pests\n\nAphids gather under the leaves.\n',
+        'kitchen.md': '# Kitchen\n\nno aphids in the pantry\n',
+      });
+      const calls: string[] = [];
+      const index = rankingIndex(literal, calls);
+      const opened: WorkspaceSearchOpenRequest[] = [];
+      try {
+        await render(index, opened);
+        const section = container.querySelector('section')!;
+        expect(section.getAttribute('data-index-persistence')).to.equal('persistent');
+        const best = container.querySelector<HTMLButtonElement>(
+          'button[aria-label="Best matches"]',
+        )!;
+        await act(async () => best.click());
+        expect(best.getAttribute('aria-pressed')).to.equal('true');
+        expect(section.getAttribute('data-search-mode')).to.equal('ranked');
+        expect(
+          container.querySelector<HTMLButtonElement>('button[aria-label="Match case"]')?.disabled,
+        ).to.equal(true);
+
+        const input = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+        await act(async () => typeInto(input, 'Aphid trouble'));
+        await settle();
+        expect(calls).to.deep.equal(['Aphid trouble']);
+        expect(
+          [...container.querySelectorAll('.db-search-document-title')].map(
+            (node) => node.textContent,
+          ),
+        ).to.deep.equal(['Garden notes', 'Kitchen']);
+        expect(container.querySelector('[role="status"]')?.textContent).to.equal(
+          '2 passages in 2 documents, best first.',
+        );
+        // While meaning is still filling in, the status says how far it got.
+        await render(index, opened, false, { total: 400, embedded: 100 });
+        expect(container.querySelector('[role="status"]')?.textContent).to.equal(
+          '2 passages in 2 documents, best first. Matching by meaning in 25% so far.',
+        );
+
+        await act(async () =>
+          container.querySelectorAll<HTMLElement>('.db-search-line')[1]!.click(),
+        );
+        expect(opened.at(-1)).to.include({
+          path: 'kitchen.md',
+          query: 'aphids',
+          matchCase: false,
+          wholeWord: false,
+        });
+        expect(opened.at(-1)?.match?.line).to.equal(3);
+      } finally {
+        literal.dispose();
+      }
+    });
   });
 });

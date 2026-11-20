@@ -42,6 +42,19 @@ export const WORKSPACE_INDEX_LIMITS: Readonly<WorkspaceIndexLimits> = Object.fre
   maxTextCharacters: 24_000_000,
 });
 
+/**
+ * Limits for an index whose text lives in a persistent store (a worker's
+ * SQLite database) rather than in page memory: the page then holds only
+ * names, titles and outlines, so the text budget is the store's to bound.
+ */
+export const WORKSPACE_INDEX_STORE_LIMITS: Readonly<WorkspaceIndexLimits> = Object.freeze({
+  ...WORKSPACE_INDEX_LIMITS,
+  maxEntries: 250_000,
+  maxDirectories: 50_000,
+  maxDocuments: 200_000,
+  maxTextCharacters: Number.MAX_SAFE_INTEGER,
+});
+
 export interface WorkspaceIndexOptions {
   readonly workspaceId: string;
   readonly source: WorkspaceIndexSource;
@@ -61,6 +74,12 @@ export interface WorkspaceIndexOptions {
    * in memory for the session. The index disposes the engine with itself.
    */
   readonly engine?: WorkspaceIndexEngine;
+  /**
+   * Embed a search query with the engine's embedding profile, so `find()`
+   * ranks by meaning as well as words. A slow or failing embedder leaves
+   * that search lexical.
+   */
+  readonly embedQuery?: (query: string, signal: AbortSignal) => Promise<ArrayLike<number>>;
 }
 
 export type WorkspaceIndexPhase = 'idle' | 'listing' | 'analyzing' | 'ready' | 'error' | 'disposed';
@@ -84,6 +103,52 @@ export interface WorkspaceIndexStatus {
   readonly error: string | null;
   /** Advances whenever the published files, documents, or status change. */
   readonly generation: number;
+  /** 'persistent' once the engine keeps analysis across launches; absent or 'memory' otherwise. */
+  readonly persistence?: 'memory' | 'persistent';
+  /** True when `find()` ranks passages (the engine has a full-text index). */
+  readonly ranked?: boolean;
+}
+
+/** A passage ranked by relevance (BM25 over titles, headings and text). */
+export interface WorkspacePassageHit {
+  readonly path: string;
+  readonly title: string;
+  /** Headings above the passage, outermost first. */
+  readonly headingPath: readonly string[];
+  /** 1-based inclusive source line span. */
+  readonly lineStart: number;
+  readonly lineEnd: number;
+  readonly snippet: string;
+  /** Match ranges within `snippet`, as [start, end) UTF-16 offsets. */
+  readonly ranges: ReadonlyArray<readonly [number, number]>;
+  /** Higher is better; comparable within one result. */
+  readonly score: number;
+  /**
+   * Found by meaning: the passage's embedding is near the query's, above the
+   * embedding profile's measured floor. Absent for a search by words alone.
+   */
+  readonly meaning?: boolean;
+  /** The passage's full text, when `WorkspaceFindOptions.text` asked for it. */
+  readonly text?: string;
+}
+
+export interface WorkspaceFindOptions {
+  /** Most passages; default 20. */
+  readonly limit?: number;
+  /** Most passages from one document; default 3. */
+  readonly perDocument?: number;
+  /** Match the last word as a prefix, for search as you type. */
+  readonly prefix?: boolean;
+  /** Documents to leave out. */
+  readonly exclude?: ReadonlySet<string>;
+  /**
+   * The query's embedding from the index's profile, to fuse passages near in
+   * meaning with those matching the words. The index fills it in itself when
+   * it was given `embedQuery`.
+   */
+  readonly vector?: ArrayLike<number>;
+  /** Include each passage's full text (to quote it to a model, say). */
+  readonly text?: boolean;
 }
 
 export type WorkspaceIndexFileKind = 'markdown' | 'outside-in' | 'other';
@@ -216,6 +281,12 @@ export interface WorkspaceIndex {
     query: WorkspaceSearchQuery,
     options?: { readonly signal?: AbortSignal; readonly limits?: Partial<WorkspaceSearchLimits> },
   ): Promise<WorkspaceSearchResult>;
+  /**
+   * Passages ranked by relevance; empty when the engine cannot rank
+   * (`getStatus().ranked` says which). Words, not literal text: unlike
+   * `search`, it ignores case, accents and word order.
+   */
+  find?(query: string, options?: WorkspaceFindOptions): Promise<readonly WorkspacePassageHit[]>;
   /** Re-walk the workspace, re-reading only changed documents. Coalesced. */
   refresh(options?: { readonly force?: boolean }): void;
   /** Re-check one path (or subtree) that is known to have changed. */

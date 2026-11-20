@@ -41,6 +41,7 @@
     "dist:dir": "npm run build && electron-builder --dir -c.mac.hardenedRuntime=false -c.extraMetadata.docblocksAutomationHooks=true",
     "start": "node scripts/run-electron.cjs",
     "stage:gezel-native": "node scripts/stage-gezel-native.cjs",
+    "stage:embedding-model": "node scripts/stage-embedding-model.cjs",
     "icons": "python3 scripts/generate-icons.py",
     "test:e2e": "npm run build && playwright test --config=e2e/playwright.config.ts",
     "test:e2e:packaged": "npm run dist:dir && npm run test:e2e:packaged:only",
@@ -49,6 +50,7 @@
   "dependencies": {
     "@bendyline/gezel-app-sdk": "1.2.3",
     "@bendyline/gezel-inference": "1.1.3",
+    "@bendyline/gezel-knowledge": "1.2.11",
     "@huggingface/transformers": "4.3.1",
     "builder-util-runtime": "9.7.0",
     "chokidar": "4.0.3",

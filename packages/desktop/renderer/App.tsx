@@ -3,6 +3,7 @@ import { getDocBlocksHost } from '@bendyline/docblocks/host';
 import { UpdateStatusItem, useUpdaterStatus } from './UpdateStatusBanner';
 import { DESKTOP_CALC_ENGINE_FACTORY } from './calculationConfig';
 import { DESKTOP_PROOFING_PROVIDER } from './proofingConfig';
+import { DESKTOP_WORKSPACE_INDEX_WORKER } from './workspaceIndexConfig';
 // pdf.js parses PDFs only with a worker, and only the bundler can give its URL.
 // pdfjs-dist is pinned to the version Squisq's formats package loads.
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
@@ -25,6 +26,7 @@ export function App() {
         calcEngineFactory={DESKTOP_CALC_ENGINE_FACTORY}
         pdfWorkerSrc={pdfWorkerUrl}
         proofing={DESKTOP_PROOFING_PROVIDER}
+        workspaceIndexWorker={DESKTOP_WORKSPACE_INDEX_WORKER}
         statusBarSlotRight={<UpdateStatusItem status={updaterStatus} />}
         onCopyCode={(code) => getDocBlocksHost().clipboard?.writeText(code)}
         allowPresentationWindow={false}

@@ -10,7 +10,7 @@ This file is the distribution-level entry point for third-party software used by
 | -------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------- |
 | DocBlocks Capacitor distribution       | [packages/mobile/THIRD_PARTY_NOTICES.txt](packages/mobile/THIRD_PARTY_NOTICES.txt)           | 222 locked components |
 | @bendyline/docblocks npm package       | [packages/core/THIRD_PARTY_NOTICES.txt](packages/core/THIRD_PARTY_NOTICES.txt)               | 113 locked components |
-| @bendyline/docblocks-react npm package | [packages/react/THIRD_PARTY_NOTICES.txt](packages/react/THIRD_PARTY_NOTICES.txt)             | 382 locked components |
+| @bendyline/docblocks-react npm package | [packages/react/THIRD_PARTY_NOTICES.txt](packages/react/THIRD_PARTY_NOTICES.txt)             | 384 locked components |
 | @bendyline/docblocks-cli npm package   | [packages/cli/THIRD_PARTY_NOTICES.txt](packages/cli/THIRD_PARTY_NOTICES.txt)                 | 353 locked components |
 | DocBlocks site distribution            | [packages/site/public/THIRD_PARTY_NOTICES.txt](packages/site/public/THIRD_PARTY_NOTICES.txt) | 213 locked components |
 | DocBlocks VS Code extension (VSIX)     | [packages/vscode/THIRD_PARTY_NOTICES.txt](packages/vscode/THIRD_PARTY_NOTICES.txt)           | 205 locked components |
@@ -36,6 +36,7 @@ The public npm package notices are explicitly included by each package's `files`
 The following upstream npm archives declare a license identifier but omit a package-local license/copying/notice file:
 
 - @pdf-lib/fontkit@1.1.1 (MIT); affected artifact: @bendyline/docblocks-cli npm package, @bendyline/docblocks-react npm package, DocBlocks Capacitor distribution, DocBlocks VS Code extension (VSIX), DocBlocks desktop distribution, DocBlocks site distribution; source: https://github.com/Hopding/fontkit.
+- @sqlite.org/sqlite-wasm@3.53.4-build2 (Apache-2.0); affected artifact: @bendyline/docblocks-react npm package; source: https://github.com/sqlite/sqlite-wasm.
 - fastdom@1.0.12 (MIT); affected artifact: @bendyline/docblocks-cli npm package, @bendyline/docblocks-react npm package, DocBlocks Capacitor distribution, DocBlocks VS Code extension (VSIX), DocBlocks desktop distribution, DocBlocks site distribution; source: https://github.com/wilsonpage/fastdom.
 - lazy-val@1.0.5 (MIT); affected artifact: DocBlocks desktop distribution; source: https://github.com/develar/lazy-val.
 - onnxruntime-common@1.30.0 (MIT); affected artifact: DocBlocks desktop distribution; source: https://github.com/Microsoft/onnxruntime.

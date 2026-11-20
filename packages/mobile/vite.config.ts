@@ -7,6 +7,7 @@ import docblocksPackage from '../core/package.json';
 import { harperWasmPlugin } from '../../scripts/vite-harper-wasm.js';
 import { ironCalcWasmPlugin } from '../../scripts/vite-ironcalc-wasm.js';
 import { thirdPartyComponentManifestPlugin } from '../../scripts/vite-third-party-manifest.js';
+import { workerSafeBuilds } from '../../scripts/vite-worker-builds.js';
 
 const mobileBoundary = (): Plugin => ({
   name: 'docblocks-mobile-boundary',
@@ -137,6 +138,10 @@ export default defineConfig({
         replacement: path.resolve(__dirname, '../react/src/styles/docblocks.css'),
       },
       {
+        find: '@bendyline/docblocks-react/workspace-index-worker',
+        replacement: path.resolve(__dirname, '../react/src/WorkspaceIndex/worker.ts'),
+      },
+      {
         find: /^@bendyline\/docblocks-react$/,
         replacement: path.resolve(__dirname, '../react/src/index.ts'),
       },
@@ -158,6 +163,6 @@ export default defineConfig({
     ],
   },
   build: { chunkSizeWarningLimit: 8_000 },
-  worker: { format: 'es', plugins: () => [mobileBoundary()] },
+  worker: { format: 'es', plugins: () => [mobileBoundary(), workerSafeBuilds()] },
   server: { port: 5222, host: '127.0.0.1' },
 });

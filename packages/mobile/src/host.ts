@@ -2,6 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { native } from './native';
 import { installMobileAi } from './ai';
 import { installMobileSpeech } from './speech';
+import { installMobileEmbeddings } from './embeddings';
 import { routeExternalLinks } from './external-links';
 import { installNativePrint } from './print';
 import { installNativeWakeLock } from './wake-lock';
@@ -57,6 +58,10 @@ export async function installMobileHost(): Promise<void> {
     env: info.env,
     ...(mobileAi ? { ai: mobileAi.ai } : {}),
     ...(mobileSpeech ? { speech: mobileSpeech.speech } : {}),
+    // Semantic search embeds with the knowledge plugin's on-device model.
+    ...(Capacitor.isPluginAvailable('GezelKnowledge')
+      ? { embeddings: installMobileEmbeddings() }
+      : {}),
     fsV2: createMobileFileSystemBridge((request) => native.request({ request }), info.capabilities),
     workspaces: {
       // Native lists the current default workspace first; it can change after

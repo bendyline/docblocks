@@ -97,12 +97,18 @@ import {
   aiImagesAvailabilityArguments,
   hostEnvironmentArguments,
   speechAvailabilityArguments,
+  embeddingsAvailabilityArguments,
 } from '../shared/host-environment.js';
 import type { AiImageService } from './ai/ai-image-service.js';
 import type { AiService } from './ai/ai-service.js';
 import { createAiImageService, createAiService, registerAiIpc } from './ipc-ai.js';
 import type { SpeechService } from './speech/speech-service.js';
 import { createSpeechService, registerSpeechIpc } from './ipc-speech.js';
+import {
+  createEmbeddingService,
+  registerEmbeddingsIpc,
+  type EmbeddingService,
+} from './ipc-embeddings.js';
 
 const DEV_SERVER_URL = DESKTOP_DEVELOPMENT_SERVER_URL;
 const TITLE_BAR_HEIGHT = 42;
@@ -166,6 +172,7 @@ const mainWindow = new MainWindowSlot<BrowserWindow>(reopenWindow, (error: unkno
 let aiService: AiService | null = null;
 let aiImageService: AiImageService | null = null;
 let speechService: SpeechService | null = null;
+let embeddingService: EmbeddingService | null = null;
 let appExitApproved = false;
 let appExitPreparing = false;
 const pendingOpenRequests = new PendingOpenRequests();
@@ -390,6 +397,7 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
           stt: speechService?.sttAvailable ?? false,
           tts: speechService?.ttsAvailable ?? false,
         }),
+        ...embeddingsAvailabilityArguments(embeddingService?.available ?? false),
       ],
     },
   });
@@ -495,6 +503,8 @@ async function prepareApplicationExit(reason: 'app-quit' | 'update-install'): Pr
   // Cancel in-flight completions and release the Gezel transport. Bounded: a
   // provider that has stopped answering must not hold the app open.
   aiImageService?.dispose();
+  // Kills the semantic search model's utility process, if one is running.
+  embeddingService?.dispose();
   if (aiService || speechService) {
     let disposeTimer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
@@ -691,6 +701,9 @@ async function bootstrap(): Promise<void> {
   // Engines start lazily on first use; nothing is spawned here.
   speechService = await createSpeechService();
   registerSpeechIpc(speechService);
+  // Checks files only; the model's utility process starts on the first batch.
+  embeddingService = createEmbeddingService();
+  registerEmbeddingsIpc(embeddingService);
   // Before the window loads: the shell publishes its pinned documents as soon
   // as it mounts, and the tray has to be listening already.
   registerTray(

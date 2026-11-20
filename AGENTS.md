@@ -193,6 +193,15 @@ Which entries count as documents, and which folders are skipped, lives in
 `packages/core/src/filesystem/workspace-entry-rules.ts`. The index is never
 persisted inside the workspace (`.docblocks/` syncs and lands in git).
 
+On desktop and the phone apps the index's analysis and text live in a worker
+over an origin-private SQLite store (Gezel's `@bendyline/gezel-retrieval` live
+index), which survives relaunch and ranks passages ("Best matches"); the site
+and VS Code keep the in-memory engine. Semantic search embeds through
+`host.embeddings` (desktop: the bundled model in a utility process; phones:
+Gezel's on-device model). Core never imports a Gezel package — the worker entry
+lives in `packages/react` and each app injects it via `workspaceIndexConfig.ts`.
+See [`docs/workspace-search.md`](docs/workspace-search.md).
+
 ### Ask what the host can do, never which host it is
 
 `packages/core/src/host/capabilities.ts` is the seam. `isElectronHost()` was a

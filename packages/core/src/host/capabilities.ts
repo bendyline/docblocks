@@ -88,6 +88,8 @@ export interface HostCapabilities {
   readonly speechOutput: boolean;
   /** The host can list, download, and remove speech models. */
   readonly speechModelManagement: boolean;
+  /** The host embeds text with a local model, for semantic workspace search. */
+  readonly semanticEmbeddings: boolean;
   /** Documents live in the web origin (IndexedDB) rather than on the host. */
   readonly browserOriginStorage: boolean;
   /** The host draws the window chrome, so the shell must leave room for it. */
@@ -128,6 +130,7 @@ const NO_CAPABILITIES: HostCapabilities = Object.freeze({
   speechInput: false,
   speechOutput: false,
   speechModelManagement: false,
+  semanticEmbeddings: false,
   // A browser with no host keeps its documents in the origin.
   browserOriginStorage: true,
   ownsWindowChrome: false,
@@ -249,6 +252,10 @@ export function deriveHostCapabilities(host: unknown): HostCapabilities {
     speechOutput: hasMethod(host.speech, 'synthesize'),
     speechModelManagement:
       hasMethod(host.speech, 'catalog') && hasMethod(host.speech, 'installModel'),
+    semanticEmbeddings:
+      hasMethod(host.embeddings, 'status') &&
+      hasMethod(host.embeddings, 'embed') &&
+      hasMethod(host.embeddings, 'tokenizer'),
     // A host that owns workspace roots keeps documents outside the web origin.
     browserOriginStorage: !hasMethod(workspaces, 'register'),
     ownsWindowChrome: environment.surface === 'electron',

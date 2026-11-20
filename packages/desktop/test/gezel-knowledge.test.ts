@@ -147,6 +147,43 @@ describe('Gezel knowledge in inference', () => {
   });
 });
 
+describe('workspace passages in Gezel knowledge', () => {
+  const note = {
+    uri: 'knowledge://local/ws-0123456789abcdef/garden/pests.md#line=3-5',
+    title: 'Garden notes › Pests',
+    text: 'Aphids gather under the leaves.',
+  };
+
+  it('offers workspace passages beside catalog passages and names them', async () => {
+    const result = await withGezelKnowledge(
+      app(async () => ({ reranked: true, passages: [passage] })),
+      messages,
+      new AbortController().signal,
+      { workspacePassages: [note] },
+    );
+    expect(result.messages[0].content).to.contain(passage.text);
+    expect(result.messages[0].content).to.contain(note.text);
+    expect(result.messages[0].content).to.contain(note.uri);
+    expect(result.knowledge).to.deep.include({ outcome: 'used' });
+    expect(
+      result.knowledge?.outcome === 'used' && result.knowledge.sources.map((source) => source.name),
+    ).to.deep.equal(['Science Library', 'This workspace']);
+  });
+
+  it('grounds a request in workspace passages where Gezel offers no catalogs', async () => {
+    const result = await withGezelKnowledge(
+      {} as GezelApp,
+      messages,
+      new AbortController().signal,
+      { catalogs: false, workspacePassages: [note] },
+    );
+    expect(result.messages[0].content).to.contain(note.text);
+    expect(result.knowledge?.outcome === 'used' && result.knowledge.sources).to.deep.equal([
+      { catalogId: 'workspace', name: 'This workspace', titles: ['Garden notes › Pests'] },
+    ]);
+  });
+});
+
 describe('Gezel knowledge reported to the renderer', () => {
   it('names the catalogs and distinct articles a request cited', async () => {
     const result = await withGezelKnowledge(

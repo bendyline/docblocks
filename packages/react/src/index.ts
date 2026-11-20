@@ -33,6 +33,11 @@ export type { WorkspacePickerProps } from './WorkspacePicker/index.js';
 // DocBlocksShell
 export { DocBlocksShell } from './DocBlocksShell/index.js';
 export type { DocBlocksShellProps } from './DocBlocksShell/index.js';
+export type { WorkspaceIndexWorkerOption } from './WorkspaceIndex/useWorkspaceIndex.js';
+export type {
+  SemanticProgress,
+  WorkspaceIndexEmbedder,
+} from './WorkspaceIndex/embedding-scheduler.js';
 
 // AppMenu
 export { AppMenu } from './AppMenu/index.js';

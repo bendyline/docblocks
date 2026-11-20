@@ -358,6 +358,139 @@ describe('App Settings sections', () => {
     expect(legends(visiblePanels()[0])).to.deep.equal(['Storage', 'Version history']);
   });
 
+  it('offers Search with the switch and coverage on a host with an embedding model', async () => {
+    const changes: boolean[] = [];
+    await renderDialog({
+      section: 'search',
+      semanticSearch: {
+        enabled: true,
+        onChange: (enabled) => changes.push(enabled),
+        progress: { total: 2_000, embedded: 500, working: true },
+      },
+    });
+    expect(tabs().map((tab) => tab.textContent)).to.deep.equal(['Appearance', 'Search']);
+    const panel = visiblePanels()[0] as HTMLElement;
+    expect(legends(panel)).to.deep.equal(['Semantic search']);
+    expect(panel.querySelector('[data-testid="semantic-search-coverage"]')?.textContent).to.equal(
+      `${(500).toLocaleString()} of ${(2_000).toLocaleString()} passages ready…`,
+    );
+    const toggle = panel.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    await act(async () => toggle?.click());
+    expect(changes).to.deep.equal([false]);
+
+    await renderDialog({
+      section: 'search',
+      semanticSearch: {
+        enabled: false,
+        onChange: () => undefined,
+        progress: { total: 2_000, embedded: 500, working: false },
+      },
+    });
+    expect(
+      visiblePanels()[0]?.querySelector('[data-testid="semantic-search-coverage"]')?.textContent,
+    ).to.contain('paused');
+
+    // A phone indexes on demand: until the first search there is nothing to count.
+    await renderDialog({
+      section: 'search',
+      semanticSearch: {
+        enabled: true,
+        onChange: () => undefined,
+        progress: { total: 0, embedded: 0, working: false },
+        waiting: true,
+      },
+    });
+    expect(
+      visiblePanels()[0]?.querySelector('[data-testid="semantic-search-coverage"]')?.textContent,
+    ).to.equal('The open workspace is prepared once you first search it.');
+  });
+
+  it('offers the per-workspace AI switch, saying where passages go', async () => {
+    const changes: boolean[] = [];
+    await renderDialog({
+      section: 'search',
+      semanticSearch: {
+        enabled: true,
+        onChange: () => undefined,
+        progress: null,
+        aiGrounding: { enabled: false, onChange: (on) => changes.push(on), remote: true },
+      },
+    });
+    const panel = visiblePanels()[0] as HTMLElement;
+    const toggle = [...panel.querySelectorAll('label')]
+      .find((label) => label.textContent?.includes('Use this workspace in AI answers'))
+      ?.querySelector('input');
+    expect(toggle?.checked).to.equal(false);
+    expect(panel.textContent).to.contain('runs remotely, so those passages are sent to it');
+    await act(async () => toggle?.click());
+    expect(changes).to.deep.equal([true]);
+
+    // Without meaning there is nothing to ground in, so the switch waits.
+    await renderDialog({
+      section: 'search',
+      semanticSearch: {
+        enabled: false,
+        onChange: () => undefined,
+        progress: null,
+        aiGrounding: { enabled: true, onChange: () => undefined, remote: false },
+      },
+    });
+    const disabled = [...(visiblePanels()[0] as HTMLElement).querySelectorAll('label')]
+      .find((label) => label.textContent?.includes('Use this workspace in AI answers'))
+      ?.querySelector('input');
+    expect(disabled?.disabled).to.equal(true);
+  });
+
+  it('offers the model download where the host does not bundle it', async () => {
+    let downloads = 0;
+    const model = {
+      profileId: 'bge-small-en-v1.5@1',
+      dimensions: 384,
+      reason: null,
+    };
+    await renderDialog({
+      section: 'search',
+      semanticSearch: {
+        enabled: true,
+        onChange: () => undefined,
+        progress: null,
+        model: {
+          ...model,
+          state: 'download-required',
+          download: { receivedBytes: 0, totalBytes: 133_805_252 },
+        },
+        onDownload: () => {
+          downloads += 1;
+        },
+      },
+    });
+    const panel = visiblePanels()[0] as HTMLElement;
+    expect(panel.textContent).to.contain('(134 MB)');
+    expect(panel.querySelector('[data-testid="semantic-search-coverage"]')).to.equal(null);
+    const button = Array.from(panel.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent === 'Download search model',
+    );
+    await act(async () => button?.click());
+    expect(downloads).to.equal(1);
+
+    await renderDialog({
+      section: 'search',
+      semanticSearch: {
+        enabled: true,
+        onChange: () => undefined,
+        progress: null,
+        model: {
+          ...model,
+          state: 'downloading',
+          download: { receivedBytes: 40_000_000, totalBytes: 133_805_252 },
+        },
+      },
+    });
+    expect(
+      visiblePanels()[0]?.querySelector('[data-testid="semantic-search-download"]')?.textContent,
+    ).to.equal('Downloading the search model: 40 MB of 134 MB…');
+  });
+
   it('leaves Narration out when the host cannot synthesize speech', async () => {
     await renderDialog({ speech: fakeSpeech({ synthesize: false }) });
     expect(tabs().map((tab) => tab.textContent)).to.deep.equal(['Appearance', 'Dictation']);

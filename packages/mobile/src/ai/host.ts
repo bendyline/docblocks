@@ -1,6 +1,9 @@
 import {
   AI_WIRE_LIMITS,
   knowledgeChatEvent,
+  WORKSPACE_KNOWLEDGE_CATALOG_ID,
+  WORKSPACE_KNOWLEDGE_NAME,
+  withWorkspacePassages,
   parseAiChatProgress,
   parseAiChatRequest,
   parseAiPreferences,
@@ -487,8 +490,16 @@ export function createMobileAi(options: MobileAiOptions) {
             model.max_output_tokens ?? 2048,
             Math.max(1, (model.context_window ?? 4096) - 1),
           );
-          // Reference passages from enabled catalogs; retrieval never fails the request.
-          const context = await knowledgeContext(embedding.knowledge, request.messages, {
+          // Reference passages from enabled catalogs and the person's workspace;
+          // retrieval never fails the request.
+          const workspace = request.workspacePassages?.length
+            ? request.workspacePassages
+            : undefined;
+          // The retriever's arrays are readonly; the SDK only reads them.
+          const retriever = withWorkspacePassages(embedding.knowledge, workspace) as
+            | typeof embedding.knowledge
+            | null;
+          const context = await knowledgeContext(retriever, request.messages, {
             signal: controller.signal,
             contextWindow: model.context_window ?? null,
             maxOutputTokens: maxTokens,
@@ -502,17 +513,23 @@ export function createMobileAi(options: MobileAiOptions) {
           if (
             !catalogs ||
             Date.now() - catalogs.at > CATALOG_NAMES_MS ||
-            context.passages.some((passage) => !catalogs?.names.has(passage.catalogId))
+            context.passages.some(
+              (passage) =>
+                passage.catalogId !== WORKSPACE_KNOWLEDGE_CATALOG_ID &&
+                !catalogs?.names.has(passage.catalogId),
+            )
           )
             await embedding.knowledge
               .state({ signal: controller.signal })
               .then(({ catalogs: list }) => rememberCatalogs(list))
               .catch(() => undefined);
+          const names = new Map(catalogs?.names ?? []);
+          if (workspace) names.set(WORKSPACE_KNOWLEDGE_CATALOG_ID, WORKSPACE_KNOWLEDGE_NAME);
           const knowledge = knowledgeChatEvent(
             context.status,
             context.passages,
-            catalogs?.names,
-            context.status === 'used' || catalogs?.enabled === true,
+            names,
+            context.status === 'used' || catalogs?.enabled === true || workspace !== undefined,
           );
           if (knowledge) emit({ kind: 'knowledge', knowledge });
           const stream = () =>

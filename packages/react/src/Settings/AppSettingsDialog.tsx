@@ -1,6 +1,6 @@
 /**
- * The app Settings dialog, in sections: Appearance, AI, Dictation, Narration
- * and Device integration. A section appears only when the host offers what it
+ * The app Settings dialog, in sections: Appearance, Search, AI, Dictation,
+ * Narration and Device integration. A section appears only when the host offers what it
  * configures, so the browser build shows fewer than the desktop app.
  */
 
@@ -31,9 +31,19 @@ import {
 import { AiSettingsControls } from './AiSettings.js';
 import { DictationSettingsControls, NarrationSettingsControls } from './SpeechSettings.js';
 import { TraySettingsControls } from './TraySettings.js';
+import {
+  SemanticSearchSettingsControls,
+  type SemanticSearchSettingsControlsProps,
+} from './SemanticSearchSettings.js';
 import { useSpeechSettings } from './useSpeechSettings.js';
 
-export type AppSettingsSection = 'appearance' | 'ai' | 'dictation' | 'narration' | 'device';
+export type AppSettingsSection =
+  | 'appearance'
+  | 'search'
+  | 'ai'
+  | 'dictation'
+  | 'narration'
+  | 'device';
 
 export interface AppSettingsDialogProps {
   onClose: () => void;
@@ -63,6 +73,8 @@ export interface AppSettingsDialogProps {
   onVersioningPreferenceChange?: (pref: VersioningPreference) => void;
   /** Opens the active workspace's own settings. The caller closes Settings first. */
   onOpenWorkspaceSettings?: () => void;
+  /** Present on a host with an embedding model; omitted hides Search. */
+  semanticSearch?: SemanticSearchSettingsControlsProps;
 }
 
 function formatBytes(bytes: number): string {
@@ -101,6 +113,7 @@ export function AppSettingsDialog({
   versioningPreference,
   onVersioningPreferenceChange,
   onOpenWorkspaceSettings,
+  semanticSearch,
 }: AppSettingsDialogProps) {
   // One session for both speech sections, alive as long as the dialog is.
   const speechSession = useSpeechSettings(speech);
@@ -156,6 +169,13 @@ export function AppSettingsDialog({
     },
   ];
 
+  if (semanticSearch) {
+    sections.push({
+      id: 'search',
+      label: 'Search',
+      content: <SemanticSearchSettingsControls {...semanticSearch} />,
+    });
+  }
   if (ai) {
     sections.push({ id: 'ai', label: 'AI', content: <AiSettingsControls ai={ai} /> });
   }

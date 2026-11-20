@@ -22,6 +22,7 @@ import {
 } from '../preferences/write-canvas.js';
 import { DEFAULT_PROOFING_PREFERENCES, type ProofingPreferences } from '../preferences/proofing.js';
 import { AppSettingsDialog, type AppSettingsSection } from '../Settings/AppSettingsDialog.js';
+import type { SemanticSearchSettingsControlsProps } from '../Settings/SemanticSearchSettings.js';
 import { Dialog } from '../components/Dialog.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
 import { displayBuildDate } from '../local-date.js';
@@ -62,6 +63,8 @@ export interface AppMenuProps {
   onVersioningPreferenceChange?: (pref: VersioningPreference) => void;
   /** Opens the active workspace's own settings (`.docblocks/workspace.json`). */
   onOpenWorkspaceSettings?: () => void;
+  /** Semantic search's switch and coverage, on a host with an embedding model. */
+  semanticSearch?: SemanticSearchSettingsControlsProps;
   /**
    * Called when the user clicks "Back up all workspaces". When omitted,
    * the menu item is hidden.
@@ -146,6 +149,7 @@ export function AppMenu({
   versioningPreference = 'browser-only',
   onVersioningPreferenceChange,
   onOpenWorkspaceSettings,
+  semanticSearch,
   onDownloadAllWorkspaces,
   onRestoreBackup,
   onShowKeyboardShortcuts,
@@ -392,6 +396,7 @@ export function AppMenu({
           requestingPersistentStorage={requestingPersistentStorage}
           versioningPreference={versioningPreference}
           onVersioningPreferenceChange={onVersioningPreferenceChange}
+          semanticSearch={semanticSearch}
           onOpenWorkspaceSettings={
             onOpenWorkspaceSettings
               ? () => {

@@ -560,6 +560,70 @@ test('AI drafts show the knowledge they drew on, flag unsourced details, and cit
   );
 });
 
+test('AI drafts draw on workspace notes found by meaning and cite them', async ({
+  launchApp,
+  workspaceDir,
+  gezelHome,
+}) => {
+  test.skip(Boolean(upstream), 'The reply and its citations are scripted.');
+  test.setTimeout(180_000);
+  // The stand-in embedder puts aphids and insects in one concept; no word is shared.
+  fs.mkdirSync(path.join(workspaceDir, 'garden'), { recursive: true });
+  fs.writeFileSync(
+    path.join(workspaceDir, 'garden', 'roses.md'),
+    '# Rose bed\n\nAphids and beetles damaged the roses this spring; neem oil helped.\n',
+  );
+  await withConnectedEditor(
+    launchApp,
+    workspaceDir,
+    gezelHome,
+    {
+      replies: [{ text: 'Beetles damaged the roses this spring [1].', finishReason: 'stop' }],
+    },
+    async ({ window, editor, file, fake }) => {
+      // Wait until the workspace is embedded, so meaning can find the note.
+      await window.locator('.db-app-menu-btn').click();
+      await window.getByRole('menuitem', { name: 'Settings' }).click();
+      const settings = window.getByRole('dialog', { name: 'Settings' });
+      await settings.getByRole('tab', { name: 'Search', exact: true }).click();
+      await expect(settings.getByTestId('semantic-search-coverage')).toContainText('ready:', {
+        timeout: 60_000,
+      });
+      // On by default: the paired provider runs on this device.
+      await expect(
+        settings.getByRole('checkbox', { name: 'Use this workspace in AI answers' }),
+      ).toBeChecked();
+      await window.keyboard.press('Escape');
+      await expect(settings).toBeHidden();
+
+      await caretAtNewParagraph(window, editor);
+      await openAiMenuItem(window, 'Add content…');
+      const dialog = window.getByRole('dialog', { name: 'Add content with AI' });
+      await dialog
+        .getByRole('textbox', { name: 'What should be added?' })
+        .fill('Add a sentence about the insects in the garden.');
+      await dialog.getByRole('button', { name: 'Generate', exact: true }).click();
+      const insert = dialog.getByRole('button', { name: 'Insert', exact: true });
+      await expect(insert).toBeEnabled({ timeout: ANSWER_TIMEOUT_MS });
+
+      // The note reached the model as cited evidence, with its place in the workspace.
+      const evidence = String(fake.chats[0]?.messages[0]?.content ?? '');
+      expect(evidence).toContain('Aphids and beetles damaged the roses');
+      expect(evidence).toMatch(/knowledge:\/\/local\/ws-[0-9a-f]{16}\/garden\/roses\.md#line=/u);
+      await expect(dialog.locator('.db-ai-knowledge--used summary')).toContainText(
+        'This workspace',
+      );
+
+      await insert.click();
+      await expect(dialog).toBeHidden();
+      await expect
+        .poll(() => readDocument(file))
+        .toContain('Beetles damaged the roses this spring[^source-1].');
+      expect(readDocument(file)).toContain('[^source-1]: Rose bed, a note in this workspace.');
+    },
+  );
+});
+
 test('AI continues a truncated rewrite without losing edits and applies it as one undo step', async ({
   launchApp,
   workspaceDir,

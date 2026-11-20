@@ -4,7 +4,7 @@
  * inserted text either names each source in a footnote or drops the markers.
  */
 
-import type { AiChatEvidence } from '@bendyline/docblocks/host';
+import { WORKSPACE_KNOWLEDGE_CATALOG_ID, type AiChatEvidence } from '@bendyline/docblocks/host';
 
 /**
  * `[3]`, `[1, 4]`, `[2-5]` with any space before it; not a link `[1](…)` or
@@ -95,6 +95,9 @@ export function citationsToFootnotes(
   );
   if (labels.size === 0) return body;
   const notes = [...labels.values()].map(({ label, passage }) => {
+    if (passage.catalogId === WORKSPACE_KNOWLEDGE_CATALOG_ID) {
+      return `[^${label}]: ${passage.title || 'Untitled note'}, a note in this workspace.`;
+    }
     const catalog = catalogNames.get(passage.catalogId) ?? passage.catalogId;
     return `[^${label}]: ${passage.title || 'Untitled article'}, from the ${catalog} knowledge catalog.`;
   });

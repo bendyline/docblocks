@@ -101,6 +101,7 @@ export interface ProviderChatRequest {
   readonly responseFormat?: AiResponseFormat;
   readonly knowledgeQuery?: string;
   readonly knowledgeCitations?: boolean;
+  readonly workspacePassages?: AiChatRequest['workspacePassages'];
 }
 
 export interface ProviderChatChunk {
@@ -660,6 +661,9 @@ export class AiService {
       ...(request.responseFormat === undefined ? {} : { responseFormat: request.responseFormat }),
       ...(request.knowledgeQuery === undefined ? {} : { knowledgeQuery: request.knowledgeQuery }),
       ...(request.knowledgeCitations ? { knowledgeCitations: true } : {}),
+      ...(request.workspacePassages?.length
+        ? { workspacePassages: request.workspacePassages }
+        : {}),
     };
     void this.runChat(connection, chat, providerRequest, emit).finally(() => {
       this.chats.delete(streamKey);

@@ -1,6 +1,17 @@
 import type { GezelApp, ChatMessage } from '@bendyline/gezel-app-sdk';
-import { AI_WIRE_LIMITS, knowledgeChatEvent } from '@bendyline/docblocks/host';
-import type { AiChatKnowledge, AiChatMessage, AiKnowledgeAction } from '@bendyline/docblocks/host';
+import {
+  AI_WIRE_LIMITS,
+  WORKSPACE_KNOWLEDGE_CATALOG_ID,
+  WORKSPACE_KNOWLEDGE_NAME,
+  knowledgeChatEvent,
+  withWorkspacePassages,
+} from '@bendyline/docblocks/host';
+import type {
+  AiChatKnowledge,
+  AiChatMessage,
+  AiKnowledgeAction,
+  AiWorkspacePassage,
+} from '@bendyline/docblocks/host';
 
 interface CatalogSnapshot {
   readonly at: number;
@@ -126,6 +137,10 @@ export interface GezelKnowledgeOptions {
   readonly query?: string;
   /** Number the passages and ask for `[n]` citations of them. */
   readonly citations?: boolean;
+  /** Search Gezel's knowledge catalogs (default true); false offers only workspace passages. */
+  readonly catalogs?: boolean;
+  /** Passages from the person's workspace, offered beside the catalogs'. */
+  readonly workspacePassages?: readonly AiWorkspacePassage[];
 }
 
 const warned = new Set<string>();
@@ -136,7 +151,14 @@ export async function withGezelKnowledge(
   options: GezelKnowledgeOptions = {},
 ): Promise<GezelKnowledgeContext> {
   const { knowledgeContext } = await import('@bendyline/gezel-app-sdk');
-  const knowledge = app.knowledge as GezelApp['knowledge'] | undefined;
+  const catalogs =
+    options.catalogs === false ? undefined : (app.knowledge as GezelApp['knowledge'] | undefined);
+  const workspace = options.workspacePassages?.length ? options.workspacePassages : undefined;
+  // The retriever's arrays are readonly; the SDK only reads them.
+  const knowledge = withWorkspacePassages(catalogs, workspace) as Pick<
+    GezelApp['knowledge'],
+    'retrieve'
+  > | null;
   const context = await knowledgeContext(knowledge, messages, {
     signal,
     contextWindow: options.contextWindow,
@@ -154,20 +176,24 @@ export async function withGezelKnowledge(
     },
   });
   const cited = context.passages;
-  const snapshot = knowledge
+  const snapshot = catalogs
     ? await catalogSnapshot(
         app,
         signal,
-        cited.map((passage) => passage.catalogId),
+        cited
+          .map((passage) => passage.catalogId)
+          .filter((id) => id !== WORKSPACE_KNOWLEDGE_CATALOG_ID),
       )
     : null;
+  const names = new Map(snapshot?.names ?? []);
+  if (workspace) names.set(WORKSPACE_KNOWLEDGE_CATALOG_ID, WORKSPACE_KNOWLEDGE_NAME);
   return {
     messages: context.messages,
     knowledge: knowledgeChatEvent(
       context.status,
       cited,
-      snapshot?.names,
-      context.status === 'used' || snapshot?.enabled === true,
+      names,
+      context.status === 'used' || snapshot?.enabled === true || workspace !== undefined,
     ),
   };
 }

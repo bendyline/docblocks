@@ -11,6 +11,7 @@ import type {
   AiChatProgress,
   AiChatPurpose,
   AiChatRequest,
+  AiWorkspacePassage,
   AiConnectionStep,
   AiError,
   AiErrorCode,
@@ -57,6 +58,11 @@ export const AI_WIRE_LIMITS = Object.freeze({
   /** Passage texts sent with a knowledge report; Gezel caps a retrieval at 24,000 characters. */
   knowledgeEvidence: 8,
   knowledgeEvidenceCharacters: 24 * 1024,
+  /** Workspace passages one request may carry, and their text; a passage is ~420 tokens. */
+  workspacePassages: 6,
+  workspacePassageCharacters: 4_000,
+  workspacePassagesCharacters: 12_000,
+  workspacePassageUriCharacters: 2_048,
   /**
    * A fact check reads one draft against every passage its run was given. It
    * runs synchronously in the host; at these bounds it takes tens of ms.
@@ -425,6 +431,7 @@ export function parseAiChatRequest(value: unknown): AiChatRequest | null {
         'responseFormat',
         'knowledgeQuery',
         'knowledgeCitations',
+        'workspacePassages',
       ],
     )
   ) {
@@ -475,6 +482,11 @@ export function parseAiChatRequest(value: unknown): AiChatRequest | null {
   if (value.knowledgeCitations !== undefined && typeof value.knowledgeCitations !== 'boolean') {
     return null;
   }
+  const workspacePassages =
+    value.workspacePassages === undefined
+      ? undefined
+      : parseAiWorkspacePassages(value.workspacePassages);
+  if (workspacePassages === null) return null;
 
   return {
     messages,
@@ -489,7 +501,34 @@ export function parseAiChatRequest(value: unknown): AiChatRequest | null {
     ...(value.knowledgeCitations === undefined
       ? {}
       : { knowledgeCitations: value.knowledgeCitations as boolean }),
+    ...(workspacePassages === undefined ? {} : { workspacePassages }),
   };
+}
+
+const WORKSPACE_PASSAGE_URI =
+  /^knowledge:\/\/local\/[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?\/[^\s#]+(#line=\d+(-\d+)?)?$/u;
+
+/** Workspace passages on a chat request: bounded, `knowledge://local/` citations only. */
+export function parseAiWorkspacePassages(value: unknown): AiWorkspacePassage[] | null {
+  if (!Array.isArray(value) || value.length > AI_WIRE_LIMITS.workspacePassages) return null;
+  const passages: AiWorkspacePassage[] = [];
+  let total = 0;
+  for (const entry of value) {
+    if (!isRecord(entry) || !hasKeysWithin(entry, ['uri', 'title', 'text'], [])) return null;
+    const { uri, title, text } = entry;
+    if (
+      !isBoundedString(uri, AI_WIRE_LIMITS.workspacePassageUriCharacters, 1) ||
+      !WORKSPACE_PASSAGE_URI.test(uri)
+    ) {
+      return null;
+    }
+    if (!isBoundedString(title, AI_WIRE_LIMITS.knowledgeTitleCharacters, 1)) return null;
+    if (!isBoundedString(text, AI_WIRE_LIMITS.workspacePassageCharacters, 1)) return null;
+    total += text.length;
+    if (total > AI_WIRE_LIMITS.workspacePassagesCharacters) return null;
+    passages.push({ uri, title, text });
+  }
+  return passages;
 }
 
 export function parseAiChatProgress(value: unknown): AiChatProgress | null {

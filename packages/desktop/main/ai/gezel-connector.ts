@@ -123,14 +123,21 @@ async function streamFrom(
   signal: AbortSignal,
   knowledge: boolean,
 ): Promise<AsyncIterable<ProviderChatChunk>> {
-  const context = knowledge
-    ? await withGezelKnowledge(app, request.messages, signal, {
-        contextWindow: request.contextWindow,
-        maxTokens: request.maxTokens,
-        query: request.knowledgeQuery,
-        citations: request.knowledgeCitations === true,
-      })
-    : { messages: [...request.messages], knowledge: null };
+  // Workspace passages ground a request even where Gezel offers no catalogs.
+  const workspacePassages = request.workspacePassages?.length
+    ? request.workspacePassages
+    : undefined;
+  const context =
+    knowledge || workspacePassages
+      ? await withGezelKnowledge(app, request.messages, signal, {
+          contextWindow: request.contextWindow,
+          maxTokens: request.maxTokens,
+          query: request.knowledgeQuery,
+          citations: request.knowledgeCitations === true,
+          catalogs: knowledge,
+          ...(workspacePassages ? { workspacePassages } : {}),
+        })
+      : { messages: [...request.messages], knowledge: null };
   // The body is shared with the docbench task pack, so a benchmark sends what this sends.
   const opened = app.chat(
     {

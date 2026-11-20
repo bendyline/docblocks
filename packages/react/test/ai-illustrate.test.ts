@@ -18,6 +18,7 @@ import {
   shortlistPassages,
 } from '../src/Ai/illustrate-passages.js';
 import {
+  chooseKind,
   drawDiagram,
   findIdeas,
   realizeDiagram,
@@ -26,9 +27,12 @@ import {
   type IllustrationEvent,
 } from '../src/Ai/illustrate-pipeline.js';
 import {
+  buildKindRequest,
   buildPlanRequest,
   buildRealizeRequest,
   inferKind,
+  namedKind,
+  parseKindResponse,
   parsePlanResponse,
   promptBudget,
 } from '../src/Ai/illustrate-prompts.js';
@@ -397,11 +401,93 @@ describe('prompts', () => {
     expect(
       inferKind('', 'The browser sends a request and the server returns a response.'),
     ).to.equal('sequence');
-    expect(inferKind('show it', 'Nothing in particular.')).to.equal('flow');
     expect(inferKind('what the two teams have in common', '')).to.equal('venn');
     expect(inferKind('a 2x2 of effort and impact', '')).to.equal('matrix');
     expect(inferKind('', 'Conversion drops at every stage of signup.')).to.equal('funnel');
     expect(inferKind('the pyramid of needs', '')).to.equal('pyramid');
+  });
+
+  it('lands text with no cue on a hierarchy, not a flowchart', () => {
+    expect(inferKind('show it', 'Nothing in particular.')).to.equal('hierarchy');
+    expect(inferKind('', NAVY)).to.not.equal('flow');
+    expect(inferKind('', 'Ships come in many types of hull.')).to.equal('hierarchy');
+    expect(inferKind('', 'If the manager rejects it, the draft goes back.')).to.equal('flow');
+  });
+
+  it('takes a kind the request names over any cue in it', () => {
+    // "steps" and "request" are cues for other kinds; the name wins.
+    expect(inferKind('Show the approval steps as a flowchart.', '')).to.equal('flow');
+    expect(namedKind('Show the approval steps as a flowchart.')).to.equal('flow');
+    expect(namedKind('an org chart of the team')).to.equal('hierarchy');
+    expect(namedKind('a bar chart of sales')).to.equal('chart');
+    expect(namedKind('the four release steps')).to.equal('steps');
+    expect(namedKind('How a pull request is reviewed and merged.')).to.equal(null);
+    expect(namedKind('')).to.equal(null);
+  });
+});
+
+const NAVY =
+  'Surface combatants form the backbone of naval power, encompassing a wide variety of ' +
+  'vessels designed for specific roles. Destroyers and cruisers are prime examples, serving ' +
+  'as multi-role warships. Their armament typically includes missile systems, naval guns, ' +
+  'and sonar. Frigates, often smaller than destroyers, are optimized for coastal defense.';
+
+describe('Auto kind choice', () => {
+  it('asks with the kinds, the request and the passage, in a format that names no kind', () => {
+    const request = buildKindRequest({ description: 'the main ship types', material: NAVY });
+    expect(request.temperature).to.equal(0);
+    expect(request.messages[0]?.content).to.contain('hierarchy (a whole and its parts)');
+    expect(request.messages[0]?.content).to.contain('{"kind":"<kind>"}');
+    expect(request.messages[1]?.content).to.contain('Asked for: the main ship types');
+    expect(request.messages[1]?.content).to.contain('Surface combatants');
+  });
+
+  it('reads the kind from JSON, aliases or a bare word, and nothing else', () => {
+    expect(parseKindResponse('{"kind":"hierarchy"}')).to.equal('hierarchy');
+    expect(parseKindResponse('```json\n{"kind": "Bar chart"}\n```')).to.equal('chart');
+    expect(parseKindResponse('{"kind":"tree"}')).to.equal('hierarchy');
+    expect(parseKindResponse('Comparison.')).to.equal('comparison');
+    expect(parseKindResponse('{"kind":"<kind>"}')).to.equal(null);
+    expect(parseKindResponse('{"kind":"design"}')).to.equal(null);
+    expect(parseKindResponse('A timeline would not work, so use steps')).to.equal(null);
+  });
+
+  it('draws a named kind without asking the model', async () => {
+    const ai = scriptedAi(() => '{"kind":"cycle"}');
+    const choice = await chooseKind({
+      ai: ai.api,
+      description: 'a timeline of the fleet',
+      material: NAVY,
+    });
+    expect(choice).to.deep.equal({ status: 'chosen', kind: 'timeline', by: 'named' });
+    expect(ai.requests).to.have.length(0);
+  });
+
+  it("uses the model's choice, and keywords when the reply names no kind", async () => {
+    const picked = await chooseKind({
+      ai: scriptedAi(() => '{"kind":"comparison"}').api,
+      description: '',
+      material: NAVY,
+    });
+    expect(picked).to.deep.equal({ status: 'chosen', kind: 'comparison', by: 'model' });
+    const fallback = await chooseKind({
+      ai: scriptedAi(() => 'I am not sure.').api,
+      description: '',
+      material: 'Nothing in particular.',
+    });
+    expect(fallback).to.deep.equal({ status: 'chosen', kind: 'hierarchy', by: 'keywords' });
+  });
+
+  it('stops when cancelled', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const choice = await chooseKind({
+      ai: scriptedAi(() => '{"kind":"steps"}').api,
+      description: '',
+      material: NAVY,
+      signal: controller.signal,
+    });
+    expect(choice).to.deep.equal({ status: 'cancelled' });
   });
 });
 

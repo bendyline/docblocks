@@ -10,7 +10,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { getFileSystemProviderV2, type FileSystemProvider } from '@bendyline/docblocks/filesystem';
 import { maybeGetDocBlocksHost } from '@bendyline/docblocks/host';
-import type { WorkspaceIndex, WorkspaceIndexStatus } from '@bendyline/docblocks/workspace-index';
+import type {
+  WorkerEngine,
+  WorkspaceIndex,
+  WorkspaceIndexOptions as WorkspaceIndexCreateOptions,
+  WorkspaceIndexStatus,
+} from '@bendyline/docblocks/workspace-index';
+import {
+  startEmbeddingScheduler,
+  type SemanticProgress,
+  type WorkspaceIndexEmbedder,
+} from './embedding-scheduler.js';
 
 /**
  * `eager` indexes once the browser is idle; `on-demand` waits until a feature
@@ -35,11 +45,77 @@ export const IDLE_WORKSPACE_INDEX_STATUS: WorkspaceIndexStatus = Object.freeze({
 export interface WorkspaceIndexHandle {
   readonly index: WorkspaceIndex | null;
   readonly status: WorkspaceIndexStatus;
+  /** How far semantic search has embedded the workspace; null when it is off. */
+  readonly semantic: SemanticProgress | null;
   /** Start indexing now (a feature needs it), and catch up if not watching. */
   ensure(): void;
 }
 
+/**
+ * How an app runs the index's analysis and storage in a worker, which keeps
+ * the index across launches (see `@bendyline/docblocks-react/workspace-index-worker`).
+ */
+export interface WorkspaceIndexWorkerOption {
+  /** Names this app's stores, so two surfaces sharing an origin never share one. */
+  readonly surface: string;
+  /** A new worker running `startWorkspaceIndexWorker`. */
+  create(): Worker;
+}
+
+export interface WorkspaceIndexOptions {
+  readonly worker?: WorkspaceIndexWorkerOption | null;
+  /** Keep the index across launches; false for a transient workspace. Default true. */
+  readonly persist?: boolean;
+  /**
+   * Embeds passages and queries for semantic search; it needs the worker.
+   * Without one, Best matches ranks by words alone.
+   */
+  readonly embedder?: WorkspaceIndexEmbedder | null;
+  /**
+   * Embed and rank by meaning now (default true). False pauses both without
+   * rebuilding the index or dropping stored vectors.
+   */
+  readonly semanticEnabled?: boolean;
+}
+
 type WorkspaceIndexModule = typeof import('@bendyline/docblocks/workspace-index');
+
+/**
+ * The worker-backed engine with its larger limits, or null to index in page
+ * memory as before. A worker that cannot start or open its store falls back
+ * to the in-memory engine under page-sized text limits.
+ */
+function workerStore(
+  module: WorkspaceIndexModule,
+  option: WorkspaceIndexWorkerOption,
+  workspaceId: string,
+  persist: boolean,
+  embedder: WorkspaceIndexEmbedder | null,
+  tokenizer: { readonly definition: string; readonly config: string } | null,
+):
+  | (Pick<WorkspaceIndexCreateOptions, 'engine' | 'limits'> & { readonly engine: WorkerEngine })
+  | null {
+  let worker: Worker;
+  try {
+    worker = option.create();
+  } catch {
+    return null;
+  }
+  const engine = module.withMemoryFallback(
+    module.createWorkerEngine(
+      worker,
+      {
+        workspaceKey: `${option.surface}:${workspaceId}`,
+        persist,
+        semantic: embedder ? { profileId: embedder.profileId, tokenizer } : null,
+      },
+      { onDispose: () => worker.terminate() },
+    ),
+    () =>
+      module.createMemoryEngine({ maxCharacters: module.WORKSPACE_INDEX_LIMITS.maxTextCharacters }),
+  );
+  return { engine, limits: module.WORKSPACE_INDEX_STORE_LIMITS };
+}
 
 let indexModule: Promise<WorkspaceIndexModule> | null = null;
 function loadWorkspaceIndexModule(): Promise<WorkspaceIndexModule> {
@@ -48,6 +124,27 @@ function loadWorkspaceIndexModule(): Promise<WorkspaceIndexModule> {
 }
 
 const IDLE_START_TIMEOUT_MS = 3_000;
+const TOKENIZER_TIMEOUT_MS = 5_000;
+
+/** The embedder's tokenizer, or null when it has none, fails, or is slow: never blocks indexing long. */
+async function embedderTokenizer(
+  embedder: WorkspaceIndexEmbedder | null,
+): Promise<{ readonly definition: string; readonly config: string } | null> {
+  if (!embedder?.tokenizer) return null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      embedder.tokenizer(),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), TOKENIZER_TIMEOUT_MS);
+      }),
+    ]);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function whenIdle(callback: () => void): () => void {
   if (typeof requestIdleCallback === 'function') {
@@ -62,27 +159,67 @@ export function useWorkspaceIndex(
   provider: FileSystemProvider | null,
   workspaceId: string | null,
   mode: WorkspaceIndexMode = 'eager',
+  options: WorkspaceIndexOptions = {},
 ): WorkspaceIndexHandle {
   const providerV2 = provider && mode !== 'off' ? getFileSystemProviderV2(provider) : null;
+  const worker = options.worker ?? null;
+  const persist = options.persist ?? true;
+  const embedder = (worker && options.embedder) || null;
+  const semanticEnabledRef = useRef(options.semanticEnabled ?? true);
+  semanticEnabledRef.current = options.semanticEnabled ?? true;
   const [index, setIndex] = useState<WorkspaceIndex | null>(null);
+  const [semantic, setSemantic] = useState<SemanticProgress | null>(null);
   // `ensure()` can arrive while the module is still loading.
   const startRequestedRef = useRef(false);
 
   useEffect(() => {
     setIndex(null);
+    setSemantic(null);
     startRequestedRef.current = false;
     if (!providerV2 || !workspaceId) return;
     let disposed = false;
     let created: WorkspaceIndex | null = null;
     let cancelIdle: (() => void) | null = null;
-    void loadWorkspaceIndexModule()
-      .then(({ createWorkspaceIndex }) => {
+    let stopEmbedding: (() => void) | null = null;
+    void Promise.all([
+      loadWorkspaceIndexModule(),
+      worker ? embedderTokenizer(embedder) : Promise.resolve(null),
+    ])
+      .then(([module, tokenizer]) => {
         if (disposed) return;
-        created = createWorkspaceIndex({ workspaceId, source: providerV2 });
+        const store = worker
+          ? workerStore(module, worker, workspaceId, persist, embedder, tokenizer)
+          : null;
+        created = module.createWorkspaceIndex({
+          workspaceId,
+          source: providerV2,
+          ...(store ?? {}),
+          ...(store && embedder
+            ? {
+                embedQuery: async (query: string, signal: AbortSignal) => {
+                  if (!semanticEnabledRef.current) throw new Error('Semantic search is off.');
+                  const [vector] = await embedder.embed('query', [query], signal);
+                  if (!vector) throw new Error('The embedder returned no vector.');
+                  return vector;
+                },
+              }
+            : {}),
+        });
         setIndex(created);
         const instance = created;
         if (startRequestedRef.current) instance.start();
         else if (mode === 'eager') cancelIdle = whenIdle(() => instance.start());
+        if (store && embedder) {
+          stopEmbedding = startEmbeddingScheduler({
+            store: store.engine,
+            embedder,
+            index: instance,
+            onProgress: (progress) => {
+              if (!disposed) setSemantic(progress);
+            },
+            paused: () => document.visibilityState === 'hidden' || !semanticEnabledRef.current,
+          });
+        }
       })
       .catch(() => {
         // Without the module there is simply no index; features degrade.
@@ -90,9 +227,10 @@ export function useWorkspaceIndex(
     return () => {
       disposed = true;
       cancelIdle?.();
+      stopEmbedding?.();
       created?.dispose();
     };
-  }, [providerV2, workspaceId, mode]);
+  }, [providerV2, workspaceId, mode, worker, persist, embedder]);
 
   // Keep a non-watching index current across focus changes and app resumes,
   // and stop provider reads entirely while the page is hidden.
@@ -133,5 +271,5 @@ export function useWorkspaceIndex(
     index.refresh();
   }, [index]);
 
-  return useMemo(() => ({ index, status, ensure }), [index, status, ensure]);
+  return useMemo(() => ({ index, status, semantic, ensure }), [index, status, semantic, ensure]);
 }

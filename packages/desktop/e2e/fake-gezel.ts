@@ -159,6 +159,13 @@ function scriptedPlan(messages: readonly ChatMessage[]): string {
   );
 }
 
+/** Auto's kind, chosen as the planner chooses: a timeline for several years, else a flowchart. */
+function scriptedKind(messages: readonly ChatMessage[]): string {
+  const user = messages.find((message) => message.role === 'user')?.content ?? '';
+  const passage = /<passage>\n([\s\S]*?)\n<\/passage>/u.exec(user)?.[1] ?? '';
+  return JSON.stringify({ kind: (passage.match(YEAR) ?? []).length >= 2 ? 'timeline' : 'flow' });
+}
+
 /** A diagram spec built only from the passage's own words, so it is grounded. */
 function scriptedDiagram(messages: readonly ChatMessage[]): string {
   const system = messages.find((message) => message.role === 'system')?.content ?? '';
@@ -248,6 +255,7 @@ function scriptedAnswer(messages: readonly ChatMessage[]): string {
     });
   }
   if (system.includes('You plan illustrations')) return scriptedPlan(messages);
+  if (system.includes('You choose the kind of diagram')) return scriptedKind(messages);
   if (system.includes('You turn one passage into')) return scriptedDiagram(messages);
   if (system.includes('document reviewer')) return scriptedReview(documentFrom(messages));
   if (system.includes('Rewrite only the supplied selection')) return FAKE_REWRITE_TEXT;

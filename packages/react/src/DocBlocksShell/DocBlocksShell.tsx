@@ -78,7 +78,12 @@ import {
   hostSupports,
   maybeGetDocBlocksHost,
 } from '@bendyline/docblocks/host';
-import type { ElectronWorkspaceInfo, OpenRequest } from '@bendyline/docblocks/host';
+import type {
+  AiChatRequest,
+  AiWorkspacePassage,
+  ElectronWorkspaceInfo,
+  OpenRequest,
+} from '@bendyline/docblocks/host';
 import {
   parseSharedDocumentHash,
   type SharedDocumentMode,
@@ -351,7 +356,26 @@ import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
 import { CompactWelcomeScreen, WelcomeScreen } from './WelcomeScreen.js';
 import { WindowDragGrip } from './WindowDragGrip.js';
 import { useDocumentLinkProvider } from './useDocumentLinkProvider.js';
-import { useWorkspaceIndex, type WorkspaceIndexMode } from '../WorkspaceIndex/useWorkspaceIndex.js';
+import {
+  useWorkspaceIndex,
+  type WorkspaceIndexMode,
+  type WorkspaceIndexWorkerOption,
+} from '../WorkspaceIndex/useWorkspaceIndex.js';
+import { useHostSemanticSearch } from '../WorkspaceIndex/host-embedder.js';
+import {
+  findWorkspacePassages,
+  useAiProviderRemote,
+  withWorkspaceGrounding,
+} from '../Ai/workspace-grounding.js';
+import {
+  loadWorkspaceGroundingChoices,
+  saveWorkspaceGroundingChoices,
+  workspaceGroundingEnabled,
+} from '../preferences/ai-workspace.js';
+import {
+  loadSemanticSearchEnabled,
+  saveSemanticSearchEnabled,
+} from '../preferences/semantic-search.js';
 import {
   forgetRecentDocuments,
   loadRecentDocuments,
@@ -589,6 +613,13 @@ export interface DocBlocksShellProps {
    * feature first needs it (hosts whose listings are expensive), `off` never.
    */
   workspaceIndex?: WorkspaceIndexMode;
+  /**
+   * Runs the workspace index's analysis, storage and search in a worker
+   * (`startWorkspaceIndexWorker` from `@bendyline/docblocks-react/workspace-index-worker`),
+   * so it survives relaunches and ranks passages. Without it the index lives
+   * in page memory for the session. Keep the object stable across renders.
+   */
+  workspaceIndexWorker?: WorkspaceIndexWorkerOption;
   /** Show Copy controls on ordinary fenced code blocks (default: true). */
   showCodeCopyButton?: boolean;
   /**
@@ -1004,6 +1035,7 @@ export function DocBlocksShell({
   onApplyUpdate,
   statusBarSlotRight,
   workspaceIndex: workspaceIndexMode = 'eager',
+  workspaceIndexWorker,
   showCodeCopyButton = true,
   onCopyCode,
   allowRecording = true,
@@ -1039,7 +1071,21 @@ export function DocBlocksShell({
   // Settings choice > the host's `theme` prop > the OS. See resolve-theme.ts
   // for why that order. Stamped as `data-theme` on the shell root below.
   const resolvedTheme = resolveShellTheme({ preference: themePreference, hostTheme, osTheme });
-  const ai = hostSupports('aiAssist') ? maybeGetDocBlocksHost()?.ai : undefined;
+  const hostAi = hostSupports('aiAssist') ? maybeGetDocBlocksHost()?.ai : undefined;
+  // Every AI action that searches knowledge also carries passages from the
+  // open workspace (set below, once the index and the open note are known).
+  const workspaceGroundingRef = useRef<
+    (request: AiChatRequest) => Promise<readonly AiWorkspacePassage[]>
+  >(async () => []);
+  const ai = useMemo(
+    () =>
+      hostAi
+        ? withWorkspaceGrounding(hostAi, (request) => workspaceGroundingRef.current(request))
+        : undefined,
+    [hostAi],
+  );
+  const aiProviderRemote = useAiProviderRemote(hostAi);
+  const [groundingChoices, setGroundingChoices] = useState(loadWorkspaceGroundingChoices);
   // "Suggest with AI" in Squisq's Custom summary designer (Write › Summarize).
   const presentationAssistant = useMemo(
     () => (ai ? createPresentationAssistant(ai) : undefined),
@@ -1110,6 +1156,19 @@ export function DocBlocksShell({
     setProofingPreferences(settings);
     saveProofingPreferences(settings);
   }, []);
+
+  // Semantic search needs the host's embedding model and the worker index.
+  const semanticSearchAvailable =
+    workspaceIndexWorker !== undefined && hostSupports('semanticEmbeddings');
+  const [semanticSearchEnabled, setSemanticSearchEnabled] = useState(loadSemanticSearchEnabled);
+  const handleSemanticSearchChange = useCallback((enabled: boolean) => {
+    setSemanticSearchEnabled(enabled);
+    saveSemanticSearchEnabled(enabled);
+  }, []);
+  // Present whenever the host can embed, so the index keeps the model's
+  // chunking (and its vectors) while the switch is off.
+  const hostSemanticSearch = useHostSemanticSearch(semanticSearchAvailable);
+  const workspaceEmbedder = hostSemanticSearch.embedder;
 
   const [viewPreferences, setViewPreferences] = useState<ViewPreferences>(loadViewPreferences);
   const handleViewPreferencesChange = useCallback((prefs: ViewPreferences) => {
@@ -1587,9 +1646,30 @@ export function DocBlocksShell({
   workspaceOutputsSchedulerRef.current = workspaceOutputs.scheduler;
   // The one shared listing of the workspace's documents. Workspace-wide
   // discovery (link picker, quick-open, search) reads it instead of walking.
-  const workspaceIndex = useWorkspaceIndex(provider, activeWorkspaceId, workspaceIndexMode);
+  const workspaceIndex = useWorkspaceIndex(provider, activeWorkspaceId, workspaceIndexMode, {
+    worker: workspaceIndexWorker,
+    embedder: workspaceEmbedder,
+    semanticEnabled: semanticSearchEnabled,
+    // A loose file or an opened bundle is gone next launch; keep nothing for it.
+    persist: activeWorkspaceId === null || getTransientWorkspace(activeWorkspaceId) === null,
+  });
   const workspaceIndexRef = useRef(workspaceIndex.index);
   workspaceIndexRef.current = workspaceIndex.index;
+  const workspaceGrounding =
+    semanticSearchAvailable &&
+    semanticSearchEnabled &&
+    workspaceGroundingEnabled(groundingChoices, activeWorkspaceId, aiProviderRemote);
+  const handleWorkspaceGroundingChange = useCallback(
+    (enabled: boolean) => {
+      if (!activeWorkspaceId) return;
+      setGroundingChoices((current) => {
+        const next = { ...current, [activeWorkspaceId]: enabled };
+        saveWorkspaceGroundingChoices(next);
+        return next;
+      });
+    },
+    [activeWorkspaceId],
+  );
   /**
    * Something in `workspaceId` changed; refresh that workspace's catalog
    * outputs and index. Every durable commit and tree mutation funnels here.
@@ -1659,6 +1739,13 @@ export function DocBlocksShell({
     void workspaceOutputsSchedulerRef.current?.regenerate({ force: true });
   }, []);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  // Read at request time: the open workspace's index, minus the open note.
+  workspaceGroundingRef.current = async (request) =>
+    workspaceGrounding && activeWorkspaceId && request.knowledgeQuery
+      ? findWorkspacePassages(workspaceIndex.index, activeWorkspaceId, request.knowledgeQuery, {
+          ...(selectedFile ? { exclude: new Set([selectedFile]) } : {}),
+        })
+      : [];
   const selectedFileRef = useRef(selectedFile);
   selectedFileRef.current = selectedFile;
   const [selectedSourceFile, setSelectedSourceFile] = useState<string | null>(null);
@@ -6118,6 +6205,31 @@ export function DocBlocksShell({
                 onProofingPreferencesChange={handleProofingPreferencesChange}
                 versioningPreference={versioningPreference}
                 onVersioningPreferenceChange={handleVersioningPreferenceChange}
+                semanticSearch={
+                  semanticSearchAvailable
+                    ? {
+                        enabled: semanticSearchEnabled,
+                        onChange: handleSemanticSearchChange,
+                        progress: workspaceIndex.semantic,
+                        model: hostSemanticSearch.status,
+                        onDownload: hostSemanticSearch.prepare,
+                        waiting: workspaceIndex.status.phase === 'idle',
+                        ...(hostAi && activeWorkspaceId
+                          ? {
+                              aiGrounding: {
+                                enabled: workspaceGroundingEnabled(
+                                  groundingChoices,
+                                  activeWorkspaceId,
+                                  aiProviderRemote,
+                                ),
+                                onChange: handleWorkspaceGroundingChange,
+                                remote: aiProviderRemote,
+                              },
+                            }
+                          : {}),
+                      }
+                    : undefined
+                }
                 onOpenWorkspaceSettings={
                   activeWorkspaceDescriptor ? handleOpenWorkspaceSettings : undefined
                 }
@@ -6267,6 +6379,7 @@ export function DocBlocksShell({
                   focusRequest={searchFocusRequest}
                   onOpen={handleSearchOpen}
                   onShowFiles={() => setSidebarView('files')}
+                  semantic={semanticSearchEnabled ? workspaceIndex.semantic : null}
                 />
               </Suspense>
             )}

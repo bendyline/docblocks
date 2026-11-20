@@ -141,6 +141,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
           'menu',
           'ai',
           'speech',
+          'embeddings',
         ].map((key) => [key, functionKeys(host[key])]),
       ),
       aiImages: functionKeys((host.ai as Record<string, unknown> | undefined)?.images),
@@ -167,6 +168,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
   expect(contract.topLevel).toEqual([
     'ai',
     'clipboard',
+    'embeddings',
     'env',
     'exports',
     'external',
@@ -308,6 +310,8 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'synthesize',
     'transcribe',
   ]);
+  // The fixture runs the stand-in embedding utility, so semantic search is present.
+  expect(contract.methods.embeddings).toEqual(['embed', 'status', 'tokenizer']);
   expect(contract.methods.git).toEqual([
     'capabilities',
     'checkoutBranch',

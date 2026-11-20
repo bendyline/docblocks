@@ -4,7 +4,12 @@ import { analyzeDocumentBytes } from './analyze.js';
 import type { StoredDocument, WorkspaceIndexEngine } from './engine.js';
 import type { SearchText } from './search-text.js';
 import { searchDocuments, type SearchableDocument } from './search.js';
-import type { IndexedDocument, WorkspaceSearchLineKind } from './types.js';
+import type {
+  IndexedDocument,
+  WorkspaceFindOptions,
+  WorkspacePassageHit,
+  WorkspaceSearchLineKind,
+} from './types.js';
 
 /**
  * What the persistent engine needs from `@bendyline/gezel-retrieval`'s
@@ -26,32 +31,66 @@ export interface LiveIndexLike {
     readonly version: string;
     readonly payload: Uint8Array | null;
   }>;
-  search(
+  search(query: string, options?: WorkspaceFindOptions): readonly LiveIndexHit[];
+  /** Lexical and semantic hits fused; lexical alone without a vector. */
+  hybridSearch(
     query: string,
-    options?: {
-      readonly limit?: number;
-      readonly perDocument?: number;
-      readonly prefix?: boolean;
-      readonly exclude?: ReadonlySet<string>;
-    },
-  ): readonly LivePassageHit[];
+    vector: ArrayLike<number> | null,
+    options?: WorkspaceFindOptions,
+  ): readonly LiveIndexHit[];
+  /** Full passage text by chunk id; absent on an older live index. */
+  passageTexts?(chunks: readonly number[]): ReadonlyMap<number, string>;
+  pendingEmbeddings(limit?: number): readonly LivePendingPassage[];
+  storeEmbeddings(
+    entries: ReadonlyArray<{ readonly hash: string; readonly vector: ArrayLike<number> }>,
+  ): void;
+  embeddingStats(): LiveEmbeddingProgress;
+  /** Re-chunk documents indexed under an earlier chunking or profile; how many it did. */
+  rechunkStale(limit?: number): number;
+}
+
+/** A hit as the live index returns it: a passage plus where it came from. */
+export interface LiveIndexHit extends Omit<WorkspacePassageHit, 'meaning' | 'text'> {
+  /** The passage's chunk id. */
+  readonly chunk?: number;
+  /** Cosine similarity to the query, for a hit the vector arm found. */
+  readonly similarity?: number;
+  /** Rank in each arm that found the hit, for a hybrid search. */
+  readonly arms?: { readonly lexical?: number; readonly vector?: number };
+}
+
+/** Passage text quoted to a model is capped; a passage is ~420 tokens. */
+const MAX_PASSAGE_TEXT = 4_000;
+
+/** A passage awaiting its vector: embed `input`, store the result under `hash`. */
+export interface LivePendingPassage {
+  readonly hash: string;
+  readonly input: string;
+}
+
+/** Passages with a vector out of those that need one. */
+export interface LiveEmbeddingProgress {
+  readonly total: number;
+  readonly embedded: number;
 }
 
 /** A ranked passage, as the live index reports it. */
-export interface LivePassageHit {
-  readonly path: string;
-  readonly title: string;
-  readonly headingPath: readonly string[];
-  readonly lineStart: number;
-  readonly lineEnd: number;
-  readonly snippet: string;
-  readonly ranges: ReadonlyArray<readonly [number, number]>;
-  readonly score: number;
-}
+export type LivePassageHit = WorkspacePassageHit;
 
 export interface LiveIndexEngine extends WorkspaceIndexEngine {
-  /** Best-matching passages by BM25 over titles, headings and text. */
-  find(query: string, options?: Parameters<LiveIndexLike['search']>[1]): readonly LivePassageHit[];
+  /**
+   * Best-matching passages: BM25 over titles, headings and text, fused with
+   * the nearest passages in meaning when `options.vector` holds the query's
+   * embedding.
+   */
+  find(query: string, options?: WorkspaceFindOptions): readonly WorkspacePassageHit[];
+  pendingEmbeddings(limit?: number): readonly LivePendingPassage[];
+  storeEmbeddings(
+    entries: ReadonlyArray<{ readonly hash: string; readonly vector: ArrayLike<number> }>,
+  ): void;
+  embeddingStats(): LiveEmbeddingProgress;
+  /** Re-chunk up to `limit` stale documents; 0 when none are left. */
+  rechunk(limit?: number): number;
 }
 
 /**
@@ -176,9 +215,26 @@ export function createLiveIndexEngine(
       }));
       return searchDocuments(searchable, query, searchOptions.checkpoint, searchOptions.limits);
     },
-    find(query, findOptions) {
-      return live.search(query, findOptions);
+    find(query, findOptions = {}) {
+      const { vector, text, ...rest } = findOptions;
+      const hits = vector ? live.hybridSearch(query, vector, rest) : live.search(query, rest);
+      const texts =
+        text && live.passageTexts
+          ? live.passageTexts(hits.flatMap((hit) => (hit.chunk === undefined ? [] : [hit.chunk])))
+          : null;
+      return hits.map(({ chunk, similarity, arms, ...hit }): WorkspacePassageHit => {
+        const passage = chunk === undefined ? undefined : texts?.get(chunk);
+        return {
+          ...hit,
+          ...(arms?.vector !== undefined || similarity !== undefined ? { meaning: true } : {}),
+          ...(passage !== undefined ? { text: passage.slice(0, MAX_PASSAGE_TEXT) } : {}),
+        };
+      });
     },
+    pendingEmbeddings: (limit) => live.pendingEmbeddings(limit),
+    storeEmbeddings: (entries) => live.storeEmbeddings(entries),
+    embeddingStats: () => live.embeddingStats(),
+    rechunk: (limit) => live.rechunkStale(limit),
     dispose() {
       options.onDispose?.();
     },

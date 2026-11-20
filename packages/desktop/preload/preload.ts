@@ -55,8 +55,10 @@ import {
   parseAiImagesAvailabilityArgument,
   parseHostEnvironmentArguments,
   parseSpeechAvailabilityArgument,
+  parseEmbeddingsAvailabilityArgument,
 } from '../shared/host-environment.js';
 import { createAiImagesApi } from './ai-images-bridge.js';
+import { createEmbeddingsApi } from './embeddings-bridge.js';
 import { createSpeechApi } from './speech-bridge.js';
 
 // The main process can dispatch launch argv as soon as the BrowserWindow is
@@ -642,6 +644,10 @@ const host: DocBlocksHostAPI = {
   // Likewise per engine: `transcribe` / `synthesize` exist only when main found
   // the engine, and the namespace only when it found at least one.
   ...speechNamespace(),
+  // Only on a build that found its bundled embedding model.
+  ...(parseEmbeddingsAvailabilityArgument(process.argv)
+    ? { embeddings: createEmbeddingsApi(ipcRenderer) }
+    : {}),
   onMenuCommand,
   onOpenRequest,
 };

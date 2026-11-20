@@ -47,6 +47,7 @@ describe('Gezel native packaging adapter', () => {
   it('hands the MAS OS and electron-builder destination to the inference packager', async () => {
     const calls: unknown[] = [];
     const verificationCalls: unknown[] = [];
+    const modelCalls: unknown[] = [];
     await stageForTarget(
       {
         packager: { info: { appDir: root }, platform: { buildConfigurationKey: 'mac' } },
@@ -61,8 +62,12 @@ describe('Gezel native packaging adapter', () => {
           expect(calls).to.have.length(1);
           verificationCalls.push(options);
         },
+        stageEmbeddingModel: async (options: unknown) => {
+          modelCalls.push(options);
+        },
       },
     );
+    expect(modelCalls).to.deep.equal([{ appDir: root }]);
     expect(verificationCalls).to.deep.equal([
       { directory: path.join(root, 'dist', 'gezel-native', 'mac-arm64'), platform: 'darwin' },
     ]);
@@ -185,6 +190,7 @@ describe('Gezel native packaging adapter', () => {
       },
       {
         stageElectronNative: stagedWindowsEngines,
+        stageEmbeddingModel: async () => {},
         vcRuntime: { env: { DOCBLOCKS_VCRUNTIME_DIR: crt }, verify: () => undefined },
       },
     );
@@ -198,6 +204,7 @@ describe('Gezel native packaging adapter', () => {
       { appDir: root, platform: 'win32', arch: 'arm64' },
       {
         stageElectronNative: stagedWindowsEngines,
+        stageEmbeddingModel: async () => {},
         verifyNativePlatformRequirements: async () => {},
       },
     );
@@ -226,6 +233,7 @@ describe('Gezel native packaging adapter', () => {
         { appDir: root, platform, arch },
         {
           stageElectronNative: stagedUnixEngines(`${platform}-${arch}`),
+          stageEmbeddingModel: async () => {},
           verifyNativePlatformRequirements: async () => {},
         },
       );
@@ -244,6 +252,7 @@ describe('Gezel native packaging adapter', () => {
       },
       {
         stageElectronNative: stagedUnixEngines('darwin-arm64'),
+        stageEmbeddingModel: async () => {},
         verifyNativePlatformRequirements: async () => {},
       },
     );

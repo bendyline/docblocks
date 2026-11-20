@@ -72,6 +72,11 @@
       "import": "./dist/editor.js",
       "default": "./dist/editor.js"
     },
+    "./workspace-index-worker": {
+      "types": "./dist/workspace-index-worker/index.d.ts",
+      "import": "./dist/workspace-index-worker/index.js",
+      "default": "./dist/workspace-index-worker/index.js"
+    },
     "./styles": "./src/styles/docblocks.css",
     "./package.json": "./package.json"
   },
@@ -98,6 +103,8 @@
     "@bendyline/squisq-react": "2.12.33",
     "@bendyline/squisq-video": "2.4.26",
     "@bendyline/squisq-video-react": "2.5.36",
+    "@huggingface/tokenizers": "0.2.0",
+    "@sqlite.org/sqlite-wasm": "3.53.4-build2",
     "lucide-react": "1.52.0",
     "qrcode": "1.5.4"
   },

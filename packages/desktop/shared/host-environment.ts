@@ -112,6 +112,21 @@ export function parseSpeechAvailabilityArgument(argv: readonly string[]): Speech
   return { stt: engines.has('stt'), tts: engines.has('tts') };
 }
 
+const EMBEDDINGS_AVAILABLE_SWITCH = '--docblocks-embeddings=';
+
+/**
+ * Main-side: whether this build can run its bundled embedding model. Main
+ * decides from files alone; the preload exposes `embeddings` only when it can.
+ */
+export function embeddingsAvailabilityArguments(available: boolean): string[] {
+  return [`${EMBEDDINGS_AVAILABLE_SWITCH}${available ? '1' : '0'}`];
+}
+
+/** Preload-side. Fail safe: only an explicit '1' exposes semantic search. */
+export function parseEmbeddingsAvailabilityArgument(argv: readonly string[]): boolean {
+  return switchValue(argv, EMBEDDINGS_AVAILABLE_SWITCH) === '1';
+}
+
 /** Preload-side: decode the main-owned values out of `process.argv`. */
 export function parseHostEnvironmentArguments(argv: readonly string[]): HostEnvironmentValues {
   const appVersion = switchValue(argv, APP_VERSION_SWITCH);

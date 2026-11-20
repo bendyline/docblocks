@@ -56,6 +56,8 @@ import {
   type WorkspaceIndexSource,
   type WorkspaceIndexStatus,
   type WorkspaceIndexTruncation,
+  type WorkspaceFindOptions,
+  type WorkspacePassageHit,
   type WorkspaceSearchLimits,
   type WorkspaceSearchQuery,
   type WorkspaceSearchResult,
@@ -146,6 +148,8 @@ function defaultNow(): number {
 }
 
 const PUBLISH_INTERVAL_MS = 250;
+/** A query embedding slower than this leaves that search lexical. */
+const QUERY_EMBED_BUDGET_MS = 1_500;
 const SLICE_MS = 8;
 
 class WorkspaceIndexImpl implements WorkspaceIndex {
@@ -153,6 +157,7 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
 
   private readonly source: WorkspaceIndexSource;
   private readonly engine: WorkspaceIndexEngine;
+  private readonly embedQuery: WorkspaceIndexOptions['embedQuery'];
   private readonly limits: WorkspaceIndexLimits;
   private readonly yieldControl: () => Promise<void>;
   private readonly now: () => number;
@@ -164,6 +169,8 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
   /** What the engine kept from an earlier session, until the first full listing settles. */
   private restored: ReadonlyMap<WorkspacePath, StoredDocument> | null = null;
   private restoreDone = false;
+  private persistence: 'memory' | 'persistent' = 'memory';
+  private ranked = false;
   private truncation: Truncation | null = null;
   private analysisTruncation: Truncation | null = null;
   private rootError: string | null = null;
@@ -205,6 +212,7 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     this.workspaceId = options.workspaceId;
     this.source = options.source;
     this.engine = options.engine ?? createMemoryEngine();
+    this.embedQuery = options.embedQuery;
     this.limits = { ...WORKSPACE_INDEX_LIMITS, ...options.limits };
     this.yieldControl = options.yieldControl ?? defaultYield;
     this.now = options.now ?? defaultNow;
@@ -243,6 +251,8 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       issues: this.tree.unreadable.size + this.readIssues,
       error: this.rootError,
       generation: this.generation,
+      persistence: this.persistence,
+      ranked: this.ranked,
     });
     return this.statusCache;
   }
@@ -368,6 +378,38 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     });
   }
 
+  public async find(
+    query: string,
+    options?: WorkspaceFindOptions,
+  ): Promise<readonly WorkspacePassageHit[]> {
+    if (!this.engine.find || this.disposed) return [];
+    const vector = options?.vector ?? (await this.queryVector(query));
+    const hits = await this.engine.find(query, vector ? { ...options, vector } : options);
+    // The store may still hold a document the latest listing no longer has.
+    return hits.filter((hit) => this.tree.documents.has(hit.path as WorkspacePath));
+  }
+
+  /** The query's embedding, or null when there is no embedder or it was too slow. */
+  private async queryVector(query: string): Promise<ArrayLike<number> | null> {
+    if (!this.embedQuery || !query.trim()) return null;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // A race, not just the signal: an embedder that ignores it still cannot hold search.
+    const late = new Promise<null>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        resolve(null);
+      }, QUERY_EMBED_BUDGET_MS);
+    });
+    try {
+      return await Promise.race([this.embedQuery(query, controller.signal), late]);
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   public refresh(options: { readonly force?: boolean } = {}): void {
     if (!options.force && this.watching) return;
     this.requestWalk(options.force ?? false);
@@ -476,6 +518,15 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
 
   /** What the engine kept from an earlier session; nothing if it cannot say. */
   private async restoreStored(): Promise<ReadonlyMap<WorkspacePath, StoredDocument>> {
+    void this.engine.opened?.then(
+      (opened) => {
+        if (this.disposed) return;
+        this.persistence = opened.persistence;
+        this.ranked = opened.ranks ?? typeof this.engine.find === 'function';
+        this.publish();
+      },
+      () => undefined,
+    );
     try {
       return await this.engine.restore();
     } catch {

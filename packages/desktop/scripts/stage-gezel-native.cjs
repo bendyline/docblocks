@@ -2,6 +2,7 @@
 const { readFile, rm } = require('node:fs/promises');
 const { createRequire } = require('node:module');
 const path = require('node:path');
+const { stageEmbeddingModel } = require('./stage-embedding-model.cjs');
 const { stageVcRuntime } = require('./stage-vc-runtime.cjs');
 const { verifyNativePlatformRequirements } = require('./native-platform-requirements.cjs');
 const intelMacFinal = require('../intel-mac-final.json');
@@ -76,6 +77,8 @@ async function stageForTarget(context, overrides = {}) {
     },
     overrides,
   );
+  // Every platform bundles the same embedding model for semantic search.
+  await (overrides.stageEmbeddingModel ?? stageEmbeddingModel)({ appDir });
   if (platform === 'win32') {
     // This also serves DocBlocks' speech runtime, which is outside the text AI host.
     await stageVcRuntime({

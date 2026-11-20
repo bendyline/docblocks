@@ -5,6 +5,7 @@ import { SITE_CALC_ENGINE_FACTORY } from './calculationConfig';
 import { SITE_PROOFING_PROVIDER } from './proofingConfig';
 import { dismissSplash } from './splash';
 import { firstRunGreeting } from './storage-welcome';
+import { MOBILE_WORKSPACE_INDEX_WORKER } from './workspaceIndexConfig';
 // pdf.js parses PDFs only with a worker, and only the bundler can give its URL.
 // pdfjs-dist is pinned to the version Squisq's formats package loads.
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
@@ -27,6 +28,8 @@ createRoot(document.getElementById('root')!).render(
       // Native listings re-read every file beneath each folder, so index
       // only once quick-open, search, or the link picker asks for it.
       workspaceIndex="on-demand"
+      // Analysis and storage run in a worker whose store survives relaunches.
+      workspaceIndexWorker={MOBILE_WORKSPACE_INDEX_WORKER}
       // Recording, document narration and dictation use the microphone and
       // camera under the app's declared permissions, and capture only while
       // the person records. Both WebViews lack a screen picker, so Squisq's

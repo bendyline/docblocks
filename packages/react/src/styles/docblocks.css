@@ -9728,6 +9728,14 @@ button.db-git-file-row:hover {
   color: var(--db-text-on-selected);
 }
 
+/* Best matches ignores case and word edges, so those toggles rest meanwhile. */
+.db-search-toggle:disabled {
+  opacity: 0.45;
+  cursor: default;
+  background: none;
+  color: var(--db-text-muted);
+}
+
 .db-search-toggle:focus-visible {
   outline: 2px solid var(--db-focus);
   outline-offset: 1px;

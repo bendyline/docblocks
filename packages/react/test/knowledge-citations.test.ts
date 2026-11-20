@@ -25,6 +25,24 @@ describe('knowledge citations in inserted text', () => {
     );
   });
 
+  it('names a workspace passage as a note in this workspace', () => {
+    expect(
+      citationsToFootnotes(
+        'Aphids hide under leaves [2], as the history notes [1].',
+        [
+          ...evidence.slice(0, 1),
+          { title: 'Garden notes › Pests', catalogId: 'workspace', text: 'Aphids.' },
+        ],
+        names,
+        '',
+      ),
+    ).to.equal(
+      'Aphids hide under leaves[^source-1], as the history notes[^source-2].\n\n' +
+        '[^source-1]: Garden notes › Pests, a note in this workspace.\n' +
+        '[^source-2]: Panama Hotel (Seattle), from the Pacific Northwest knowledge catalog.',
+    );
+  });
+
   it("keeps clear of the document's footnotes, links and code, and drops unknown numbers", () => {
     const result = citationsToFootnotes(
       'See [the site](https://example.com) and note[^1] [2] [9].\n\n```\nlist[1]\n```',

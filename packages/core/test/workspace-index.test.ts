@@ -550,6 +550,86 @@ describe('workspace index engines', () => {
     expect(calls.searches).to.be.greaterThan(0);
     index.dispose();
   });
+
+  describe('find with a query embedder', () => {
+    function rankingEngine() {
+      const { engine } = recordingEngine();
+      const vectors: Array<ArrayLike<number> | undefined> = [];
+      const ranked: WorkspaceIndexEngine = {
+        ...engine,
+        find: async (_query, options) => {
+          vectors.push(options?.vector);
+          return [
+            {
+              path: 'a.md',
+              title: 'A',
+              headingPath: [],
+              lineStart: 1,
+              lineEnd: 1,
+              snippet: 'a',
+              ranges: [],
+              score: 1,
+            },
+            {
+              path: 'gone.md',
+              title: 'Gone',
+              headingPath: [],
+              lineStart: 1,
+              lineEnd: 1,
+              snippet: 'gone',
+              ranges: [],
+              score: 0.5,
+            },
+          ];
+        },
+      };
+      return { engine: ranked, vectors };
+    }
+
+    it('fuses the query embedding and drops documents no longer listed', async () => {
+      const provider = await seed({ 'a.md': '# A\n' });
+      const { engine, vectors } = rankingEngine();
+      const index = createIndex(spy(provider).source, {
+        engine,
+        embedQuery: async (query) => [query.length, 0],
+      });
+      index.start();
+      await waitFor(settled(index), 'ready');
+      const hits = (await index.find?.('heron')) ?? [];
+      expect(hits.map((hit) => hit.path)).to.deep.equal(['a.md']);
+      expect(vectors).to.deep.equal([[5, 0]]);
+      index.dispose();
+    });
+
+    it('stays lexical when the embedder fails or never answers', async function () {
+      this.timeout(5_000);
+      const provider = await seed({ 'a.md': '# A\n' });
+      const failing = rankingEngine();
+      const index = createIndex(spy(provider).source, {
+        engine: failing.engine,
+        embedQuery: () => Promise.reject(new Error('model not loaded')),
+      });
+      index.start();
+      await waitFor(settled(index), 'ready');
+      await index.find?.('heron');
+      expect(failing.vectors).to.deep.equal([undefined]);
+      index.dispose();
+
+      // An embedder that ignores its abort signal still cannot hold search past the budget.
+      const hung = rankingEngine();
+      const stalled = createIndex(spy(provider).source, {
+        engine: hung.engine,
+        embedQuery: () => new Promise<never>(() => undefined),
+      });
+      stalled.start();
+      await waitFor(settled(stalled), 'ready');
+      const started = Date.now();
+      await stalled.find?.('heron');
+      expect(Date.now() - started).to.be.lessThan(3_000);
+      expect(hung.vectors).to.deep.equal([undefined]);
+      stalled.dispose();
+    });
+  });
 });
 
 describe('workspace index over a recursive listing', () => {

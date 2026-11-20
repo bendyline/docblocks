@@ -25,9 +25,13 @@ import {
 import { validateCompiledDiagram, type MermaidValidator } from './diagram-validate.js';
 import { segmentPassages, shortlistPassages, type Passage } from './illustrate-passages.js';
 import {
+  buildKindRequest,
   buildPlanRequest,
   buildRealizeRequest,
   buildRepairRequest,
+  inferKind,
+  namedKind,
+  parseKindResponse,
   parsePlanResponse,
   type PlanPick,
   type PromptBudget,
@@ -231,6 +235,42 @@ export interface DrawOptions {
   readonly budget: PromptBudget;
   readonly validateMermaid: MermaidValidator;
   readonly signal?: AbortSignal;
+}
+
+export type KindChoice =
+  | {
+      readonly status: 'chosen';
+      readonly kind: DiagramKind;
+      /** Who chose: the person's words, the model, or keywords when the model could not. */
+      readonly by: 'named' | 'model' | 'keywords';
+    }
+  | { readonly status: 'cancelled' };
+
+/**
+ * The kind for Auto: the one the person's words name, else the model's
+ * choice, else a keyword guess. A failed or unreadable choice never fails the
+ * picture; the drawing call reports a model that is not answering.
+ */
+export async function chooseKind(options: {
+  readonly ai: ChatApi;
+  /** What the person asked for, or ''. */
+  readonly description: string;
+  /** The text the picture is drawn from, or ''. */
+  readonly material: string;
+  readonly signal?: AbortSignal;
+}): Promise<KindChoice> {
+  const named = namedKind(options.description);
+  if (named) return { status: 'chosen', kind: named, by: 'named' };
+  const outcome = await chatOnce(
+    options.ai,
+    buildKindRequest({ description: options.description, material: options.material }),
+    options.signal,
+  );
+  if (outcome.kind === 'cancelled') return { status: 'cancelled' };
+  const chosen = outcome.kind === 'ok' ? parseKindResponse(outcome.text) : null;
+  return chosen
+    ? { status: 'chosen', kind: chosen, by: 'model' }
+    : { status: 'chosen', kind: inferKind(options.description, options.material), by: 'keywords' };
 }
 
 /**

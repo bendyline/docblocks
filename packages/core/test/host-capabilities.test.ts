@@ -70,6 +70,11 @@ function electronHost(): Record<string, unknown> {
       transcribe: () => undefined,
       synthesize: () => undefined,
     },
+    embeddings: {
+      status: () => undefined,
+      embed: () => undefined,
+      tokenizer: () => undefined,
+    },
     git: { status: () => undefined },
     updater: { checkForUpdates: () => undefined },
     lifecycle: { onPrepareClose: () => undefined },
@@ -286,6 +291,21 @@ describe('deriveHostCapabilities', () => {
     expect(none.speechInput).to.equal(false);
     expect(none.speechOutput).to.equal(false);
     expect(none.speechModelManagement).to.equal(false);
+  });
+
+  it('reports semantic embeddings only from a complete bridge, independently of AI', () => {
+    const host = electronHost();
+    delete host.ai;
+    host.embeddings = { status: () => undefined, embed: () => undefined };
+    expect(deriveHostCapabilities(host).semanticEmbeddings).to.equal(false);
+    host.embeddings = {
+      status: () => undefined,
+      embed: () => undefined,
+      tokenizer: () => undefined,
+    };
+    expect(deriveHostCapabilities(host).semanticEmbeddings).to.equal(true);
+    delete host.embeddings;
+    expect(deriveHostCapabilities(host).semanticEmbeddings).to.equal(false);
   });
 
   it('does not claim assisted writing from an incomplete core bridge', () => {

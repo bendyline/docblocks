@@ -13,11 +13,26 @@ export {
   type WorkspaceIndexEngine,
 } from './engine.js';
 export {
+  createWorkerEngine,
+  serveWorkspaceIndexEngine,
+  withMemoryFallback,
+  type EngineHost,
+  type EnginePort,
+  type ServedEngine,
+  type WorkerEngine,
+  type WorkerEngineOpenRequest,
+  type WorkerEngineOpened,
+  type WorkerFindOptions,
+} from './engine-worker.js';
+export {
   LIVE_ENGINE_PAYLOAD_FORMAT,
   createLiveIndexEngine,
+  type LiveEmbeddingProgress,
   type LiveIndexEngine,
+  type LiveIndexHit,
   type LiveIndexLike,
   type LivePassageHit,
+  type LivePendingPassage,
 } from './live-engine.js';
 export { analyzeDocumentBytes, type AnalyzedDocument, type DocumentIdentity } from './analyze.js';
 export {
@@ -30,6 +45,7 @@ export type { SearchText } from './search-text.js';
 export { fuzzyMatch, fuzzyMatchTokens, fuzzyTokens, type FuzzyMatch } from './fuzzy.js';
 export {
   WORKSPACE_INDEX_LIMITS,
+  WORKSPACE_INDEX_STORE_LIMITS,
   WORKSPACE_SEARCH_LIMITS,
   type IndexedDocument,
   type IndexedDocumentContent,
@@ -43,6 +59,8 @@ export {
   type WorkspaceIndexSource,
   type WorkspaceIndexStatus,
   type WorkspaceIndexTruncation,
+  type WorkspaceFindOptions,
+  type WorkspacePassageHit,
   type WorkspaceSearchDocument,
   type WorkspaceSearchLimits,
   type WorkspaceSearchLineKind,

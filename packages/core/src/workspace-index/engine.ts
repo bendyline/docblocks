@@ -5,6 +5,8 @@ import type { SearchText } from './search-text.js';
 import { searchDocuments, type Checkpoint } from './search.js';
 import type {
   IndexedDocument,
+  WorkspaceFindOptions,
+  WorkspacePassageHit,
   WorkspaceSearchLimits,
   WorkspaceSearchQuery,
   WorkspaceSearchResult,
@@ -66,22 +68,55 @@ export interface WorkspaceIndexEngine {
     query: WorkspaceSearchQuery,
     options: EngineSearchOptions,
   ): Promise<WorkspaceSearchResult>;
+  /** Settles with the store the engine opened. The memory engine has none to report. */
+  readonly opened?: Promise<{
+    readonly persistence: 'persistent' | 'memory';
+    readonly ranks?: boolean;
+  }>;
+  /** Passages ranked by relevance, for an engine with a full-text index. */
+  find?(
+    query: string,
+    options?: WorkspaceFindOptions,
+  ): Promise<readonly WorkspacePassageHit[]> | readonly WorkspacePassageHit[];
   dispose(): void;
 }
 
-/** The session-only engine: analysis on the calling thread, text in memory. */
-export function createMemoryEngine(): WorkspaceIndexEngine {
+/**
+ * The session-only engine: analysis on the calling thread, text in memory.
+ * `maxCharacters` caps the text it holds, for an engine standing in for a
+ * persistent one under that engine's larger index limits; past it, a
+ * document is kept by name only.
+ */
+export function createMemoryEngine(
+  options: { readonly maxCharacters?: number } = {},
+): WorkspaceIndexEngine {
   const texts = new Map<WorkspacePath, SearchText>();
+  const maxCharacters = options.maxCharacters ?? Number.POSITIVE_INFINITY;
+  let held = 0;
+  const drop = (path: WorkspacePath) => {
+    held -= texts.get(path)?.characters ?? 0;
+    texts.delete(path);
+  };
   return {
     restore: () => Promise.resolve(new Map()),
-    async analyze(identity, _version, data, options) {
-      const analyzed = await analyzeDocumentBytes(identity, data, options);
-      if (analyzed.text) texts.set(identity.path, analyzed.text);
-      else texts.delete(identity.path);
-      return { record: analyzed.record, characters: analyzed.text?.characters ?? 0 };
+    async analyze(identity, _version, data, analyzeOptions) {
+      const analyzed = await analyzeDocumentBytes(identity, data, analyzeOptions);
+      drop(identity.path);
+      const characters = analyzed.text?.characters ?? 0;
+      if (analyzed.text && held + characters > maxCharacters) {
+        return {
+          record: { ...analyzed.record, content: 'name-only', issue: 'over-budget' },
+          characters: 0,
+        };
+      }
+      if (analyzed.text) {
+        texts.set(identity.path, analyzed.text);
+        held += characters;
+      }
+      return { record: analyzed.record, characters };
     },
     forget(path) {
-      texts.delete(path);
+      drop(path);
     },
     search(documents, query, options) {
       return searchDocuments(
@@ -98,6 +133,7 @@ export function createMemoryEngine(): WorkspaceIndexEngine {
     },
     dispose() {
       texts.clear();
+      held = 0;
     },
   };
 }

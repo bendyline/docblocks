@@ -24,6 +24,7 @@ export type {
   AiChatProgress,
   AiChatPurpose,
   AiChatRequest,
+  AiWorkspacePassage,
   AiConnectionStep,
   AiEnsureWorkspaceHandle,
   AiError,
@@ -62,6 +63,7 @@ export {
   parseAiChatKnowledge,
   parseAiChatProgress,
   parseAiChatRequest,
+  parseAiWorkspacePassages,
   parseAiError,
   parseAiFactCheck,
   parseAiFactCheckRequest,
@@ -129,6 +131,29 @@ export {
   parseSpeechTranscript,
   parseSpeechVoiceInfo,
 } from './speech-wire-policy.js';
+
+export {
+  WORKSPACE_KNOWLEDGE_CATALOG_ID,
+  WORKSPACE_KNOWLEDGE_NAME,
+  withWorkspacePassages,
+  type KnowledgeRetrievedPassage,
+  type KnowledgeRetriever,
+} from './ai-workspace-knowledge.js';
+
+export type {
+  DocBlocksHostEmbeddingsAPI,
+  EmbeddingKind,
+  EmbeddingsRequest,
+  EmbeddingsStatus,
+  EmbeddingsTokenizer,
+} from './embeddings.js';
+export {
+  EMBEDDINGS_WIRE_LIMITS,
+  parseEmbeddingsRequest,
+  parseEmbeddingsStatus,
+  parseEmbeddingsTokenizer,
+  parseEmbeddingsVectors,
+} from './embeddings.js';
 
 export type {
   DocBlocksHostAPI,
