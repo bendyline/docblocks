@@ -402,7 +402,8 @@ test('Clicking a review finding selects its text, and finds it again after an ed
       await expect(card.getByRole('button', { name: 'Apply' })).toBeDisabled();
 
       // The Source view selects the same text in the Markdown itself: typing replaces it.
-      await window.getByRole('tab', { name: 'Source', exact: true }).click();
+      await window.getByRole('button', { name: 'Choose Write mode', exact: true }).click();
+      await window.getByRole('menuitemradio', { name: 'Source', exact: true }).click();
       await expect(window.locator('.monaco-editor').first()).toBeVisible();
       await card.getByRole('button', { name: 'Show in document' }).click();
       await window.keyboard.type('Replaced from the review panel.');

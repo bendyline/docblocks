@@ -52,12 +52,6 @@ import { resolveWorkspaceDefaultThemeId } from '@bendyline/docblocks/workspace-s
 import { createVscodeCalcEngineFactory } from './calculationConfig.js';
 import type { ProofingProvider } from '@bendyline/squisq-editor-react';
 
-const PresentationMaker = lazy(() =>
-  import('@bendyline/docblocks-react/editor').then((module) => ({
-    default: module.PresentationMaker,
-  })),
-);
-
 const vscode = getVscodeApi();
 const VSCODE_CALC_ENGINE_FACTORY = createVscodeCalcEngineFactory();
 
@@ -401,7 +395,9 @@ export function VscodeEditor() {
 
   const handleMonacoIntent = useCallback((event: React.SyntheticEvent<HTMLDivElement>) => {
     if (!(event.target instanceof Element)) return;
-    if (!event.target.closest('[role="tab"][data-view="raw"]')) return;
+    // Source is chosen from the Write menu; its entry carries data-view="raw".
+    // The menu is portaled, but React still bubbles its events through here.
+    if (!event.target.closest('[data-view="raw"]')) return;
     void preloadMonacoRuntime().catch(() => undefined);
   }, []);
 
@@ -540,11 +536,6 @@ export function VscodeEditor() {
               />
             </Suspense>
           }
-          summarizationDesigner={(onClose) => (
-            <Suspense fallback={null}>
-              <PresentationMaker onClose={onClose} />
-            </Suspense>
-          )}
           toolbarSlotQuickTools={
             <FindButton
               active={findMode}

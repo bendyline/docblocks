@@ -228,8 +228,10 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   // Interactive controls inside the drag region must remain clickable.
   await sidebarHeader.getByRole('button', { name: 'Workspace settings' }).click();
   await expect(window.getByRole('menuitem', { name: /Workspace settings/ })).toBeVisible();
+  // Source is chosen from the Write menu; the editing tab then carries its name.
+  await toolbar.getByRole('button', { name: 'Choose Write mode', exact: true }).click();
+  await window.getByRole('menuitemradio', { name: 'Source', exact: true }).click();
   const sourceTab = toolbar.getByRole('tab', { name: 'Source' });
-  await sourceTab.click();
   await expect(sourceTab).toHaveClass(/squisq-toolbar-view-tab--active/);
 
   // macOS owns its global application menu outside the BrowserWindow;

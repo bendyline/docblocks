@@ -43,18 +43,35 @@ Generate narration on your computer. DocBlocks saves the audio beside your docum
 Review your presentation. Export a narrated video. One document carries the source text, the voice, and the visual story.
 `;
 
-async function openDesigner(window: Page, screenshotPath?: string) {
-  const button = window.getByRole('button', { name: 'Summarization designer', exact: true });
-  if (!(await button.isVisible()))
-    await window.getByRole('button', { name: 'More preview settings' }).click();
-  await expect(
-    button.locator('..').getByRole('combobox', { name: 'Summarize', exact: true }),
-  ).toBeVisible();
-  if (screenshotPath) await button.locator('..').screenshot({ path: screenshotPath });
-  await button.click();
+function summarizeView(window: Page) {
+  return window.getByRole('region', { name: 'Summarize', exact: true });
 }
 
-test('designs dynamic slides from the Summarize toolbar and exports a timed MP4', async ({
+/** Opens Write › Summarize and chooses Custom, whose designer (Squisq's) it returns. */
+async function openDesigner(window: Page, screenshotPath?: string) {
+  await window.getByRole('button', { name: 'Choose Write mode', exact: true }).click();
+  await window
+    .getByRole('menu', { name: 'Write mode', exact: true })
+    .getByRole('menuitemradio', { name: 'Summarize', exact: true })
+    .click();
+  await summarizeView(window).getByRole('radio', { name: 'Custom', exact: true }).check();
+  if (screenshotPath) await summarizeView(window).screenshot({ path: screenshotPath });
+  return summarizeView(window).getByRole('region', {
+    name: 'Summarization designer',
+    exact: true,
+  });
+}
+
+/** Returns Write to the whole-document editor. */
+async function openWrite(window: Page) {
+  await window.getByRole('button', { name: 'Choose Write mode', exact: true }).click();
+  await window
+    .getByRole('menu', { name: 'Write mode', exact: true })
+    .getByRole('menuitemradio', { name: 'Write', exact: true })
+    .click();
+}
+
+test('designs Custom summaries in Write › Summarize and exports a timed MP4', async ({
   launchApp,
   userDataDir,
   workspaceDir,
@@ -179,12 +196,9 @@ test('designs dynamic slides from the Summarize toolbar and exports a timed MP4'
       bookmarks: Array<{ charOffset: number; time: number }>;
     };
     expect(timing.bookmarks.length).toBeGreaterThan(50);
-    await window.getByRole('button', { name: 'Choose Use mode' }).click();
-    await window.getByRole('menuitemradio', { name: 'Slideshow', exact: true }).click();
-    await openDesigner(window, testInfo.outputPath('summarize-design-control.png'));
-    const maker = window.getByRole('dialog', { name: 'Summarization designer', exact: true });
-    await expect(maker).toContainText(
-      'Design how your text is summarized for presentation in slides and video. Note that your document text and narration will remain unchanged.',
+    const maker = await openDesigner(window, testInfo.outputPath('summarize-design-control.png'));
+    await expect(summarizeView(window)).toContainText(
+      'Your document text and narration are not changed.',
     );
     await expect(maker.getByRole('region', { name: 'Original document text' })).toContainText(
       'Start with a few bullet points.',
@@ -208,7 +222,7 @@ test('designs dynamic slides from the Summarize toolbar and exports a timed MP4'
     await expect(
       maker
         .getByRole('navigation', { name: 'Presentation slides' })
-        .locator('.db-presentation-beat-ai'),
+        .locator('.squisq-summary-designer-slide-ai'),
     ).toHaveCount(5);
     await expect(maker.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
     await expect(maker.getByRole('button', { name: 'Suggest with AI' })).toBeEnabled();
@@ -220,29 +234,30 @@ test('designs dynamic slides from the Summarize toolbar and exports a timed MP4'
       .first()
       .click();
     await maker.getByText('Customize slide wording (slides only)', { exact: true }).click();
-    await maker
-      .getByRole('textbox', { name: 'Slide headline', exact: true })
-      .fill('An idea becomes a story');
+    const headline = maker.getByRole('textbox', { name: 'Slide headline', exact: true });
+    await headline.fill('An idea becomes a story');
+    // Wording is saved as the field is left; there is no button to commit.
+    await headline.press('Tab');
     await maker.screenshot({ path: testInfo.outputPath('reviewed-presentation.png') });
-    await maker.getByRole('button', { name: 'Use dynamic slides' }).click();
-    await expect(maker).toBeHidden();
-    await expect.poll(() => fs.readFileSync(file, 'utf8')).toContain(PRESENTATION_HINTS_KEY);
+    await expect.poll(() => fs.readFileSync(file, 'utf8')).toContain('An idea becomes a story');
     const saved = fs.readFileSync(file, 'utf8');
+    expect(saved).toContain(PRESENTATION_HINTS_KEY);
     // Slide-only edits must leave the authored body (including narration) byte-identical.
     expect(splitFrontmatterBlock(saved).body).toBe(splitFrontmatterBlock(narrated).body);
+    // Each saved change is a step the Write editor, mounted behind the
+    // designer, can undo and redo.
     await window.waitForTimeout(600);
-    await window.getByRole('tab', { name: 'Write', exact: true }).click();
+    await openWrite(window);
     await editor.focus();
     await window.keyboard.press('ControlOrMeta+Z');
-    await expect.poll(() => fs.readFileSync(file, 'utf8')).not.toContain(PRESENTATION_HINTS_KEY);
+    await expect.poll(() => fs.readFileSync(file, 'utf8')).not.toContain('An idea becomes a story');
+    expect(fs.readFileSync(file, 'utf8')).toContain(PRESENTATION_HINTS_KEY);
     expect(fs.readFileSync(file, 'utf8')).toContain('anchor=document');
     await window.keyboard.press('ControlOrMeta+Shift+Z');
     await expect.poll(() => fs.readFileSync(file, 'utf8')).toBe(saved);
     await expectSavedBeforeReload(window);
     await window.reload();
     await window.locator('.db-tree-row[data-path$="launch.md"]').click();
-    await window.getByRole('button', { name: 'Choose Use mode' }).click();
-    await window.getByRole('menuitemradio', { name: 'Video', exact: true }).click();
     await openDesigner(window);
     await expect(maker.getByRole('region', { name: 'Original document text' })).toContainText(
       'Give your ideas a voice',
@@ -258,7 +273,6 @@ test('designs dynamic slides from the Summarize toolbar and exports a timed MP4'
       .nth(2)
       .click();
     await maker.screenshot({ path: testInfo.outputPath('steps-presentation.png') });
-    await window.keyboard.press('Escape');
     const parsed = markdownToDoc(parseMarkdown(saved));
     const hints = parsePresentationHints(parsed.frontmatter?.[PRESENTATION_HINTS_KEY])!;
     expect(hints.inbetweens).toBe(true);
@@ -388,10 +402,7 @@ test('keeps the full source section selected when layouts split and merge slides
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell');
   await window.locator('.db-tree-row[data-path$="layouts.md"]').click();
-  await window.getByRole('button', { name: 'Choose Use mode' }).click();
-  await window.getByRole('menuitemradio', { name: 'Slideshow', exact: true }).click();
-  await openDesigner(window);
-  const designer = window.getByRole('dialog', { name: 'Summarization designer' });
+  const designer = await openDesigner(window);
   const slides = designer.getByRole('navigation', { name: 'Presentation slides' });
   const layout = designer.getByRole('combobox', { name: 'Layout preference for this section' });
   const original = designer.getByRole('region', { name: 'Original document text' }).locator('p');
@@ -414,7 +425,9 @@ test('keeps the full source section selected when layouts split and merge slides
   await expect(original).toHaveText(`Features\n${features}`);
   await expect(layout).toHaveValue('statement');
   await expect(slides.locator('[aria-current="step"]')).toContainText('Features');
-  expect(fs.readFileSync(file, 'utf8')).toBe(source);
+  // Each choice is saved as it is made, into the frontmatter alone.
+  await expect.poll(() => fs.readFileSync(file, 'utf8')).toContain('"layout":"statement"');
+  expect(splitFrontmatterBlock(fs.readFileSync(file, 'utf8')).body).toBe(source);
 });
 
 test('refreshes dynamic summaries after editing prose without saving generated text', async ({
@@ -433,13 +446,14 @@ test('refreshes dynamic summaries after editing prose without saving generated t
   await editor.getByText('The sky is pink.', { exact: true }).click({ clickCount: 3 });
   await window.keyboard.insertText('The sky is blue.');
   await expect.poll(() => fs.readFileSync(file, 'utf8')).toContain('The sky is blue.');
-  await window.getByRole('button', { name: 'Choose Use mode' }).click();
-  await window.getByRole('menuitemradio', { name: 'Slideshow', exact: true }).click();
-  await openDesigner(window);
-  const designer = window.getByRole('dialog', { name: 'Summarization designer' });
+  const designer = await openDesigner(window);
   await expect(designer.getByRole('img', { name: /^Slide 1:/ })).toContainText('The sky is blue.');
   await expect(designer.getByRole('alert')).toHaveCount(0);
-  await designer.getByRole('button', { name: 'Use dynamic slides' }).click();
+  // Opening the designer saves nothing; a design change saves only intent.
+  expect(fs.readFileSync(file, 'utf8')).not.toContain(PRESENTATION_HINTS_KEY);
+  await designer
+    .getByRole('checkbox', { name: 'Add supporting visual slides where useful' })
+    .uncheck();
   await expect.poll(() => fs.readFileSync(file, 'utf8')).toContain(PRESENTATION_HINTS_KEY);
   const saved = fs.readFileSync(file, 'utf8');
   const hints = parsePresentationHints(parseMarkdown(saved).frontmatter?.[PRESENTATION_HINTS_KEY])!;

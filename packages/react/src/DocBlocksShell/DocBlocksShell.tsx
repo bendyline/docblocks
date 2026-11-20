@@ -2,6 +2,7 @@ import { dismissTopmostDialog } from '../components/dialog-stack.js';
 import type { AiPanel } from '../Ai/AiEditorAssistant.js';
 import type { HostFileSystemProvider } from '@bendyline/docblocks/filesystem/host';
 import { prepareHostLifecycle } from './host-lifecycle.js';
+import { createPresentationAssistant } from '../Presentation/presentation-assistant.js';
 /**
  * DocBlocksShell -- top-level layout component.
  *
@@ -191,11 +192,6 @@ const GitToolbarControl = lazy(() =>
 const AiToolbarControl = lazy(() =>
   import('../Ai/AiEditorAssistant.js').then((module) => ({
     default: module.AiToolbarControl,
-  })),
-);
-const PresentationMaker = lazy(() =>
-  import('../Presentation/PresentationMaker.js').then((module) => ({
-    default: module.PresentationMaker,
   })),
 );
 const AiReviewPanel = lazy(() =>
@@ -1042,6 +1038,11 @@ export function DocBlocksShell({
   // for why that order. Stamped as `data-theme` on the shell root below.
   const resolvedTheme = resolveShellTheme({ preference: themePreference, hostTheme, osTheme });
   const ai = hostSupports('aiAssist') ? maybeGetDocBlocksHost()?.ai : undefined;
+  // "Suggest with AI" in Squisq's Custom summary designer (Write › Summarize).
+  const presentationAssistant = useMemo(
+    () => (ai ? createPresentationAssistant(ai) : undefined),
+    [ai],
+  );
   const speech = hostSupports('speechModelManagement')
     ? maybeGetDocBlocksHost()?.speech
     : undefined;
@@ -6460,17 +6461,7 @@ export function DocBlocksShell({
                                   </button>
                                 ) : undefined
                               }
-                              summarizationDesigner={
-                                selectedImage === undefined &&
-                                selectedManagedOutput === undefined &&
-                                (selectedOutsideIn === null || selectedOutsideInEditingEnabled)
-                                  ? (onClose) => (
-                                      <Suspense fallback={null}>
-                                        <PresentationMaker ai={ai ?? undefined} onClose={onClose} />
-                                      </Suspense>
-                                    )
-                                  : undefined
-                              }
+                              summarizationAssistant={presentationAssistant}
                               toolbarSlotQuickTools={
                                 <>
                                   {canFind && (

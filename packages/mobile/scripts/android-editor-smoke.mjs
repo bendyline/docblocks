@@ -88,9 +88,12 @@ try {
   await device.shell(`am start -n ${app}/com.bendyline.docblocks.mobile.MainActivity`);
   page = await attach();
   await expect(page.locator('.tiptap')).toContainText(text, { timeout: 30000 });
-  await page.getByRole('tab', { name: 'Source', exact: true }).click();
+  // Source and Write are both chosen from the menu beside the editing tab.
+  await page.getByRole('button', { name: 'Choose Write mode', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: 'Source', exact: true }).click();
   await expect(page.locator('.monaco-editor').first()).toBeVisible();
-  await page.getByRole('tab', { name: 'Write', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose Write mode', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: 'Write', exact: true }).click();
   // A same-origin child frame must not receive native authority.
   await page.evaluate(() => {
     window.__nativeProbe = [];
