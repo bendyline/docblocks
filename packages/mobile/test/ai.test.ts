@@ -1020,7 +1020,9 @@ describe('mobile knowledge', () => {
     assert.deepEqual(knowledge?.kind === 'knowledge' && knowledge.knowledge, {
       outcome: 'used',
       sources: [{ catalogId: catalog.id, name: 'Pacific Northwest', titles: [passage.title] }],
-      evidence: [{ title: passage.title, catalogId: catalog.id, text: passage.text }],
+      evidence: [
+        { title: passage.title, catalogId: catalog.id, text: passage.text, uri: passage.uri },
+      ],
     });
     // The names stay cached for the next request.
     const calls = f.stateCalls();

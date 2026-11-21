@@ -8,16 +8,16 @@
     />
     <meta name="referrer" content="no-referrer" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DocBlocks Apps &amp; Getting Started — Web, Desktop, VS Code &amp; CLI</title>
+    <title>DocBlocks Getting Started — Apps, Backups &amp; Troubleshooting</title>
     <meta
       name="description"
-      content="Choose a DocBlocks app, create your first document, and move your Markdown between web, desktop, and VS Code. Explore the mobile apps, CLI, and MCP server."
+      content="Choose a DocBlocks app, create your first document, keep backups, and move your Markdown between the web, desktop, phone, and VS Code."
     />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <link rel="canonical" href="https://docblocks.com/docs/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="DocBlocks" />
-    <meta property="og:title" content="DocBlocks apps and getting started" />
+    <meta property="og:title" content="DocBlocks getting started" />
     <meta
       property="og:description"
       content="Find the right DocBlocks app, follow the first-run tutorial, and keep your documents portable."
@@ -47,8 +47,8 @@
         </picture>
       </a>
       <nav class="site-nav" aria-label="Primary navigation">
+        <a href="/apps/">Apps</a>
         <a href="/web/">Web</a>
-        <a href="/desktop/">Desktop</a>
         <a href="/vscode/">VS Code</a>
         <a href="/cli/">CLI &amp; MCP</a>
         <a href="/formats/">Formats</a>
@@ -60,25 +60,20 @@
     <main class="page-main" id="content" tabindex="-1">
       <section class="hero">
         <div>
-          <p class="eyebrow">Apps &amp; documentation</p>
-          <h1>Choose your app. Keep your Markdown.</h1>
+          <h1>Getting started with DocBlocks</h1>
           <p class="lede">
-            Start in a browser, download the desktop app, or write inside VS Code. Use the CLI and
-            MCP server for repeatable document work, and explore the iOS and Android preview. Every
-            option keeps readable Markdown at the center.
+            How to choose an app, make your first document, keep backups, move files between apps,
+            and fix common problems.
           </p>
-          <div class="hero-actions">
-            <a class="button" href="#apps">Compare the apps</a>
-            <a class="button button--secondary" href="#quick-start">Create your first document</a>
-          </div>
         </div>
-        <aside class="hero-aside" aria-label="About these guides">
-          <h2>One document, familiar tools</h2>
+        <aside class="hero-aside" aria-labelledby="on-this-page">
+          <h2 id="on-this-page">On this page</h2>
           <ul>
-            <li>Visual writing and Markdown source</li>
-            <li>Document, Page, Slideshow, and Video previews</li>
-            <li>Portable files and local storage</li>
-            <li>App-specific setup and features below</li>
+            <li><a href="#apps">The DocBlocks apps</a></li>
+            <li><a href="#quick-start">Quick start</a></li>
+            <li><a href="#moving-between-apps">Moving between apps</a></li>
+            <li><a href="#troubleshooting">Troubleshooting</a></li>
+            <li><a href="#support-and-releases">Support and releases</a></li>
           </ul>
         </aside>
       </section>
@@ -92,31 +87,27 @@
             height="720"
             loading="eager"
           />
-          <figcaption>
-            One Markdown document, with the file pane and editing tools shared by the web and
-            desktop experiences.
-          </figcaption>
+          <figcaption>The same editor runs in the web and desktop apps.</figcaption>
         </figure>
       </section>
 
       <section class="section" aria-labelledby="apps">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">The DocBlocks apps</p>
-            <h2 id="apps">Start where you work.</h2>
+            <h2 id="apps">The DocBlocks apps</h2>
           </div>
           <p class="section-copy">
-            Choose by where you keep your files and how you like to write. The installed web app
-            uses browser storage; the desktop and mobile apps have their own storage and native file
-            access. Workspaces do not automatically sync between them.
+            Pick an app by where you keep your files. The web app uses browser storage. The desktop
+            and mobile apps use folders on the device. Workspaces do not sync between apps. Store
+            links and prices are on the <a href="/apps/">Apps page</a>.
           </p>
         </div>
         <div class="card-grid">
           <article class="card">
             <h3>Web app</h3>
             <p>
-              <strong>For a quick start on any device.</strong> Open the editor with no account.
-              Keep work in this browser or open a folder in a supported browser. Choose
+              Open the editor with no account. Keep work in this browser or open a folder in a
+              supported browser. Choose
               <strong>Install DocBlocks…</strong> in the app menu when offered to launch it from
               your desktop. Offline editing is ready once the app finishes downloading.
             </p>
@@ -125,32 +116,26 @@
           <article class="card">
             <h3>Desktop app</h3>
             <p>
-              <strong>For everyday work in your own folders.</strong> Download for macOS (Apple
-              silicon), Windows, or Linux, then choose <strong>Open a folder</strong>. Get native
-              menus and file opening, plus optional AI assistance, dictation, and read aloud where
-              supported.
+              Download for macOS (Apple silicon), Windows, or Linux, then choose
+              <strong>Open a folder</strong>. Get native menus and file opening, plus optional AI
+              assistance, dictation, and read aloud where supported.
             </p>
             <p><a href="/desktop/">Download and set up Desktop</a></p>
           </article>
-          <article class="card" id="mobile-preview">
-            <h3>Mobile apps · preview</h3>
+          <article class="card" id="mobile">
+            <h3>iPhone, iPad, and Android</h3>
             <p>
-              <strong>For iPhone, iPad, and Android.</strong> Native apps are in development; store
-              distribution is pending. Preview builds offer an <strong>On this device</strong>
-              workspace, picked folders, import, export, and system sharing. Use the web app on your
-              phone or tablet today.
+              Get DocBlocks on the App Store or Google Play. Documents stay in iCloud Drive or on
+              the device on iPhone and iPad, and in a folder you choose on Android, with import,
+              export, and system sharing.
             </p>
-            <p>
-              <a href="https://github.com/bendyline/docblocks/tree/main/packages/mobile"
-                >Mobile preview and build guide</a
-              >
-            </p>
+            <p><a href="/apps/#phones">Get the mobile apps</a></p>
           </article>
           <article class="card">
             <h3>VS Code extension</h3>
             <p>
-              <strong>For documents beside your code.</strong> Install the extension and open a
-              Markdown file. If needed, right-click the file and choose
+              Install the extension and open a Markdown file. If needed, right-click the file and
+              choose
               <strong>Open in DocBlocks</strong>. Keep VS Code&rsquo;s explorer, tabs, saving, and
               source control while editing visually.
             </p>
@@ -159,7 +144,7 @@
           <article class="card">
             <h3>CLI</h3>
             <p>
-              <strong>For terminal and build workflows.</strong> Install
+              Install
               <code>@bendyline/docblocks-cli</code> with npm, then run
               <code>docblocks --help</code>. Build HTML, preview locally, convert files, and render
               video using repeatable commands.
@@ -169,9 +154,9 @@
           <article class="card">
             <h3>MCP server</h3>
             <p>
-              <strong>For document work with an agent.</strong> Connect the local MCP server
-              included in the CLI. Let your agent convert, inspect, or preview documents, then save
-              the resulting artifacts. File access is limited to roots you explicitly allow.
+              Connect the local MCP server included in the CLI. Let your agent convert, inspect, or
+              preview documents, then save the resulting artifacts. File access is limited to roots
+              you explicitly allow.
             </p>
             <p>
               <a href="https://github.com/bendyline/docblocks/blob/main/docs/mcp.md"
@@ -185,8 +170,7 @@
       <section class="section" aria-labelledby="quick-start">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Quick start</p>
-            <h2 id="quick-start">Create, protect, and publish a document.</h2>
+            <h2 id="quick-start">Quick start</h2>
           </div>
           <p class="section-copy">
             The web and desktop apps share these first steps. In a fresh default workspace, open the
@@ -235,8 +219,7 @@
       <section class="section" aria-labelledby="moving-between-apps">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Keep your work portable</p>
-            <h2 id="moving-between-apps">Move files, keep writing.</h2>
+            <h2 id="moving-between-apps">Moving between apps</h2>
           </div>
           <p class="section-copy">
             Installing another DocBlocks app does not move your existing workspaces. Choose a shared
@@ -289,13 +272,11 @@
       <section class="section" aria-labelledby="troubleshooting">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Troubleshooting</p>
-            <h2 id="troubleshooting">Recover without guessing.</h2>
+            <h2 id="troubleshooting">Troubleshooting</h2>
           </div>
           <p class="section-copy">
-            DocBlocks keeps failures visible instead of silently treating storage, permissions, or
-            conversion errors as success. Start with the message on screen, then use the matching
-            recovery path below.
+            DocBlocks shows a message when saving, permissions, or conversion fails. Start with the
+            message on screen, then find the matching case below.
           </p>
         </div>
         <div class="card-grid">
@@ -329,8 +310,7 @@
       <section class="section" aria-labelledby="support-and-releases">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Support and releases</p>
-            <h2 id="support-and-releases">Include the version when asking for help.</h2>
+            <h2 id="support-and-releases">Support and releases</h2>
           </div>
           <div>
             <p class="section-copy">
@@ -349,18 +329,6 @@
           </div>
         </div>
       </section>
-
-      <section class="section">
-        <div class="callout">
-          <div>
-            <h2>Start with a real document.</h2>
-            <p>
-              The web editor opens immediately, stores documents locally, and requires no account.
-            </p>
-          </div>
-          <a class="button" href="/">Open DocBlocks</a>
-        </div>
-      </section>
     </main>
 
     <footer class="site-footer">
@@ -369,6 +337,7 @@
         <a href="https://bendyline.com">Bendyline</a>.
       </p>
       <nav class="footer-nav" aria-label="Footer navigation">
+        <a href="/desktop/">Desktop downloads</a>
         <a href="/privacy/">Privacy</a>
         <a href="/terms/">Terms</a>
         <a href="/docs/">Documentation</a>

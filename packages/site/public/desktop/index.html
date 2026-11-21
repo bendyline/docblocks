@@ -47,8 +47,8 @@
         </picture>
       </a>
       <nav class="site-nav" aria-label="Primary navigation">
+        <a href="/apps/">Apps</a>
         <a href="/web/">Web</a>
-        <a href="/desktop/" aria-current="page">Desktop</a>
         <a href="/vscode/">VS Code</a>
         <a href="/cli/">CLI &amp; MCP</a>
         <a href="/formats/">Formats</a>
@@ -60,13 +60,11 @@
     <main class="page-main" id="content" tabindex="-1">
       <section class="hero">
         <div>
-          <p class="eyebrow">DocBlocks Desktop</p>
-          <h1>Your Markdown. Your folders. A native window.</h1>
+          <h1>DocBlocks for Mac, Windows, and Linux</h1>
           <p class="lede">
-            Bring DocBlocks to macOS (Apple silicon), Windows, or Linux. Write visually, keep
-            ordinary Markdown files in your own folders, and turn them into documents, slides, and
-            web pages. Start with the editor, then add optional AI and speech tools when they help
-            your work.
+            The desktop app is a free download for macOS (Apple silicon), Windows, and Linux. It
+            keeps ordinary Markdown files in your own folders and turns them into documents, slides,
+            and web pages. AI and speech tools are optional and run on your computer.
           </p>
           <div class="hero-actions">
             <a
@@ -101,7 +99,6 @@
           </p>
         </div>
         <aside class="hero-aside" aria-label="Desktop highlights">
-          <h2>Built for local work</h2>
           <ul>
             <li>Real folders and plain Markdown files</li>
             <li>Visual writing, Markdown source, and previews</li>
@@ -109,6 +106,84 @@
             <li>Optional AI assistance, dictation, and read aloud</li>
           </ul>
         </aside>
+      </section>
+
+      <!--
+        Store editions of the desktop app. Both are pending. When a store
+        approves DocBlocks, follow "When a store approves DocBlocks" in
+        packages/site/README.md: swap that store's plate for the badge in the
+        comment beside it and reword the paragraph.
+      -->
+      <section class="store-panel" aria-labelledby="store-editions">
+        <div>
+          <h2 id="store-editions">Store editions</h2>
+          <p>
+            Supporter Editions are coming to the Mac App Store and Microsoft Store for $9.99. They
+            are the same app, built from the same source, and your store keeps them up to date. The
+            downloads on this page stay free.
+          </p>
+        </div>
+        <div class="store-row">
+          <!-- store:mac-app-store pending — remove this plate when the listing is live. -->
+          <span class="store-pending">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 7v5l3 2" />
+            </svg>
+            <span class="store-pending__text">
+              <span class="store-pending__status">Coming soon</span>
+              <span class="store-pending__name">Mac App Store</span>
+            </span>
+          </span>
+          <!-- store:mac-app-store live — uncomment when the listing is live.
+          <a
+            class="store-badge"
+            href="https://apps.apple.com/us/app/docblocks-markdown-editor/id6792768923"
+            ><img
+              src="/marketing/stores/mac-app-store-badge.svg"
+              alt="Download on the Mac App Store"
+              width="156"
+              height="40"
+          /></a>
+          -->
+          <!-- store:microsoft-store pending — remove this plate when the listing is live. -->
+          <span class="store-pending">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 7v5l3 2" />
+            </svg>
+            <span class="store-pending__text">
+              <span class="store-pending__status">Coming soon</span>
+              <span class="store-pending__name">Microsoft Store</span>
+            </span>
+          </span>
+          <!-- store:microsoft-store live — uncomment when the listing is live, and
+               replace STORE_ID with the product's Store ID from Partner Center.
+          <a class="store-badge" href="https://apps.microsoft.com/detail/STORE_ID"
+            ><img
+              src="/marketing/stores/microsoft-store-badge.svg"
+              alt="Download from the Microsoft Store"
+              width="161"
+              height="44"
+          /></a>
+          -->
+        </div>
       </section>
 
       <section class="product-preview" aria-label="DocBlocks desktop editor preview">
@@ -121,7 +196,7 @@
             loading="eager"
           />
           <figcaption>
-            The familiar DocBlocks editor, with your documents saved in folders you choose.
+            The DocBlocks editor, with documents saved in a folder you choose.
           </figcaption>
         </figure>
       </section>
@@ -129,8 +204,7 @@
       <section class="section" id="downloads" aria-labelledby="downloads-heading">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Downloads</p>
-            <h2 id="downloads-heading">Get DocBlocks for your platform</h2>
+            <h2 id="downloads-heading">Downloads</h2>
           </div>
           <p class="section-copy">
             These installers come from the latest release on GitHub<span data-dl-release hidden>
@@ -176,20 +250,19 @@
         </ul>
         <p class="dl-note">
           Older systems can still edit and export documents, with those native features unavailable.
-          For browser, VS Code, and mobile options,
-          <a href="/docs/#apps">compare the DocBlocks apps</a>.
+          For iPhone, iPad, Android, browser, and VS Code options,
+          <a href="/apps/">see every DocBlocks app</a>.
         </p>
       </section>
 
       <section class="section" aria-labelledby="getting-started">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Your first document</p>
-            <h2 id="getting-started">Install. Open a folder. Start writing.</h2>
+            <h2 id="getting-started">Getting started</h2>
           </div>
           <p class="section-copy">
-            No DocBlocks account is required. If you already use the web editor, the writing tools
-            will feel familiar; the desktop app saves directly to your chosen folder.
+            You do not need an account. The editor is the same as the web version, and the desktop
+            app saves straight to the folder you choose.
           </p>
         </div>
         <div class="card-grid">
@@ -224,37 +297,33 @@
       <section class="section" aria-labelledby="desktop-workflow">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">One editor, native capabilities</p>
-            <h2 id="desktop-workflow">
-              A desktop workflow without document <span class="nowrap">lock-in.</span>
-            </h2>
+            <h2 id="desktop-workflow">What the desktop app does</h2>
           </div>
           <p class="section-copy">
-            Keep your notes beside your project, use your usual backup tools, and open the same
-            files in VS Code or another editor. DocBlocks adds visual writing and publishing tools
-            while your source stays readable Markdown.
+            Your documents are ordinary Markdown files. You can back them up with your usual tools
+            and open them in VS Code or any other editor.
           </p>
         </div>
         <div class="card-grid">
           <article class="card">
-            <h3>Work in real folders</h3>
+            <h3>Work in your own folders</h3>
             <p>
-              Open the folders you want to work in. Markdown and media stay there, with automatic
-              saving and visible messages when a save fails or another app changes your document.
+              Open any folder. Markdown and media are saved there automatically, and DocBlocks tells
+              you when a save fails or another app changes your document.
             </p>
           </article>
           <article class="card">
             <h3>Write three ways</h3>
             <p>
-              Move between rich visual editing, raw Markdown source, and Document, Page, Slideshow,
-              and Video previews.
+              Switch between visual editing, Markdown source, and Document, Page, Slideshow, and
+              Video previews.
             </p>
           </article>
           <article class="card">
-            <h3>Export from the same source</h3>
+            <h3>Export to other formats</h3>
             <p>
-              Turn one Markdown document into PDF, Word, PowerPoint, HTML, and other supported
-              formats while keeping the original readable and version-control friendly.
+              Export a document to PDF, Word, PowerPoint, HTML, and other formats. The original
+              stays a readable Markdown file that works with version control.
             </p>
           </article>
         </div>
@@ -263,17 +332,16 @@
       <section class="section" aria-labelledby="desktop-tools">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">More ways to work</p>
-            <h2 id="desktop-tools">Add assistance when you want it.</h2>
+            <h2 id="desktop-tools">AI, speech, and moving from the web app</h2>
           </div>
           <p class="section-copy">
-            The editor works without AI or speech setup. Available tools depend on your device and
-            installed models; Settings shows what is ready and any downloads you can choose.
+            The editor works without AI or speech. What is available depends on your computer and
+            the models you install. Settings shows what is ready and what you can download.
           </p>
         </div>
         <div class="card-grid">
           <article class="card">
-            <h3>Rewrite, review, illustrate</h3>
+            <h3>AI assistance</h3>
             <p>
               Open <strong>Settings → AI assistance</strong>, enable
               <strong>Use AI features</strong>, and select a ready model. Ask for writing
@@ -282,7 +350,7 @@
             </p>
           </article>
           <article class="card">
-            <h3>Dictate and listen</h3>
+            <h3>Dictation and read aloud</h3>
             <p>
               Where speech is available, open <strong>Settings → Speech</strong> to download a
               dictation model or narration voices. Use the microphone to dictate or read aloud to
@@ -290,7 +358,7 @@
             </p>
           </article>
           <article class="card">
-            <h3>Bring your browser work</h3>
+            <h3>Moving from the web app</h3>
             <p>
               Export Markdown with its media, or a DBK bundle, from the web editor and open it in
               Desktop. Browser workspaces stay in that browser; installing the desktop app does not
@@ -304,13 +372,13 @@
       <section class="section">
         <div class="callout">
           <div>
-            <h2>Find the app that fits your work.</h2>
+            <h2>Other DocBlocks apps</h2>
             <p>
-              Try DocBlocks in your browser, edit inside VS Code, or automate with the CLI and MCP
-              server. Your Markdown can move with you.
+              DocBlocks is also on iPhone, iPad, and Android, in a browser, in VS Code, and on the
+              command line. They all use the same Markdown files.
             </p>
           </div>
-          <a class="button" href="/docs/#apps">Compare the apps</a>
+          <a class="button" href="/apps/">See all the apps</a>
         </div>
       </section>
     </main>
@@ -321,6 +389,7 @@
         <a href="https://bendyline.com">Bendyline</a>.
       </p>
       <nav class="footer-nav" aria-label="Footer navigation">
+        <a href="/desktop/" aria-current="page">Desktop downloads</a>
         <a href="/privacy/">Privacy</a>
         <a href="/terms/">Terms</a>
         <a href="/docs/">Documentation</a>

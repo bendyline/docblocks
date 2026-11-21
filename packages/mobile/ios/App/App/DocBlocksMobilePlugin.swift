@@ -38,6 +38,8 @@ public class DocBlocksMobilePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicke
     private static let cloudContainer = "iCloud.com.bendyline.docblocks"
     private var cloudConnected = false
     private var deviceLabel = "On My iPhone"
+    /// Says when iCloud Drive documents may have changed, so the page re-checks without waiting.
+    private var changes: StorageChangeWatcher?
     public override func load() {
         deviceLabel = UIDevice.current.userInterfaceIdiom == .pad ? "On My iPad" : "On My iPhone"
         do {
@@ -55,10 +57,18 @@ public class DocBlocksMobilePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicke
             let caches = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             exportStaging = try ExportStaging(root: caches.appendingPathComponent("DocBlocksExports", isDirectory: true))
         } catch { startupError = error }
+        changes = StorageChangeWatcher { [weak self] in self?.bridge?.triggerWindowJSEvent(eventName: "docblocksStorageChanged") }
         // The container lookup can block, so it runs on the storage queue; bootstrap waits behind it.
-        queue.async { self.connectCloud() }
+        queue.async {
+            self.connectCloud()
+            if self.cloudConnected { DispatchQueue.main.async { self.changes?.watchCloudDocuments() } }
+        }
         NotificationCenter.default.addObserver(self, selector: #selector(letScreenSleep), name: UIApplication.didEnterBackgroundNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(stopWatchingStorage), name: UIApplication.didEnterBackgroundNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(watchStorageAgain), name: UIApplication.willEnterForegroundNotification, object: nil)
     }
+    @objc private func stopWatchingStorage() { changes?.suspend() }
+    @objc private func watchStorageAgain() { changes?.resume() }
     /// Keeps the screen on while the page holds a screen wake lock (wake-lock.ts), so auto-lock does not cut long work short.
     @objc func setKeepAwake(_ call: CAPPluginCall) {
         guard Set(call.options.keys) == ["on"], let on = call.getBool("on") else { call.reject("Invalid wake lock request."); return }

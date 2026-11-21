@@ -98,6 +98,38 @@ nativeDescribe('real mobile native storage', () => {
       await provider.dispose();
     }
   });
+  it('lists a workspace from metadata without reading a file, as the index walks it', async () => {
+    const provider = await makeProvider();
+    const p = parseWorkspacePath;
+    const encode = (text: string) => new TextEncoder().encode(text);
+    try {
+      await provider.writeFile(p('notes/deep/b.md'), encode('# B'), { createParents: true });
+      await provider.writeFile(p('notes/a.md'), encode('# A'));
+      await provider.writeFile(p('node_modules/pkg/index.js'), encode('x'), {
+        createParents: true,
+      });
+      await provider.writeFile(p('report_files/chart.png'), encode('png'), { createParents: true });
+      const pages = [];
+      for await (const page of provider.enumerate(p(''))) pages.push(page);
+      const entries = pages.flatMap((page) => page.entries);
+      expect(entries.map((entry) => entry.path).sort()).to.deep.equal([
+        'notes',
+        'notes/a.md',
+        'notes/deep',
+        'notes/deep/b.md',
+        // A companion folder is listed, not entered; a tool folder not at all.
+        'report_files',
+      ]);
+      expect(entries.every((entry) => entry.version.startsWith('meta:'))).to.equal(true);
+      expect(entries.find((entry) => entry.path === 'notes/a.md')).to.include({
+        kind: 'file',
+        size: 3,
+      });
+      expect(pages.flatMap((page) => page.unreadable)).to.deep.equal([]);
+    } finally {
+      await provider.dispose();
+    }
+  });
 });
 
 describe('mobile native wire', () => {
@@ -110,6 +142,68 @@ describe('mobile native wire', () => {
       () => expect.fail('accepted malformed response'),
       (error: unknown) => expect(error).to.be.instanceOf(Error),
     );
+  });
+
+  it('walks folders in pages over a native that lists one folder at a time', async () => {
+    const folders = new Map<string, Array<{ name: string; kind: 'file' | 'directory' }>>([
+      [
+        '',
+        [
+          { name: 'big', kind: 'directory' },
+          { name: 'locked', kind: 'directory' },
+          { name: '.git', kind: 'directory' },
+        ],
+      ],
+      [
+        'big',
+        Array.from({ length: 2_500 }, (_, n) => ({ name: `n${n}.md`, kind: 'file' as const })),
+      ],
+    ]);
+    const listed: string[] = [];
+    const bridge = createMobileFileSystemBridge(async (request) => {
+      if (request.op === 'open') return { ok: true, value: { ...capabilities } };
+      if (request.op === 'dispose') return { ok: true, value: null };
+      if (request.op !== 'listMetadata') throw new Error(`unexpected ${request.op}`);
+      listed.push(request.path);
+      if (request.path === 'locked') {
+        return {
+          ok: false,
+          error: {
+            name: 'FsError',
+            code: 'permission-denied',
+            message: 'No.',
+            operation: 'list',
+            path: 'locked',
+            destinationPath: null,
+            retryable: false,
+          },
+        };
+      }
+      const children = folders.get(request.path) ?? [];
+      return {
+        ok: true,
+        value: children.map(({ name, kind }) => ({
+          path: request.path ? `${request.path}/${name}` : name,
+          name,
+          kind,
+          size: kind === 'file' ? 1 : null,
+          version: `meta:${name}`,
+          lastModified: '2026-11-20T00:00:00.000Z',
+        })),
+      };
+    }, capabilities);
+    const provider = new HostFileSystemProviderV2('local', 'Walk', 'Walk', {
+      capabilities,
+      limits: MOBILE_STORAGE_LIMITS,
+      transport: bridge,
+    });
+    const pages = [];
+    for await (const page of provider.enumerate(parseWorkspacePath(''))) pages.push(page);
+    expect(pages.length).to.be.greaterThan(1);
+    expect(pages.flatMap((page) => page.entries)).to.have.length(2 + 2_500);
+    expect(pages.flatMap((page) => page.unreadable)).to.deep.equal(['locked']);
+    // A tool folder is neither listed nor entered.
+    expect(listed).to.deep.equal(['', 'big', 'locked']);
   });
 
   it('stages exports past the workspace file limit, up to its own', () => {

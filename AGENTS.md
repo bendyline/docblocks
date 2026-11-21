@@ -139,6 +139,112 @@ and on a heartbeat where native storage cannot watch. Its observation sequence
 must outlive effect re-runs, because the session ignores a sequence it has
 already seen. Do not add a second observer or a separate freshness timer.
 
+Storage that cannot meet the `watch` contract can still say "something
+changed": another tab wrote to the same IndexedDB workspace
+(`BroadcastChannel`), or a phone's native layer saw iCloud deliver a file.
+That is a change hint (`packages/core/src/filesystem/change-hints.ts`): no
+path, no ordering. Hints reach consumers through the revalidation signal as
+reason `storage`, which re-checks cheaply (a version check before any read)
+because a hint also follows this app's own saves. A new source publishes a
+hint; it does not add a listener of its own to the shell.
+
+When the file and unsaved edits disagree, the session decides in this order.
+Edits to different parts of the document are combined by itself
+(`three-way-merge.ts`, line based and conservative: neighbouring lines count
+as an overlap), once typing has paused, and only for a target that offers
+`park()`: the text from before the merge is kept first, and the shell offers
+Undo. Otherwise the conflict waits for the user, who can keep either version
+or combine them by hand. A conflict no longer traps the user on a document:
+leaving parks the unsaved text and takes the saved file. The session never
+drops text by its own choice; keep that invariant when touching it.
+
+Versions that are not the document live in its sidecar as conflict copies,
+`<stem>_files/conflicts/<UTC stamp>-<origin>[-s]-<hash16>[ (<label>)].<ext>`
+(`packages/core/src/filesystem/conflict-copies.ts`). One immutable file per
+copy, every fact in the name, no manifest, deduplicated by content hash.
+Origins: `sync` (set aside by a sync service), `local` and `draft` (parked by
+the session), `premerge` (undo material, removed after a week). The Swift
+storage layer writes `sync` copies with the same grammar;
+`packages/core/test/fixtures/conflict-copy-names.json` is read by both test
+suites, so change the grammar in both places or not at all. The shell surfaces
+copies through `DocumentVersionsLayer` and the explorer badge; do not list
+`conflicts/` as media or as documents.
+
+Two devices saving at the same moment is the common case on synced storage,
+and the sync service settles it before the session sees a disagreement: one
+save becomes the file, the other a `sync` copy. That copy is the proof the two
+saves never saw each other, so `DocumentVersionsLayer` offers it to the
+session first (`absorbConcurrentVersion`) and only shows it for review when
+the session declines. Combining needs the text both started from, which no
+sync service reports; `DocumentLineage` (`packages/core/src/document/lineage.ts`)
+works it out from the texts the session has held (opened, saved, taken from
+outside) and refuses when it cannot defend the answer: a version saved before
+the starting point existed, nothing typed here since, or a save of this
+session's own that the other version does not carry. Closeness is counted in
+characters, not lines, because a paragraph is one line and two devices typing
+hand each other half-finished paragraphs; a version that is only a stage the
+document has already passed is cleared, not queued for review. Do not combine a plain
+newer file the same way: without a set-aside copy, text missing from it may
+have been deleted on purpose. A version the user turned down (Undo) is kept as
+`local`, never `sync`, or every device would combine it again.
+`DocumentLineageStore` keeps the starting point across restarts, device-local.
+
+Three things settle a set-aside version without a starting text, and they are
+the only ones: the document already holds all of it (`holdsAllOf`: the version
+plus text added, nothing reworded or removed); it only typed into a paragraph
+that the document has typed further into; or the same text is already kept as
+a `premerge` copy, which means some device combined or replaced it. Age alone
+never settles one: an old version can still hold a paragraph that went
+nowhere else. Before the layer clears any version as already included it asks
+the shell to re-read the document (`checkDocument`) and asks the session
+again, because a sync service sets a save aside at the moment it replaces it:
+a session that has not seen the replacement would call its own lost save
+"included" and delete the only copy.
+
+The same set-aside copy decides how the session treats the version that
+replaced its save. Measured from the session's last save, that version looks
+as if it deleted the typing in it: combined that way the typing vanishes until
+the copy puts it back, and typing on in the same paragraph becomes a conflict
+the user is asked to resolve. So when storage hands over a version that was
+not built on the saves made here (`DocumentLineage.parting`), the session
+holds it for up to `concurrentSaveGraceMs` (2 s) as a conflict with `merging`
+set, clean text included. A set-aside copy of one of those saves
+(`sawSetAside`, recorded by `absorbConcurrentVersion`, which the layer calls
+during a conflict for this reason) proves the two were written at the same
+time, and they are combined from the text they parted at. With no copy by
+then it is an ordinary newer version: taken as it is when nothing is unsaved,
+combined from the last save otherwise. Never use the parting text without
+that proof; a version that lacks the typing here may have removed it on
+purpose. `mergeText` also takes the fuller of two versions of one paragraph
+when both only added to it and one has all of the other's additions: after a
+merge on each device, both hold the same typing at different stages, and
+that is not a disagreement. `packages/core/test/document-lineage.test.ts`
+ends with a two-device simulation of all this (a sync service that keeps one
+save and sets the other aside); it must never show text vanishing from the
+device that typed it, a conflict to resolve, or a version left for review.
+
+Deleting breaks the fuller-one rule, and so does a word typed and taken out
+again, which leaves a text exactly as it once was. The session therefore
+combines through `DocumentLineage.merge`, never bare `mergeText`: it passes
+what is known of the texts behind the two (`MergeHistory`), and the side that
+already had the other's text for a paragraph and moved on from it has the
+later word. Where the other version has a paragraph exactly as a text held
+here had it, the text here stands. Where the text here still has a paragraph
+exactly as an earlier version from the other writer had it, theirs stands,
+even when theirs is back to what it was before. That second rule depends on
+how the earlier version arrived: one that was the saved document (`outside`)
+was certainly on its writer's screen, but one a sync service set aside
+(`aside`) may have been lost on its writer's own device to the version that
+replaced it. So a set-aside version counts only where the newer one plainly
+goes on from it and is not simply the replacing text. Keep that distinction:
+treating a lost word as a deleted one removes typing from every device.
+Versions are told apart by time as well as text (`findVersion`), because the
+same text saved half a minute later is another version, not a copy of the save
+made here. What text cannot settle is left alone: a word that reached the
+other device only as a set-aside copy, and was then deleted, can come back
+once. The simulation covers typing, deleting, and both mixed; for the mixed
+runs it requires only that both devices end on one text and nobody is asked.
+
 ### `FileSystemProviderV2` is the storage correctness boundary
 
 `packages/core/src/filesystem/v2.ts` defines the byte-authoritative contract.
@@ -639,10 +745,21 @@ Native contract tests use real Swift and Java storage. Android device conformanc
 against a test-only DocumentsProvider in the isolated `.tests` app; it requires an
 explicit device ID. See `packages/mobile/README.md` for build, package, and device commands.
 No test may clear the personal app's documents. Mobile provider atomicity is process-scoped,
-with best-effort durability and no watcher yet; the open document is re-checked on
-return and on a 20-second heartbeat. iOS asks iCloud for the current version before it
-reads or changes a file it knows is out of date (`CloudState` in `native/ios`), and
-refuses a change for a bounded time rather than save over old content.
+with best-effort durability and no `watch` support; the open document is re-checked on
+return, on a change hint, and on a 20-second heartbeat. iOS asks iCloud for the current
+version before it reads or changes a file it knows is out of date (`CloudState` in
+`native/ios`), and refuses a change for a bounded time rather than save over old content.
+It raises change hints from an `NSMetadataQuery` on the app's iCloud documents
+(`StorageChangeWatcher`, observation only: it takes no part in file coordination), and
+moves the versions iCloud sets aside into the document's sidecar (`ConflictHarvester`).
+
+The Mac app reaches iCloud folders as ordinary files, which hides those set-aside versions.
+A small helper (`CloudHelper` target in `packages/mobile/native/ios`, sharing the harvester)
+runs as a child of the desktop main process and is the only thing that calls
+`NSFileVersion` there (`packages/desktop/main/cloud-helper.ts`, `cloud-conflicts.ts`).
+`beforePack` builds it from source with the Swift toolchain; a source checkout stages it
+with `npm run stage:cloud-helper`, and runs without it otherwise.
+Harvested copies land in a watched folder, so no new wire reaches the renderer.
 
 Mobile AI implements the existing optional `host.ai` seam through Gezel's Capacitor
 App SDK in `packages/mobile/src/ai`. Keep native engines in the upstream SDK,

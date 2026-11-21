@@ -331,6 +331,52 @@ describe('desktop permission policy', () => {
     ).to.equal(false);
   });
 
+  it("keeps the trusted renderer's storage persistent, but no embedded frame's", () => {
+    const owner = fakeRenderer();
+    // Electron's types omit the name it asks with for navigator.storage.persist().
+    const persistent = 'persistent-storage' as Parameters<typeof allowsPermissionRequest>[2];
+    const checked = 'persistent-storage' as Parameters<typeof allowsPermissionCheck>[2];
+    expect(
+      allowsPermissionRequest(owner.contents, owner.contents, persistent, permissionRequest()),
+    ).to.equal(true);
+    expect(
+      allowsPermissionCheck(
+        owner.contents,
+        owner.contents,
+        checked,
+        TRUSTED_ORIGIN,
+        permissionCheck(),
+      ),
+    ).to.equal(true);
+    // Electron names the main frame's own origin as its embedder for this check.
+    expect(
+      allowsPermissionCheck(
+        owner.contents,
+        owner.contents,
+        checked,
+        TRUSTED_ORIGIN,
+        permissionCheck({ embeddingOrigin: `${TRUSTED_ORIGIN}/`, isMainFrame: true }),
+      ),
+    ).to.equal(true);
+    expect(
+      allowsPermissionCheck(
+        owner.contents,
+        owner.contents,
+        checked,
+        TRUSTED_ORIGIN,
+        permissionCheck({ embeddingOrigin: 'https://example.com', isMainFrame: true }),
+      ),
+    ).to.equal(false);
+    expect(
+      allowsPermissionRequest(
+        owner.contents,
+        owner.contents,
+        persistent,
+        permissionRequest({ isMainFrame: false, requestingUrl: 'https://example.com/embed' }),
+      ),
+    ).to.equal(false);
+  });
+
   it('requires trusted, current, user-initiated main-frame display capture', () => {
     const owner = fakeRenderer();
     expect(allowsDisplayMediaRequest(owner.contents, displayRequest(owner.frame))).to.equal(true);

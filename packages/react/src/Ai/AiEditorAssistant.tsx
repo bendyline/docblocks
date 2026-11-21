@@ -72,7 +72,7 @@ const AiStudyDialog = lazy(() =>
 );
 
 /** The AI side panels; at most one is open at a time. */
-export type AiPanel = 'review' | 'illustrate' | 'images';
+export type AiPanel = 'review' | 'illustrate' | 'images' | 'ask';
 
 export interface AiToolbarControlProps {
   ai: DocBlocksHostAiAPI;
@@ -81,6 +81,8 @@ export interface AiToolbarControlProps {
   onOpenPanel: (panel: AiPanel) => void;
   /** Opens Settings on AI, where a person with no model adds one. */
   onOpenSettings?: () => void;
+  /** Offer "Ask your workspace", where the host can search notes by meaning. */
+  canAskWorkspace?: boolean;
 }
 
 export interface AiReviewPanelProps {
@@ -94,6 +96,7 @@ export function AiToolbarControl({
   openPanel,
   onOpenPanel,
   onOpenSettings,
+  canAskWorkspace = false,
 }: AiToolbarControlProps) {
   const {
     activeView,
@@ -280,6 +283,21 @@ export function AiToolbarControl({
       >
         Rewrite selection…
       </button>
+      {canAskWorkspace && (
+        <button
+          type="button"
+          role="menuitem"
+          tabIndex={-1}
+          className="db-toolbar-menu-item"
+          disabled={!ready || readOnly}
+          onClick={() => {
+            closeMenu(false);
+            onOpenPanel('ask');
+          }}
+        >
+          {openPanel === 'ask' ? 'Show workspace questions' : 'Ask your workspace…'}
+        </button>
+      )}
       <button
         type="button"
         role="menuitem"
@@ -396,6 +414,7 @@ export function AiToolbarControl({
           model={status?.kind === 'ready' ? status.model : null}
           mode={draftMode}
           documentSource={markdownSource}
+          documentPath={fileName ?? null}
           capturedSelection={capturedSelection}
           getSelection={getSelection}
           replaceSelection={replaceSelection}
@@ -434,6 +453,8 @@ interface AiDraftDialogProps {
   model?: AiModelInfo | null;
   mode: AiDraftMode;
   documentSource: string;
+  /** The open document's workspace path, so footnotes can link cited notes. */
+  documentPath?: string | null;
   capturedSelection: EditorSelectionInfo;
   getSelection: () => EditorSelectionInfo | null;
   replaceSelection: (markdown: string) => boolean;
@@ -445,6 +466,7 @@ export function AiDraftDialog({
   model,
   mode,
   documentSource,
+  documentPath = null,
   capturedSelection,
   getSelection,
   replaceSelection,
@@ -731,6 +753,7 @@ export function AiDraftDialog({
               knowledge.evidence,
               new Map(knowledge.sources.map((source) => [source.catalogId, source.name])),
               documentSource,
+              documentPath,
             )
           : stripCitationMarkers(replacement);
     if (!replaceSelection(inserted)) {
@@ -742,6 +765,7 @@ export function AiDraftDialog({
     capturedSelection,
     selectedMarkdown,
     documentSource,
+    documentPath,
     draft,
     getSelection,
     mode,

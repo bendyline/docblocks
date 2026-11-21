@@ -5,7 +5,7 @@
     <title>DocBlocks — Local-First Markdown Editor</title>
     <meta
       name="description"
-      content="Write Markdown visually, keep files local, and export to Word, PDF, slides, e-books, or video. Available on the web, desktop, VS Code, and CLI."
+      content="Write Markdown visually, keep files local, and export to Word, PDF, slides, e-books, or video. On the web, iPhone, iPad, Android, desktop, VS Code, and CLI."
     />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <link rel="canonical" href="https://docblocks.com/" />
@@ -78,10 +78,33 @@
             "name": "DocBlocks",
             "alternateName": "DocBlocks Markdown Editor",
             "url": "https://docblocks.com/",
-            "description": "A local-first Markdown editor for the web, desktop, VS Code, and CLI that converts one source document into Word, PDF, slides, e-books, video, and more.",
+            "description": "A local-first Markdown editor for the web, iPhone, iPad, Android, desktop, VS Code, and CLI that converts one source document into Word, PDF, slides, e-books, video, and more.",
             "applicationCategory": "ProductivityApplication",
-            "operatingSystem": "Web, Windows, macOS, Linux",
-            "isAccessibleForFree": true,
+            "operatingSystem": "Web, iOS, iPadOS, Android, Windows, macOS, Linux",
+            "downloadUrl": "https://docblocks.com/apps/",
+            "offers": [
+              {
+                "@type": "Offer",
+                "name": "Web editor, desktop app, VS Code extension, and CLI",
+                "price": "0",
+                "priceCurrency": "USD",
+                "url": "https://docblocks.com/apps/"
+              },
+              {
+                "@type": "Offer",
+                "name": "iPhone and iPad app",
+                "price": "9.99",
+                "priceCurrency": "USD",
+                "url": "https://apps.apple.com/us/app/docblocks-markdown-editor/id6792768923"
+              },
+              {
+                "@type": "Offer",
+                "name": "Android app",
+                "price": "9.99",
+                "priceCurrency": "USD",
+                "url": "https://play.google.com/store/apps/details?id=com.bendyline.docblocks"
+              }
+            ],
             "license": "https://github.com/bendyline/docblocks/blob/main/LICENSE",
             "publisher": { "@id": "https://docblocks.com/#organization" },
             "featureList": [
@@ -89,6 +112,7 @@
               "Visual and source editing",
               "Document workspaces",
               "DOCX, PDF, PPTX, EPUB, HTML, MP4, and GIF export",
+              "iPhone, iPad, and Android apps",
               "VS Code extension",
               "Command-line interface and local MCP server"
             ]
@@ -540,15 +564,6 @@
         margin-top: 0;
       }
 
-      .db-seo-bootstrap-kicker {
-        margin-bottom: 12px;
-        color: var(--db-boot-text-muted);
-        font-size: 0.72rem;
-        font-weight: 700;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-      }
-
       .db-seo-bootstrap h1 {
         max-width: 760px;
         margin-bottom: 12px;
@@ -732,7 +747,6 @@
           </div>
           <div class="db-seo-bootstrap-document-scroll">
             <article class="db-seo-bootstrap-document">
-              <p class="db-seo-bootstrap-kicker">Welcome to DocBlocks</p>
               <h1>The Markdown editor that turns one file into anything.</h1>
               <p class="db-seo-bootstrap-copy">
                 Write visually or in source, keep your files local, and publish the same Markdown as
@@ -740,12 +754,13 @@
                 document format.
               </p>
               <nav class="db-seo-bootstrap-document-nav" aria-label="Learn about DocBlocks">
+                <a href="/apps/">Apps for phone and computer</a>
                 <a href="/web/">Web</a>
                 <a href="/desktop/">Desktop</a>
                 <a href="/vscode/">VS Code</a>
                 <a href="/cli/">CLI and MCP</a>
                 <a href="/formats/">Formats</a>
-                <a href="/docs/">Apps and getting started</a>
+                <a href="/docs/">Getting started</a>
               </nav>
               <p class="db-seo-bootstrap-loading-note">
                 Still loading&hellip; If this page doesn&rsquo;t finish loading, please

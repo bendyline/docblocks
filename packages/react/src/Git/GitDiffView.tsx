@@ -1,5 +1,5 @@
 /**
- * GitDiffView — read-only Monaco side-by-side diff.
+ * GitDiffView — Monaco side-by-side diff, read-only unless `editable`.
  *
  * Monaco is never statically imported: squisq's useMonacoLoader() lazily
  * imports the editor bundle once per page and hands back the namespace.
@@ -37,6 +37,14 @@ export interface GitDiffViewProps {
   changesOnly?: boolean;
   /** Optional column headers rendered above the two panes. */
   labels?: { original: string; modified: string };
+  /**
+   * Let the modified side be edited, with an arrow beside each change that
+   * puts the original text back. For combining two versions by hand. Fixed
+   * for the life of the view.
+   */
+  editable?: boolean;
+  /** The modified side's text after each edit. Only called when `editable`. */
+  onModifiedChange?: (value: string) => void;
 }
 
 function languageFor(fileName: string): string {
@@ -54,6 +62,8 @@ export function GitDiffView({
   layout = 'auto',
   changesOnly = false,
   labels,
+  editable = false,
+  onModifiedChange,
 }: GitDiffViewProps) {
   const language = languageOverride ?? languageFor(fileName);
   // Monaco registers languages on demand; ask for this one so the diff is highlighted.
@@ -64,6 +74,11 @@ export function GitDiffView({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<DiffEditorInstance | null>(null);
   const modelsRef = useRef<{ original: TextModel; modified: TextModel } | null>(null);
+  // The `modified` prop last written into its model. While editing, the model
+  // moves ahead of the prop; only a new prop value may replace what was typed.
+  const appliedModifiedRef = useRef<string | null>(null);
+  const onModifiedChangeRef = useRef(onModifiedChange);
+  onModifiedChangeRef.current = onModifiedChange;
 
   // Create the editor once monaco settles; dispose editor AND models on unmount.
   useEffect(() => {
@@ -72,7 +87,9 @@ export function GitDiffView({
     const originalModel = monaco.editor.createModel('', 'plaintext');
     const modifiedModel = monaco.editor.createModel('', 'plaintext');
     const editor = monaco.editor.createDiffEditor(host, {
-      readOnly: true,
+      readOnly: !editable,
+      originalEditable: false,
+      renderMarginRevertIcon: editable,
       automaticLayout: true,
       minimap: { enabled: false },
       wordWrap: 'on',
@@ -82,14 +99,21 @@ export function GitDiffView({
     editor.setModel({ original: originalModel, modified: modifiedModel });
     editorRef.current = editor;
     modelsRef.current = { original: originalModel, modified: modifiedModel };
+    appliedModifiedRef.current = null;
+    const changes = editable
+      ? modifiedModel.onDidChangeContent(() =>
+          onModifiedChangeRef.current?.(modifiedModel.getValue()),
+        )
+      : null;
     return () => {
       editorRef.current = null;
       modelsRef.current = null;
+      changes?.dispose();
       editor.dispose();
       originalModel.dispose();
       modifiedModel.dispose();
     };
-  }, [monaco]);
+  }, [monaco, editable]);
 
   // Sync content + language into the existing models — never recreate the editor.
   useEffect(() => {
@@ -97,7 +121,10 @@ export function GitDiffView({
     const models = modelsRef.current;
     if (!models) return;
     if (models.original.getValue() !== original) models.original.setValue(original);
-    if (models.modified.getValue() !== modified) models.modified.setValue(modified);
+    if (appliedModifiedRef.current !== modified) {
+      appliedModifiedRef.current = modified;
+      if (models.modified.getValue() !== modified) models.modified.setValue(modified);
+    }
     monaco.editor.setModelLanguage(models.original, language);
     monaco.editor.setModelLanguage(models.modified, language);
   }, [monaco, original, modified, language]);

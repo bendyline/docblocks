@@ -3,6 +3,7 @@ const { readFile, rm } = require('node:fs/promises');
 const { createRequire } = require('node:module');
 const path = require('node:path');
 const { stageEmbeddingModel } = require('./stage-embedding-model.cjs');
+const { stageCloudHelper } = require('./stage-cloud-helper.cjs');
 const { stageVcRuntime } = require('./stage-vc-runtime.cjs');
 const { verifyNativePlatformRequirements } = require('./native-platform-requirements.cjs');
 const intelMacFinal = require('../intel-mac-final.json');
@@ -79,6 +80,10 @@ async function stageForTarget(context, overrides = {}) {
   );
   // Every platform bundles the same embedding model for semantic search.
   await (overrides.stageEmbeddingModel ?? stageEmbeddingModel)({ appDir });
+  // macOS only: the helper that collects the versions iCloud sets aside.
+  if (platform === 'darwin') {
+    await (overrides.stageCloudHelper ?? stageCloudHelper)({ appDir, platform, arch });
+  }
   if (platform === 'win32') {
     // This also serves DocBlocks' speech runtime, which is outside the text AI host.
     await stageVcRuntime({

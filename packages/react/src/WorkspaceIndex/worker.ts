@@ -60,19 +60,35 @@ function loadSqlite(options: WorkspaceIndexWorkerOptions): Promise<WasmSqlite3> 
   return sqliteModule;
 }
 
-/** Hold `name` for this worker's lifetime, unless another context already does. */
+/**
+ * How long a worker waits for its workspace's store: long enough for the
+ * worker it replaces in this window (the index reopened) to be gone, short
+ * enough that a second window soon settles for an in-memory index.
+ */
+const LOCK_WAIT_MS = 1_500;
+
+/** Hold `name` for this worker's lifetime, unless another context keeps it. */
 function holdLock(name: string): Promise<boolean> {
   const locks = (globalThis.navigator as Navigator | undefined)?.locks;
   if (typeof locks?.request !== 'function') return Promise.resolve(true);
+  const signal =
+    typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(LOCK_WAIT_MS) : undefined;
   return new Promise((resolve) => {
     locks
-      .request(name, { ifAvailable: true }, (lock) => {
+      .request(name, signal ? { signal } : { ifAvailable: true }, (lock) => {
         resolve(lock !== null);
         // Released when the worker is terminated.
         return lock ? new Promise<void>(() => undefined) : undefined;
       })
+      // The wait ran out: another window holds the store.
       .catch(() => resolve(false));
   });
+}
+
+/** The parts of sqlite-wasm's pool utility that delete a store. */
+interface DisposablePool {
+  wipeFiles?(): Promise<void>;
+  removeVfs?(): Promise<boolean>;
 }
 
 /** A short, stable, filename-safe name for a workspace's store. */
@@ -87,14 +103,24 @@ async function openPersistent(
   sqlite3: WasmSqlite3,
   request: WorkerEngineOpenRequest,
 ): Promise<WasmSqlDatabase | null> {
-  if (!request.persist) return null;
+  if (!request.persist && !request.discard) return null;
   const name = await storeName(request.workspaceKey);
+  // Without the store, leave it alone: it is another window's to keep or delete.
   if (!(await holdLock(`docblocks-index:${name}`))) return null;
+  const pool = `docblocks-index-${name}`;
   try {
-    const { db } = await openPoolDatabase(sqlite3, {
-      pool: `docblocks-index-${name}`,
-      filename: '/index.sqlite3',
-    });
+    if (request.discard) {
+      const installed = (await sqlite3.installOpfsSAHPoolVfs?.({ name: pool })) as
+        | DisposablePool
+        | undefined;
+      if (!request.persist) {
+        // Keeping turned off: nothing of the index stays on the device.
+        await installed?.removeVfs?.();
+        return null;
+      }
+      await installed?.wipeFiles?.();
+    }
+    const { db } = await openPoolDatabase(sqlite3, { pool, filename: '/index.sqlite3' });
     return db;
   } catch {
     return null;

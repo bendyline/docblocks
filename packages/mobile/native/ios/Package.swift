@@ -3,5 +3,5 @@ import PackageDescription
 let package = Package(
     name: "DocBlocksStorage",
     platforms: [.macOS(.v13), .iOS(.v16)],
-    products: [.library(name: "DocBlocksStorage", targets: ["DocBlocksStorage"]), .executable(name: "StorageHarness", targets: ["StorageHarness"])],
-    targets: [.target(name: "DocBlocksStorage"), .executableTarget(name: "StorageHarness", dependencies: ["DocBlocksStorage"]), .testTarget(name: "DocBlocksStorageTests", dependencies: ["DocBlocksStorage"])])
+    products: [.library(name: "DocBlocksStorage", targets: ["DocBlocksStorage"]), .executable(name: "StorageHarness", targets: ["StorageHarness"]), .executable(name: "CloudHelper", targets: ["CloudHelper"])],
+    targets: [.target(name: "DocBlocksStorage"), .executableTarget(name: "StorageHarness", dependencies: ["DocBlocksStorage"]), .executableTarget(name: "CloudHelper", dependencies: ["DocBlocksStorage"]), .testTarget(name: "DocBlocksStorageTests", dependencies: ["DocBlocksStorage"])])

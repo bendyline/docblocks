@@ -45,6 +45,12 @@ export interface WorkerEngineOpenRequest {
   /** Keep the index across launches; false for a transient workspace. */
   readonly persist: boolean;
   /**
+   * Delete this workspace's stored index first: emptied when `persist` (the
+   * index rebuilds), removed from the device when not. Only a worker that
+   * holds the workspace's store does so, never one in a second window.
+   */
+  readonly discard?: boolean;
+  /**
    * Store vectors for this embedding profile, for semantic search. Absent,
    * the index is lexical; switching re-chunks documents in the background.
    */

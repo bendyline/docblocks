@@ -1,7 +1,9 @@
 import { expect } from 'chai';
 import {
   WORKSPACE_KNOWLEDGE_CATALOG_ID,
+  parseWorkspacePassageUri,
   withWorkspacePassages,
+  workspacePassageUri,
   type KnowledgeRetrievedPassage,
   type KnowledgeRetriever,
 } from '../src/host/ai-workspace-knowledge.js';
@@ -89,6 +91,35 @@ describe('workspace passages in knowledge retrieval', () => {
       .retrieve(query, { signal: controller.signal })
       .catch((caught: unknown) => caught);
     expect((error as Error).message).to.equal('aborted');
+  });
+
+  it('names a note and its lines in the grammar Gezel accepts, and reads it back', () => {
+    const uri = workspacePassageUri('ws-1', '/Garden notes/Ros\u0065\u0301s.md', 3, 9);
+    // NFC, no leading slash, each segment encoded.
+    expect(uri).to.equal('knowledge://local/ws-1/Garden%20notes/Ros%C3%A9s.md#line=3-9');
+    expect(parseWorkspacePassageUri(uri!)).to.deep.equal({
+      catalogId: 'ws-1',
+      path: 'Garden notes/Ros\u00e9s.md',
+      lineStart: 3,
+      lineEnd: 9,
+    });
+    expect(parseWorkspacePassageUri('knowledge://local/ws-1/a.md#line=4')).to.include({
+      lineStart: 4,
+      lineEnd: 4,
+    });
+    for (const path of [`${'x'.repeat(257)}.md`, 'a//b.md', ' a.md', 'a\u0007.md', '']) {
+      expect(workspacePassageUri('ws-1', path, 1, 1), path).to.equal(null);
+    }
+    expect(workspacePassageUri('Not A Label', 'a.md', 1, 1)).to.equal(null);
+    for (const bad of [
+      'knowledge://bendyline/wiki/doc',
+      'knowledge://local/ws-1/',
+      'knowledge://local/ws-1/a%ZZ.md',
+      'knowledge://local/ws-1/a.md#chunk=1',
+      'knowledge://local/ws-1/a%2F%2Fb.md',
+    ]) {
+      expect(parseWorkspacePassageUri(bad), bad).to.equal(null);
+    }
   });
 
   it('accepts only bounded knowledge://local passages on the wire', () => {

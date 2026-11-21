@@ -10,6 +10,7 @@ import { listWorkspaces, saveWorkspace, touchWorkspace } from '@bendyline/docblo
 import { hostSupports } from '@bendyline/docblocks/host';
 import { FolderIcon, MoreIcon, NewFolderIcon } from '../icons.js';
 import { fitWithinClippingAncestor } from '../components/fitWithinClip.js';
+import { friendlyWorkspaceLocation } from '../workspace-location.js';
 
 function isNativeFileSystemSupported(): boolean {
   return (
@@ -357,7 +358,7 @@ export function WorkspacePicker({
                     </span>
                     {ws.rootPath && (
                       <span className="db-workspace-path" title={ws.rootPath}>
-                        <WorkspacePath path={ws.rootPath} />
+                        <WorkspacePath path={friendlyWorkspaceLocation(ws.rootPath)} />
                       </span>
                     )}
                   </span>

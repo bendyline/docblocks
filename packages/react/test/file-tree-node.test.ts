@@ -161,6 +161,41 @@ describe('FileTreeNode destructive confirmation', () => {
     }
   });
 
+  it('says what else goes with a document that has versions waiting for review', async () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    const asked: string[] = [];
+    try {
+      await act(async () => {
+        root.render(
+          createElement(
+            FileTreeNode,
+            baseProps({
+              badge: { kind: 'versions', glyph: '2', label: '2 other versions to review' },
+              deleteWarning: 'Its 2 other versions to review will be deleted too.',
+              confirmDelete: (message) => {
+                asked.push(message);
+                return false;
+              },
+            }),
+          ),
+        );
+      });
+      // The row announces the waiting versions, and shows their number.
+      expect(container.querySelector('.db-git-badge--versions')?.textContent).to.equal('2');
+      const more = container.querySelector<HTMLButtonElement>('[aria-label="More actions"]');
+      await act(async () => more!.click());
+      await act(async () => clickContextItem('Delete'));
+      expect(asked).to.deep.equal([
+        'Delete the document "draft.md"? Its 2 other versions to review will be deleted too. This cannot be undone.',
+      ]);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
   it('surfaces a failed delete instead of leaving the row looking untouched', async () => {
     const container = document.createElement('div');
     document.body.append(container);

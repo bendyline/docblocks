@@ -21,6 +21,7 @@ import {
   parseMobileOpenRequests,
   parseMobilePickedFolder,
 } from '@bendyline/docblocks/host/mobile';
+import { publishFileSystemChangeHint } from '@bendyline/docblocks/filesystem';
 import {
   parseOpenExternalUrl,
   type DocBlocksHostAPI,
@@ -155,6 +156,9 @@ export async function installMobileHost(): Promise<void> {
   window.addEventListener('docblocksIncoming', () => {
     void drainOpenRequests().catch(reportImportError);
   });
+  // Native saw synced files change (iCloud delivered or took a document). It
+  // cannot say which, so everything on screen re-checks itself, cheaply.
+  window.addEventListener('docblocksStorageChanged', () => publishFileSystemChangeHint());
   window.addEventListener('docblocksNativeBack', () => {
     if (![...back].reverse().some((listener) => listener())) void native.backUnhandled();
   });

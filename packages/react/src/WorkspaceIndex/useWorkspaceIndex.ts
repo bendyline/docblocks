@@ -49,6 +49,11 @@ export interface WorkspaceIndexHandle {
   readonly semantic: SemanticProgress | null;
   /** Start indexing now (a feature needs it), and catch up if not watching. */
   ensure(): void;
+  /**
+   * Delete the workspace's stored index and start over: it rebuilds when the
+   * index is kept, and nothing is left on the device when it is not.
+   */
+  discard(): void;
 }
 
 /**
@@ -92,6 +97,7 @@ function workerStore(
   persist: boolean,
   embedder: WorkspaceIndexEmbedder | null,
   tokenizer: { readonly definition: string; readonly config: string } | null,
+  discard: boolean,
 ):
   | (Pick<WorkspaceIndexCreateOptions, 'engine' | 'limits'> & { readonly engine: WorkerEngine })
   | null {
@@ -101,12 +107,14 @@ function workerStore(
   } catch {
     return null;
   }
+  if (persist) requestPersistentStorage();
   const engine = module.withMemoryFallback(
     module.createWorkerEngine(
       worker,
       {
         workspaceKey: `${option.surface}:${workspaceId}`,
         persist,
+        ...(discard ? { discard: true } : {}),
         semantic: embedder ? { profileId: embedder.profileId, tokenizer } : null,
       },
       { onDispose: () => worker.terminate() },
@@ -115,6 +123,19 @@ function workerStore(
       module.createMemoryEngine({ maxCharacters: module.WORKSPACE_INDEX_LIMITS.maxTextCharacters }),
   );
   return { engine, limits: module.WORKSPACE_INDEX_STORE_LIMITS };
+}
+
+let persistenceRequested = false;
+/**
+ * Ask once for storage the browser will not evict under disk pressure, so a
+ * large workspace's index is not silently rebuilt. Desktop grants it (its
+ * permission policy allows `persistent-storage`); WKWebView answers false and
+ * the index tolerates eviction. Workers cannot ask, so the page does.
+ */
+function requestPersistentStorage(): void {
+  if (persistenceRequested) return;
+  persistenceRequested = true;
+  void globalThis.navigator?.storage?.persist?.().catch(() => false);
 }
 
 let indexModule: Promise<WorkspaceIndexModule> | null = null;
@@ -171,6 +192,9 @@ export function useWorkspaceIndex(
   const [semantic, setSemantic] = useState<SemanticProgress | null>(null);
   // `ensure()` can arrive while the module is still loading.
   const startRequestedRef = useRef(false);
+  // `discard()` reopens the index once with its store deleted.
+  const [discardRequest, setDiscardRequest] = useState(0);
+  const discardRef = useRef(false);
 
   useEffect(() => {
     setIndex(null);
@@ -187,8 +211,11 @@ export function useWorkspaceIndex(
     ])
       .then(([module, tokenizer]) => {
         if (disposed) return;
+        // Taken only by the run that opens the store, not one disposed first.
+        const discard = discardRef.current;
+        discardRef.current = false;
         const store = worker
-          ? workerStore(module, worker, workspaceId, persist, embedder, tokenizer)
+          ? workerStore(module, worker, workspaceId, persist, embedder, tokenizer, discard)
           : null;
         created = module.createWorkspaceIndex({
           workspaceId,
@@ -230,7 +257,8 @@ export function useWorkspaceIndex(
       stopEmbedding?.();
       created?.dispose();
     };
-  }, [providerV2, workspaceId, mode, worker, persist, embedder]);
+    // `discardRequest` only re-runs this effect; `discardRef` carries the request.
+  }, [providerV2, workspaceId, mode, worker, persist, embedder, discardRequest]);
 
   // Keep a non-watching index current across focus changes and app resumes,
   // and stop provider reads entirely while the page is hidden.
@@ -271,5 +299,13 @@ export function useWorkspaceIndex(
     index.refresh();
   }, [index]);
 
-  return useMemo(() => ({ index, status, semantic, ensure }), [index, status, semantic, ensure]);
+  const discard = useCallback(() => {
+    discardRef.current = true;
+    setDiscardRequest((count) => count + 1);
+  }, []);
+
+  return useMemo(
+    () => ({ index, status, semantic, ensure, discard }),
+    [index, status, semantic, ensure, discard],
+  );
 }

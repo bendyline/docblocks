@@ -87,6 +87,7 @@ import type {
   AiWorkspacePassage,
   ElectronWorkspaceInfo,
   OpenRequest,
+  WorkspacePassageReference,
 } from '@bendyline/docblocks/host';
 import {
   parseSharedDocumentHash,
@@ -219,6 +220,11 @@ const AiImagePanel = lazy(() =>
     default: module.AiImagePanel,
   })),
 );
+const AiAskPanel = lazy(() =>
+  import('../Ai/AiAskPanel.js').then((module) => ({
+    default: module.AiAskPanel,
+  })),
+);
 const TextFromNarration = lazy(() =>
   import('../Speech/TextFromNarration.js').then((module) => ({
     default: module.TextFromNarration,
@@ -297,6 +303,7 @@ import { startTypedWhileOpening, type TypedWhileOpening } from './typedWhileOpen
 import { EditorErrorBoundary } from './EditorErrorBoundary.js';
 import { localDateStamp } from '../local-date.js';
 import { openExternalUrl } from '../external-url.js';
+import { friendlyWorkspaceLocation } from '../workspace-location.js';
 import {
   loadPageTemplateEngine,
   readOutsideInHtmlOutput,
@@ -344,6 +351,8 @@ import { findRequestForSearchOpen } from '../WorkspaceSearch/search-find-request
 import { FindButton } from '../components/FindButton.js';
 import { focusFindInput } from '../components/find-input.js';
 import { DocumentConflictBanner, DocumentConflictNotice } from './DocumentConflictBanner.js';
+import { DocumentVersionsLayer } from './DocumentVersionsLayer.js';
+import { autoSavePacingFor } from './synced-storage.js';
 import {
   dismissConflict,
   isConflictDismissed,
@@ -367,15 +376,24 @@ import {
 } from '../WorkspaceIndex/useWorkspaceIndex.js';
 import { useHostSemanticSearch } from '../WorkspaceIndex/host-embedder.js';
 import {
+  findTextForPassage,
   findWorkspacePassages,
   useAiProviderRemote,
   withWorkspaceGrounding,
+  workspaceCatalogId,
 } from '../Ai/workspace-grounding.js';
+import type { AskNotice } from '../Ai/AiAskPanel.js';
+import type { WorkspaceAskSession } from '../Ai/workspace-ask.js';
 import {
   loadWorkspaceGroundingChoices,
   saveWorkspaceGroundingChoices,
   workspaceGroundingEnabled,
 } from '../preferences/ai-workspace.js';
+import {
+  keepsSearchIndex,
+  loadSearchIndexChoices,
+  saveSearchIndexChoices,
+} from '../preferences/search-index.js';
 import {
   loadSemanticSearchEnabled,
   saveSemanticSearchEnabled,
@@ -743,6 +761,34 @@ function stripExtension(name: string): string {
   return name.replace(/\.[^.]+$/, '');
 }
 
+/** Write a new Markdown document; throws when a document already has that path. */
+async function createMarkdownFile(
+  provider: FileSystemProvider,
+  path: string,
+  content: string,
+): Promise<void> {
+  if (getFileSystemProviderV2(provider)) {
+    try {
+      await writeProviderText(provider, path, content, 'create');
+    } catch (error: unknown) {
+      if (error instanceof FsError && error.code === 'already-exists') {
+        throw new Error('A document with that name already exists.');
+      }
+      throw error;
+    }
+  } else if (provider.commitFile) {
+    const result = await provider.commitFile(path, content, null);
+    if (result.status === 'conflict') {
+      throw new Error('A document with that name already exists.');
+    }
+  } else {
+    if (await providerEntryExists(provider, path)) {
+      throw new Error('A document with that name already exists.');
+    }
+    await writeProviderText(provider, path, content);
+  }
+}
+
 function normaliseProviderPath(p: string): string {
   const canonical = parseWorkspacePath(p);
   return canonical ? `/${canonical}` : '/';
@@ -1081,6 +1127,10 @@ export function DocBlocksShell({
   );
   const openAiSettings = useCallback(
     () => setSettingsRequest(({ count }) => ({ count: count + 1, section: 'ai' })),
+    [],
+  );
+  const openSearchSettings = useCallback(
+    () => setSettingsRequest(({ count }) => ({ count: count + 1, section: 'search' })),
     [],
   );
   // Squisq re-resolves a changed capability and cancels any session in
@@ -1617,13 +1667,31 @@ export function DocBlocksShell({
   workspaceOutputsSchedulerRef.current = workspaceOutputs.scheduler;
   // The one shared listing of the workspace's documents. Workspace-wide
   // discovery (link picker, quick-open, search) reads it instead of walking.
+  const [searchIndexChoices, setSearchIndexChoices] = useState(loadSearchIndexChoices);
+  const keepSearchIndex = keepsSearchIndex(searchIndexChoices, activeWorkspaceId);
+  // A loose file or an opened bundle is gone next launch; keep nothing for it.
+  const transientWorkspace =
+    activeWorkspaceId !== null && getTransientWorkspace(activeWorkspaceId) !== null;
   const workspaceIndex = useWorkspaceIndex(provider, activeWorkspaceId, workspaceIndexMode, {
     worker: workspaceIndexWorker,
     embedder: workspaceEmbedder,
     semanticEnabled: semanticSearchEnabled,
-    // A loose file or an opened bundle is gone next launch; keep nothing for it.
-    persist: activeWorkspaceId === null || getTransientWorkspace(activeWorkspaceId) === null,
+    persist: !transientWorkspace && keepSearchIndex,
   });
+  const discardWorkspaceIndex = workspaceIndex.discard;
+  const handleKeepSearchIndexChange = useCallback(
+    (keep: boolean) => {
+      if (!activeWorkspaceId) return;
+      setSearchIndexChoices((current) => {
+        const next = { ...current, [activeWorkspaceId]: keep };
+        saveSearchIndexChoices(next);
+        return next;
+      });
+      // Off: the reopened index deletes the stored copy and stays in memory.
+      if (!keep) discardWorkspaceIndex();
+    },
+    [activeWorkspaceId, discardWorkspaceIndex],
+  );
   const workspaceIndexRef = useRef(workspaceIndex.index);
   workspaceIndexRef.current = workspaceIndex.index;
   const workspaceGrounding =
@@ -2146,6 +2214,8 @@ export function DocBlocksShell({
       ) {
         return {
           key: baseTarget.key,
+          // Lets the session combine separate edits and set unsaved text aside.
+          ...(baseTarget.park ? { park: baseTarget.park } : {}),
           async commit(request) {
             await assertNotGeneratedCatalog(fsProvider, filePath);
             const result = await baseTarget.commit(request);
@@ -3314,7 +3384,7 @@ export function DocBlocksShell({
   const reportDocumentCheckFailed = useCallback(() => {
     showToast('error', 'Could not check this document for changes made elsewhere.');
   }, [showToast]);
-  useExternalDocumentObserver({
+  const checkOpenDocument = useExternalDocumentObserver({
     provider,
     path: selectedImage ? null : (selectedSourceFile ?? selectedFile),
     targetKey: documentSnapshot.targetKey,
@@ -3400,6 +3470,49 @@ export function DocBlocksShell({
       return false;
     }
   }, [documentSession]);
+
+  const handleUseMergedDocument = useCallback(
+    async (content: string) => {
+      const conflictKey = documentSession.getSnapshot().conflict?.targetKey;
+      try {
+        await documentSession.resolveConflict('use-merged', { content });
+        if (conflictKey) pendingDbkConflictsRef.current.delete(conflictKey);
+        setSaveToast({ kind: 'success', message: 'Your combined version was saved.' });
+        return true;
+      } catch {
+        setSaveToast({ kind: 'error', message: 'Could not save your combined version.' });
+        return false;
+      }
+    },
+    [documentSession],
+  );
+
+  // A version of the open document was kept as its own document beside it.
+  const handleVersionDocumentCreated = useCallback(
+    (path: string) => {
+      if (activeWorkspaceId) afterWorkspaceCommit(activeWorkspaceId, path);
+      setExplorerKey((key) => key + 1);
+    },
+    [activeWorkspaceId, afterWorkspaceCommit],
+  );
+  const reportVersionsError = useCallback(
+    (message: string) => showToast('error', message),
+    [showToast],
+  );
+  // Other versions of the open document waiting for review, for its explorer row.
+  const [openDocumentVersionCount, setOpenDocumentVersionCount] = useState(0);
+
+  // Save less eagerly where a sync service keeps and uploads every version.
+  const workspaceLocation =
+    activeWorkspaceDescriptor?.id === activeWorkspaceId
+      ? (activeWorkspaceDescriptor?.rootPath ?? null)
+      : null;
+  const mobileHost = hostEnvironment?.surface === 'capacitor';
+  useEffect(() => {
+    documentSession.setAutoSavePacing(
+      autoSavePacingFor({ location: workspaceLocation, mobile: mobileHost }),
+    );
+  }, [documentSession, mobileHost, workspaceLocation]);
 
   useEffect(() => {
     const needsWarning = ['dirty', 'saving', 'error', 'conflict'].includes(documentSnapshot.status);
@@ -4055,27 +4168,7 @@ export function DocBlocksShell({
           if (requestId !== navigationRequestRef.current) return null;
           if (format === 'markdown') {
             const content = blank ? '' : '# ' + basenameOf(path).replace(/\.[^.]+$/, '') + '\n';
-            const providerV2 = getFileSystemProviderV2(provider);
-            if (providerV2) {
-              try {
-                await writeProviderText(provider, path, content, 'create');
-              } catch (error: unknown) {
-                if (error instanceof FsError && error.code === 'already-exists') {
-                  throw new Error('A document with that name already exists.');
-                }
-                throw error;
-              }
-            } else if (provider.commitFile) {
-              const result = await provider.commitFile(path, content, null);
-              if (result.status === 'conflict') {
-                throw new Error('A document with that name already exists.');
-              }
-            } else {
-              if (await providerEntryExists(provider, path)) {
-                throw new Error('A document with that name already exists.');
-              }
-              await writeProviderText(provider, path, content);
-            }
+            await createMarkdownFile(provider, path, content);
             createdRef.current = {
               displayPath: path,
               sourcePath: path,
@@ -4797,6 +4890,90 @@ export function DocBlocksShell({
     },
     [handleSelect, singlePane],
   );
+
+  // "Ask your workspace": the conversation is the shell's, so it outlives the
+  // panel when the editor remounts for a cited note; a new workspace starts afresh.
+  const askSessionRef = useRef<WorkspaceAskSession | null>(null);
+  useEffect(
+    () => () => {
+      askSessionRef.current?.clear();
+      askSessionRef.current = null;
+    },
+    [activeWorkspaceId],
+  );
+  // Phones index on demand; asking is a demand.
+  useEffect(() => {
+    if (aiPanel === 'ask') ensureWorkspaceIndex();
+  }, [aiPanel, ensureWorkspaceIndex]);
+  const askFindPassages = useCallback(
+    (question: string) =>
+      activeWorkspaceId
+        ? findWorkspacePassages(workspaceIndexRef.current, activeWorkspaceId, question, {
+            // A person waiting on an answer can wait for a cold model too.
+            deadlineMs: 4_000,
+          })
+        : Promise.resolve([]),
+    [activeWorkspaceId],
+  );
+  const handleOpenCitedNote = useCallback(
+    (reference: WorkspacePassageReference, passage: string) => {
+      if (!activeWorkspaceId || reference.catalogId !== workspaceCatalogId(activeWorkspaceId)) {
+        showToast('error', 'That note is in another workspace.');
+        return;
+      }
+      // A compact window shows the panel over the editor; the note needs the room.
+      // The conversation is kept and returns when the panel is opened again.
+      if (formFactor.widthClass === 'compact') setAiPanel(null);
+      handleSearchOpen({
+        path: reference.path,
+        match: null,
+        query: findTextForPassage(passage),
+        matchCase: false,
+        wholeWord: false,
+      });
+    },
+    [activeWorkspaceId, formFactor.widthClass, handleSearchOpen, showToast],
+  );
+  const handleSaveAnswerNote = useCallback(
+    async (title: string, markdownFor: (path: string) => string) => {
+      if (!provider) throw new Error('Open a workspace to save the answer as a note.');
+      let path = `${title}.md`;
+      for (let n = 2; await providerEntryExists(provider, path); n += 1) {
+        path = `${title} ${n}.md`;
+      }
+      await createMarkdownFile(provider, path, markdownFor(path));
+      notifyWorkspaceChanged(activeWorkspaceId ?? provider.id, path);
+      setExplorerKey((key) => key + 1);
+      await handleSelect(path, 'file');
+    },
+    [provider, activeWorkspaceId, notifyWorkspaceChanged, handleSelect],
+  );
+  const askModel = hostSemanticSearch.status;
+  const askNotice: AskNotice | null = !semanticSearchEnabled
+    ? { kind: 'semantic-off', onAllow: () => handleSemanticSearchChange(true) }
+    : askModel && askModel.state !== 'ready'
+      ? {
+          kind: 'not-ready',
+          message:
+            askModel.state === 'downloading'
+              ? 'The search model is downloading. Questions can be asked once it is ready.'
+              : askModel.state === 'download-required'
+                ? 'Answers come from notes found by meaning, which needs the search model on this device.'
+                : (askModel.reason ?? 'Search by meaning is not available on this device.'),
+          onOpenSettings: openSearchSettings,
+        }
+      : !workspaceGrounding
+        ? {
+            kind: 'grounding-off',
+            remote: aiProviderRemote,
+            onAllow: () => handleWorkspaceGroundingChange(true),
+          }
+        : null;
+  const askProgress = workspaceIndex.semantic;
+  const askCoverage =
+    askProgress && askProgress.total > 0 && askProgress.embedded < askProgress.total
+      ? `only ${Math.floor((askProgress.embedded / askProgress.total) * 100)}% of this workspace is prepared for search by meaning so far.`
+      : null;
 
   const handleEditorLinkClick = useCallback(
     (href: string): boolean => {
@@ -5811,7 +5988,9 @@ export function DocBlocksShell({
             : ws?.type === 'transient'
               ? `Remove ${name} from DocBlocks? The file on disk will not be deleted.`
               : `Remove ${name} from DocBlocks? ${
-                  ws?.rootPath ? `The folder ${ws.rootPath}` : 'The folder'
+                  ws?.rootPath
+                    ? `The folder ${friendlyWorkspaceLocation(ws.rootPath)}`
+                    : 'The folder'
                 } and its files will not be deleted. You can add it back later with Open Folder.`,
         confirmLabel: 'Remove',
         // Only these cases actually destroy the user's documents.
@@ -5987,7 +6166,28 @@ export function DocBlocksShell({
             DocBlocks is ready to work offline.
           </div>
         )}
+        <DocumentVersionsLayer
+          provider={provider}
+          session={documentSession}
+          snapshot={documentSnapshot}
+          documentPath={selectedImage ? null : selectedFile}
+          sourcePath={selectedSourceFile}
+          theme={resolvedTheme}
+          defaultThemeId={workspaceDefaultThemeId}
+          mediaProvider={mediaProviderCurrent ? mediaProvider : null}
+          heartbeatMs={hostSupports('nativeWorkspaces') ? UNWATCHED_DOCUMENT_HEARTBEAT_MS : null}
+          checkDocument={checkOpenDocument}
+          onDocumentCreated={handleVersionDocumentCreated}
+          onCountChange={setOpenDocumentVersionCount}
+          onError={reportVersionsError}
+        />
+        {/* While the session is about to combine both versions itself, there is
+            nothing for the user to decide and nothing to interrupt them with. */}
         {documentSnapshot.conflict &&
+          !documentSnapshot.conflict.merging &&
+          // The comparison dialog says the same thing with more room; the
+          // banner would only sit across its top edge.
+          !showConflictComparison &&
           (isConflictDismissed(documentSnapshot.conflict, dismissedConflict) ? (
             <DocumentConflictNotice onReview={() => setDismissedConflict(null)} />
           ) : (
@@ -6013,6 +6213,12 @@ export function DocBlocksShell({
               readSavedFile={readConflictFile}
               onUseLocal={handleKeepLocalDocument}
               onUseSaved={handleUseExternalDocument}
+              // A staged bundle holds more than this text; it is taken or left whole.
+              onUseMerged={
+                pendingDbkConflictsRef.current.has(documentSnapshot.conflict.targetKey)
+                  ? undefined
+                  : handleUseMergedDocument
+              }
               onClose={() => setShowConflictComparison(false)}
             />
           </Suspense>
@@ -6097,6 +6303,16 @@ export function DocBlocksShell({
                 onProofingPreferencesChange={handleProofingPreferencesChange}
                 versioningPreference={versioningPreference}
                 onVersioningPreferenceChange={handleVersioningPreferenceChange}
+                searchIndex={
+                  workspaceIndexWorker !== undefined && activeWorkspaceId && !transientWorkspace
+                    ? {
+                        keep: keepSearchIndex,
+                        onKeepChange: handleKeepSearchIndexChange,
+                        onClear: discardWorkspaceIndex,
+                        persistence: workspaceIndex.status.persistence ?? null,
+                      }
+                    : undefined
+                }
                 semanticSearch={
                   semanticSearchAvailable
                     ? {
@@ -6220,6 +6436,7 @@ export function DocBlocksShell({
               defaultNewFileFormat={defaultNewFileFormat}
               onNewFileFormatUsed={rememberNewFileFormat}
               onCreateDocument={createDocumentFromExplorer}
+              activeFileVersionCount={selectedFile ? openDocumentVersionCount : null}
               metadataRefreshKey={`${documentSnapshot.targetKey ?? ''}:${documentSnapshot.persistedRevision}`}
               activeWorkspaceId={activeWorkspaceId}
               // The descriptor follows renames; the provider's label covers the
@@ -6486,6 +6703,17 @@ export function DocBlocksShell({
                                   <Suspense fallback={null}>
                                     {aiPanel === 'review' ? (
                                       <AiReviewPanel ai={ai} onClose={() => setAiPanel(null)} />
+                                    ) : aiPanel === 'ask' ? (
+                                      <AiAskPanel
+                                        sessionHolder={askSessionRef}
+                                        ai={ai}
+                                        findPassages={askFindPassages}
+                                        notice={askNotice}
+                                        coverage={askCoverage}
+                                        onOpenNote={handleOpenCitedNote}
+                                        onSaveNote={handleSaveAnswerNote}
+                                        onClose={() => setAiPanel(null)}
+                                      />
                                     ) : aiPanel === 'images' ? (
                                       <AiImagePanel ai={ai} onClose={() => setAiPanel(null)} />
                                     ) : (
@@ -6546,6 +6774,7 @@ export function DocBlocksShell({
                                         openPanel={aiPanel}
                                         onOpenPanel={setAiPanel}
                                         onOpenSettings={openAiSettings}
+                                        canAskWorkspace={semanticSearchAvailable}
                                       />
                                     </Suspense>
                                   )}

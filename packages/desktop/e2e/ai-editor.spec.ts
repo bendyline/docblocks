@@ -619,7 +619,64 @@ test('AI drafts draw on workspace notes found by meaning and cite them', async (
       await expect
         .poll(() => readDocument(file))
         .toContain('Beetles damaged the roses this spring[^source-1].');
-      expect(readDocument(file)).toContain('[^source-1]: Rose bed, a note in this workspace.');
+      // The footnote links the note, relative to the document it went into.
+      expect(readDocument(file)).toContain(
+        '[^source-1]: [Rose bed](garden/roses.md), a note in this workspace.',
+      );
+    },
+  );
+});
+
+test('Ask your workspace answers from notes and opens the note an answer cites', async ({
+  launchApp,
+  workspaceDir,
+  gezelHome,
+}) => {
+  test.skip(Boolean(upstream), 'The reply and its citations are scripted.');
+  test.setTimeout(180_000);
+  fs.mkdirSync(path.join(workspaceDir, 'garden'), { recursive: true });
+  fs.writeFileSync(
+    path.join(workspaceDir, 'garden', 'roses.md'),
+    '# Rose bed\n\nAphids and beetles damaged the roses this spring; neem oil helped.\n',
+  );
+  await withConnectedEditor(
+    launchApp,
+    workspaceDir,
+    gezelHome,
+    { replies: [{ text: 'Neem oil helped against the beetles [1].', finishReason: 'stop' }] },
+    async ({ window, fake }) => {
+      await window.locator('.db-app-menu-btn').click();
+      await window.getByRole('menuitem', { name: 'Settings' }).click();
+      const settings = window.getByRole('dialog', { name: 'Settings' });
+      await settings.getByRole('tab', { name: 'Search', exact: true }).click();
+      await expect(settings.getByTestId('semantic-search-coverage')).toContainText('ready:', {
+        timeout: 60_000,
+      });
+      await window.keyboard.press('Escape');
+      await expect(settings).toBeHidden();
+
+      await openAiMenuItem(window, 'Ask your workspace…');
+      const panel = window.getByRole('complementary', { name: 'Ask your workspace' });
+      await panel.getByRole('textbox', { name: 'Question' }).fill('What helped the insects?');
+      await panel.getByRole('button', { name: 'Ask', exact: true }).click();
+      await expect(panel.locator('.db-ai-ask-answer')).toContainText('Neem oil helped', {
+        timeout: ANSWER_TIMEOUT_MS,
+      });
+      const evidence = String(fake.chats[0]?.messages[0]?.content ?? '');
+      expect(evidence).toContain('Aphids and beetles damaged the roses');
+      expect(fake.chats[0]?.messages.at(-1)?.content).toBe('What helped the insects?');
+
+      await test.info().attach('Ask your workspace', {
+        body: await window.screenshot({ path: test.info().outputPath('ask-panel.png') }),
+        contentType: 'image/png',
+      });
+
+      // The citation opens the note; the conversation stays beside it.
+      await panel.getByRole('button', { name: /^Source 1: Rose bed/u }).click();
+      await expect(
+        window.locator('.squisq-editor-content [contenteditable="true"]').first(),
+      ).toContainText('neem oil helped', { timeout: 30_000 });
+      await expect(panel.locator('.db-ai-ask-question')).toHaveText('What helped the insects?');
     },
   );
 });

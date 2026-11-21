@@ -248,7 +248,12 @@ describe('parseAiChatEvent', () => {
           catalogId: 'pnw',
           text: 'Built in 1910 by Sabro Ozasa.',
         },
-        { title: '', catalogId: 'law', text: 'City of Seattle.' },
+        {
+          title: '',
+          catalogId: 'law',
+          text: 'City of Seattle.',
+          uri: 'knowledge://local/ws-1/notes/law.md#line=2-4',
+        },
       ],
     };
     expect(parseAiChatEvent({ kind: 'knowledge', knowledge })).to.deep.equal({
@@ -292,6 +297,12 @@ describe('parseAiChatEvent', () => {
       { outcome: 'used', sources: [source], evidence: [{ ...passage, text: '' }] },
       { outcome: 'used', sources: [source], evidence: [{ ...passage, catalogId: '' }] },
       { outcome: 'used', sources: [source], evidence: [{ ...passage, extra: true }] },
+      { outcome: 'used', sources: [source], evidence: [{ ...passage, uri: 'https://x.test' }] },
+      {
+        outcome: 'used',
+        sources: [source],
+        evidence: [{ ...passage, uri: `knowledge://local/ws-1/${'a'.repeat(2_048)}` }],
+      },
       { outcome: 'used', sources: [source], evidence: ['A passage.'] },
       {
         outcome: 'used',

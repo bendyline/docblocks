@@ -75,6 +75,44 @@ describe('Document conflict comparison', () => {
     return probe.style.background;
   }
 
+  it('lets the user combine both versions by hand and saves what they end up with', async () => {
+    const merged: string[] = [];
+    props.conflict = { ...props.conflict, recoveredDraft: false };
+    props.onUseMerged = async (content) => {
+      merged.push(content);
+      return true;
+    };
+    await render();
+    await click('Combine by hand');
+    expect(document.body.querySelector('section[aria-label="Combined version"]')).not.to.equal(
+      null,
+    );
+    // The two whole-version choices step aside while combining.
+    expect(document.body.querySelector<HTMLElement>('.db-conflict-columns')?.hidden).to.equal(true);
+    await click('Back to comparing');
+    expect(document.body.querySelector('section[aria-label="Combined version"]')).to.equal(null);
+
+    await click('Combine by hand');
+    await click('Save combined version');
+    // Untouched, the combined version is the user's own text.
+    expect(merged).to.deep.equal(['# Old draft\n\nUnfinished thoughts']);
+    expect(localChoices + savedChoices).to.equal(0);
+    expect(closes).to.equal(1);
+  });
+
+  it('offers no combining when the file was deleted or the host cannot save a combination', async () => {
+    await render();
+    const combine = () =>
+      [...document.body.querySelectorAll('button')].some(
+        (item) => item.textContent === 'Combine by hand',
+      );
+    expect(combine()).to.equal(false);
+    props.onUseMerged = async () => true;
+    props.conflict = { ...props.conflict, externalContent: null };
+    await render();
+    expect(combine()).to.equal(false);
+  });
+
   it('renders both versions as pages beside a source diff and distinguishes capture time from file modification', async () => {
     await render();
     expect(document.body.querySelectorAll('textarea')).to.have.length(0);

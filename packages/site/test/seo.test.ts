@@ -7,6 +7,7 @@ import { SITE_PRECACHE_EXTENSIONS } from '../../../scripts/site-precache-policy.
 const SITE_ROOT = path.join(process.cwd(), 'packages', 'site');
 const PUBLIC_ROOT = path.join(SITE_ROOT, 'public');
 const MARKETING_ROUTES = [
+  'apps',
   'web',
   'desktop',
   'vscode',
@@ -340,6 +341,103 @@ describe('site SEO surface', () => {
     expect(html).to.include('Install DocBlocks&hellip;');
     expect(html).to.include('href="/desktop/"');
   });
+
+  it('puts Apps in the primary navigation and keeps desktop downloads one click away', async () => {
+    const primaryNav = (html: string): string =>
+      html.match(/<nav class="site-nav"[\s\S]*?<\/nav>/u)?.[0] ?? '';
+    const footerNav = (html: string): string =>
+      html.match(/<nav class="footer-nav"[\s\S]*?<\/nav>/u)?.[0] ?? '';
+
+    for (const route of STATIC_CSP_PAGES) {
+      const html = await read(route === '404' ? 'public/404.html' : `public/${route}/index.html`);
+      // Six links: at phone width the nav is two fixed rows of three.
+      expect(
+        [...primaryNav(html).matchAll(/href="([^"]+)"/gu)].map(([, href]) => href),
+        `${route} primary nav`,
+      ).to.deep.equal(['/apps/', '/web/', '/vscode/', '/cli/', '/formats/', '/docs/']);
+      // The Mac App Store and Microsoft Store listings name docblocks.com as
+      // where the desktop apps are free, so the download page stays reachable
+      // from every page.
+      expect(footerNav(html), `${route} footer nav`).to.include('href="/desktop/"');
+    }
+  });
+
+  it('titles every page and section plainly, with no label above the heading', async () => {
+    for (const route of STATIC_CSP_PAGES) {
+      const html = await read(route === '404' ? 'public/404.html' : `public/${route}/index.html`);
+      // A heading says what the page or section is. The small uppercase label
+      // that used to sit above each one is gone; do not bring it back.
+      expect(html, `${route} eyebrow`).not.to.include('class="eyebrow"');
+    }
+    const css = await read('public/marketing/marketing.css');
+    expect(css).not.to.include('.eyebrow');
+  });
+
+  it('lists every app with its store, its price, and no claim it cannot keep', async () => {
+    const [apps, desktop, docs, root] = await Promise.all([
+      read('public/apps/index.html'),
+      read('public/desktop/index.html'),
+      read('public/docs/index.html'),
+      read('index.html'),
+    ]);
+
+    expect(apps).to.include('https://apps.apple.com/us/app/docblocks-markdown-editor/id6792768923');
+    expect(apps).to.include(
+      'https://play.google.com/store/apps/details?id=com.bendyline.docblocks',
+    );
+    expect(apps).to.include('alt="Download on the App Store"');
+    expect(apps).to.include('alt="Get it on Google Play"');
+    expect(apps).to.include('$9.99');
+    expect(apps).to.include('href="/desktop/"');
+    for (const anchor of ['phones', 'computer', 'tools']) {
+      expect(apps, `#${anchor}`).to.include(`id="${anchor}"`);
+    }
+    // Store review holds the site to the same words as the listings: nothing
+    // is a beta or a preview, and DocBlocks itself does not sync.
+    for (const page of [apps, docs]) {
+      expect(page).not.to.match(/\bbeta\b/iu);
+      expect(page).not.to.match(/mobile preview|preview build|in development/iu);
+    }
+    expect(apps).not.to.match(/\bsyncs?\b/iu);
+    expect(root).to.include('href="/apps/"');
+    // The app's welcome screen links here.
+    expect(docs).to.include('id="apps"');
+
+    // A store that has not approved DocBlocks shows a plate of our own; its
+    // badge waits in a comment and never links anywhere until it is live.
+    const withoutComments = (html: string): string => html.replace(/<!--[\s\S]*?-->/gu, '');
+    for (const page of [apps, desktop]) {
+      for (const store of ['mac-app-store', 'microsoft-store']) {
+        const pending = page.includes(`store:${store} pending`);
+        const badge = withoutComments(page).includes(`/marketing/stores/${store}-badge.svg`);
+        expect(pending !== badge, `${store} is either pending or live, never both`).to.equal(true);
+      }
+      expect(withoutComments(page), 'placeholder Store ID').not.to.include('STORE_ID');
+    }
+  });
+
+  it('ships the store badges and phone screenshots the apps page shows', async () => {
+    const apps = await read('public/apps/index.html');
+    for (const badge of [
+      'app-store-badge.svg',
+      'google-play-badge.png',
+      'mac-app-store-badge.svg',
+      'microsoft-store-badge.svg',
+    ]) {
+      const file = await stat(path.join(PUBLIC_ROOT, 'marketing', 'stores', badge));
+      expect(file.size, badge).to.be.greaterThan(1_000);
+    }
+    const screenshots = [
+      ...apps.matchAll(/src="\/marketing\/(docblocks-phone-[a-z]+\.webp)"/gu),
+    ].map(([, name]) => name);
+    expect(screenshots.length).to.equal(3);
+    for (const name of screenshots) {
+      const file = await stat(path.join(PUBLIC_ROOT, 'marketing', name));
+      expect(file.size, name).to.be.greaterThan(10_000);
+      expect(file.size, name).to.be.lessThan(200_000);
+    }
+  });
+
   it('ships dark-mode marketing surfaces with real product imagery', async () => {
     const [css, web, desktop, vscode, docs, editorImage, vscodeImage, editorPng, vscodePng] =
       await Promise.all([

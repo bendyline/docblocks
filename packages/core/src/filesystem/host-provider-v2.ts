@@ -2,6 +2,7 @@
 // re-exports filesystem-v2.ts, which depends back on this package.
 import { maybeGetDocBlocksHost } from '../host/index.js';
 import {
+  FILE_SYSTEM_DIRECTORY_LIMITS,
   FILE_SYSTEM_ENUMERATION_LIMITS as ENUMERATION_LIMITS,
   FILE_SYSTEM_TRANSFER_LIMITS as TRANSFER_LIMITS,
   type DocBlocksHostFsV2API,
@@ -626,7 +627,9 @@ function normalizeDirectoryListing(
   value: readonly FileSystemEntrySnapshot[],
   parent: WorkspacePath,
 ): readonly FileSystemEntrySnapshot[] {
-  if (!Array.isArray(value)) throw new TypeError('Expected a filesystem directory listing.');
+  if (!Array.isArray(value) || value.length > FILE_SYSTEM_DIRECTORY_LIMITS.entries) {
+    throw new TypeError('Expected a bounded filesystem directory listing.');
+  }
   const entries = value.map(normalizeEntry);
   const seen = new Set<WorkspacePath>();
   for (const entry of entries) {

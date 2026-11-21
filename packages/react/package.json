@@ -96,6 +96,7 @@
   },
   "dependencies": {
     "@bendyline/docblocks": "2.8.5",
+    "@bendyline/gezel-retrieval": "1.0.0",
     "@bendyline/squisq": "2.14.0",
     "@bendyline/squisq-calc": "2.11.2",
     "@bendyline/squisq-editor-react": "2.14.0",

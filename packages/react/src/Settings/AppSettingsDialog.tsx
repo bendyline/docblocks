@@ -35,6 +35,10 @@ import {
   SemanticSearchSettingsControls,
   type SemanticSearchSettingsControlsProps,
 } from './SemanticSearchSettings.js';
+import {
+  SearchIndexSettingsControls,
+  type SearchIndexSettingsControlsProps,
+} from './SearchIndexSettings.js';
 import { useSpeechSettings } from './useSpeechSettings.js';
 
 export type AppSettingsSection =
@@ -75,6 +79,8 @@ export interface AppSettingsDialogProps {
   onOpenWorkspaceSettings?: () => void;
   /** Present on a host with an embedding model; omitted hides Search. */
   semanticSearch?: SemanticSearchSettingsControlsProps;
+  /** Where the open workspace's index is kept; present where it can be kept. */
+  searchIndex?: SearchIndexSettingsControlsProps;
 }
 
 function formatBytes(bytes: number): string {
@@ -114,6 +120,7 @@ export function AppSettingsDialog({
   onVersioningPreferenceChange,
   onOpenWorkspaceSettings,
   semanticSearch,
+  searchIndex,
 }: AppSettingsDialogProps) {
   // One session for both speech sections, alive as long as the dialog is.
   const speechSession = useSpeechSettings(speech);
@@ -169,11 +176,16 @@ export function AppSettingsDialog({
     },
   ];
 
-  if (semanticSearch) {
+  if (semanticSearch || searchIndex) {
     sections.push({
       id: 'search',
       label: 'Search',
-      content: <SemanticSearchSettingsControls {...semanticSearch} />,
+      content: (
+        <>
+          {semanticSearch && <SemanticSearchSettingsControls {...semanticSearch} />}
+          {searchIndex && <SearchIndexSettingsControls {...searchIndex} />}
+        </>
+      ),
     });
   }
   if (ai) {

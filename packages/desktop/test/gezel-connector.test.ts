@@ -476,7 +476,14 @@ describe('Gezel connector against the app SDK', () => {
       knowledge: {
         outcome: 'used',
         sources: [{ catalogId: 'science', name: 'science', titles: ['Science'] }],
-        evidence: [{ title: 'Science', catalogId: 'science', text: 'A relevant fact.' }],
+        evidence: [
+          {
+            title: 'Science',
+            catalogId: 'science',
+            text: 'A relevant fact.',
+            uri: 'knowledge://publisher/science/article',
+          },
+        ],
       },
       text: '',
       finishReason: null,
@@ -525,7 +532,9 @@ describe('Gezel connector against the app SDK', () => {
     expect(first.value?.knowledge).to.deep.equal({
       outcome: 'used',
       sources: [{ catalogId: 'pnw', name: 'pnw', titles: ['Panama Hotel'] }],
-      evidence: [{ title: 'Panama Hotel', catalogId: 'pnw', text: 'Fact.' }],
+      evidence: [
+        { title: 'Panama Hotel', catalogId: 'pnw', text: 'Fact.', uri: 'knowledge://a/pnw/x' },
+      ],
     });
     let failure: unknown = null;
     try {

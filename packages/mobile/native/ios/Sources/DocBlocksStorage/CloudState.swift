@@ -10,6 +10,18 @@ public protocol CloudState {
     /// True when the last download attempt failed, for example while offline.
     func downloadFailed(for url: URL) -> Bool
     func startDownloading(_ url: URL) throws
+    /// How far the item's upload has got. Nil for an item iCloud does not sync.
+    func upload(of url: URL) -> CloudUpload?
+}
+public extension CloudState {
+    func upload(of url: URL) -> CloudUpload? { nil }
+}
+
+/// Whether an item's latest content has reached iCloud.
+public struct CloudUpload: Equatable {
+    public var uploaded: Bool
+    public var uploading: Bool
+    public init(uploaded: Bool, uploading: Bool) { self.uploaded = uploaded; self.uploading = uploading }
 }
 
 public struct SystemCloudState: CloudState {
@@ -26,6 +38,10 @@ public struct SystemCloudState: CloudState {
         (try? URL(fileURLWithPath: url.path).resourceValues(forKeys: [.ubiquitousItemDownloadingErrorKey]))?.ubiquitousItemDownloadingError != nil
     }
     public func startDownloading(_ url: URL) throws { try FileManager.default.startDownloadingUbiquitousItem(at: url) }
+    public func upload(of url: URL) -> CloudUpload? {
+        guard let values = try? URL(fileURLWithPath: url.path).resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemIsUploadedKey, .ubiquitousItemIsUploadingKey]), values.isUbiquitousItem == true else { return nil }
+        return CloudUpload(uploaded: values.ubiquitousItemIsUploaded ?? false, uploading: values.ubiquitousItemIsUploading ?? false)
+    }
 }
 
 /// How long storage waits on iCloud. Short, because every other request queues behind the wait.

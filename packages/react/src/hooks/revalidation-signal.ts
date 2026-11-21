@@ -1,3 +1,4 @@
+import { subscribeFileSystemChangeHints } from '@bendyline/docblocks/filesystem';
 import { maybeGetDocBlocksHost } from '@bendyline/docblocks/host';
 
 /**
@@ -8,8 +9,13 @@ import { maybeGetDocBlocksHost } from '@bendyline/docblocks/host';
  * This is the safety net under every provider, watching or not. A watcher can
  * miss changes (a sync client still downloading, a suspended tab, a native
  * observer that stopped), and several providers cannot watch at all.
+ *
+ * `storage` is different in kind: something reported that storage did change
+ * (another tab wrote, a phone's native layer saw a file arrive). It says
+ * nothing about which file, so it is handled the same way, only cheaper: it
+ * can arrive often, including for this app's own saves.
  */
-export type RevalidationReason = 'focus' | 'visible' | 'resume' | 'online' | 'input';
+export type RevalidationReason = 'focus' | 'visible' | 'resume' | 'online' | 'input' | 'storage';
 
 export interface RevalidationSignalOptions {
   /** Minimum spacing between two signals. Returning to an app fires several events at once. */
@@ -34,13 +40,34 @@ export function subscribeRevalidationSignal(
   let lastSignalAt = Number.NEGATIVE_INFINITY;
   let lastInputAt = now();
   let stopped = false;
+  let deferred: ReturnType<typeof setTimeout> | null = null;
 
   const signal = (reason: RevalidationReason) => {
     if (stopped) return;
     const at = now();
     if (at - lastSignalAt < minIntervalMs) return;
     lastSignalAt = at;
+    if (deferred) {
+      clearTimeout(deferred);
+      deferred = null;
+    }
     listener(reason);
+  };
+  // A reported change must not be dropped for arriving just after another
+  // signal: the look that signal caused may have happened before the change.
+  // It waits out the spacing instead, and a burst of reports becomes one look.
+  const onStorage = () => {
+    // A hidden tab looks again when it is shown, which covers what it missed.
+    if (stopped || deferred || document.visibilityState !== 'visible') return;
+    const wait = lastSignalAt + minIntervalMs - now();
+    if (wait <= 0) {
+      signal('storage');
+      return;
+    }
+    deferred = setTimeout(() => {
+      deferred = null;
+      signal('storage');
+    }, wait);
   };
   const onFocus = () => signal('focus');
   const onVisible = () => {
@@ -62,6 +89,7 @@ export function subscribeRevalidationSignal(
   window.addEventListener('pointerdown', onInput, inputOptions);
   window.addEventListener('keydown', onInput, inputOptions);
   const stopResume = maybeGetDocBlocksHost()?.lifecycle?.onResume?.(() => signal('resume'));
+  const stopHints = subscribeFileSystemChangeHints(onStorage);
 
   return () => {
     if (stopped) return;
@@ -73,5 +101,7 @@ export function subscribeRevalidationSignal(
     window.removeEventListener('pointerdown', onInput, inputOptions);
     window.removeEventListener('keydown', onInput, inputOptions);
     stopResume?.();
+    stopHints();
+    if (deferred) clearTimeout(deferred);
   };
 }

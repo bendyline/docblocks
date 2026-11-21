@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react';
 import {
   AI_WIRE_LIMITS,
+  workspacePassageUri,
   type AiChatRequest,
   type AiStatus,
   type AiWorkspacePassage,
@@ -36,17 +37,6 @@ export function workspaceCatalogId(workspaceId: string): string {
     hash = (hash * 0x100000001b3n) & 0xffffffffffffffffn;
   }
   return `ws-${hash.toString(16).padStart(16, '0')}`;
-}
-
-export function workspacePassageUri(
-  catalogId: string,
-  path: string,
-  lineStart: number,
-  lineEnd: number,
-): string {
-  const encoded = path.split('/').map(encodeURIComponent).join('/');
-  const lines = lineEnd > lineStart ? `${lineStart}-${lineEnd}` : `${lineStart}`;
-  return `knowledge://local/${catalogId}/${encoded}#line=${lines}`;
 }
 
 /** The note's title and the headings above the passage, as one label. */
@@ -106,14 +96,34 @@ export async function findWorkspacePassages(
     if (passages.length >= AI_WIRE_LIMITS.workspacePassages) break;
     const passageText = hit.text.slice(0, AI_WIRE_LIMITS.workspacePassageCharacters);
     if (characters + passageText.length > AI_WIRE_LIMITS.workspacePassagesCharacters) continue;
+    // A note whose path the citation grammar cannot name is not offered.
+    const uri = workspacePassageUri(catalogId, hit.path, hit.lineStart, hit.lineEnd);
+    if (!uri) continue;
     passages.push({
-      uri: workspacePassageUri(catalogId, hit.path, hit.lineStart, hit.lineEnd),
+      uri,
       title: passageTitle(hit.title || hit.path, hit.headingPath),
       text: passageText,
     });
     characters += passageText.length;
   }
   return passages;
+}
+
+/**
+ * Words from a passage that Find can land on in its note: its first line, cut
+ * at a word boundary. The passage text is the index's search text, which is
+ * the text a reader sees, so it matches the rendered note.
+ */
+export function findTextForPassage(text: string): string {
+  const line =
+    text
+      .split('\n')
+      .find((entry) => entry.trim())
+      ?.trim() ?? '';
+  if (line.length <= 60) return line;
+  const cut = line.slice(0, 60);
+  const space = cut.lastIndexOf(' ');
+  return space > 20 ? cut.slice(0, space) : cut;
 }
 
 type ChatApi = Pick<DocBlocksHostAiAPI, 'chat'>;

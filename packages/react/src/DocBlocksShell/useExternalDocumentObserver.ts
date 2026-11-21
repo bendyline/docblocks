@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { DocumentSession } from '@bendyline/docblocks/document';
 import {
   decodeUtf8Text,
@@ -75,7 +75,8 @@ export interface ExternalDocumentObserverOptions {
  * Why the file is being looked at.
  * - `reported`: something said it changed (a watch event, a known rewrite).
  * - `revalidation`: the app came back; read it in full, quietly.
- * - `heartbeat`: a periodic check; read only when the version moved.
+ * - `heartbeat`: a periodic check, or an unspecific report that storage
+ *   changed somewhere; read only when the version moved.
  */
 type ObservationKind = 'reported' | 'revalidation' | 'heartbeat';
 
@@ -97,8 +98,15 @@ function strongerObservation(a: ObservationKind, b: ObservationKind): Observatio
  * spell), and an optional heartbeat for storage that cannot watch. The session
  * decides what an observed change means: a clean buffer adopts it, unsaved
  * edits become a conflict.
+ *
+ * Returns a way to look at the file now. It resolves once the session has
+ * been shown what storage holds (or at once when nothing is being observed),
+ * and never rejects: a caller about to act on "the session is up to date"
+ * asks the session again afterwards whatever happened.
  */
-export function useExternalDocumentObserver(options: ExternalDocumentObserverOptions): void {
+export function useExternalDocumentObserver(
+  options: ExternalDocumentObserverOptions,
+): () => Promise<void> {
   const { provider, path, targetKey, session, refreshToken, heartbeatMs } = options;
   // The session ignores a sequence it has already seen and only starts over
   // when the document changes, so this counter must outlive every re-run of
@@ -106,6 +114,7 @@ export function useExternalDocumentObserver(options: ExternalDocumentObserverOpt
   const sequenceRef = useRef(0);
   const onCheckFailedRef = useRef(options.onCheckFailed);
   onCheckFailedRef.current = options.onCheckFailed;
+  const checkNowRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     if (!provider || !path || !targetKey) return;
@@ -113,7 +122,8 @@ export function useExternalDocumentObserver(options: ExternalDocumentObserverOpt
     if (!providerV2) return;
     const canonicalPath = parseWorkspacePath(path);
     let disposed = false;
-    let reading = false;
+    // The read loop in flight, if any; it also covers whatever is `pending`.
+    let reading: Promise<void> | null = null;
     let pending: ObservationKind | null = null;
     // Version of the content last handed to the session; undefined until the first read.
     let observedVersion: string | null | undefined;
@@ -130,38 +140,46 @@ export function useExternalDocumentObserver(options: ExternalDocumentObserverOpt
       if (disposed) return;
       observedVersion = external.version;
       // The session decides whether this is a clean update or a conflict.
+      const modifiedAt = external.lastModified ? Date.parse(external.lastModified) : Number.NaN;
       session.observeExternal({
         targetKey,
         sequence,
         content: external.content,
         version: external.version,
+        // When it was written tells the session which other versions can have been built on it.
+        ...(Number.isFinite(modifiedAt) ? { origin: { modifiedAt } } : {}),
       });
     };
 
-    const observe = async (kind: ObservationKind): Promise<void> => {
+    const observe = (kind: ObservationKind): Promise<void> => {
       if (reading) {
         // One follow-up read covers everything that arrived meanwhile.
         pending = pending === null ? kind : strongerObservation(pending, kind);
-        return;
+        return reading;
       }
-      reading = true;
-      let current = kind;
-      try {
-        for (;;) {
-          try {
-            await observeOnce(current);
-          } catch {
-            // Precautionary checks stay quiet: being offline is not news.
-            if (!disposed && current === 'reported') onCheckFailedRef.current?.();
+      const run = async (): Promise<void> => {
+        let current = kind;
+        try {
+          for (;;) {
+            try {
+              await observeOnce(current);
+            } catch {
+              // Precautionary checks stay quiet: being offline is not news.
+              if (!disposed && current === 'reported') onCheckFailedRef.current?.();
+            }
+            if (disposed || pending === null) return;
+            current = pending;
+            pending = null;
           }
-          if (disposed || pending === null) return;
-          current = pending;
-          pending = null;
+        } finally {
+          reading = null;
         }
-      } finally {
-        reading = false;
-      }
+      };
+      reading = run();
+      return reading;
     };
+    const checkNow = () => observe('revalidation');
+    checkNowRef.current = checkNow;
 
     const watching = providerV2.capabilities.watch;
     const subscription = watching
@@ -186,7 +204,11 @@ export function useExternalDocumentObserver(options: ExternalDocumentObserverOpt
       : null;
     void subscription?.ready.catch(() => undefined);
 
-    const stopSignal = subscribeRevalidationSignal(() => void observe('revalidation'));
+    // Coming back reads the file in full. A storage report arrives often,
+    // this app's own saves included, so it asks for the version first.
+    const stopSignal = subscribeRevalidationSignal(
+      (reason) => void observe(reason === 'storage' ? 'heartbeat' : 'revalidation'),
+    );
     const heartbeat =
       !watching && heartbeatMs
         ? setInterval(() => {
@@ -197,9 +219,12 @@ export function useExternalDocumentObserver(options: ExternalDocumentObserverOpt
 
     return () => {
       disposed = true;
+      if (checkNowRef.current === checkNow) checkNowRef.current = null;
       stopSignal();
       if (heartbeat !== null) clearInterval(heartbeat);
       void subscription?.dispose();
     };
   }, [provider, path, targetKey, session, refreshToken, heartbeatMs]);
+
+  return useCallback(() => checkNowRef.current?.() ?? Promise.resolve(), []);
 }

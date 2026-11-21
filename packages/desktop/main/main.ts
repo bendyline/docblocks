@@ -15,6 +15,7 @@ import {
   dialog,
   Menu,
   net,
+  powerMonitor,
   protocol,
   screen,
   session,
@@ -29,6 +30,8 @@ import { isTrustedRendererUrl, parseExternalHttpUrl } from '@bendyline/docblocks
 
 import { registerFsIpc } from './ipc-fs.js';
 import { registerFsV2Ipc } from './ipc-fs-v2.js';
+import { FileSystemV2IpcService } from './filesystem-v2-ipc-service.js';
+import { createCloudConflicts } from './cloud-conflicts.js';
 import { registerExternalIpc } from './ipc-external.js';
 import { ensureDevelopmentWorkspace, registerWorkspaceIpc } from './ipc-workspaces.js';
 import { registerShellIpc } from './ipc-shell.js';
@@ -683,7 +686,38 @@ async function bootstrap(): Promise<void> {
   }
 
   registerFsIpc();
-  registerFsV2Ipc();
+  // macOS only: versions iCloud set aside when two devices saved a document are
+  // collected into its sidecar. Null on other platforms and unstaged checkouts.
+  const cloudConflicts = createCloudConflicts({
+    platform: process.platform,
+    packaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+    systemVersion: process.getSystemVersion(),
+  });
+  registerFsV2Ipc(new FileSystemV2IpcService(undefined, cloudConflicts?.observer));
+  // A computer that slept, or sat locked, missed whatever a sync client did
+  // meanwhile, and a watcher does not replay it. Tell every window to look
+  // again at what it shows, as a phone does when its app returns.
+  const announceResume = () => {
+    cloudConflicts?.refresh();
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('lifecycle:resume');
+    }
+  };
+  powerMonitor.on('resume', announceResume);
+  powerMonitor.on('unlock-screen', announceResume);
+  if (cloudConflicts) {
+    app.on('browser-window-focus', () => cloudConflicts.refresh());
+    const cloudTimer = setInterval(() => {
+      if (BrowserWindow.getFocusedWindow()) cloudConflicts.refresh();
+    }, 60_000);
+    cloudTimer.unref();
+    app.on('will-quit', () => {
+      clearInterval(cloudTimer);
+      cloudConflicts.dispose();
+    });
+  }
   registerExternalIpc();
   registerWorkspaceIpc();
   registerShellIpc();

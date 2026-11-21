@@ -208,10 +208,25 @@ describe('Gezel knowledge reported to the renderer', () => {
       ],
       // Every passage the model saw, for checking its output against.
       evidence: [
-        { title: 'Science', catalogId: 'science', text: 'A cited fact.' },
-        { title: 'Science', catalogId: 'science', text: 'More.' },
-        { title: 'Physics', catalogId: 'science', text: 'A cited fact.' },
-        { title: 'Statute', catalogId: 'law', text: 'A cited fact.' },
+        { title: 'Science', catalogId: 'science', text: 'A cited fact.', uri: passage.uri },
+        {
+          title: 'Science',
+          catalogId: 'science',
+          text: 'More.',
+          uri: 'knowledge://publisher/science/article#2',
+        },
+        {
+          title: 'Physics',
+          catalogId: 'science',
+          text: 'A cited fact.',
+          uri: 'knowledge://publisher/physics/a',
+        },
+        {
+          title: 'Statute',
+          catalogId: 'law',
+          text: 'A cited fact.',
+          uri: 'knowledge://publisher/law/a',
+        },
       ],
     });
   });
@@ -240,7 +255,9 @@ describe('Gezel knowledge reported to the renderer', () => {
     expect(result.knowledge).to.deep.equal({
       outcome: 'used',
       sources: [{ catalogId: 'science', name: 'science', titles: ['Science'] }],
-      evidence: [{ title: 'Science', catalogId: 'science', text: 'A cited fact.' }],
+      evidence: [
+        { title: 'Science', catalogId: 'science', text: 'A cited fact.', uri: passage.uri },
+      ],
     });
     // Without state, "nothing matched" cannot be told from "nothing enabled".
     const none = await withGezelKnowledge(
@@ -438,8 +455,13 @@ describe('Gezel knowledge for cited drafts', () => {
     // The model was asked to cite evidence[0] as [1].
     expect(cited.knowledge).to.deep.include({
       evidence: [
-        { title: 'Science', catalogId: 'science', text: 'A cited fact.' },
-        { title: 'B', catalogId: 'science', text: 'A cited fact.' },
+        { title: 'Science', catalogId: 'science', text: 'A cited fact.', uri: passage.uri },
+        {
+          title: 'B',
+          catalogId: 'science',
+          text: 'A cited fact.',
+          uri: 'knowledge://publisher/science/b',
+        },
       ],
     });
     const plain = await withGezelKnowledge(app(two), messages, new AbortController().signal);

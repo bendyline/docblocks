@@ -29,6 +29,7 @@ import {
   appxManifestViolations,
   installerSignatureViolations,
   masAppEntitlementViolations,
+  MAS_CLOUD_HELPER,
   masChildEntitlementViolations,
   masHelperViolations,
   masInfoViolations,
@@ -262,6 +263,15 @@ async function checkMas(buildNumber: string, artifactsDir: string): Promise<void
       }),
     );
     report('Contents/Helpers', masHelperViolations(entries));
+    // The Gezel engines are verified with their payload below; the iCloud
+    // helper is signed by this build and must inherit the app's sandbox.
+    if (entries.some((entry) => entry.type === 'file' && entry.name === MAS_CLOUD_HELPER))
+      report(
+        MAS_CLOUD_HELPER,
+        masChildEntitlementViolations(
+          await entitlementsOf(path.join(helpersDir, MAS_CLOUD_HELPER), work),
+        ),
+      );
 
     // Where engine hashes, signatures and sandbox inheritance are verified. The
     // shipped app checks only that its engines are present: Apple re-signs them.

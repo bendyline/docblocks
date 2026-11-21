@@ -39,6 +39,7 @@ const stripBrokenSourcemapPragmas = (): Plugin => ({
 });
 
 const STATIC_DIRECTORY_INDEX_ROUTES = new Set([
+  '/apps/',
   '/cli/',
   '/web/',
   '/desktop/',

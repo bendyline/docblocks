@@ -74,8 +74,12 @@ export interface HostCapabilities {
   /** The host can list and download provider-catalog models. */
   readonly aiModelManagement: boolean;
   readonly aiKnowledgeManagement: boolean;
-  /** The host can bind a workspace folder to a provider-side index. */
+  /**
+   * @deprecated Workspace passages come from the renderer's index (see
+   * `semanticEmbeddings`); always false on current hosts.
+   */
   readonly aiWorkspaceIndex: boolean;
+  /** @deprecated See `aiWorkspaceIndex`; always false on current hosts. */
   readonly aiSearch: boolean;
   readonly aiImages: boolean;
   /** @deprecated Speech moved to `host.speech`; use `speechInput`. Always false on current hosts. */

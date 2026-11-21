@@ -262,6 +262,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
   expect(contract.methods.lifecycle).toEqual([
     'onCancelClose',
     'onPrepareClose',
+    'onResume',
     'requestWindowClose',
   ]);
   expect(contract.methods.menu).toEqual(['getTrayEnabled', 'setPinnedDocuments', 'setTrayEnabled']);

@@ -300,6 +300,7 @@ const browser = await chromium.launch();
 try {
   if (phases.includes('pages')) {
     const routes = [
+      '/apps/',
       '/web/',
       '/desktop/',
       '/vscode/',

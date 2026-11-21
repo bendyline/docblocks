@@ -358,6 +358,50 @@ describe('App Settings sections', () => {
     expect(legends(visiblePanels()[0])).to.deep.equal(['Storage', 'Version history']);
   });
 
+  it('lets a workspace keep no index, and clears a kept one', async () => {
+    const keeps: boolean[] = [];
+    let cleared = 0;
+    const searchIndex = {
+      keep: true,
+      onKeepChange: (keep: boolean) => keeps.push(keep),
+      onClear: () => (cleared += 1),
+      persistence: 'persistent' as const,
+    };
+    await renderDialog({ section: 'search', searchIndex });
+    expect(tabs().map((tab) => tab.textContent)).to.deep.equal(['Appearance', 'Search']);
+    let panel = visiblePanels()[0] as HTMLElement;
+    expect(legends(panel)).to.deep.equal(['Search index']);
+    const keep = panel.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    expect(keep?.checked).to.equal(true);
+    await act(async () => keep?.click());
+    expect(keeps).to.deep.equal([false]);
+    const clear = [...panel.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Clear search index',
+    );
+    await act(async () => clear?.click());
+    expect(cleared).to.equal(1);
+
+    await renderDialog({ section: 'search', searchIndex: { ...searchIndex, keep: false } });
+    panel = visiblePanels()[0] as HTMLElement;
+    expect(panel.querySelector('[data-testid="search-index-status"]')?.textContent).to.contain(
+      'nothing is kept on this device',
+    );
+    expect(
+      [...panel.querySelectorAll('button')].some(
+        (button) => button.textContent === 'Clear search index',
+      ),
+    ).to.equal(false);
+
+    // A second window on the workspace indexes in memory; say why.
+    await renderDialog({
+      section: 'search',
+      searchIndex: { ...searchIndex, persistence: 'memory' },
+    });
+    expect(
+      visiblePanels()[0]?.querySelector('[data-testid="search-index-status"]')?.textContent,
+    ).to.contain('another window');
+  });
+
   it('offers Search with the switch and coverage on a host with an embedding model', async () => {
     const changes: boolean[] = [];
     await renderDialog({

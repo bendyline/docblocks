@@ -31,6 +31,15 @@ export interface HostFileSystemReadTransfer {
   readonly entry: FileSystemFileSnapshot;
 }
 
+/**
+ * Children one directory listing may carry. Larger than the generic array
+ * limit: a flat notes folder can hold tens of thousands of notes, and each
+ * entry is a few hundred bytes. Recursive listings page instead (below).
+ */
+export const FILE_SYSTEM_DIRECTORY_LIMITS = Object.freeze({
+  entries: 100_000,
+});
+
 /** Recursive metadata listings cross the bridge in pages, each under the array limit. */
 export const FILE_SYSTEM_ENUMERATION_LIMITS = Object.freeze({
   /** Entries plus unreadable folders in one page. */

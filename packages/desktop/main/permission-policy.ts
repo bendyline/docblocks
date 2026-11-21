@@ -23,21 +23,26 @@ type PermissionCheckName = Parameters<PermissionCheckHandler>[1];
  * to page script, so without it that menu item has no way to paste. As with
  * every entry, only the trusted renderer's main frame is granted it, never an
  * embedded player.
+ *
+ * `persistent-storage` keeps the workspace index's origin-private store out of
+ * Chromium's eviction under disk pressure (`navigator.storage.persist()`).
+ * Electron asks for it by that name although its types omit it; denied, the
+ * index is best-effort storage and rebuilds after an eviction.
  */
-const ALLOWED_PERMISSION_REQUESTS = new Set<PermissionRequestName>([
+const ALLOWED_PERMISSION_REQUESTS: ReadonlySet<string> = new Set<
+  PermissionRequestName | 'persistent-storage'
+>([
   'clipboard-read',
   'clipboard-sanitized-write',
   'display-capture',
   'fullscreen',
   'media',
+  'persistent-storage',
 ]);
 
-const ALLOWED_PERMISSION_CHECKS = new Set<PermissionCheckName>([
-  'clipboard-read',
-  'clipboard-sanitized-write',
-  'fullscreen',
-  'media',
-]);
+const ALLOWED_PERMISSION_CHECKS: ReadonlySet<string> = new Set<
+  PermissionCheckName | 'persistent-storage'
+>(['clipboard-read', 'clipboard-sanitized-write', 'fullscreen', 'media', 'persistent-storage']);
 
 /**
  * The macOS TCC media types DocBlocks can ask for. `screen` is deliberately
@@ -147,9 +152,14 @@ export function allowsPermissionCheck(
   details: PermissionCheckHandlerHandlerDetails,
   developmentOrigin?: string,
 ): boolean {
+  // An embedded frame reports its embedder. Some checks (`persistent-storage`)
+  // name the main frame's own origin there; that frame embeds nothing.
+  const embedded =
+    details.embeddingOrigin !== undefined &&
+    !(details.isMainFrame === true && hasTrustedUrl(details.embeddingOrigin, developmentOrigin));
   if (
     !ALLOWED_PERMISSION_CHECKS.has(permission) ||
-    details.embeddingOrigin !== undefined ||
+    embedded ||
     !isTrustedMainFrame(
       owner,
       sender,

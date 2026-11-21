@@ -6771,13 +6771,18 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-document-conflict {
   position: fixed;
-  top: 16px;
+  top: calc(16px + var(--db-safe-top, 0px));
   left: 50%;
   z-index: 210;
   display: flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 8px 16px;
   align-items: center;
-  max-width: min(720px, calc(100vw - 32px));
+  box-sizing: border-box;
+  /* Sized by its content, not by the half of the screen right of its anchor:
+     on a phone that half, less the buttons, left the sentence one word wide. */
+  width: max-content;
+  max-width: min(720px, calc(100vw - 32px - var(--db-safe-left, 0px) - var(--db-safe-right, 0px)));
   padding: 10px 12px;
   color: var(--db-text);
   background: var(--db-bg-elevated, var(--db-bg));
@@ -6789,6 +6794,8 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-document-conflict-text {
   display: flex;
+  /* On a phone the sentence takes the first line and the buttons the next. */
+  flex: 1 1 260px;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
@@ -6803,9 +6810,11 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   display: flex;
   flex: none;
   gap: 8px;
+  margin-left: auto;
 }
 
 .db-document-conflict-actions button {
+  min-height: var(--db-target-min, 0);
   padding: 5px 9px;
   color: var(--db-text);
   cursor: pointer;
@@ -6852,6 +6861,161 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 .db-document-conflict-notice button:focus-visible {
   outline: 2px solid var(--db-focus, var(--db-accent));
   outline-offset: 2px;
+}
+
+/* Other versions are waiting but nothing is blocked: the same place as the
+   conflict notice (the two never show together), without its warning edge. */
+.db-document-versions-notice {
+  border-color: var(--db-border-strong, var(--db-border));
+}
+
+/* What the app just did to the open document by itself. Sits above the save
+   toasts' line so an Undo is never covered by "Saved". */
+.db-document-session-notice {
+  position: fixed;
+  left: 50%;
+  bottom: calc(84px + var(--db-safe-bottom, 0px) + var(--db-keyboard-inset, 0px));
+  z-index: 210;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: center;
+  /* Sized by its content, not by the half of the screen right of its anchor. */
+  width: max-content;
+  max-width: min(640px, calc(100vw - 32px));
+  padding: 8px 8px 8px 14px;
+  font-size: 13px;
+  color: var(--db-text);
+  background: var(--db-bg-elevated, var(--db-bg));
+  border: 1px solid var(--db-border-strong, var(--db-border));
+  border-radius: 8px;
+  box-shadow: 0 6px 20px var(--db-shadow);
+  transform: translateX(-50%);
+}
+
+.db-document-session-notice span {
+  /* On a phone the sentence takes the first line and the buttons the next,
+     instead of the buttons squeezing it into a column one word wide. */
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.db-document-session-notice-actions {
+  display: flex;
+  flex: none;
+  gap: 10px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.db-document-session-notice button {
+  flex: none;
+  min-height: var(--db-target-min, 32px);
+  padding: 4px 10px;
+  color: var(--db-text);
+  cursor: pointer;
+  background: var(--db-bg);
+  border: 1px solid var(--db-border);
+  border-radius: 5px;
+}
+
+.db-document-session-notice button.db-document-session-notice-close {
+  color: var(--db-text-muted);
+  background: transparent;
+  border-color: transparent;
+}
+
+.db-document-session-notice button:focus-visible {
+  outline: 2px solid var(--db-focus, var(--db-accent));
+  outline-offset: 2px;
+}
+
+.db-versions-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.db-versions-picker select {
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--db-target-min, 32px);
+  padding: 0 8px;
+  color: var(--db-text);
+  background: var(--db-bg);
+  border: 1px solid var(--db-border-strong);
+  border-radius: 5px;
+  font: inherit;
+}
+
+.db-versions-picker select:focus-visible {
+  outline: 2px solid var(--db-accent);
+  outline-offset: 2px;
+}
+
+.db-versions-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* A version that could not be opened yet: say so in the app's own type, with a way to retry. */
+.db-versions-unread {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+  font: inherit;
+  font-size: 13px;
+}
+
+/* Documents elsewhere in the workspace with versions waiting: above the tree,
+   where a collapsed folder cannot hide it. */
+.db-tree-versions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 4px 8px;
+  padding: 6px 8px 6px 10px;
+  font-size: 12px;
+  color: var(--db-text);
+  background: var(--db-bg-elevated, var(--db-bg));
+  border: 1px solid var(--db-warning, #b7791f);
+  border-radius: 6px;
+}
+
+.db-tree-versions span {
+  min-width: 0;
+}
+
+.db-tree-versions button {
+  flex: none;
+  min-height: var(--db-target-min, 28px);
+  padding: 2px 8px;
+  color: var(--db-text);
+  cursor: pointer;
+  background: var(--db-bg);
+  border: 1px solid var(--db-border);
+  border-radius: 5px;
+  font: inherit;
+}
+
+.db-tree-versions button:focus-visible {
+  outline: 2px solid var(--db-focus, var(--db-accent));
+  outline-offset: 2px;
+}
+
+/* A file row whose document has other versions waiting for review. */
+.db-git-badge--versions {
+  min-width: 14px;
+  padding: 0 4px;
+  color: var(--db-bg);
+  text-align: center;
+  background: var(--db-warning, #b7791f);
+  border-radius: 8px;
 }
 
 /* Three panes need more than the standard full dialog's 1100px. */
@@ -6984,6 +7148,27 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 [data-db-width='compact'] .db-conflict-columns {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* The grid is hidden, not unmounted, while combining: its previews keep
+   their scroll position for the way back. */
+.db-conflict-columns[hidden] {
+  display: none;
+}
+
+/* Combining by hand takes the whole dialog: two source columns need the room. */
+.db-conflict-combine {
+  flex: 1;
+  min-height: 300px;
+}
+
+.db-conflict-combine .db-git-diff-host {
+  flex: 1;
+  min-height: 240px;
+}
+
+.db-conflict-combine > button {
+  align-self: flex-start;
 }
 
 /* Browser PWA update notice. It is docked over the right side of Squisq's
@@ -7518,6 +7703,28 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   font-weight: 600;
 }
 
+/* A cited workspace note: its title opens it where that is safe; its place follows. */
+.db-ai-knowledge .db-ai-knowledge-note {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--db-accent);
+  font: inherit;
+  text-align: start;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.db-ai-knowledge .db-ai-knowledge-note:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
+.db-ai-knowledge-where {
+  color: var(--db-text-muted);
+  overflow-wrap: anywhere;
+}
+
 /* Facts to check: details in AI output that no source shows. */
 .db-ai-facts > summary {
   border-color: var(--db-danger);
@@ -7629,6 +7836,175 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   width: 100%;
   min-width: 0;
   border-left: 0;
+}
+
+/* Ask your workspace: the conversation scrolls; the question field stays at the bottom. */
+.db-ai-review-panel.db-ai-ask-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.db-ai-ask-panel .db-ai-review-header {
+  align-items: center;
+}
+
+.db-ai-ask-panel .db-ai-review-header > div {
+  flex: 1 1 auto;
+}
+
+.db-ai-ask-notice {
+  margin: 12px 14px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: var(--db-bg-subtle);
+}
+
+.db-ai-ask-notice p {
+  margin: 0 0 8px;
+}
+
+.db-ai-ask-turns {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 14px 12px;
+}
+
+.db-ai-ask-empty {
+  margin: 12px 0;
+  color: var(--db-text-muted);
+}
+
+.db-ai-ask-turn {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--db-border);
+}
+
+.db-ai-ask-turn:last-of-type {
+  border-bottom: 0;
+}
+
+.db-ai-ask-question {
+  margin: 0 0 8px;
+  color: var(--db-text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.db-ai-ask-answer {
+  color: var(--db-text);
+  overflow-wrap: anywhere;
+}
+
+.db-ai-ask-answer p,
+.db-ai-ask-answer ul,
+.db-ai-ask-answer ol {
+  margin: 0 0 8px;
+}
+
+.db-ai-ask-answer ul,
+.db-ai-ask-answer ol {
+  padding-left: 20px;
+}
+
+.db-ai-ask-answer h3 {
+  margin: 10px 0 6px;
+  font-size: 13px;
+}
+
+.db-ai-ask-answer code {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--db-bg-subtle);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+/* A citation: a small numbered chip; one naming a workspace note opens it. */
+.db-ai-ask-cites {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 2px;
+  vertical-align: super;
+}
+
+.db-ai-ask-panel .db-ai-ask-cite {
+  min-width: 18px;
+  min-height: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--db-accent);
+  border-radius: 9px;
+  background: var(--db-badge-bg);
+  color: var(--db-badge-text);
+  font: 600 10px/16px var(--db-ui-font);
+  text-align: center;
+}
+
+.db-ai-ask-panel button.db-ai-ask-cite:hover:not(:disabled) {
+  border-color: var(--db-accent-hover);
+  background: var(--db-badge-bg);
+  color: var(--db-badge-text-hover);
+}
+
+.db-ai-ask-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.db-ai-ask-actions .db-ai-note {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.db-ai-ask-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 14px 14px;
+  border-top: 1px solid var(--db-border);
+  background: var(--db-bg-raised);
+}
+
+.db-ai-ask-form textarea {
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: var(--db-target-min);
+  max-height: 160px;
+  padding: 8px 10px;
+  resize: vertical;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  outline: none;
+  background: var(--db-bg-subtle);
+  color: var(--db-text);
+  font: 400 var(--db-input-font-size) / 1.45 var(--db-ui-font);
+}
+
+.db-ai-ask-form textarea:focus-visible {
+  border-color: var(--db-accent);
+  box-shadow: 0 0 0 1px var(--db-accent);
+}
+
+.db-ai-ask-running {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.db-ai-ask-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--db-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .db-ai-review-header {

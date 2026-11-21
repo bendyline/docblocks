@@ -10,7 +10,7 @@ import {
   useExternalDocumentObserver,
   type ExternalDocumentObserverOptions,
 } from '../src/DocBlocksShell/useExternalDocumentObserver.js';
-import { advanceTime, renderHook, type HookHandle } from './helpers/renderHook.js';
+import { act, advanceTime, renderHook, type HookHandle } from './helpers/renderHook.js';
 
 const PATH = 'note.md';
 
@@ -72,7 +72,7 @@ function editScope(harness: Harness) {
 }
 
 describe('useExternalDocumentObserver', () => {
-  let mounted: HookHandle<ExternalDocumentObserverOptions, void> | null = null;
+  let mounted: HookHandle<ExternalDocumentObserverOptions, () => Promise<void>> | null = null;
   const mount = async (options: ExternalDocumentObserverOptions) => {
     mounted = await renderHook(useExternalDocumentObserver, options);
     return mounted;
@@ -229,6 +229,52 @@ describe('useExternalDocumentObserver', () => {
 
     expect(harness.session.getSnapshot().content).to.equal('two');
     expect(harness.session.getSnapshot().generation).to.be.greaterThan(before);
+  });
+
+  it('looks at the file on request, and answers once the session has seen it', async () => {
+    const harness = await createHarness();
+    const hook = await mount({
+      provider: harness.unwatched,
+      path: PATH,
+      targetKey: harness.targetKey,
+      session: harness.session,
+    });
+    await advanceTime(20);
+    await changeOutside(harness, 'two');
+    expect(harness.session.getSnapshot().content).to.equal('one');
+
+    await act(async () => {
+      await hook.result.current();
+    });
+    expect(harness.session.getSnapshot().content).to.equal('two');
+
+    // A request made while a read is under way waits for a read that covers it.
+    await changeOutside(harness, 'three');
+    await act(async () => {
+      const first = hook.result.current();
+      await changeOutside(harness, 'four');
+      await Promise.all([first, hook.result.current()]);
+    });
+    expect(harness.session.getSnapshot().content).to.equal('four');
+
+    // Storage that cannot be read is not a reason to leave the caller waiting.
+    harness.failReads(true);
+    await act(async () => {
+      await hook.result.current();
+    });
+    expect(harness.session.getSnapshot().content).to.equal('four');
+  });
+
+  it('answers a request at once when there is no document to look at', async () => {
+    const harness = await createHarness();
+    const hook = await mount({
+      provider: harness.unwatched,
+      path: null,
+      targetKey: harness.targetKey,
+      session: harness.session,
+    });
+    await hook.result.current();
+    expect(harness.reads()).to.equal(0);
   });
 
   it('observes nothing without a document', async () => {

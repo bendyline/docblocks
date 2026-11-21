@@ -531,6 +531,12 @@ let prepareCloseListener:
   | ((request: HostPrepareCloseRequest) => Promise<HostPrepareCloseResult>)
   | null = null;
 const cancelCloseListeners = new Set<(requestId: string) => void>();
+const resumeListeners = new Set<() => void>();
+
+// The computer woke or was unlocked: whatever a sync client did meanwhile was not watched.
+ipcRenderer.on('lifecycle:resume', () => {
+  for (const listener of [...resumeListeners]) listener();
+});
 
 ipcRenderer.on(
   'lifecycle:prepare-close',
@@ -577,6 +583,12 @@ const lifecycleApi: DocBlocksHostLifecycleAPI = {
   onCancelClose(listener) {
     cancelCloseListeners.add(listener);
     return () => cancelCloseListeners.delete(listener);
+  },
+  onResume(listener) {
+    resumeListeners.add(listener);
+    return () => {
+      resumeListeners.delete(listener);
+    };
   },
 };
 

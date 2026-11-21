@@ -758,6 +758,7 @@ async function crawlMarketingPages(browser: Browser): Promise<void> {
   currentPhase = 'marketing-desktop';
   say('Phase: marketing pages (desktop)');
   const routes: Array<{ slug: string; name: string }> = [
+    { slug: '/apps/', name: 'apps' },
     { slug: '/web/', name: 'web' },
     { slug: '/desktop/', name: 'desktop' },
     { slug: '/vscode/', name: 'vscode' },

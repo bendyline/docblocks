@@ -143,6 +143,36 @@ export {
 } from './move-entry.js';
 export { rewriteCompanionReferences } from './companion-references.js';
 export {
+  publishFileSystemChangeHint,
+  subscribeFileSystemChangeHints,
+  type FileSystemChangeHint,
+  type FileSystemChangeHintListener,
+} from './change-hints.js';
+export {
+  CONFLICT_COPIES_DIRECTORY_NAME,
+  CONFLICT_COPIES_OTHER_DIRECTORY_NAME,
+  PREMERGE_COPY_LIFETIME_MS,
+  PREMERGE_COPY_LIMIT,
+  conflictCopyHash,
+  conflictCopyScope,
+  formatConflictCopyName,
+  isConflictCopyPath,
+  isReviewableConflictCopy,
+  listConflictCopies,
+  parseConflictCopyName,
+  pruneConflictCopies,
+  readConflictCopy,
+  removeConflictCopy,
+  sanitizeConflictCopyLabel,
+  writeConflictCopy,
+  type ConflictCopy,
+  type ConflictCopyName,
+  type ConflictCopyOrigin,
+  type ConflictCopyScope,
+  type WriteConflictCopyOptions,
+  type WriteConflictCopyResult,
+} from './conflict-copies.js';
+export {
   FileSystemMoveRecoveryError,
   FileSystemPartialMoveError,
   isFileSystemMoveRecoveryError,

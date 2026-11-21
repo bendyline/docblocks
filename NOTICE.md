@@ -10,7 +10,7 @@ This file is the distribution-level entry point for third-party software used by
 | -------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------- |
 | DocBlocks Capacitor distribution       | [packages/mobile/THIRD_PARTY_NOTICES.txt](packages/mobile/THIRD_PARTY_NOTICES.txt)           | 222 locked components |
 | @bendyline/docblocks npm package       | [packages/core/THIRD_PARTY_NOTICES.txt](packages/core/THIRD_PARTY_NOTICES.txt)               | 113 locked components |
-| @bendyline/docblocks-react npm package | [packages/react/THIRD_PARTY_NOTICES.txt](packages/react/THIRD_PARTY_NOTICES.txt)             | 384 locked components |
+| @bendyline/docblocks-react npm package | [packages/react/THIRD_PARTY_NOTICES.txt](packages/react/THIRD_PARTY_NOTICES.txt)             | 393 locked components |
 | @bendyline/docblocks-cli npm package   | [packages/cli/THIRD_PARTY_NOTICES.txt](packages/cli/THIRD_PARTY_NOTICES.txt)                 | 353 locked components |
 | DocBlocks site distribution            | [packages/site/public/THIRD_PARTY_NOTICES.txt](packages/site/public/THIRD_PARTY_NOTICES.txt) | 213 locked components |
 | DocBlocks VS Code extension (VSIX)     | [packages/vscode/THIRD_PARTY_NOTICES.txt](packages/vscode/THIRD_PARTY_NOTICES.txt)           | 205 locked components |

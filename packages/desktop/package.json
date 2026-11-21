@@ -42,15 +42,16 @@
     "start": "node scripts/run-electron.cjs",
     "stage:gezel-native": "node scripts/stage-gezel-native.cjs",
     "stage:embedding-model": "node scripts/stage-embedding-model.cjs",
+    "stage:cloud-helper": "node scripts/stage-cloud-helper.cjs",
     "icons": "python3 scripts/generate-icons.py",
     "test:e2e": "npm run build && playwright test --config=e2e/playwright.config.ts",
     "test:e2e:packaged": "npm run dist:dir && npm run test:e2e:packaged:only",
     "test:e2e:packaged:only": "playwright test --config=e2e/playwright.packaged.config.ts"
   },
   "dependencies": {
-    "@bendyline/gezel-app-sdk": "1.2.3",
-    "@bendyline/gezel-inference": "1.1.3",
-    "@bendyline/gezel-knowledge": "1.2.11",
+    "@bendyline/gezel-app-sdk": "1.2.4",
+    "@bendyline/gezel-inference": "1.1.4",
+    "@bendyline/gezel-knowledge": "1.2.12",
     "@huggingface/transformers": "4.3.1",
     "builder-util-runtime": "9.7.0",
     "chokidar": "4.0.3",
@@ -61,7 +62,7 @@
   "devDependencies": {
     "@bendyline/docblocks": "2.8.5",
     "@bendyline/docblocks-react": "2.8.6",
-    "@bendyline/gezel": "1.3.3",
+    "@bendyline/gezel": "1.3.4",
     "@bendyline/squisq": "2.14.0",
     "@bendyline/squisq-editor-react": "2.14.0",
     "@bendyline/squisq-formats": "2.8.23",

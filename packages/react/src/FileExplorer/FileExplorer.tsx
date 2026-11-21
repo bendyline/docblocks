@@ -40,6 +40,10 @@ import { useGitContext } from '../Git/GitContext.js';
 import { IMPORT_ACCEPT } from '../DocBlocksShell/import-file-types.js';
 import { BADGE_GLYPHS, BADGE_LABELS, isFileDirty } from '../Git/git-status.js';
 import { PinnedDocuments } from './PinnedDocuments.js';
+import { displayFileName } from './file-names.js';
+import { useConflictCopyCounts } from './useConflictCopyCounts.js';
+import { useWorkspaceVersionsToReview } from './useWorkspaceVersionsToReview.js';
+import { describeVersionCount } from '../DocBlocksShell/document-versions.js';
 import type { PinnedDocumentListItem } from '../DocBlocksShell/pinned-documents.js';
 import { filterVisibleFileEntries } from './entry-visibility.js';
 import { sortFileEntries, type FileExplorerSortMode } from './entry-sort.js';
@@ -138,6 +142,12 @@ export interface FileExplorerProps {
   metadataRefreshKey?: string | number | null;
   /** Active document to select and reveal by expanding all ancestor folders. */
   activeFilePath?: string | null;
+  /**
+   * How many other versions of the active document wait for review, when the
+   * host is tracking that live. Takes over from the explorer's own count for
+   * that one row, which only updates when the folder listing does.
+   */
+  activeFileVersionCount?: number | null;
   /** Presentation order for files within each directory. */
   sortMode?: FileExplorerSortMode;
   /** Files left out of the tree (workspace paths, any case), e.g. generated catalog outputs. */
@@ -216,6 +226,7 @@ export function FileExplorer({
   loading = false,
   metadataRefreshKey,
   activeFilePath,
+  activeFileVersionCount = null,
   sortMode,
   hiddenPaths,
   onSortModeChange,
@@ -593,15 +604,70 @@ export function FileExplorer({
     [draggedEntry, handleMove],
   );
 
+  // Documents with other versions set aside in their sidecar, waiting for review.
+  const listings = useMemo(
+    () => [tree.entries, ...childEntries.values()],
+    [tree.entries, childEntries],
+  );
+  const versionCounts = useConflictCopyCounts(provider, listings);
+  const versionsWaiting = useCallback(
+    (entry: FileSystemEntry): number => {
+      if (entry.kind !== 'file') return 0;
+      const path = normalisePath(entry.path);
+      if (
+        activeFileVersionCount !== null &&
+        activeFilePath &&
+        normalisePath(activeFilePath) === path
+      ) {
+        return activeFileVersionCount;
+      }
+      return versionCounts.get(path.replace(/^\/+/, '')) ?? 0;
+    },
+    [activeFilePath, activeFileVersionCount, versionCounts],
+  );
+
+  // The same, for the whole workspace: documents in folders nobody has opened.
+  const versionsSignature = useMemo(
+    () => [...versionCounts].map(([path, count]) => `${path}:${count}`).join('|'),
+    [versionCounts],
+  );
+  const workspaceVersions = useWorkspaceVersionsToReview(
+    provider,
+    `${versionsSignature}#${activeFileVersionCount ?? ''}`,
+  );
+  // The open document announces its own; this is for the ones out of sight.
+  const versionsElsewhere = useMemo(() => {
+    const active = activeFilePath ? normalisePath(activeFilePath) : null;
+    return workspaceVersions.filter((item) => item.path !== active);
+  }, [activeFilePath, workspaceVersions]);
+  const openNextToReview = useCallback(() => {
+    const next = versionsElsewhere[0];
+    if (!next) return;
+    // Match the slash style of the paths this tree already holds.
+    const rooted = tree.entries.some((entry) => entry.path.startsWith('/'));
+    const path = rooted ? `/${next.path}` : next.path;
+    reveal(path, 'file');
+    onSelect?.(path, 'file');
+  }, [onSelect, reveal, tree.entries, versionsElsewhere]);
+
   const badgeFor = useCallback(
     (entry: FileSystemEntry): FileTreeNodeBadge | undefined => {
+      // Unreviewed versions outrank a git status: they hold text nobody has seen merged.
+      const waiting = versionsWaiting(entry);
+      if (waiting > 0) {
+        return {
+          kind: 'versions',
+          glyph: waiting > 9 ? '9+' : String(waiting),
+          label: describeVersionCount(waiting),
+        };
+      }
       if (!git?.repo) return undefined;
       const key = entry.path.startsWith('/') ? entry.path : `/${entry.path}`;
       const kind = git.badges.get(key);
       if (!kind) return undefined;
       return { kind, glyph: BADGE_GLYPHS[kind], label: BADGE_LABELS[kind] };
     },
-    [git],
+    [git, versionsWaiting],
   );
 
   const gitActionsFor = useCallback(
@@ -716,6 +782,11 @@ export function FileExplorer({
               normalisePath(tree.selectedPath) === normalisePath(entry.path)
             }
             badge={badgeFor(entry)}
+            deleteWarning={
+              versionsWaiting(entry) > 0
+                ? `Its ${describeVersionCount(versionsWaiting(entry))} will be deleted too.`
+                : undefined
+            }
             gitActions={gitActionsFor(entry)}
             actions={actionsForEntry?.(entry)}
             onToggle={tree.toggleExpand}
@@ -767,6 +838,7 @@ export function FileExplorer({
       childEntries,
       childIssues,
       badgeFor,
+      versionsWaiting,
       gitActionsFor,
       actionsForEntry,
       draggedEntry,
@@ -1077,6 +1149,19 @@ export function FileExplorer({
             onClick={() => void tree.retryDirectory('')}
           >
             Retry
+          </button>
+        </div>
+      )}
+
+      {versionsElsewhere.length > 0 && (
+        <div className="db-tree-versions" role="status">
+          <span>
+            {versionsElsewhere.length === 1
+              ? `${displayFileName(versionsElsewhere[0]!.path.split('/').pop() ?? '')} has ${describeVersionCount(versionsElsewhere[0]!.count)}`
+              : `${versionsElsewhere.length.toLocaleString()} documents have other versions to review`}
+          </span>
+          <button type="button" onClick={openNextToReview}>
+            {versionsElsewhere.length === 1 ? 'Open' : 'Open next'}
           </button>
         </div>
       )}

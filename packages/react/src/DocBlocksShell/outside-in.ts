@@ -1128,8 +1128,11 @@ export function createOutsideInDocumentTarget(
 ): DocumentCommitTarget {
   const sourceTarget = createFileSystemDocumentTarget(provider, layout.markdownPath);
   let partialSource: { baseline: string | null; content: string } | undefined;
+  const park = sourceTarget.park;
   return {
     key: `${provider.id}:outside-in:${parseWorkspacePath(layout.targetPath)}`,
+    // Text set aside is a copy of the Markdown source, kept in this page's sidecar.
+    ...(park ? { park: (request) => park(request) } : {}),
     async commit(request) {
       if (!(await isOutsideInMarkdownEditingEnabled(request.content))) {
         throw new Error(

@@ -282,6 +282,11 @@ export interface AiChatEvidence {
   readonly title: string;
   readonly catalogId: string;
   readonly text: string;
+  /**
+   * The passage's `knowledge://` citation, when the provider reported it. A
+   * workspace passage's (`knowledge://local/…`) names its note and lines.
+   */
+  readonly uri?: string;
 }
 
 /** One knowledge catalog that contributed reference passages to a request. */
@@ -470,10 +475,15 @@ export interface DocBlocksHostAiAPI {
    */
   chat(request: AiChatRequest, onEvent: (event: AiChatEvent) => void): AiChatHandle;
 
+  /**
+   * @deprecated The renderer's workspace index finds passages itself and sends
+   * them as {@link AiChatRequest.workspacePassages}; no host implements this.
+   */
   ensureWorkspace?(
     workspaceId: string,
     onProgress?: (progress: AiProgress) => void,
   ): AiEnsureWorkspaceHandle;
+  /** @deprecated See {@link DocBlocksHostAiAPI.ensureWorkspace}; no host implements this. */
   search?(workspaceId: string, query: AiSearchQuery): Promise<AiResult<AiSearchResult>>;
   /** @deprecated Speech lives on `DocBlocksHostAPI.speech`; no host implements this. */
   transcribe?(request: AiTranscribeRequest): Promise<AiResult<AiTranscript>>;

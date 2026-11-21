@@ -1,16 +1,17 @@
 import { expect } from 'chai';
 import {
   parseAiWorkspacePassages,
+  workspacePassageUri,
   type AiChatEvent,
   type AiChatRequest,
   type DocBlocksHostAiAPI,
 } from '@bendyline/docblocks/host';
 import type { WorkspaceIndex, WorkspacePassageHit } from '@bendyline/docblocks/workspace-index';
 import {
+  findTextForPassage,
   findWorkspacePassages,
   withWorkspaceGrounding,
   workspaceCatalogId,
-  workspacePassageUri,
 } from '../src/Ai/workspace-grounding.js';
 
 const hit = (n: number, overrides: Partial<WorkspacePassageHit> = {}): WorkspacePassageHit => ({
@@ -69,6 +70,23 @@ describe('workspace grounding', () => {
     expect((calls[0] as { options: { text: boolean; exclude: Set<string> } }).options).to.include({
       text: true,
     });
+  });
+
+  it('leaves out a note whose path the citation grammar cannot name', async () => {
+    const long = `${'deep/'.repeat(60)}note.md`;
+    const passages = await findWorkspacePassages(
+      fakeIndex([hit(1, { path: long }), hit(2)]).index,
+      'w1',
+      'q',
+    );
+    expect(passages.map((passage) => passage.title)).to.deep.equal(['Note 2 › Section']);
+  });
+
+  it('lands Find on a passage by its first line, cut at a word', () => {
+    expect(findTextForPassage('\n  Pests  \nAphids return.')).to.equal('Pests');
+    expect(
+      findTextForPassage('Aphids cluster on new growth every May, and ladybirds follow them soon.'),
+    ).to.equal('Aphids cluster on new growth every May, and ladybirds');
   });
 
   it('caps passages by count and characters', async () => {

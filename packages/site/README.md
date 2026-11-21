@@ -36,6 +36,42 @@ custom 404, canonical metadata, social metadata, and structured data are shipped
 build. The service-worker navigation fallback is allowlisted to `/` so it cannot replace those
 static responses with the editor shell.
 
+## Apps page and store listings
+
+`/apps/` is the page that says where DocBlocks runs, what each app costs, and how to get it. It
+replaced Desktop in the primary navigation; `/desktop/` is still the direct-download page (and the
+Mac App Store listing's marketing URL), reached from `/apps/` and from every page's footer. The
+store listings tell people the desktop apps are free at docblocks.com, so never remove that link.
+
+The static pages allow no scripts, so a store going live is a markup change. Every listing that is
+not live yet is a `.store-pending` plate with its live badge in a comment beside it.
+`grep -rn "store:" packages/site/public` finds every place.
+
+| Store                    | Marker                  | State   | Link                                                                    |
+| ------------------------ | ----------------------- | ------- | ----------------------------------------------------------------------- |
+| App Store (iPhone, iPad) | none                    | live    | `https://apps.apple.com/us/app/docblocks-markdown-editor/id6792768923`  |
+| Google Play              | none                    | live    | `https://play.google.com/store/apps/details?id=com.bendyline.docblocks` |
+| Mac App Store            | `store:mac-app-store`   | pending | the App Store link above (one listing, universal purchase)              |
+| Microsoft Store          | `store:microsoft-store` | pending | `https://apps.microsoft.com/detail/<Store ID>`                          |
+
+### When a store approves DocBlocks
+
+1. In `public/apps/index.html` and `public/desktop/index.html`, delete that store's
+   `pending` comment and plate, and uncomment the `live` badge below it. For the Microsoft Store,
+   replace `STORE_ID` with the product's Store ID from Partner Center first.
+2. Reword the sentences that say "coming to": the note under the computer cards on `/apps/`
+   and the store panel on `/desktop/`. For the Mac, also add
+   "One purchase covers iPhone, iPad, and Mac." to the iPhone and iPad card. Name the store in the
+   trademark line at the foot of `/apps/`.
+3. Add the store's offer to the `offers` list in `index.html`'s structured data.
+4. Make the same change on bendyline.com (`index.html` there carries the same markers).
+5. Run `npm test`. `seo.test.ts` fails if a store is both pending and live, or if `STORE_ID` is
+   still in the page.
+
+The four badges in `public/marketing/stores/` are the stores' own artwork. Size them only through
+`.store-badge img`; never recolor or crop them. The phone screenshots on `/apps/` are the App Store
+captures from the store kit, scaled to 640px wide.
+
 ## PWA / offline
 
 The site ships as an installable Progressive Web App (`vite-plugin-pwa`, configured in `vite.config.ts`):

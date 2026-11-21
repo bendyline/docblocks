@@ -39,6 +39,46 @@ describe('FileSystemV2IpcService transport', () => {
     await fs.rm(rootPath, { recursive: true, force: true });
   });
 
+  it('tells its observer which folders are open and which files were read or changed', async () => {
+    const seen: string[] = [];
+    await fs.writeFile(path.join(rootPath, 'note.md'), 'one');
+    const observed = new FileSystemV2IpcService(undefined, {
+      opened: (root) => seen.push(`opened ${path.basename(root)}`),
+      closed: (root) => seen.push(`closed ${path.basename(root)}`),
+      touched: (root, item) => seen.push(`touched ${item}`),
+    });
+    const name = path.basename(rootPath);
+    try {
+      expect((await observed.open('owner-a', request, rootPath)).ok).to.equal(true);
+      // Opening again reuses the provider: the folder is still open once.
+      expect((await observed.open('owner-a', request, rootPath)).ok).to.equal(true);
+      await observed.readFile('owner-a', request.instanceId, parseWorkspacePath('note.md'));
+      await observed.readFile('owner-a', request.instanceId, parseWorkspacePath('missing.md'));
+      await observed.stat('owner-a', request.instanceId, parseWorkspacePath('note.md'));
+      expect(seen).to.deep.equal([`opened ${name}`, 'touched note.md']);
+
+      const messages: HostFileSystemV2WatchMessage[] = [];
+      const watching = await observed.watchSubscribe(
+        'owner-a',
+        request.instanceId,
+        'watch-1',
+        (m) => messages.push(m),
+      );
+      expect(watching.ok).to.equal(true);
+      await fs.writeFile(path.join(rootPath, 'outside.md'), 'written by another program');
+      for (let attempt = 0; attempt < 100 && !seen.includes('touched outside.md'); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(seen).to.include('touched outside.md');
+      // The renderer still receives the same event the observer saw.
+      expect(messages.some((message) => message.kind === 'event')).to.equal(true);
+    } finally {
+      await observed.dispose('owner-a', request.instanceId);
+    }
+    expect(seen.at(-1)).to.equal(`closed ${name}`);
+    expect(seen.filter((entry) => entry.startsWith('closed'))).to.have.length(1);
+  });
+
   it('serializes typed failures and isolates provider instances by owner', async () => {
     expect((await service.open('owner-a', request, rootPath)).ok).to.equal(true);
 

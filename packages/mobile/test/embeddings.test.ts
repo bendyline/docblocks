@@ -50,13 +50,18 @@ describe('mobile host embeddings', () => {
     expect((await api.status()).state).to.equal('ready');
   });
 
-  it('is unavailable with a Gezel release that has no text embedder', async () => {
-    const api = installMobileEmbeddings((async () => ({})) as unknown as Load);
+  it('is unavailable while the plugin cannot load, and tries again', async () => {
+    let attempts = 0;
+    const api = installMobileEmbeddings((async () => {
+      attempts += 1;
+      throw new Error('plugin missing');
+    }) as unknown as Load);
     expect(await api.status()).to.include({ state: 'unavailable' });
     expect(await api.tokenizer()).to.equal(null);
     const error = await api
       .embed({ kind: 'query', texts: ['q'] })
       .catch((caught: unknown) => caught);
     expect((error as Error).message).to.contain('not available');
+    expect(attempts).to.equal(3);
   });
 });

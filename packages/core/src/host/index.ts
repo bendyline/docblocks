@@ -135,9 +135,12 @@ export {
 export {
   WORKSPACE_KNOWLEDGE_CATALOG_ID,
   WORKSPACE_KNOWLEDGE_NAME,
+  parseWorkspacePassageUri,
   withWorkspacePassages,
+  workspacePassageUri,
   type KnowledgeRetrievedPassage,
   type KnowledgeRetriever,
+  type WorkspacePassageReference,
 } from './ai-workspace-knowledge.js';
 
 export type {
@@ -205,6 +208,7 @@ export type {
 export {
   ELECTRON_FILE_SYSTEM_V2_CAPABILITIES,
   FILE_SYSTEM_TRANSFER_LIMITS,
+  FILE_SYSTEM_DIRECTORY_LIMITS,
   FILE_SYSTEM_ENUMERATION_LIMITS,
   type HostFileSystemEnumerationStep,
   type HostFileSystemReadTransfer,

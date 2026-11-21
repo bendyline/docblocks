@@ -23,6 +23,7 @@ import {
 import { DEFAULT_PROOFING_PREFERENCES, type ProofingPreferences } from '../preferences/proofing.js';
 import { AppSettingsDialog, type AppSettingsSection } from '../Settings/AppSettingsDialog.js';
 import type { SemanticSearchSettingsControlsProps } from '../Settings/SemanticSearchSettings.js';
+import type { SearchIndexSettingsControlsProps } from '../Settings/SearchIndexSettings.js';
 import { Dialog } from '../components/Dialog.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
 import { displayBuildDate } from '../local-date.js';
@@ -65,6 +66,8 @@ export interface AppMenuProps {
   onOpenWorkspaceSettings?: () => void;
   /** Semantic search's switch and coverage, on a host with an embedding model. */
   semanticSearch?: SemanticSearchSettingsControlsProps;
+  /** Keeping and clearing the open workspace's stored index, where it is stored. */
+  searchIndex?: SearchIndexSettingsControlsProps;
   /**
    * Called when the user clicks "Back up all workspaces". When omitted,
    * the menu item is hidden.
@@ -150,6 +153,7 @@ export function AppMenu({
   onVersioningPreferenceChange,
   onOpenWorkspaceSettings,
   semanticSearch,
+  searchIndex,
   onDownloadAllWorkspaces,
   onRestoreBackup,
   onShowKeyboardShortcuts,
@@ -397,6 +401,7 @@ export function AppMenu({
           versioningPreference={versioningPreference}
           onVersioningPreferenceChange={onVersioningPreferenceChange}
           semanticSearch={semanticSearch}
+          searchIndex={searchIndex}
           onOpenWorkspaceSettings={
             onOpenWorkspaceSettings
               ? () => {

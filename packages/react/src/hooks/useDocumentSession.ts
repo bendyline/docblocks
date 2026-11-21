@@ -1,5 +1,6 @@
 import { useState, useSyncExternalStore } from 'react';
 import {
+  DocumentLineageStore,
   DocumentRecoveryJournal,
   DocumentSession,
   getDefaultDocumentRecoveryStorage,
@@ -26,6 +27,9 @@ export function useDocumentSession(autoSaveDelayMs = 500): UseDocumentSessionRes
       new DocumentSession({
         autoSaveDelayMs,
         recoveryJournal: new DocumentRecoveryJournal(getDefaultDocumentRecoveryStorage()),
+        // What each document was last built on, so a version saved on another
+        // device at the same moment can still be combined after a restart.
+        lineageStore: new DocumentLineageStore(getDefaultDocumentRecoveryStorage()),
       }),
   );
   const snapshot = useSyncExternalStore(

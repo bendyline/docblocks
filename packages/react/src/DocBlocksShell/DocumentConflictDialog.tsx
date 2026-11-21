@@ -1,13 +1,11 @@
-import React, { Component, useEffect, useMemo, useState, type ReactNode } from 'react';
+import React, { useEffect, useState } from 'react';
 import { resolveFileKind } from '@bendyline/squisq-editor-react';
 import { MediaContext } from '@bendyline/squisq-react';
-import { LinearDocView } from '@bendyline/squisq-react/page';
-import { markdownToDoc, resolveThemeForDoc } from '@bendyline/squisq/doc';
-import { parseMarkdown } from '@bendyline/squisq/markdown';
 import type { MediaProvider } from '@bendyline/squisq/schemas';
 import type { DocumentSessionConflict } from '@bendyline/docblocks/document';
 import { Dialog } from '../components/Dialog.js';
 import { GitDiffView } from '../Git/GitDiffView.js';
+import { RenderedVersion, VersionText } from './ConflictVersionPreview.js';
 
 export interface DocumentConflictDialogProps {
   conflict: DocumentSessionConflict;
@@ -22,6 +20,11 @@ export interface DocumentConflictDialogProps {
   readSavedFile: () => Promise<{ content: string | null; lastModified: string | null } | null>;
   onUseLocal: () => Promise<boolean>;
   onUseSaved: () => Promise<boolean>;
+  /**
+   * Save text the user combined from both versions. When absent, or when the
+   * saved file was deleted, the dialog offers only the two whole versions.
+   */
+  onUseMerged?: (content: string) => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -39,91 +42,6 @@ function formattedTime(value: string | number | null | undefined): string | null
   return Number.isFinite(date.getTime()) ? date.toLocaleString() : null;
 }
 
-function VersionText({ label, content }: { label: string; content: string }) {
-  return (
-    <textarea
-      className="db-conflict-preview"
-      aria-label={`${label} preview`}
-      value={content}
-      readOnly
-      spellCheck={false}
-    />
-  );
-}
-
-interface RenderBoundaryProps {
-  /** A new value clears a caught error: a changed version gets another try. */
-  resetKey: string;
-  fallback: ReactNode;
-  children: ReactNode;
-}
-
-class RenderBoundary extends Component<RenderBoundaryProps, { failed: boolean; resetKey: string }> {
-  state = { failed: false, resetKey: this.props.resetKey };
-
-  static getDerivedStateFromError(): { failed: boolean } {
-    return { failed: true };
-  }
-
-  static getDerivedStateFromProps(
-    props: RenderBoundaryProps,
-    state: { failed: boolean; resetKey: string },
-  ): { failed: boolean; resetKey: string } | null {
-    return props.resetKey === state.resetKey ? null : { failed: false, resetKey: props.resetKey };
-  }
-
-  render(): ReactNode {
-    return this.state.failed ? this.props.fallback : this.props.children;
-  }
-}
-
-/**
- * One version as the editor's preview draws it. A version that cannot be
- * parsed or drawn falls back to its exact text: both versions must stay
- * readable, or there is nothing to choose between.
- */
-function RenderedVersion({
-  label,
-  content,
-  defaultThemeId,
-}: {
-  label: string;
-  content: string;
-  defaultThemeId?: string;
-}) {
-  const rendered = useMemo(() => {
-    try {
-      const doc = markdownToDoc(parseMarkdown(content));
-      // The workspace default applies only when the version names no theme.
-      return { doc, theme: resolveThemeForDoc(doc, doc.themeId ? undefined : defaultThemeId) };
-    } catch {
-      return null;
-    }
-  }, [content, defaultThemeId]);
-  const text = <VersionText label={label} content={content} />;
-  if (!rendered) return text;
-  return (
-    <RenderBoundary resetKey={content} fallback={text}>
-      <div
-        className="db-conflict-preview db-conflict-preview--rendered"
-        role="region"
-        aria-label={`${label} preview`}
-        tabIndex={0}
-        style={{ background: rendered.theme.colors.background }}
-      >
-        <LinearDocView
-          doc={rendered.doc}
-          theme={rendered.theme}
-          variant="document"
-          showCover={false}
-          thinMargins
-          animationsEnabled={false}
-        />
-      </div>
-    </RenderBoundary>
-  );
-}
-
 export default function DocumentConflictDialog({
   conflict,
   fileName,
@@ -133,6 +51,7 @@ export default function DocumentConflictDialog({
   readSavedFile,
   onUseLocal,
   onUseSaved,
+  onUseMerged,
   onClose,
 }: DocumentConflictDialogProps) {
   const [savedFile, setSavedFile] = useState<{
@@ -143,6 +62,12 @@ export default function DocumentConflictDialog({
   const [error, setError] = useState<string | null>(null);
   // Inline by default: it fits the middle pane, which side by side widens.
   const [diffView, setDiffView] = useState<DiffView>('inline');
+  // Combining by hand: the text the editable side started from (fixed while
+  // editing, so typing is never replaced) and what it holds now.
+  const [combineStart, setCombineStart] = useState<string | null>(null);
+  const [combined, setCombined] = useState('');
+  const canCombine = onUseMerged !== undefined && conflict.externalContent !== null;
+  const combining = canCombine && combineStart !== null;
   useEffect(() => {
     let disposed = false;
     void readSavedFile().then(
@@ -210,6 +135,41 @@ export default function DocumentConflictDialog({
         Compare the two versions before choosing. Neither version changes until you choose.
       </p>
       <MediaContext.Provider value={mediaProvider ?? null}>
+        {combining && (
+          <section className="db-conflict-diff db-conflict-combine" aria-label="Combined version">
+            <div className="db-conflict-diff-header">
+              <h3>Combine both versions</h3>
+              <button type="button" disabled={busy} onClick={() => setCombineStart(null)}>
+                Back to comparing
+              </button>
+            </div>
+            <p className="db-conflict-metadata">
+              The saved file is shown for reference. The other side starts as{' '}
+              {localLabel.toLowerCase()} and is yours to edit: type in it, or use the arrow beside a
+              difference to take the saved file&rsquo;s text there.
+            </p>
+            <GitDiffView
+              original={conflict.externalContent ?? ''}
+              modified={combineStart ?? ''}
+              fileName={fileName}
+              language={fileKind.language}
+              theme={theme}
+              editable
+              onModifiedChange={setCombined}
+              labels={{ original: 'Saved file', modified: 'Combined version (edit here)' }}
+            />
+            <p className="db-conflict-consequence">
+              Saves the combined version as the document. Neither original is kept.
+            </p>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void choose(() => onUseMerged!(combined))}
+            >
+              Save combined version
+            </button>
+          </section>
+        )}
         <div
           className={
             diffView === 'side-by-side'
@@ -217,6 +177,7 @@ export default function DocumentConflictDialog({
               : 'db-conflict-columns'
           }
           aria-busy={busy}
+          hidden={combining}
         >
           <section className="db-conflict-version" aria-label={localLabel}>
             <h3>{localLabel}</h3>
@@ -264,6 +225,23 @@ export default function DocumentConflictDialog({
               layout={diffView === 'side-by-side' ? 'side-by-side' : 'inline'}
               changesOnly={diffView === 'changes'}
             />
+            {canCombine && (
+              <>
+                <p className="db-conflict-consequence">
+                  Want parts of both? Edit them into one version yourself.
+                </p>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setCombined(conflict.localContent);
+                    setCombineStart(conflict.localContent);
+                  }}
+                >
+                  Combine by hand
+                </button>
+              </>
+            )}
           </section>
           <section className="db-conflict-version" aria-label="Saved file">
             <h3>Saved file</h3>

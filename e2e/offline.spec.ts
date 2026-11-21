@@ -135,7 +135,7 @@ test.describe('DocBlocks offline (PWA)', () => {
 
     await page.goto('/desktop/');
     await expect(page.getByRole('heading', { level: 1 })).toContainText(
-      'Your Markdown. Your folders.',
+      'DocBlocks for Mac, Windows, and Linux',
     );
     await expect(page.locator('.db-shell')).toHaveCount(0);
   });
@@ -339,7 +339,7 @@ test.describe('DocBlocks offline (PWA)', () => {
     const desktopPage = await context.newPage();
     await desktopPage.goto('/desktop/');
     await expect(desktopPage.getByRole('heading', { level: 1 })).toContainText(
-      'Your Markdown. Your folders.',
+      'DocBlocks for Mac, Windows, and Linux',
     );
     await desktopPage.close();
 

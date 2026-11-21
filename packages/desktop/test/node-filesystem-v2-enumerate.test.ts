@@ -116,7 +116,9 @@ describe('native filesystem metadata enumeration', () => {
     expect((await collect(provider!)).entries[0]?.version).to.not.equal(first);
   });
 
-  it('pages a folder larger than the per-listing entry limit', async () => {
+  it('pages a folder larger than the generic wire limit', async function () {
+    // Listing hashes each of the 10,050 files.
+    this.timeout(60_000);
     const big = path.join(rootPath, 'big');
     await fs.mkdir(big);
     const names = Array.from({ length: 10_050 }, (_, n) => `n${String(n).padStart(5, '0')}.md`);
@@ -126,10 +128,9 @@ describe('native filesystem metadata enumeration', () => {
       );
     }
     const listing = open();
-    await listing
-      .readDirectory(p('big'))
-      .then(() => expect.fail('readDirectory should refuse the folder'))
-      .catch((error: unknown) => expect((error as FsError).code).to.equal('quota-exceeded'));
+    // A flat notes folder lists in one call now (FILE_SYSTEM_DIRECTORY_LIMITS)…
+    expect(await listing.readDirectory(p('big'))).to.have.length(10_050);
+    // …and the index's metadata walk still pages it.
     const { pages, entries } = await collect(listing);
     expect(entries).to.have.length(10_051);
     expect(pages.length).to.be.greaterThan(5);

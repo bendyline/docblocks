@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import { publishFileSystemChangeHint } from '@bendyline/docblocks/filesystem';
 import type { DocBlocksHostAPI } from '@bendyline/docblocks/host';
 import {
   subscribeRevalidationSignal,
@@ -38,6 +39,41 @@ describe('subscribeRevalidationSignal', () => {
     clock += 5_000;
     window.dispatchEvent(new Event('pageshow'));
     expect(reasons).to.deep.equal(['focus', 'visible', 'online', 'visible']);
+  });
+
+  it('signals at once when storage reports a change after a quiet spell', () => {
+    subscribe();
+    publishFileSystemChangeHint('workspace');
+    expect(reasons).to.deep.equal(['storage']);
+  });
+
+  it('holds a storage report that follows another signal, instead of dropping it', async () => {
+    stop = subscribeRevalidationSignal((reason) => reasons.push(reason), {
+      minIntervalMs: 60,
+      idleMs: 10_000,
+    });
+    window.dispatchEvent(new Event('focus'));
+    // The look that focus caused may have happened before this change landed.
+    publishFileSystemChangeHint('workspace');
+    publishFileSystemChangeHint('workspace');
+    publishFileSystemChangeHint(null);
+    expect(reasons).to.deep.equal(['focus']);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    // A burst of reports is one more look, not three.
+    expect(reasons).to.deep.equal(['focus', 'storage']);
+  });
+
+  it('forgets a held storage report once unsubscribed', async () => {
+    stop = subscribeRevalidationSignal((reason) => reasons.push(reason), {
+      minIntervalMs: 40,
+      idleMs: 10_000,
+    });
+    window.dispatchEvent(new Event('focus'));
+    publishFileSystemChangeHint('workspace');
+    stop();
+    await new Promise((resolve) => setTimeout(resolve, 90));
+    publishFileSystemChangeHint('workspace');
+    expect(reasons).to.deep.equal(['focus']);
   });
 
   it('collapses the burst of events that one return produces into one signal', () => {

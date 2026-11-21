@@ -63,6 +63,8 @@ export interface FileTreeNodeProps {
   expanded: boolean;
   selected: boolean;
   badge?: FileTreeNodeBadge;
+  /** Added to the delete confirmation: what else goes with this entry. */
+  deleteWarning?: string;
   gitActions?: FileTreeNodeGitActions;
   actions?: readonly FileTreeNodeAction[];
   children?: FileSystemEntry[];
@@ -112,6 +114,7 @@ export function FileTreeNode({
   expanded,
   selected,
   badge,
+  deleteWarning,
   gitActions,
   actions = [],
   focusable = true,
@@ -331,8 +334,11 @@ export function FileTreeNode({
     closeMenu(false);
     setActionError(null);
     const description = entry.kind === 'directory' ? 'folder and everything inside it' : 'document';
+    const warning = deleteWarning ? ` ${deleteWarning}` : '';
     if (
-      !(await confirmDelete(`Delete the ${description} "${entry.name}"? This cannot be undone.`))
+      !(await confirmDelete(
+        `Delete the ${description} "${entry.name}"?${warning} This cannot be undone.`,
+      ))
     ) {
       return;
     }
@@ -343,7 +349,7 @@ export function FileTreeNode({
       // failures reject; without this the row silently keeps the entry.
       setActionError(caught instanceof Error ? caught.message : 'Unable to delete this entry.');
     }
-  }, [entry.name, entry.path, entry.kind, confirmDelete, onDelete, closeMenu]);
+  }, [entry.name, entry.path, entry.kind, confirmDelete, deleteWarning, onDelete, closeMenu]);
 
   const handleTogglePin = useCallback(async () => {
     closeMenu(false);

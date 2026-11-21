@@ -49,6 +49,7 @@ export interface AiKnowledgePassage {
   readonly title: string;
   readonly catalogId: string;
   readonly text: string;
+  readonly uri?: string;
 }
 
 /** Group cited passages by catalog, in the order the provider ranked them. */
@@ -96,6 +97,10 @@ export function knowledgeChatEvent(
         title: passage.title.trim().slice(0, AI_WIRE_LIMITS.knowledgeTitleCharacters),
         catalogId: passage.catalogId,
         text: passage.text,
+        ...(passage.uri?.startsWith('knowledge://') &&
+        passage.uri.length <= AI_WIRE_LIMITS.workspacePassageUriCharacters
+          ? { uri: passage.uri }
+          : {}),
       })),
     };
   return anyEnabled ? { outcome: status } : null;

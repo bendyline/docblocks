@@ -1,4 +1,5 @@
 import { HOST_WIRE_LIMITS, isBoundedString } from './wire-policy.js';
+import { parseWorkspacePassageUri } from './ai-workspace-knowledge.js';
 import type {
   AiChatEvent,
   AiChatEvidence,
@@ -505,9 +506,6 @@ export function parseAiChatRequest(value: unknown): AiChatRequest | null {
   };
 }
 
-const WORKSPACE_PASSAGE_URI =
-  /^knowledge:\/\/local\/[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?\/[^\s#]+(#line=\d+(-\d+)?)?$/u;
-
 /** Workspace passages on a chat request: bounded, `knowledge://local/` citations only. */
 export function parseAiWorkspacePassages(value: unknown): AiWorkspacePassage[] | null {
   if (!Array.isArray(value) || value.length > AI_WIRE_LIMITS.workspacePassages) return null;
@@ -518,7 +516,7 @@ export function parseAiWorkspacePassages(value: unknown): AiWorkspacePassage[] |
     const { uri, title, text } = entry;
     if (
       !isBoundedString(uri, AI_WIRE_LIMITS.workspacePassageUriCharacters, 1) ||
-      !WORKSPACE_PASSAGE_URI.test(uri)
+      !parseWorkspacePassageUri(uri)
     ) {
       return null;
     }
@@ -618,13 +616,28 @@ function parseAiChatEvidence(value: unknown): AiChatEvidence[] | null {
   const evidence: AiChatEvidence[] = [];
   let total = 0;
   for (const entry of value) {
-    if (!isRecord(entry) || !hasExactKeys(entry, ['title', 'catalogId', 'text'])) return null;
+    if (!isRecord(entry) || !hasKeysWithin(entry, ['title', 'catalogId', 'text'], ['uri'])) {
+      return null;
+    }
     if (!isBoundedString(entry.title, AI_WIRE_LIMITS.knowledgeTitleCharacters)) return null;
     if (!isBoundedString(entry.catalogId, HOST_WIRE_LIMITS.identifierCharacters, 1)) return null;
     if (!isBoundedString(entry.text, AI_WIRE_LIMITS.knowledgeEvidenceCharacters, 1)) return null;
+    const { uri } = entry;
+    if (
+      uri !== undefined &&
+      (!isBoundedString(uri, AI_WIRE_LIMITS.workspacePassageUriCharacters, 1) ||
+        !uri.startsWith('knowledge://'))
+    ) {
+      return null;
+    }
     total += entry.text.length;
     if (total > AI_WIRE_LIMITS.knowledgeEvidenceCharacters) return null;
-    evidence.push({ title: entry.title, catalogId: entry.catalogId, text: entry.text });
+    evidence.push({
+      title: entry.title,
+      catalogId: entry.catalogId,
+      text: entry.text,
+      ...(uri === undefined ? {} : { uri }),
+    });
   }
   return evidence;
 }

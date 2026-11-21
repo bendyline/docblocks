@@ -261,6 +261,48 @@ function requireBundledGezelEngines(): void {
 
 requireBundledGezelEngines();
 
+/**
+ * The Mac app collects the versions iCloud sets aside through a small native
+ * helper built from this repo. It must be staged before packaging, sit where
+ * macOS expects nested programs, and be signed by the app's own signing pass
+ * (never listed in signIgnore), which is what sandboxes it in the store build.
+ */
+function requireBundledCloudHelper(): void {
+  const stager = readFileSync(
+    path.join(repoRoot, 'packages/desktop/scripts/stage-gezel-native.cjs'),
+    'utf8',
+  );
+  if (!stager.includes("require('./stage-cloud-helper.cjs')")) {
+    failConfigPolicy('beforePack must build and stage the iCloud helper for macOS.');
+  }
+  if (
+    !isRecord(config) ||
+    !isRecord(config.mac) ||
+    !Array.isArray(config.mac.extraFiles) ||
+    !config.mac.extraFiles.some(
+      (entry) => isRecord(entry) && entry.from === 'dist/cloud-helper' && entry.to === 'Helpers',
+    )
+  ) {
+    failConfigPolicy('Mac packaging must copy the iCloud helper into Contents/Helpers.');
+  }
+  for (const target of ['mac', 'mas'] as const) {
+    const section = config[target];
+    const ignored =
+      isRecord(section) && Array.isArray(section.signIgnore) ? section.signIgnore : [];
+    for (const pattern of ignored) {
+      if (
+        typeof pattern === 'string' &&
+        new RegExp(pattern).test('/Contents/Helpers/docblocks-cloud-helper')
+      ) {
+        failConfigPolicy(`${target}.signIgnore must not exclude the iCloud helper from signing.`);
+      }
+    }
+  }
+  process.stdout.write('electron-builder.yml: iCloud helper configured OK\n');
+}
+
+requireBundledCloudHelper();
+
 function requireNativePlatformContract(): void {
   if (
     !isRecord(config) ||

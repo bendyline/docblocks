@@ -43,6 +43,28 @@ describe('knowledge citations in inserted text', () => {
     );
   });
 
+  it('links a cited note relative to the open document', () => {
+    const note = {
+      title: 'Rose bed › Pests [2026]',
+      catalogId: 'ws-0123456789abcdef',
+      text: 'Aphids.',
+      uri: 'knowledge://local/ws-0123456789abcdef/garden/rose%20bed.md#line=3-9',
+    };
+    expect(
+      citationsToFootnotes('Aphids return [1].', [note], names, '', 'journal/2026/nov.md'),
+    ).to.equal(
+      'Aphids return[^source-1].\n\n' +
+        '[^source-1]: [Rose bed › Pests \\[2026\\]](../../garden/rose%20bed.md), a note in this workspace.',
+    );
+    expect(
+      citationsToFootnotes('Aphids return [1].', [note], names, '', 'garden/log.md'),
+    ).to.contain('](rose%20bed.md)');
+    // Without the open document's path, the title stands alone.
+    expect(citationsToFootnotes('Aphids return [1].', [note], names, '')).to.contain(
+      '[^source-1]: Rose bed › Pests [2026], a note in this workspace.',
+    );
+  });
+
   it("keeps clear of the document's footnotes, links and code, and drops unknown numbers", () => {
     const result = citationsToFootnotes(
       'See [the site](https://example.com) and note[^1] [2] [9].\n\n```\nlist[1]\n```',

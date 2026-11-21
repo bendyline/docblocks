@@ -13,7 +13,19 @@ same index feeds quick-open, the link picker and the search panel.
 
 A second window on the same workspace, a transient workspace (a loose file,
 an opened bundle), or a store that will not open falls back to the in-memory
-engine for the session.
+engine for the session. A worker waits up to 1.5 s for its workspace's Web
+Lock, so the index reopening in the same window keeps its store.
+
+**Privacy and storage.** The store is a copy of the workspace's text in the
+app's origin-private storage, never in the workspace. Settings → Search →
+Search index has a per-workspace "Keep a search index for this workspace"
+(on by default; off deletes the stored copy and indexes in memory each
+session) and "Clear search index" (deletes the store and rebuilds it, vectors
+included). Both go through the open request's `discard` flag, which only a
+worker holding the workspace's lock acts on. The desktop permission policy
+grants `persistent-storage`, so Chromium does not evict the store under disk
+pressure; phones answer `persist()` with false and the index rebuilds after an
+eviction.
 
 ## Pieces
 
@@ -35,8 +47,16 @@ startEmbeddingScheduler (react) ◀────▶   pendingEmbeddings / storeEm
   (`startWorkspaceIndexWorker`). It holds a Web Lock per workspace and opens
   that workspace's own SQLite pool. Apps start it from a two-line worker file
   and pass it to the shell as `workspaceIndexWorker`.
-- **Listing.** Providers with `enumerate` (desktop) list metadata only, without
-  hashing or touching online-only cloud files. Others walk `readDirectory`.
+- **Listing.** Providers with `enumerate` list metadata only, without hashing
+  or touching online-only cloud files. Desktop walks in main; on phones the
+  bridge walks one folder per native `listMetadata` call (iOS `Storage.swift`,
+  Android `Storage.java`), so a phone no longer hashes the workspace (and no
+  longer fails on a folder holding over 32 MB) to index it. Others walk
+  `readDirectory`.
+- **Large workspaces (desktop).** The watcher's starting baseline is a
+  metadata walk bounded like `enumerate` (1,000,000 entries), not a hashing
+  scan capped at the 10,000-entry wire limit. One folder listing may carry
+  100,000 children (`FILE_SYSTEM_DIRECTORY_LIMITS`), for flat notes folders.
 - **Relaunch.** The store returns each document's version; only documents
   whose version changed are read again.
 - **Literal search** keeps exact semantics (case, whole word) by scanning the
@@ -67,11 +87,50 @@ startEmbeddingScheduler (react) ◀────▶   pendingEmbeddings / storeEm
 - **The switch** (Settings → Search → "Search by meaning") pauses embedding and
   meaning-ranked queries; stored vectors are kept.
 
+## AI answers from the workspace
+
+- **Grounded actions.** Every AI action that searches knowledge (it sets
+  `knowledgeQuery`) also carries up to six passages from the open workspace,
+  found by meaning and leaving out the open note (`withWorkspaceGrounding` in
+  `packages/react/src/Ai/workspace-grounding.ts`). Only passages the vector arm
+  found above the profile's floor are offered, the bar Gezel holds unjudged
+  catalog passages to; a search that takes over 1.2 s offers none.
+- **Citations.** A workspace passage is cited as
+  `knowledge://local/<ws-hash>/<path>#line=a-b` (`workspacePassageUri` in
+  core), in the grammar Gezel accepts for an app's own passages: NFC, at most
+  256 characters, no control characters or empty segments. A note whose path
+  the grammar cannot name is not offered. `parseWorkspacePassageUri` reads one
+  back. Evidence on the `knowledge` chat event carries each passage's `uri`.
+- **Ranking.** Hosts hand the passages to Gezel's `knowledgeContext`, beside
+  the enabled catalogs (`withWorkspacePassages` in core). Today the two take
+  turns, a catalog passage first. Gezel's retrieve route can also take them as
+  `candidates` and judge both with its relevance model; DocBlocks moves to that
+  once the release with it is pinned.
+- **Footnotes.** An inserted draft names a cited note in a footnote that links
+  it relative to the document: `[^source-1]: [Rose bed](garden/roses.md), a
+note in this workspace.`
+- **Ask your workspace** (AI menu, where the host can search by meaning): a
+  side-panel conversation. Each question finds passages across the whole
+  workspace (4 s budget), sends them with the last three finished turns, and
+  checks the answer's details against them where the host has a fact check. A
+  question that matches no note never reaches the model. Citations are chips
+  that open the note with Find on the passage; the indicator lists each note
+  with its lines. Answers can be inserted into the document or saved as a new
+  note, both with footnotes. The conversation belongs to the shell, so it
+  survives opening a cited note, and starts afresh with another workspace. The
+  panel explains what stops a question: search by meaning off, the model
+  missing, or the workspace switched off for AI answers.
+- **Switch.** Settings → Search → "Use this workspace in AI answers", per
+  workspace: on by default for an on-device provider, off for a remote one.
+
 ## Testing
 
 - Unit: `packages/core/test/workspace-index*.test.ts`,
   `packages/react/test/{live-index-engine,workspace-index-worker,embedding-scheduler,host-embedder}.test.ts`,
   `packages/desktop/test/embedding-engine.test.ts`.
+- AI answers: `packages/core/test/ai-workspace-knowledge.test.ts`,
+  `packages/react/test/{workspace-grounding,workspace-ask,ai-ask-panel,ai-knowledge-indicator,knowledge-citations}.test.ts`;
+  desktop e2e in `packages/desktop/e2e/ai-editor.spec.ts`.
 - Desktop e2e: `packages/desktop/e2e/workspace-index.spec.ts`. Every e2e run
   uses a stand-in embedding utility (`e2e/fake-embedding-utility.cjs`) with
   deterministic vectors; launch with `DOCBLOCKS_EMBEDDINGS_ENTRY=''` to use the

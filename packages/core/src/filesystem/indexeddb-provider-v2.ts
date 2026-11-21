@@ -6,6 +6,7 @@ import {
   type FsOperation,
 } from './fs-error.js';
 import { withFileCommitLock } from './commit-lock.js';
+import { openFileSystemChangeChannel, type FileSystemChangeChannel } from './change-hints.js';
 import {
   RawIndexedDBFileSystemStore,
   indexedDBWorkspaceDatabaseName,
@@ -223,6 +224,11 @@ export interface IndexedDBFileSystemProviderV2Options {
   readonly now?: () => Date;
   /** Shared-store owners can retain the connection when this facade is disposed. */
   readonly closeStoreOnDispose?: boolean;
+  /**
+   * Whether writes are announced to other tabs on this workspace, and theirs
+   * heard as change hints. On by default wherever BroadcastChannel exists.
+   */
+  readonly announceChanges?: boolean;
 }
 
 interface MutationVersion {
@@ -251,6 +257,8 @@ export class IndexedDBFileSystemProviderV2 implements FileSystemProviderV2 {
   private readonly versionPrefix: string;
   private readonly subscriptions = new Set<FileSystemWatchSubscription>();
   private readonly inFlight = new Set<Promise<unknown>>();
+  /** Other tabs on this workspace are told after each write here, and heard after theirs. */
+  private readonly changes: FileSystemChangeChannel | null;
   private initialization: Promise<void> | null = null;
   private disposePromise: Promise<void> | null = null;
   private storeClosed = false;
@@ -268,6 +276,10 @@ export class IndexedDBFileSystemProviderV2 implements FileSystemProviderV2 {
     this.now = options.now ?? (() => new Date());
     this.closeStoreOnDispose = options.closeStoreOnDispose ?? true;
     this.versionPrefix = `idb-${encodeURIComponent(id).slice(0, 900) || 'workspace'}`;
+    this.changes =
+      options.announceChanges === false
+        ? null
+        : openFileSystemChangeChannel(`docblocks:fs:${indexedDBWorkspaceDatabaseName(id)}`, id);
   }
 
   /** Track accepted storage work so disposal can join it before closing. */
@@ -642,6 +654,7 @@ export class IndexedDBFileSystemProviderV2 implements FileSystemProviderV2 {
         await Promise.allSettled([...this.inFlight]);
         await Promise.all([...this.subscriptions].map((subscription) => subscription.dispose()));
       } finally {
+        this.changes?.close();
         if (this.closeStoreOnDispose && !this.storeClosed) {
           this.storeClosed = true;
           this.store.close?.();
@@ -1065,6 +1078,8 @@ export class IndexedDBFileSystemProviderV2 implements FileSystemProviderV2 {
           },
         );
         if (outcome.retry) continue;
+        // Committed: another tab showing this workspace should look again.
+        if (mode === 'readwrite') this.changes?.announce();
         return outcome.value;
       } catch (error: unknown) {
         if (!(error instanceof LegacyNamespaceDetectedError)) {

@@ -11,10 +11,14 @@ import { expect, test } from './fixtures.js';
 
 async function openSearch(window: Page) {
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
-  await window.locator('.db-shell').click({ position: { x: 5, y: 5 } });
-  await window.keyboard.press('ControlOrMeta+Shift+f');
   const input = window.getByRole('searchbox', { name: 'Search workspace' });
-  await expect(input).toBeVisible();
+  // A shortcut pressed before the freshly launched window has focus is lost;
+  // press it again until the panel answers.
+  await expect(async () => {
+    await window.locator('.db-shell').click({ position: { x: 5, y: 5 } });
+    await window.keyboard.press('ControlOrMeta+Shift+f');
+    await expect(input).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
   return input;
 }
 
@@ -36,6 +40,8 @@ test('keeps a persistent index across relaunch and ranks passages', async ({
   let input = await openSearch(first.window);
   const panel = first.window.locator('section.db-search-panel');
   await expect(panel).toHaveAttribute('data-index-persistence', 'persistent', { timeout: 30_000 });
+  // The permission policy lets the index's store opt out of eviction.
+  expect(await first.window.evaluate(() => navigator.storage.persisted())).toBe(true);
 
   await input.fill('soap spray');
   const results = first.window.getByRole('tree', { name: 'Search results' });
@@ -128,4 +134,67 @@ test('finds a note by meaning once the workspace is embedded', async ({
     'literal',
   );
   await expect(results.locator('.db-search-document')).toHaveCount(0, { timeout: 30_000 });
+});
+
+/** The origin-private folders holding workspace index stores. */
+async function indexStores(window: Page): Promise<string[]> {
+  return window.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    const names: string[] = [];
+    for await (const name of (root as unknown as { keys(): AsyncIterable<string> }).keys()) {
+      if (name.includes('docblocks-index-')) names.push(name);
+    }
+    return names;
+  });
+}
+
+test('keeps no index on the device when keeping is off, and Clear rebuilds it', async ({
+  launchApp,
+  workspaceDir,
+}) => {
+  fs.writeFileSync(
+    path.join(workspaceDir, 'kitchen.md'),
+    '# Kitchen\n\nRoast the tomatoes slowly with garlic.\n',
+  );
+  const { window } = await launchApp();
+  const input = await openSearch(window);
+  const panel = window.locator('section.db-search-panel');
+  await expect(panel).toHaveAttribute('data-index-persistence', 'persistent', { timeout: 30_000 });
+  expect(await indexStores(window)).toHaveLength(1);
+
+  const openSearchSettings = async () => {
+    await window.locator('.db-app-menu-btn').click();
+    await window.getByRole('menuitem', { name: 'Settings' }).click();
+    const dialog = window.getByRole('dialog', { name: 'Settings' });
+    await dialog.getByRole('tab', { name: 'Search', exact: true }).click();
+    return dialog;
+  };
+  let dialog = await openSearchSettings();
+  const keep = dialog.getByRole('checkbox', { name: 'Keep a search index for this workspace' });
+  await expect(keep).toBeChecked();
+  await keep.uncheck();
+  await expect(dialog.getByTestId('search-index-status')).toContainText('in memory');
+  await window.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+
+  // Off: the stored copy is gone, and search still works from memory.
+  await expect(panel).toHaveAttribute('data-index-persistence', 'memory', { timeout: 30_000 });
+  await expect.poll(() => indexStores(window)).toHaveLength(0);
+  await input.fill('garlic');
+  const results = window.getByRole('tree', { name: 'Search results' });
+  await expect(results.locator('.db-search-document', { hasText: 'Kitchen' })).toBeVisible({
+    timeout: 30_000,
+  });
+
+  // On again, then cleared: kept, rebuilt, and searchable.
+  dialog = await openSearchSettings();
+  await dialog.getByRole('checkbox', { name: 'Keep a search index for this workspace' }).check();
+  await dialog.getByRole('button', { name: 'Clear search index' }).click();
+  await window.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(panel).toHaveAttribute('data-index-persistence', 'persistent', { timeout: 30_000 });
+  await input.fill('tomatoes');
+  await expect(results.locator('.db-search-document', { hasText: 'Kitchen' })).toBeVisible({
+    timeout: 30_000,
+  });
 });

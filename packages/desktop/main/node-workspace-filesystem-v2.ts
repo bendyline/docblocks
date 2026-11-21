@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { BigIntStats } from 'node:fs';
+import type { BigIntStats, Dirent } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
@@ -45,6 +45,7 @@ import {
 } from '@bendyline/docblocks/filesystem';
 import {
   ELECTRON_FILE_SYSTEM_V2_CAPABILITIES,
+  FILE_SYSTEM_DIRECTORY_LIMITS,
   FILE_SYSTEM_ENUMERATION_LIMITS,
   FILE_SYSTEM_TRANSFER_LIMITS,
   HOST_WIRE_LIMITS,
@@ -368,7 +369,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
 
       const abs = await this.resolveRead(canonical, 'list');
       const children = await fs.readdir(abs, { withFileTypes: true });
-      if (children.length > HOST_WIRE_LIMITS.arrayEntries) {
+      if (children.length > FILE_SYSTEM_DIRECTORY_LIMITS.entries) {
         throw this.error(
           'quota-exceeded',
           'list',
@@ -441,6 +442,67 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     if (entries.length > 0 || unreadable.length > 0 || !yielded) {
       yield { entries: entries.splice(0), unreadable: unreadable.splice(0) };
     }
+  }
+
+  /**
+   * What a watch session compares before and after its watcher starts: the
+   * metadata identity of every entry it would report, from a walk that never
+   * opens a file. Hashing here read the whole workspace on every launch and
+   * stopped at the renderer's 10,000-entry wire limit, though none of it
+   * crosses the wire; this walk is bounded like `enumerate` instead. Unlike
+   * `enumerate`, it enters companion folders too, whose changes are reported.
+   */
+  private async watchBaseline(): Promise<Map<WorkspacePath, string>> {
+    const identities = new Map<WorkspacePath, string>();
+    const queue: WorkspacePath[] = [WORKSPACE_ROOT];
+    const visited = new Set<string>();
+    while (queue.length > 0) {
+      const folder = queue.shift()!;
+      let abs: string;
+      let children: Dirent[];
+      try {
+        abs = await this.resolveRead(folder, 'watch');
+        const real = await fs.realpath(abs);
+        if (visited.has(real)) continue;
+        visited.add(real);
+        children = await fs.readdir(abs, { withFileTypes: true });
+      } catch (error: unknown) {
+        if (folder === WORKSPACE_ROOT) throw error;
+        // Gone or unreadable now; a change to that is still a change.
+        identities.set(folder, 'unreadable');
+        continue;
+      }
+      const observed = await Promise.all(
+        children
+          .filter((child) => !isIgnoredWorkspaceEntryName(child.name))
+          .map(async (child) => {
+            const childPath = workspacePathJoin(folder, child.name);
+            try {
+              // A link is followed only where it stays inside the workspace.
+              const target = child.isSymbolicLink()
+                ? await this.roots.resolvePhysical(this.rootPath, childPath)
+                : path.join(abs, child.name);
+              return { childPath, stat: await fs.stat(target, { bigint: true }) };
+            } catch {
+              return null; // Vanished, outside the workspace, or an unusable name.
+            }
+          }),
+      );
+      for (const entry of observed) {
+        if (!entry || (!entry.stat.isFile() && !entry.stat.isDirectory())) continue;
+        identities.set(entry.childPath, versionForMetadata(entry.stat));
+        if (entry.stat.isDirectory()) queue.push(entry.childPath);
+      }
+      if (identities.size > ENUMERATION_ENTRY_LIMIT) {
+        throw this.error(
+          'quota-exceeded',
+          'watch',
+          WORKSPACE_ROOT,
+          'The workspace is too large to watch.',
+        );
+      }
+    }
+    return identities;
   }
 
   /** One folder's children from metadata, and the folders to enter next. */
@@ -1669,7 +1731,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
 
   private async openWatchSession(session: WatchSession): Promise<void> {
     try {
-      const before = await this.scanEntry(WORKSPACE_ROOT, false, new Set(), 'watch');
+      const before = await this.watchBaseline();
       if (isClosingWatchSession(session)) return;
       const physicalRoot = await fs.realpath(await this.roots.resolvePhysical(this.rootPath, ''));
       if (isClosingWatchSession(session)) return;
@@ -1687,9 +1749,10 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
       }
       await handle.ready;
       if (isClosingWatchSession(session)) return;
-      const after = await this.scanEntry(WORKSPACE_ROOT, false, new Set(), 'watch');
+      const after = await this.watchBaseline();
       if (isClosingWatchSession(session)) return;
-      if (before.root.version !== after.root.version) {
+      // Something changed while the watcher was starting, unseen by it.
+      if (!sameIdentities(before, after)) {
         this.emitExternal({
           type: 'overflow',
           kind: null,
@@ -1773,6 +1836,10 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
         return;
       }
 
+      // The watch baseline versions no file, so a path seen for the first
+      // time here may have changed since the folders above it were versioned.
+      // Move them on, as a second, different observation of it would.
+      const seenBefore = this.observedVersions.has(itemPath);
       const scanned = await this.tryScanEntry(itemPath, false, 'watch');
       if (!scanned) {
         this.emitExternal({
@@ -1785,6 +1852,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
         });
         return;
       }
+      if (!seenBefore) this.invalidateAncestors(itemPath);
       const previous = this.knownEntries.get(itemPath);
       this.remember(scanned.entries);
       this.emitExternal({
@@ -2250,6 +2318,18 @@ function compareSnapshots(left: FileSystemEntrySnapshot, right: FileSystemEntryS
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/** Two watch baselines saw the same entries, each with the same identity. */
+function sameIdentities(
+  before: ReadonlyMap<WorkspacePath, string>,
+  after: ReadonlyMap<WorkspacePath, string>,
+): boolean {
+  if (before.size !== after.size) return false;
+  for (const [itemPath, identity] of before) {
+    if (after.get(itemPath) !== identity) return false;
+  }
+  return true;
 }
 
 function sameEntryState(

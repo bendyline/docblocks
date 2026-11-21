@@ -7,30 +7,16 @@
  * Nothing native loads until semantic search first asks.
  */
 import type { DocBlocksHostEmbeddingsAPI, EmbeddingsStatus } from '@bendyline/docblocks/host';
-
-/**
- * Gezel's `MobileTextEmbedder`, declared here until DocBlocks pins the
- * gezel-capacitor release that exports it; replace with that type then.
- */
-interface MobileTextEmbedder {
-  readonly profileId: string;
-  readonly dimensions: number;
-  status(): Promise<{
-    readonly state: 'ready' | 'download-required' | 'downloading' | 'unavailable';
-    readonly receivedBytes: number;
-    readonly totalBytes: number;
-    readonly error: string | null;
-  }>;
-  install(): Promise<void>;
-  embed(kind: 'passage' | 'query', texts: readonly string[]): Promise<Float32Array[]>;
-  tokenizer(): Promise<{ definition: string; config: string }>;
-}
-type MobileTextEmbedderFactory = (options: { profileId: string }) => MobileTextEmbedder;
+import type { MobileTextEmbedder } from '@bendyline/gezel-capacitor';
 
 const PROFILE_ID = 'bge-small-en-v1.5@1';
 const DIMENSIONS = 384;
+const UNAVAILABLE = 'Semantic search is not available on this device.';
 
-type CapacitorModule = typeof import('@bendyline/gezel-capacitor');
+type CapacitorModule = Pick<
+  typeof import('@bendyline/gezel-capacitor'),
+  'createMobileTextEmbedder'
+>;
 
 export function installMobileEmbeddings(
   load: () => Promise<CapacitorModule> = () => import('@bendyline/gezel-capacitor'),
@@ -38,13 +24,9 @@ export function installMobileEmbeddings(
   let embedder: Promise<MobileTextEmbedder | null> | null = null;
   const get = () => {
     embedder ??= load().then(
-      (module) => {
-        // gezel-capacitor 1.1.3 and earlier have no text embedder; semantic search stays off.
-        const create = (module as { createMobileTextEmbedder?: MobileTextEmbedderFactory })
-          .createMobileTextEmbedder;
-        return create ? create({ profileId: PROFILE_ID }) : null;
-      },
+      (module) => module.createMobileTextEmbedder({ profileId: PROFILE_ID }),
       () => {
+        // The plugin failed to load; the next request tries again.
         embedder = null;
         return null;
       },
@@ -60,13 +42,13 @@ export function installMobileEmbeddings(
   });
   const ready = async () => {
     const current = await get();
-    if (!current) throw new Error('Semantic search is not available in this version.');
+    if (!current) throw new Error(UNAVAILABLE);
     return current;
   };
   return {
     async status() {
       const current = await get();
-      if (!current) return unavailable('Semantic search is not available in this version.');
+      if (!current) return unavailable(UNAVAILABLE);
       const status = await current.status();
       return {
         profileId: current.profileId,

@@ -168,6 +168,28 @@ An absolute `DOCBLOCKS_GEZEL_NATIVE_BIN_DIR` points it at another staged
 payload. A source build never downloads an engine at runtime; `dev` warns when
 the staged payload is missing or older than the installed service's pin.
 
+### The iCloud helper (macOS)
+
+On a Mac, a folder in iCloud Drive is ordinary files to DocBlocks, which hides
+the versions iCloud sets aside when two devices save the same document. A small
+native helper, `docblocks-cloud-helper`, reads them and moves them into the
+document's sidecar (`name_files/conflicts/`), where the editor offers them for
+review. It is the `CloudHelper` target of the Swift package that also holds
+the iPhone and iPad storage layer (`packages/mobile/native/ios`), so both
+platforms collect versions with the same code.
+
+`beforePack` builds it from source (`scripts/stage-cloud-helper.cjs`, needs the
+Swift toolchain) and packaging places it in `Contents/Helpers`, signed by the
+app's own signing pass; in the Mac App Store build that gives it the inherited
+sandbox, which `scripts/check-store-packages.ts` verifies. A source checkout
+stages it with `npm run stage:cloud-helper` and simply runs without it
+otherwise. It needs macOS 13 or later; on macOS 12 the editor works as before
+and set-aside versions stay with iCloud. The main process starts it on first
+use, sends one JSON request per line (`main/cloud-helper.ts`), and decides when
+to look (`main/cloud-conflicts.ts`): when a folder opens, when a document is
+read or changes on disk, when the app comes forward, and when the computer
+wakes. Everything it does is best effort, and it only ever adds files.
+
 macOS distributions support Apple Silicon only; 2.7.1 is Intel Macs' final
 version (see [Intel Macs](#intel-macs)). Mac App Store builds include
 AI through a private service inside `userData/ai/gezel`, with standalone Gezel

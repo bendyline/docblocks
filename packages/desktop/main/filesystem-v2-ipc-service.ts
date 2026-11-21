@@ -35,6 +35,19 @@ export type FileSystemV2ProviderFactory = (
 
 export type FileSystemV2WatchSender = (message: HostFileSystemV2WatchMessage) => void;
 
+/**
+ * Told what happens to workspace folders, for main-process features that
+ * follow them (collecting the versions iCloud sets aside). Observers must not
+ * throw; they never affect the result the renderer receives.
+ */
+export interface FileSystemV2Observer {
+  /** A window opened a folder. Paired with one `closed` call. */
+  opened?(rootPath: string): void;
+  closed?(rootPath: string): void;
+  /** A file was read, or a watcher reported it created or changed. */
+  touched?(rootPath: string, itemPath: WorkspacePath): void;
+}
+
 /** Pure owner-scoped service used by the Electron IPC adapter and unit tests. */
 export class FileSystemV2IpcService {
   private readonly records = new Map<string, ProviderRecord>();
@@ -46,6 +59,7 @@ export class FileSystemV2IpcService {
   public constructor(
     private readonly providerFactory: FileSystemV2ProviderFactory = (request, rootPath) =>
       new NodeWorkspaceFileSystemV2(request.providerId, request.label, rootPath),
+    private readonly observer: FileSystemV2Observer = {},
   ) {}
 
   public open(
@@ -95,9 +109,11 @@ export class FileSystemV2IpcService {
   }
 
   public readFile(ownerId: string, instanceId: string, itemPath: WorkspacePath) {
-    return this.withProvider(ownerId, instanceId, 'read', itemPath, null, (provider) =>
-      provider.readFile(itemPath),
-    );
+    return this.withProvider(ownerId, instanceId, 'read', itemPath, null, async (provider) => {
+      const read = await provider.readFile(itemPath);
+      if (read) this.touched(ownerId, instanceId, itemPath);
+      return read;
+    });
   }
 
   public readDirectory(ownerId: string, instanceId: string, itemPath: WorkspacePath) {
@@ -128,9 +144,11 @@ export class FileSystemV2IpcService {
   }
 
   public beginRead(ownerId: string, instanceId: string, itemPath: WorkspacePath) {
-    return this.withProvider(ownerId, instanceId, 'read', itemPath, null, (provider) =>
-      this.transfers.beginRead(ownerId, instanceId, itemPath, provider),
-    );
+    return this.withProvider(ownerId, instanceId, 'read', itemPath, null, async (provider) => {
+      const read = await this.transfers.beginRead(ownerId, instanceId, itemPath, provider);
+      if (read) this.touched(ownerId, instanceId, itemPath);
+      return read;
+    });
   }
 
   public readChunk(ownerId: string, instanceId: string, transferId: string, offset: number) {
@@ -254,7 +272,12 @@ export class FileSystemV2IpcService {
       }
 
       const subscription = record.provider.watch(
-        (event) => send({ instanceId, subscriptionId, kind: 'event', event }),
+        (event) => {
+          if (event.kind === 'file' && event.type !== 'removed') {
+            this.observer.touched?.(record.rootPath, event.destinationPath ?? event.path);
+          }
+          send({ instanceId, subscriptionId, kind: 'event', event });
+        },
         {
           onError: (error) =>
             send({
@@ -301,6 +324,7 @@ export class FileSystemV2IpcService {
       const record = this.records.get(key);
       if (!record) return null;
       this.records.delete(key);
+      this.observer.closed?.(record.rootPath);
       await this.transfers.dispose(ownerId, instanceId);
       await this.enumerations.dispose(ownerId, instanceId);
       await Promise.all([...record.subscriptions.values()].map((item) => item.dispose()));
@@ -322,6 +346,7 @@ export class FileSystemV2IpcService {
     await Promise.all(
       records.map(async ([key, record]) => {
         this.records.delete(key);
+        this.observer.closed?.(record.rootPath);
         await this.transfers.dispose(ownerId, record.request.instanceId);
         await this.enumerations.dispose(ownerId, record.request.instanceId);
         await record.provider.dispose();
@@ -363,7 +388,13 @@ export class FileSystemV2IpcService {
     }
     const record: ProviderRecord = { request, rootPath, provider, subscriptions: new Map() };
     this.records.set(key, record);
+    this.observer.opened?.(rootPath);
     return record;
+  }
+
+  private touched(ownerId: string, instanceId: string, itemPath: WorkspacePath): void {
+    const record = this.records.get(recordKey(ownerId, instanceId));
+    if (record) this.observer.touched?.(record.rootPath, itemPath);
   }
 
   private requireRecord(
