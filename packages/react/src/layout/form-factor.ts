@@ -141,6 +141,16 @@ export function resolveLayoutMode(
 }
 
 /**
+ * The preference that flips a docked file pane: collapse it when it shares the
+ * row with the editor, pin it back when it does not, as the resizer and
+ * Restore split view do. Where `splitPaneAllowed`, applying it always flips
+ * `resolveLayoutMode`; below that there is no docked pane to bring back.
+ */
+export function toggledSidebarPreference(layoutMode: DbLayoutMode): DbSidebarPreference {
+  return layoutMode === 'split-pane' ? 'collapsed' : 'pinned';
+}
+
+/**
  * The contract between this module and `docblocks.css`. Every adaptive rule in
  * the stylesheet keys off one of these attributes rather than re-testing a
  * width, so the breakpoints above stay the single source of truth.

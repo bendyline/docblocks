@@ -6,6 +6,7 @@ import {
   classifyWidth,
   formFactorDataAttributes,
   resolveLayoutMode,
+  toggledSidebarPreference,
   type DbFormFactor,
   type DbLayoutMode,
   type DbPointer,
@@ -141,6 +142,30 @@ describe('form factor classification', () => {
         'single-pane',
       );
     });
+  });
+
+  describe('toggledSidebarPreference', () => {
+    // The View menu's Files row is offered wherever the viewport can split, so
+    // every such layout, from every starting preference, must flip.
+    const splittable: ReadonlyArray<readonly [string, Partial<FormFactorInput>]> = [
+      ['split floor, fine pointer', { width: 800, height: 700, pointer: 'fine' }],
+      ['iPad portrait', { width: 834, height: 1194, pointer: 'coarse' }],
+      ['iPad landscape', { width: 1194, height: 834, pointer: 'coarse' }],
+      ['wide desktop', { width: 1920, height: 1080, pointer: 'fine' }],
+    ];
+
+    for (const [name, overrides] of splittable) {
+      for (const preference of ['auto', 'pinned', 'collapsed'] as const) {
+        it(`flips the layout on ${name} from '${preference}'`, () => {
+          const formFactor = classifyFormFactor(input(overrides));
+          const before = resolveLayoutMode(formFactor, preference);
+          const after = resolveLayoutMode(formFactor, toggledSidebarPreference(before));
+          expect(after).to.not.equal(before);
+          // And back again.
+          expect(resolveLayoutMode(formFactor, toggledSidebarPreference(after))).to.equal(before);
+        });
+      }
+    }
   });
 
   describe('formFactorDataAttributes', () => {

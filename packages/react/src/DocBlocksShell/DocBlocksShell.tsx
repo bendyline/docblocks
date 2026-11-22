@@ -32,6 +32,7 @@ import type {
   NavigationSheetPanel,
   ProofingCapability,
   ProofingIgnoreStore,
+  ViewMenuToggleItem,
   ViewPreferences,
 } from '@bendyline/squisq-editor-react';
 import type { CodeBlockCopyHandler } from '@bendyline/squisq-react';
@@ -335,7 +336,11 @@ import {
   SIDEBAR_WIDTH_MAX,
   SIDEBAR_WIDTH_MIN,
 } from './shell-preferences.js';
-import { resolveLayoutMode, type DbSidebarPreference } from '../layout/form-factor.js';
+import {
+  resolveLayoutMode,
+  toggledSidebarPreference,
+  type DbSidebarPreference,
+} from '../layout/form-factor.js';
 import { useFormFactor } from '../layout/useFormFactor.js';
 import { useInert } from '../layout/useInert.js';
 import { useKeyboardInset } from '../layout/useKeyboardInset.js';
@@ -1230,6 +1235,31 @@ export function DocBlocksShell({
   // A "Restore split view" button exits it, and is only offered where the
   // viewport can actually hold both panes (splitPaneAllowed).
   const canRestoreSplitView = sidebarPreference === 'collapsed' && formFactor.splitPaneAllowed;
+  // Files, in the Navigation column of Squisq's View menu beside its Outline.
+  // It docks and undocks the file pane as the resizer and Restore split view
+  // do, so it is listed only where the viewport can hold both panes. Narrower
+  // layouts have the toolbar's own Files button for the drawer, which would
+  // open under this menu, since toggles leave it open.
+  const toggleDockedFilePane = useCallback(() => {
+    const next = toggledSidebarPreference(layoutMode);
+    updateSidebarPreference(next);
+    // Collapse as the resizer does: single-pane, showing the document.
+    if (next === 'collapsed') setMobileShowEditor(true);
+  }, [layoutMode, updateSidebarPreference]);
+  const viewMenuNavigation = useMemo<readonly ViewMenuToggleItem[] | undefined>(
+    () =>
+      formFactor.splitPaneAllowed
+        ? [
+            {
+              id: 'docblocks-files',
+              label: 'Files',
+              checked: !singlePane,
+              onToggle: toggleDockedFilePane,
+            },
+          ]
+        : undefined,
+    [formFactor.splitPaneAllowed, singlePane, toggleDockedFilePane],
+  );
   const editorAreaRef = useRef<HTMLElement>(null);
   const [desktopToolbarWrapped, setDesktopToolbarWrapped] = useState(false);
   useEffect(() => {
@@ -6673,6 +6703,7 @@ export function DocBlocksShell({
                               findRequest={editorFindRequest}
                               navigationSheet={navigationSheet}
                               onNavigationSheetChange={setNavigationSheet}
+                              viewMenuNavigation={viewMenuNavigation}
                               versionBasename={
                                 versionBasename ?? stripExtension(basenameOf(selectedFile))
                               }
