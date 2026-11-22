@@ -234,9 +234,18 @@ export interface AiChatRequest {
   readonly responseFormat?: AiResponseFormat;
   /**
    * What to search knowledge catalogs for. Without it a provider searches with
-   * the last user message, which for a templated prompt is mostly document.
+   * the last user message, which for a templated prompt is mostly document,
+   * unless {@link searchKnowledge} is false.
    */
   readonly knowledgeQuery?: string;
+  /**
+   * False sends the request without reference passages: the host searches no
+   * knowledge catalog for it. For a task whose prompt forbids adding
+   * information, such as tidying a transcript, where any passage can only
+   * mislead. Omitted means search. A request that searches nothing names no
+   * {@link knowledgeQuery}, citations or {@link workspacePassages}.
+   */
+  readonly searchKnowledge?: boolean;
   /**
    * Number knowledge passages and ask the model to cite them as `[n]`. Only a
    * caller that checks and renders citations should: the markers otherwise
@@ -245,8 +254,9 @@ export interface AiChatRequest {
   readonly knowledgeCitations?: boolean;
   /**
    * Passages from the person's own workspace, found by meaning for this
-   * request. The host offers them to the model beside its knowledge
-   * catalogs' passages, under the same budget and citation numbering.
+   * request. The host offers them with its knowledge catalogs' passages,
+   * under the same budget and citation numbering; a provider that judges
+   * relevance (Gezel's relevance model) may leave some or all of them out.
    */
   readonly workspacePassages?: readonly AiWorkspacePassage[];
 }

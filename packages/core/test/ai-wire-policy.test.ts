@@ -33,6 +33,29 @@ describe('parseAiChatRequest', () => {
     }
   });
 
+  it('accepts an opt-out of knowledge only when nothing asks for knowledge', () => {
+    const optOut = { ...VALID_REQUEST, searchKnowledge: false };
+    expect(parseAiChatRequest(optOut)).to.deep.equal(optOut);
+    const search = { ...VALID_REQUEST, searchKnowledge: true, knowledgeQuery: 'Panama Hotel' };
+    expect(parseAiChatRequest(search)).to.deep.equal(search);
+    const passage = {
+      uri: 'knowledge://local/ws-0123456789abcdef/notes.md#line=1-2',
+      title: 'Notes',
+      text: 'A note.',
+    };
+    expect(parseAiChatRequest({ ...VALID_REQUEST, workspacePassages: [passage] })).not.to.equal(
+      null,
+    );
+    for (const invalid of [
+      { ...VALID_REQUEST, searchKnowledge: 'no' },
+      { ...optOut, knowledgeQuery: 'Panama Hotel' },
+      { ...optOut, knowledgeCitations: true },
+      { ...optOut, workspacePassages: [passage] },
+    ]) {
+      expect(parseAiChatRequest(invalid)).to.equal(null);
+    }
+  });
+
   it('accepts a minimal request and drops nothing', () => {
     expect(parseAiChatRequest({ ...VALID_REQUEST })).to.deep.equal({
       messages: [{ role: 'user', content: 'Draft an intro.' }],

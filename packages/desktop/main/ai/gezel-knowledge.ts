@@ -4,7 +4,7 @@ import {
   WORKSPACE_KNOWLEDGE_CATALOG_ID,
   WORKSPACE_KNOWLEDGE_NAME,
   knowledgeChatEvent,
-  withWorkspacePassages,
+  withWorkspaceCatalogId,
 } from '@bendyline/docblocks/host';
 import type {
   AiChatKnowledge,
@@ -139,7 +139,11 @@ export interface GezelKnowledgeOptions {
   readonly citations?: boolean;
   /** Search Gezel's knowledge catalogs (default true); false offers only workspace passages. */
   readonly catalogs?: boolean;
-  /** Passages from the person's workspace, offered beside the catalogs'. */
+  /**
+   * Passages from the person's workspace, which Gezel ranks with the
+   * catalogs' passages (its relevance model judges both against one bar).
+   * They still ground the request when catalog retrieval fails or is off.
+   */
   readonly workspacePassages?: readonly AiWorkspacePassage[];
 }
 
@@ -154,12 +158,7 @@ export async function withGezelKnowledge(
   const catalogs =
     options.catalogs === false ? undefined : (app.knowledge as GezelApp['knowledge'] | undefined);
   const workspace = options.workspacePassages?.length ? options.workspacePassages : undefined;
-  // The retriever's arrays are readonly; the SDK only reads them.
-  const knowledge = withWorkspacePassages(catalogs, workspace) as Pick<
-    GezelApp['knowledge'],
-    'retrieve'
-  > | null;
-  const context = await knowledgeContext(knowledge, messages, {
+  const context = await knowledgeContext(catalogs ?? null, messages, {
     signal,
     contextWindow: options.contextWindow,
     maxOutputTokens: options.maxTokens,
@@ -169,13 +168,14 @@ export async function withGezelKnowledge(
     // passage it rests on, and is checked against exactly that passage.
     ...(options.citations ? { citations: 'numbered' as const } : {}),
     ...(options.query?.trim() ? { query: options.query } : {}),
+    ...(workspace ? { candidates: workspace } : {}),
     onUnavailable(reason) {
       if (warned.has(reason)) return;
       warned.add(reason);
       console.warn(`[ai] sending AI requests without knowledge passages: ${reason}`);
     },
   });
-  const cited = context.passages;
+  const cited = withWorkspaceCatalogId(context.passages);
   const snapshot = catalogs
     ? await catalogSnapshot(
         app,

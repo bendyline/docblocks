@@ -127,14 +127,16 @@ async function streamFrom(
   const workspacePassages = request.workspacePassages?.length
     ? request.workspacePassages
     : undefined;
+  // A request may opt out, as a transcript tidy that must add nothing does.
+  const catalogs = knowledge && request.searchKnowledge !== false;
   const context =
-    knowledge || workspacePassages
+    catalogs || workspacePassages
       ? await withGezelKnowledge(app, request.messages, signal, {
           contextWindow: request.contextWindow,
           maxTokens: request.maxTokens,
           query: request.knowledgeQuery,
           citations: request.knowledgeCitations === true,
-          catalogs: knowledge,
+          catalogs,
           ...(workspacePassages ? { workspacePassages } : {}),
         })
       : { messages: [...request.messages], knowledge: null };

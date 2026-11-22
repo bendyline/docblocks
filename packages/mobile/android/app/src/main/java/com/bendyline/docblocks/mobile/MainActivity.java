@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
     @Override public void onCreate(Bundle savedInstanceState) {
         LaunchSplash.install(this);
         registerPlugin(DocBlocksMobilePlugin.class);
+        BundledEmbeddingModel.install(this);
         super.onCreate(savedInstanceState);
         receive(getIntent());
         BridgeBoundary.install(getBridge());

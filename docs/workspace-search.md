@@ -76,8 +76,18 @@ startEmbeddingScheduler (react) ◀────▶   pendingEmbeddings / storeEm
   (copying from a local Hugging Face cache when the digests match); packaging
   stages it in `beforePack` and ships it in `resources/embedding-model/` with
   its MIT license. It never downloads at runtime.
-- **Phone model.** The same model the knowledge catalogs use, installed into
-  the knowledge plugin's store; Settings → Search offers the download.
+- **Phone model.** Bundled too: the same files as the desktop's, which are
+  also the knowledge catalogs' query model. `sync:ios` / `sync:android` run
+  `scripts/stage-embedding-model.mjs` after `cap sync`, which puts them in the
+  app's `public/embedding-model/` with a manifest. That fails if the desktop pins
+  differ from the Capacitor SDK's. At launch the app records them as installed
+  in Gezel's knowledge store (`BundledEmbeddingModel` in `AppDelegate.swift`,
+  an APFS clone; `BundledEmbeddingModel.java`, a one-time copy out of the APK).
+  Gezel's plugin installs only what it downloads, but it counts a store folder
+  holding the files and an `installed.json` of their digests as installed.
+  `verify-package.py` fails a release whose model is missing or altered. A
+  build without the model falls back to Settings → Search offering the
+  download.
 - **Scheduling.** `startEmbeddingScheduler` embeds in batches of 16 while the
   page is visible and the switch is on, backs off when the embedder fails, and
   sleeps until the index changes. Vectors are keyed by a hash of the exact
@@ -103,11 +113,17 @@ startEmbeddingScheduler (react) ◀────▶   pendingEmbeddings / storeEm
   256 characters, no control characters or empty segments. A note whose path
   the grammar cannot name is not offered. `parseWorkspacePassageUri` reads one
   back. Evidence on the `knowledge` chat event carries each passage's `uri`.
-- **Ranking.** Hosts hand the passages to Gezel's `knowledgeContext`, beside
-  the enabled catalogs (`withWorkspacePassages` in core). Today the two take
-  turns, a catalog passage first. Gezel's retrieve route can also take them as
-  `candidates` and judge both with its relevance model; DocBlocks moves to that
-  once the release with it is pinned.
+- **Ranking.** Hosts hand the passages to Gezel's `knowledgeContext` as
+  knowledge `candidates` (Gezel 1.3.5 / app SDK 1.2.5 and later). On desktop,
+  with Gezel's relevance model installed, Gezel scores workspace and catalog
+  passages together and keeps only what clears the model's bar, so a note the
+  index admitted can still be left out. Without the model (and always on
+  phones) the two take turns, a catalog passage first. Workspace passages still
+  ground the request when no catalog is enabled or catalog search fails.
+  Gezel returns a chosen passage under its `ws-…` collection id; hosts report
+  every workspace passage under one source, "This workspace"
+  (`withWorkspaceCatalogId` in core). `packages/desktop/test/gezel-knowledge.test.ts`
+  drives Gezel's own route through the SDK to pin this behaviour.
 - **Footnotes.** An inserted draft names a cited note in a footnote that links
   it relative to the document: `[^source-1]: [Rose bed](garden/roses.md), a
 note in this workspace.`
@@ -115,7 +131,9 @@ note in this workspace.`
   side-panel conversation. Each question finds passages across the whole
   workspace (4 s budget), sends them with the last three finished turns, and
   checks the answer's details against them where the host has a fact check. A
-  question that matches no note never reaches the model. Citations are chips
+  question that matches no note never reaches the model, and a turn stops
+  before answering when Gezel's relevance model finds none of its passages
+  relevant (the model would otherwise answer from memory). Citations are chips
   that open the note with Find on the passage; the indicator lists each note
   with its lines. Answers can be inserted into the document or saved as a new
   note, both with footnotes. The conversation belongs to the shell, so it

@@ -9,6 +9,7 @@ import type {
   DocBlocksHostAiAPI,
 } from '@bendyline/docblocks/host';
 import { NarrationRewriteAction } from '../src/Speech/NarrationRewriteAction.js';
+import { narrationRewriteRequest } from '../src/Speech/narration-text.js';
 
 (globalThis as typeof globalThis & { React: typeof React }).React = React;
 
@@ -131,5 +132,13 @@ describe('narration rewrite action', () => {
     expect(fake.cancelled()).to.equal(true);
     await act(async () => fake.complete('Late response.'));
     expect(changes).to.deep.equal([]);
+  });
+});
+
+describe('narration rewrite request', () => {
+  it('searches no knowledge: tidying a transcript must add nothing to it', () => {
+    const request = narrationRewriteRequest('Um, the Panama Hotel.');
+    expect(request.searchKnowledge).to.equal(false);
+    expect(request).not.to.have.any.keys('knowledgeQuery', 'knowledgeCitations');
   });
 });

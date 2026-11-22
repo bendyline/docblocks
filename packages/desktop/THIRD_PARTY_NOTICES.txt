@@ -19,13 +19,13 @@ Other AI models, speech models, and voices are not part of this distribution. Th
 
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
-| @bendyline/gezel | 1.3.4 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-app-sdk | 1.2.4 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-catalog | 1.3.4 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-client | 1.3.4 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-inference | 1.1.4 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-knowledge | 1.2.12 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezk | 1.0.8 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel | 1.3.5 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-app-sdk | 1.2.5 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-catalog | 1.3.5 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-client | 1.3.5 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-inference | 1.1.5 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-knowledge | 1.2.13 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezk | 1.0.9 | MIT | https://github.com/bendyline/gezel |
 | @bendyline/squisq | 2.14.0 | MIT | https://github.com/bendyline/squisq |
 | @bendyline/squisq-calc | 2.11.2 | MIT | https://github.com/bendyline/squisq |
 | @bendyline/squisq-editor-react | 2.14.0 | MIT | https://github.com/bendyline/squisq |
@@ -309,7 +309,7 @@ The following locked packages declare a license identifier but publish no packag
 | onnxruntime-node | 1.30.0 | MIT | https://www.npmjs.com/package/onnxruntime-node |
 
 ==============================================================================
-Components: @bendyline/gezel-app-sdk@1.2.4, @bendyline/gezel-catalog@1.3.4, @bendyline/gezel-client@1.3.4, @bendyline/gezel-inference@1.1.4, @bendyline/gezel-knowledge@1.2.12, @bendyline/gezel@1.3.4, @bendyline/gezk@1.0.8
+Components: @bendyline/gezel-app-sdk@1.2.5, @bendyline/gezel-catalog@1.3.5, @bendyline/gezel-client@1.3.5, @bendyline/gezel-inference@1.1.5, @bendyline/gezel-knowledge@1.2.13, @bendyline/gezel@1.3.5, @bendyline/gezk@1.0.9
 Source files: node_modules/@bendyline/gezel-app-sdk/LICENSE, node_modules/@bendyline/gezel-catalog/LICENSE, node_modules/@bendyline/gezel-client/LICENSE, node_modules/@bendyline/gezel-knowledge/LICENSE, node_modules/@bendyline/gezel/LICENSE, node_modules/@bendyline/gezk/LICENSE, packages/desktop/node_modules/@bendyline/gezel-inference/LICENSE
 ==============================================================================
 MIT License

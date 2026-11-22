@@ -44,6 +44,8 @@ export async function chatOnce(
   const handle = ai.chat(request, onEvent ?? (() => undefined));
   const abort = () => handle.cancel();
   signal?.addEventListener('abort', abort, { once: true });
+  // `onEvent` may abort while `chat` is still emitting, before the listener existed.
+  if (signal?.aborted) abort();
   try {
     const result = await handle.done;
     if (signal?.aborted) return { kind: 'cancelled' };

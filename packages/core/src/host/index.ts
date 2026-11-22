@@ -136,10 +136,8 @@ export {
   WORKSPACE_KNOWLEDGE_CATALOG_ID,
   WORKSPACE_KNOWLEDGE_NAME,
   parseWorkspacePassageUri,
-  withWorkspacePassages,
+  withWorkspaceCatalogId,
   workspacePassageUri,
-  type KnowledgeRetrievedPassage,
-  type KnowledgeRetriever,
   type WorkspacePassageReference,
 } from './ai-workspace-knowledge.js';
 

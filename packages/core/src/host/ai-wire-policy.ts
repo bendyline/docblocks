@@ -432,6 +432,7 @@ export function parseAiChatRequest(value: unknown): AiChatRequest | null {
         'responseFormat',
         'knowledgeQuery',
         'knowledgeCitations',
+        'searchKnowledge',
         'workspacePassages',
       ],
     )
@@ -488,6 +489,18 @@ export function parseAiChatRequest(value: unknown): AiChatRequest | null {
       ? undefined
       : parseAiWorkspacePassages(value.workspacePassages);
   if (workspacePassages === null) return null;
+  if (value.searchKnowledge !== undefined && typeof value.searchKnowledge !== 'boolean') {
+    return null;
+  }
+  // A request that searches nothing has nothing to search for, cite or merge.
+  if (
+    value.searchKnowledge === false &&
+    (value.knowledgeQuery !== undefined ||
+      value.knowledgeCitations === true ||
+      workspacePassages !== undefined)
+  ) {
+    return null;
+  }
 
   return {
     messages,
@@ -502,6 +515,9 @@ export function parseAiChatRequest(value: unknown): AiChatRequest | null {
     ...(value.knowledgeCitations === undefined
       ? {}
       : { knowledgeCitations: value.knowledgeCitations as boolean }),
+    ...(value.searchKnowledge === undefined
+      ? {}
+      : { searchKnowledge: value.searchKnowledge as boolean }),
     ...(workspacePassages === undefined ? {} : { workspacePassages }),
   };
 }

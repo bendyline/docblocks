@@ -24,6 +24,7 @@ if platform == 'ios':
     privacy = plistlib.loads((app / 'PrivacyInfo.xcprivacy').read_bytes())
     assert {'NSPrivacyAccessedAPICategoryDiskSpace', 'NSPrivacyAccessedAPICategorySystemBootTime'} <= {item['NSPrivacyAccessedAPIType'] for item in privacy['NSPrivacyAccessedAPITypes']}
     actual = {str(p.relative_to(app / 'public')): hashlib.sha256(p.read_bytes()).hexdigest() for p in (app / 'public').rglob('*') if p.is_file()}
+    model_manifest = (app / 'public/embedding-model/manifest.json').read_bytes() if (app / 'public/embedding-model/manifest.json').is_file() else None
     config = json.loads((app / 'capacitor.config.json').read_text())
     assert 'GezelRuntimePlugin' in config['packageClassList'], 'Missing native AI plugin'
     assert b'llama_model_load_from_file_impl' in (app / 'App').read_bytes(), 'Missing linked inference engine'
@@ -38,6 +39,7 @@ else:
     with zipfile.ZipFile(artifact) as archive:
         prefix = 'base/assets/' if artifact.endswith('.aab') else 'assets/'
         actual = {name.removeprefix(prefix + 'public/'): hashlib.sha256(archive.read(name)).hexdigest() for name in archive.namelist() if name.startswith(prefix + 'public/') and not name.endswith('/')}
+        model_manifest = archive.read(prefix + 'public/embedding-model/manifest.json') if prefix + 'public/embedding-model/manifest.json' in archive.namelist() else None
         config = json.loads(archive.read(prefix + 'capacitor.config.json'))
         for name in archive.namelist():
             if name.endswith('.dex'):
@@ -60,5 +62,9 @@ assert config['appId'] == 'com.bendyline.docblocks'
 assert 'url' not in config.get('server', {}) and not config.get('server', {}).get('allowNavigation')
 assert all(actual.get(name) == digest for name, digest in expected.items()), 'Native web payload is stale or incomplete'
 assert not any('ffmpeg-core' in name for name in actual)
+# Search by meaning ships its model (scripts/stage-embedding-model.mjs); the app installs it at launch.
+assert model_manifest is not None, 'Missing bundled embedding model'
+model = json.loads(model_manifest)
+assert model['files'] and all(actual.get('embedding-model/' + f['name']) == f['sha256'] for f in model['files']), 'Bundled embedding model is incomplete'
 assert not any(name.endswith(('ai-smoke.js', 'mobile-ai-fixture.gguf')) for name in actual), 'AI test assets shipped in release'
 print(json.dumps({'platform': platform, 'webFilesVerified': len(expected), 'artifact': artifact}))

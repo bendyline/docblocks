@@ -11,7 +11,10 @@ import type {
   MobileProvider,
 } from '@bendyline/gezel/mobile-providers';
 import type { AiChatEvent, AiPreferences, AiStatus } from '@bendyline/docblocks/host';
-import type { EmbeddingConnection } from '@bendyline/gezel-app-sdk/browser';
+import {
+  interleaveKnowledgeCandidates,
+  type EmbeddingConnection,
+} from '@bendyline/gezel-app-sdk/browser';
 import { createMobileAi } from '../src/ai/host';
 import { buildReviewRequest } from '../../react/src/Ai/ai-assistant';
 import { WELCOME_DOCUMENT_CONTENT } from '../../react/src/DocBlocksShell/welcome-document';
@@ -1077,6 +1080,125 @@ describe('mobile knowledge', () => {
     assert.equal(routed?.messages.at(-1)?.content, 'Hello');
     const knowledge = events.find((event) => event.kind === 'knowledge');
     assert.ok(knowledge?.kind === 'knowledge' && knowledge.knowledge.outcome !== 'used');
+    await f.ai.setPreferences({ enabled: false });
+  });
+
+  const note = {
+    uri: 'knowledge://local/ws-0123456789abcdef/garden/pests.md#line=3-5',
+    title: 'Garden notes › Pests',
+    text: 'Aphids gather under the leaves.',
+  };
+
+  it('hands workspace passages to Gezel as candidates and names them', async () => {
+    const offered: unknown[] = [];
+    const f = withKnowledge({
+      // The plugin's retrieval: candidates take turns with catalog passages.
+      retrieve: async (query) => {
+        offered.push(query.candidates);
+        return interleaveKnowledgeCandidates(
+          { reranked: false, passages: [passage] },
+          query.candidates ?? [],
+          query,
+        );
+      },
+    });
+    let routed: Parameters<GezelRuntimePlugin['generate']>[0] | undefined;
+    f.runtime.generate = async (input) => {
+      routed = input;
+      return { text: 'Aphids.', stopReason: 'stop' };
+    };
+    const events: AiChatEvent[] = [];
+    const result = await f.ai.chat(
+      {
+        purpose: 'write',
+        messages: [{ role: 'user', content: 'What eats my roses?' }],
+        knowledgeQuery: 'What eats my roses?',
+        workspacePassages: [note],
+      },
+      (event) => events.push(event),
+    ).done;
+    assert.ok(result.ok, JSON.stringify(result));
+    assert.deepEqual(offered, [[note]]);
+    assert.ok(routed?.messages[0]?.content.includes(note.text));
+    assert.ok(routed?.messages[0]?.content.includes(passage.text));
+    const knowledge = events.find((event) => event.kind === 'knowledge');
+    assert.deepEqual(knowledge?.kind === 'knowledge' && knowledge.knowledge, {
+      outcome: 'used',
+      sources: [
+        { catalogId: catalog.id, name: 'Pacific Northwest', titles: [passage.title] },
+        { catalogId: 'workspace', name: 'This workspace', titles: [note.title] },
+      ],
+      evidence: [
+        { title: passage.title, catalogId: catalog.id, text: passage.text, uri: passage.uri },
+        { title: note.title, catalogId: 'workspace', text: note.text, uri: note.uri },
+      ],
+    });
+    await f.ai.setPreferences({ enabled: false });
+  });
+
+  it('grounds a request in workspace passages when catalog retrieval fails', async () => {
+    const f = withKnowledge({
+      retrieve: async () => {
+        throw new Error('The knowledge worker stopped');
+      },
+    });
+    let routed: Parameters<GezelRuntimePlugin['generate']>[0] | undefined;
+    f.runtime.generate = async (input) => {
+      routed = input;
+      return { text: 'Aphids.', stopReason: 'stop' };
+    };
+    const events: AiChatEvent[] = [];
+    const result = await f.ai.chat(
+      {
+        purpose: 'write',
+        messages: [{ role: 'user', content: 'What eats my roses?' }],
+        knowledgeQuery: 'What eats my roses?',
+        workspacePassages: [note],
+      },
+      (event) => events.push(event),
+    ).done;
+    assert.ok(result.ok, JSON.stringify(result));
+    assert.ok(routed?.messages[0]?.content.includes(note.text));
+    const knowledge = events.find((event) => event.kind === 'knowledge');
+    assert.deepEqual(knowledge?.kind === 'knowledge' && knowledge.knowledge.outcome, 'used');
+    assert.deepEqual(
+      knowledge?.kind === 'knowledge' &&
+        knowledge.knowledge.outcome === 'used' &&
+        knowledge.knowledge.sources,
+      [{ catalogId: 'workspace', name: 'This workspace', titles: [note.title] }],
+    );
+    await f.ai.setPreferences({ enabled: false });
+  });
+
+  it('sends a request that opts out of knowledge as written', async () => {
+    const f = withKnowledge();
+    let routed: Parameters<GezelRuntimePlugin['generate']>[0] | undefined;
+    f.runtime.generate = async (input) => {
+      routed = input;
+      return { text: 'Tidy prose.', stopReason: 'stop' };
+    };
+    const events: AiChatEvent[] = [];
+    const result = await f.ai.chat(
+      {
+        purpose: 'chat',
+        searchKnowledge: false,
+        messages: [
+          { role: 'system', content: 'Edit a speech transcript.' },
+          { role: 'user', content: 'um the panama hotel' },
+        ],
+      },
+      (event) => events.push(event),
+    ).done;
+    assert.ok(result.ok, JSON.stringify(result));
+    assert.deepEqual(f.queries, []);
+    assert.equal(
+      events.some((event) => event.kind === 'knowledge'),
+      false,
+    );
+    assert.deepEqual(routed?.messages, [
+      { role: 'system', content: 'Edit a speech transcript.' },
+      { role: 'user', content: 'um the panama hotel' },
+    ]);
     await f.ai.setPreferences({ enabled: false });
   });
 });

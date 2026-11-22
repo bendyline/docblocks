@@ -684,7 +684,15 @@ describe('desktop AI service: chat', () => {
     expect(connector.connection.streams[1].request).not.to.have.any.keys(
       'knowledgeQuery',
       'knowledgeCitations',
+      'searchKnowledge',
     );
+  });
+
+  it("passes a request's opt-out of knowledge to the provider", async () => {
+    const { service, connector } = await readyService();
+    service.startChat('1:a', { ...WRITE_REQUEST, searchKnowledge: false }, () => undefined);
+    await settle();
+    expect(connector.connection.streams[0].request).to.include({ searchKnowledge: false });
   });
 
   it('a cancelled stream still ends once, with its partial text', async () => {

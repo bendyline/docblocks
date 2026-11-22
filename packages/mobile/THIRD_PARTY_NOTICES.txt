@@ -11,16 +11,17 @@ Components: 222.
 Fonts and their license texts ship under fonts/. The native app bundles this notice and all WASM licenses for offline access.
 The narration frontend compiled in from `@bendyline/gezel` embeds Kokoro's phoneme vocabulary (https://github.com/hexgrad/kokoro) and pronunciation readings generated from misaki's dictionaries (https://github.com/hexgrad/misaki), both Apache-2.0; the Apache License 2.0 text is reproduced below. The pronunciation dictionaries ship gzipped as `assets/lexicon-*-en-*.bin`, from `@bendyline/gezel-capacitor/kokoro-lexicon/`, which carries their license.
 The knowledge catalog reader (`knowledge-worker.js` with SQLite in `sqlite3.wasm`) and the question tokenizer are compiled into `@bendyline/gezel-capacitor`; their packages are listed above from the license manifest that package carries.
-AI models, speech models, and voices are not part of this distribution. They are downloaded only when you choose them, and each remains under the license published by its provider.
+Semantic search bundles the bge-small-en-v1.5 embedding model (BAAI, https://huggingface.co/BAAI/bge-small-en-v1.5; MIT License, Copyright (c) 2022 staoxiao) as its ONNX conversion (https://huggingface.co/Xenova/bge-small-en-v1.5). It ships with its license at `embedding-model/LICENSE` among the app's web assets.
+Other AI models, speech models, and voices are not part of this distribution. They are downloaded only when you choose them, and each remains under the license published by its provider.
 
 ## Component manifest
 
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
-| @bendyline/gezel | 1.3.4 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-app-sdk | 1.2.4 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-capacitor | 1.1.4 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezk | 1.0.8 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel | 1.3.5 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-app-sdk | 1.2.5 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-capacitor | 1.1.5 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezk | 1.0.9 | MIT | https://github.com/bendyline/gezel |
 | @bendyline/squisq | 2.14.0 | MIT | https://github.com/bendyline/squisq |
 | @bendyline/squisq-calc | 2.11.2 | MIT | https://github.com/bendyline/squisq |
 | @bendyline/squisq-editor-react | 2.14.0 | MIT | https://github.com/bendyline/squisq |
@@ -254,7 +255,7 @@ The following locked packages declare a license identifier but publish no packag
 | fastdom | 1.0.12 | MIT | https://github.com/wilsonpage/fastdom |
 
 ==============================================================================
-Components: @bendyline/gezel-app-sdk@1.2.4, @bendyline/gezel-capacitor@1.1.4, @bendyline/gezel@1.3.4, @bendyline/gezk@1.0.8
+Components: @bendyline/gezel-app-sdk@1.2.5, @bendyline/gezel-capacitor@1.1.5, @bendyline/gezel@1.3.5, @bendyline/gezk@1.0.9
 Source files: node_modules/@bendyline/gezel-app-sdk/LICENSE, node_modules/@bendyline/gezel-capacitor/LICENSE, node_modules/@bendyline/gezel/LICENSE, node_modules/@bendyline/gezk/LICENSE
 ==============================================================================
 MIT License

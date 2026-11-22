@@ -75,6 +75,9 @@ export function narrationRewriteRequest(text: string): AiChatRequest {
     purpose: 'chat',
     temperature: 0.2,
     maxTokens: 2_048,
+    // The prompt forbids adding information, so a reference passage could
+    // only lead the model to slip a fact into the speaker's words.
+    searchKnowledge: false,
     messages: [
       {
         role: 'system',

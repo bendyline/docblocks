@@ -225,7 +225,7 @@ describe('Core exports', () => {
       'tryParseWorkspacePath',
       'unregisterTransientWorkspace',
       'wikiArticleExists',
-      'withWorkspacePassages',
+      'withWorkspaceCatalogId',
       'workspacePassageUri',
       'workspacePathBasename',
       'workspacePathContains',

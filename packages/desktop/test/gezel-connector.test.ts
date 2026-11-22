@@ -506,6 +506,41 @@ describe('Gezel connector against the app SDK', () => {
     expect(body.messages[1]).to.deep.equal({ role: 'user', content: 'Explain science.' });
   });
 
+  it('searches no catalog for a request that opts out of knowledge', async () => {
+    const daemon = new FakeDaemon();
+    daemon.validToken = 'kept-token';
+    daemon.knowledgePassages = [
+      {
+        uri: 'knowledge://publisher/law/case',
+        title: 'Sourdough Freight Lines v. Teamsters',
+        text: 'A ruling.',
+        catalogId: 'law',
+        version: '1',
+      },
+    ];
+    const connection = await connectorFor(daemon, new MemoryCredentials('kept-token')).connect({
+      interactive: false,
+    });
+    const stream = await connection.streamChat(
+      {
+        model: 'gezel:writer',
+        messages: [{ role: 'user', content: 'Tidy this sourdough transcript.' }],
+        searchKnowledge: false,
+      },
+      new AbortController().signal,
+    );
+    const chunks: ProviderChatChunk[] = [];
+    for await (const chunk of stream) chunks.push(chunk);
+    expect(chunks.some((chunk) => chunk.knowledge)).to.equal(false);
+    expect(daemon.requests.some((entry) => entry.path === '/v1/knowledge/retrieve')).to.equal(
+      false,
+    );
+    const completion = daemon.requests.find((entry) => entry.path === '/v1/chat/completions');
+    expect((completion?.body as { messages: unknown[] }).messages).to.deep.equal([
+      { role: 'user', content: 'Tidy this sourdough transcript.' },
+    ]);
+  });
+
   it('reports cited knowledge before the model answers, even when it then fails', async () => {
     const daemon = new FakeDaemon();
     daemon.validToken = 'kept-token';

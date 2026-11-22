@@ -2,20 +2,10 @@ import { expect } from 'chai';
 import {
   WORKSPACE_KNOWLEDGE_CATALOG_ID,
   parseWorkspacePassageUri,
-  withWorkspacePassages,
+  withWorkspaceCatalogId,
   workspacePassageUri,
-  type KnowledgeRetrievedPassage,
-  type KnowledgeRetriever,
 } from '../src/host/ai-workspace-knowledge.js';
 import { parseAiWorkspacePassages } from '../src/host/ai-wire-policy.js';
-
-const passage = (n: number, text = `curated ${n}`): KnowledgeRetrievedPassage => ({
-  uri: `knowledge://bendyline/wiki/doc-${n}`,
-  title: `Doc ${n}`,
-  text,
-  catalogId: 'wiki',
-  version: '1',
-});
 
 const workspace = (n: number, text = `note ${n}`) => ({
   uri: `knowledge://local/ws-1/notes/${n}.md#line=1-3`,
@@ -23,74 +13,26 @@ const workspace = (n: number, text = `note ${n}`) => ({
   text,
 });
 
-function client(passages: KnowledgeRetrievedPassage[], fails?: Error): KnowledgeRetriever {
-  return {
-    retrieve: async () => {
-      if (fails) throw fails;
-      return { reranked: true, passages };
-    },
-  };
-}
-
-const query = { query: 'q', maxResults: 4, maxCharacters: 1_000 };
-
 describe('workspace passages in knowledge retrieval', () => {
-  it('leaves the client alone without workspace passages', () => {
-    const curated = client([passage(1)]);
-    expect(withWorkspacePassages(curated, undefined)).to.equal(curated);
-    expect(withWorkspacePassages(curated, [])).to.equal(curated);
-    expect(withWorkspacePassages(null, [])).to.equal(null);
-  });
-
-  it('alternates catalog and workspace passages within the result limit', async () => {
-    const merged = withWorkspacePassages(client([passage(1), passage(2), passage(3)]), [
-      workspace(1),
-      workspace(2),
-      workspace(3),
+  it('reports every workspace passage Gezel returns under one source', () => {
+    const catalog = {
+      n: 1,
+      uri: 'knowledge://bendyline/wiki/doc-1',
+      title: 'Doc 1',
+      text: 'curated',
+      catalogId: 'wiki',
+      version: '1',
+    };
+    // Gezel returns a chosen candidate under its collection, the reference's second segment.
+    const note = { ...workspace(1), n: 2, catalogId: 'ws-1', version: 'local' };
+    const reported = withWorkspaceCatalogId([catalog, note]);
+    expect(reported).to.deep.equal([
+      catalog,
+      { ...note, catalogId: WORKSPACE_KNOWLEDGE_CATALOG_ID },
     ]);
-    const result = await merged!.retrieve(query);
-    expect(result.reranked).to.equal(true);
-    expect(result.passages.map((p) => p.title)).to.deep.equal([
-      'Doc 1',
-      'Note 1',
-      'Doc 2',
-      'Note 2',
-    ]);
-    expect(result.passages[1]).to.include({
-      catalogId: WORKSPACE_KNOWLEDGE_CATALOG_ID,
-      version: 'local',
-    });
-  });
-
-  it('skips a passage that would overrun the character budget', async () => {
-    const merged = withWorkspacePassages(client([passage(1, 'x'.repeat(900))]), [
-      workspace(1, 'y'.repeat(200)),
-      workspace(2, 'short'),
-    ]);
-    const result = await merged!.retrieve(query);
-    expect(result.passages.map((p) => p.text.length)).to.deep.equal([900, 5]);
-  });
-
-  it('keeps workspace passages when the catalogs fail or are absent, not when cancelled', async () => {
-    const failing = withWorkspacePassages(client([], new Error('down')), [workspace(1)]);
-    expect((await failing!.retrieve(query)).passages.map((p) => p.title)).to.deep.equal(['Note 1']);
-    const alone = withWorkspacePassages(null, [workspace(1)]);
-    expect((await alone!.retrieve(query)).reranked).to.equal(false);
-
-    const controller = new AbortController();
-    const cancelled = withWorkspacePassages(
-      {
-        retrieve: async () => {
-          controller.abort();
-          throw new Error('aborted');
-        },
-      },
-      [workspace(1)],
-    );
-    const error = await cancelled!
-      .retrieve(query, { signal: controller.signal })
-      .catch((caught: unknown) => caught);
-    expect((error as Error).message).to.equal('aborted');
+    // A catalog passage keeps its catalog, even one that claims the workspace's id.
+    const impostor = { ...catalog, catalogId: 'ws-1' };
+    expect(withWorkspaceCatalogId([impostor])).to.deep.equal([impostor]);
   });
 
   it('names a note and its lines in the grammar Gezel accepts, and reads it back', () => {

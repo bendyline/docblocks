@@ -378,7 +378,10 @@ The connection asks for `openai` plus scoped
 `knowledge` access with a typed verification code. Catalog
 inventory and explicit download/update/enable/remove actions use optional
 `host.ai.knowledge`; every desktop chat retrieves bounded cited passages and
-leaves ranking to the SDK. Model locality and Apple readiness come from Gezel
+leaves ranking to the SDK, except a request that sets `searchKnowledge: false`
+(transcript tidying, whose prompt forbids adding information). Reviews search
+with the document's title and headings (`packages/react/src/Ai/review-knowledge.ts`),
+never the whole prompt, which matches large catalogs by stray words. Model locality and Apple readiness come from Gezel
 inventory, never provider-name heuristics or a DocBlocks native-helper probe.
 Knowledge never blocks a request: missing SDK support,
 a failed retrieval, or a malformed answer sends the request without passages.

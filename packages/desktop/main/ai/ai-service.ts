@@ -101,6 +101,8 @@ export interface ProviderChatRequest {
   readonly responseFormat?: AiResponseFormat;
   readonly knowledgeQuery?: string;
   readonly knowledgeCitations?: boolean;
+  /** False: search no knowledge catalog for this request. */
+  readonly searchKnowledge?: boolean;
   readonly workspacePassages?: AiChatRequest['workspacePassages'];
 }
 
@@ -661,6 +663,7 @@ export class AiService {
       ...(request.responseFormat === undefined ? {} : { responseFormat: request.responseFormat }),
       ...(request.knowledgeQuery === undefined ? {} : { knowledgeQuery: request.knowledgeQuery }),
       ...(request.knowledgeCitations ? { knowledgeCitations: true } : {}),
+      ...(request.searchKnowledge === false ? { searchKnowledge: false } : {}),
       ...(request.workspacePassages?.length
         ? { workspacePassages: request.workspacePassages }
         : {}),

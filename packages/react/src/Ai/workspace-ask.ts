@@ -5,7 +5,9 @@
  * Each turn finds passages by meaning for the question alone, sends them with
  * the last few turns, and checks the answer's details against what the model
  * was shown. A turn that finds nothing never reaches the model: an answer
- * with no notes behind it would come from the model's memory.
+ * with no notes behind it would come from the model's memory. For the same
+ * reason a turn stops when the host reports that none of its passages were
+ * used (Gezel's relevance model found none of them answers the question).
  *
  * The session is a small store rather than React state, so a streaming answer
  * re-renders the panel and not the whole shell, and a run outlives the editor
@@ -278,9 +280,17 @@ export function createWorkspaceAskSession(): WorkspaceAskSession {
       });
       let answer = '';
       let knowledge: AiChatKnowledge | null = null;
+      // Gezel's relevance model judges the passages again and may find none
+      // of them answers the question; the model would then answer from memory.
+      let judgedIrrelevant = false;
       const onEvent = (event: AiChatEvent) => {
         if (run.signal.aborted) return;
         const now = Date.now();
+        if (event.kind === 'knowledge' && event.knowledge.outcome === 'none') {
+          judgedIrrelevant = true;
+          run.abort();
+          return;
+        }
         if (event.kind === 'knowledge') {
           knowledge = mergeAiKnowledge(knowledge, event.knowledge);
           update(id, { knowledge });
@@ -305,6 +315,11 @@ export function createWorkspaceAskSession(): WorkspaceAskSession {
         onEvent,
       );
       if (controller === run) controller = null;
+      if (judgedIrrelevant) {
+        publish({ ...snapshot, generation: null });
+        update(id, { status: 'nothing' });
+        return;
+      }
       if (run.signal.aborted && outcome.kind !== 'ok') return;
       publish({ ...snapshot, generation: null });
       if (outcome.kind === 'cancelled') {

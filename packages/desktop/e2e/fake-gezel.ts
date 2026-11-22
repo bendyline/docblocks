@@ -475,7 +475,35 @@ export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGez
             catalogId: knowledge!.catalog.id,
             version: '1',
           }));
-          sendJson(response, 200, { reranked: true, passages });
+          // The app's own passages (Gezel 1.3.5+), as Gezel treats them without
+          // its relevance model: taking turns with catalog passages, a catalog
+          // passage first, within the request's budget.
+          const own = (Array.isArray(query.candidates) ? query.candidates : []).map(
+            (candidate: { uri: string; title: string; text: string }) => ({
+              uri: candidate.uri,
+              title: candidate.title,
+              text: candidate.text,
+              catalogId: candidate.uri.slice('knowledge://local/'.length).split('/')[0],
+              version: 'local',
+            }),
+          );
+          if (!own.length) {
+            sendJson(response, 200, { reranked: true, passages });
+          } else {
+            const fitted: typeof passages = [];
+            let remaining = Number(query.maxCharacters);
+            for (let index = 0; index < Math.max(passages.length, own.length); index += 1) {
+              for (const passage of [passages[index], own[index]]) {
+                if (!passage || remaining <= 0 || fitted.length >= Number(query.maxResults)) {
+                  continue;
+                }
+                const text = passage.text.slice(0, remaining);
+                fitted.push({ ...passage, text });
+                remaining -= text.length;
+              }
+            }
+            sendJson(response, 200, { reranked: false, passages: fitted });
+          }
         }
       } else if (request.method === 'GET' && url.pathname === '/v1/models') {
         sendJson(response, 200, {

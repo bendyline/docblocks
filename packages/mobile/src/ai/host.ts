@@ -3,7 +3,7 @@ import {
   knowledgeChatEvent,
   WORKSPACE_KNOWLEDGE_CATALOG_ID,
   WORKSPACE_KNOWLEDGE_NAME,
-  withWorkspacePassages,
+  withWorkspaceCatalogId,
   parseAiChatProgress,
   parseAiChatRequest,
   parseAiPreferences,
@@ -491,52 +491,60 @@ export function createMobileAi(options: MobileAiOptions) {
             Math.max(1, (model.context_window ?? 4096) - 1),
           );
           // Reference passages from enabled catalogs and the person's workspace;
-          // retrieval never fails the request.
+          // retrieval never fails the request. A request may opt out, as a
+          // transcript tidy that must add nothing does: it is sent as written.
+          // Workspace passages go to Gezel as candidates, which take turns
+          // with catalog passages (phones have no relevance model) and still
+          // ground the request when no catalog is on or catalog search fails.
           const workspace = request.workspacePassages?.length
             ? request.workspacePassages
             : undefined;
-          // The retriever's arrays are readonly; the SDK only reads them.
-          const retriever = withWorkspacePassages(embedding.knowledge, workspace) as
-            | typeof embedding.knowledge
-            | null;
-          const context = await knowledgeContext(retriever, request.messages, {
-            signal: controller.signal,
-            contextWindow: model.context_window ?? null,
-            maxOutputTokens: maxTokens,
-            maxPromptCharacters: AI_WIRE_LIMITS.promptCharacters,
-            maxMessages: AI_WIRE_LIMITS.messageEntries,
-            ...(request.knowledgeCitations ? { citations: 'numbered' as const } : {}),
-            ...(request.knowledgeQuery?.trim() ? { query: request.knowledgeQuery } : {}),
-          });
+          const context =
+            request.searchKnowledge === false
+              ? null
+              : await knowledgeContext(embedding.knowledge, request.messages, {
+                  signal: controller.signal,
+                  contextWindow: model.context_window ?? null,
+                  maxOutputTokens: maxTokens,
+                  maxPromptCharacters: AI_WIRE_LIMITS.promptCharacters,
+                  maxMessages: AI_WIRE_LIMITS.messageEntries,
+                  ...(request.knowledgeCitations ? { citations: 'numbered' as const } : {}),
+                  ...(request.knowledgeQuery?.trim() ? { query: request.knowledgeQuery } : {}),
+                  ...(workspace ? { candidates: workspace } : {}),
+                });
           checkCancelled(controller.signal);
-          // Names label the cited sources; whether any catalog is on labels the rest.
-          if (
-            !catalogs ||
-            Date.now() - catalogs.at > CATALOG_NAMES_MS ||
-            context.passages.some(
-              (passage) =>
-                passage.catalogId !== WORKSPACE_KNOWLEDGE_CATALOG_ID &&
-                !catalogs?.names.has(passage.catalogId),
+          if (context) {
+            const cited = withWorkspaceCatalogId(context.passages);
+            // Names label the cited sources; whether any catalog is on labels the rest.
+            if (
+              !catalogs ||
+              Date.now() - catalogs.at > CATALOG_NAMES_MS ||
+              cited.some(
+                (passage) =>
+                  passage.catalogId !== WORKSPACE_KNOWLEDGE_CATALOG_ID &&
+                  !catalogs?.names.has(passage.catalogId),
+              )
             )
-          )
-            await embedding.knowledge
-              .state({ signal: controller.signal })
-              .then(({ catalogs: list }) => rememberCatalogs(list))
-              .catch(() => undefined);
-          const names = new Map(catalogs?.names ?? []);
-          if (workspace) names.set(WORKSPACE_KNOWLEDGE_CATALOG_ID, WORKSPACE_KNOWLEDGE_NAME);
-          const knowledge = knowledgeChatEvent(
-            context.status,
-            context.passages,
-            names,
-            context.status === 'used' || catalogs?.enabled === true || workspace !== undefined,
-          );
-          if (knowledge) emit({ kind: 'knowledge', knowledge });
+              await embedding.knowledge
+                .state({ signal: controller.signal })
+                .then(({ catalogs: list }) => rememberCatalogs(list))
+                .catch(() => undefined);
+            const names = new Map(catalogs?.names ?? []);
+            if (workspace) names.set(WORKSPACE_KNOWLEDGE_CATALOG_ID, WORKSPACE_KNOWLEDGE_NAME);
+            const knowledge = knowledgeChatEvent(
+              context.status,
+              cited,
+              names,
+              context.status === 'used' || catalogs?.enabled === true || workspace !== undefined,
+            );
+            if (knowledge) emit({ kind: 'knowledge', knowledge });
+          }
+          const messages = context?.messages ?? request.messages;
           const stream = () =>
             embedding.streamText(
               {
                 model: model.id,
-                messages: foldSystemMessages(context.messages),
+                messages: foldSystemMessages(messages),
                 maxTokens,
                 // Sampling support comes from inventory, never a host/provider-name test.
                 ...(model.supported_options?.includes('temperature') &&

@@ -1,6 +1,7 @@
 import { expect } from 'chai';
 import type {
   AiChatEvent,
+  AiChatKnowledge,
   AiChatRequest,
   AiFactCheckRequest,
   DocBlocksHostAiAPI,
@@ -30,8 +31,16 @@ const turn = (overrides: Partial<AskTurn>): AskTurn => ({
   ...overrides,
 });
 
+const used: AiChatKnowledge = {
+  outcome: 'used',
+  sources: [{ catalogId: 'workspace', name: 'This workspace', titles: [passage.title] }],
+  evidence: [
+    { title: passage.title, catalogId: 'workspace', text: passage.text, uri: passage.uri },
+  ],
+};
+
 /** A host AI that answers each request with `reply`, emitting its knowledge first. */
-function fakeAi(reply = 'Aphids arrive in **May** [1].') {
+function fakeAi(reply = 'Aphids arrive in **May** [1].', knowledge: AiChatKnowledge = used) {
   const requests: AiChatRequest[] = [];
   const checks: AiFactCheckRequest[] = [];
   let release: () => void = () => undefined;
@@ -41,16 +50,9 @@ function fakeAi(reply = 'Aphids arrive in **May** [1].') {
       requests.push(request);
       let cancelled = false;
       const done = (async () => {
-        onEvent({
-          kind: 'knowledge',
-          knowledge: {
-            outcome: 'used',
-            sources: [{ catalogId: 'ws-1', name: 'This workspace', titles: [passage.title] }],
-            evidence: [
-              { title: passage.title, catalogId: 'ws-1', text: passage.text, uri: passage.uri },
-            ],
-          },
-        });
+        onEvent({ kind: 'knowledge', knowledge });
+        if (cancelled)
+          return { ok: false as const, error: { code: 'cancelled' as const, message: 'x' } };
         if (hold) await new Promise<void>((resolve) => (release = resolve));
         if (cancelled)
           return { ok: false as const, error: { code: 'cancelled' as const, message: 'x' } };
@@ -174,6 +176,22 @@ describe('Ask your workspace', () => {
     expect(requests).to.have.length(0);
     session.clear();
     expect(session.getSnapshot().turns).to.deep.equal([]);
+  });
+
+  it('stops when Gezel finds none of the passages answers the question', async () => {
+    const { ai, requests, checks } = fakeAi('From memory.', { outcome: 'none' });
+    const session = createWorkspaceAskSession();
+    session.configure({ ai, findPassages: async () => [passage] });
+    await session.ask('What eats them?');
+    expect(requests).to.have.length(1);
+    expect(session.getSnapshot().turns.map((entry) => [entry.status, entry.answer])).to.deep.equal([
+      ['nothing', ''],
+    ]);
+    expect(session.getSnapshot().generation).to.equal(null);
+    expect(checks).to.have.length(0);
+    // The next question still runs.
+    await session.ask('Anything else?');
+    expect(requests).to.have.length(2);
   });
 
   it('stops a running answer and takes one question at a time', async () => {

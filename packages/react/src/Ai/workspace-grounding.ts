@@ -1,7 +1,7 @@
 /**
  * Ground AI requests in the person's own workspace: passages the index finds
- * by meaning travel with the request, and the host offers them to the model
- * beside its knowledge catalogs' (see `withWorkspacePassages` in core).
+ * by meaning travel with the request, and the host hands them to Gezel as
+ * knowledge candidates, ranked with its catalogs' passages.
  *
  * Grounding never blocks a request: no index, no ranking, no meaning, a slow
  * search or a failure all send the request without workspace passages.
