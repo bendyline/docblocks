@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 import * as vscode from 'vscode';
 import { SUITE_STARTED_MARKER } from '../suite-marker.js';
 
-const EXTENSION_ID = 'Bendyline.docblocks-vscode';
+const EXTENSION_ID = 'bendylinellc.docblocks-vscode';
 
 export async function run(): Promise<void> {
   // Before any assertion, so run.ts never retries a failure of the suite itself.
