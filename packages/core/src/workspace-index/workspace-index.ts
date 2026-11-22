@@ -518,6 +518,8 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
 
   /** What the engine kept from an earlier session; nothing if it cannot say. */
   private async restoreStored(): Promise<ReadonlyMap<WorkspacePath, StoredDocument>> {
+    // An engine that does not report how it opened ranks if it can.
+    if (!this.engine.opened) this.ranked = typeof this.engine.find === 'function';
     void this.engine.opened?.then(
       (opened) => {
         if (this.disposed) return;
@@ -1142,12 +1144,18 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     }
     await this.checkpoint();
 
+    // Tagged with the version the listing reported, in memory and in a
+    // persistent engine's store alike, so the next listing (this session's or
+    // the next launch's) compares like with like: an enumerated version
+    // describes metadata and never equals a read's content version. Bytes that
+    // changed after the listing just earn one extra read later.
+    const analysisVersion = state.sourceVersion ?? read.entry.version;
     let analyzed: DocumentAnalysis;
     if (read.data.byteLength > this.limits.maxDocumentBytes) {
       analyzed = nameOnly(identity, 'too-large');
     } else {
       try {
-        analyzed = await this.engine.analyze(identity, read.entry.version, read.data, {
+        analyzed = await this.engine.analyze(identity, analysisVersion, read.data, {
           maxParseBytes: this.limits.maxParseBytes,
           signal: this.abort.signal,
         });
@@ -1170,11 +1178,7 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       this.analysisTruncation ??= { reason: 'text', limit: this.limits.maxTextCharacters };
     }
     state.analysis = analyzed;
-    // Tagged with the version the listing reported, so the next listing
-    // compares like with like: an enumerated version describes metadata and
-    // never equals a read's content version. Bytes that changed after the
-    // listing just earn one extra read later.
-    state.analysisVersion = state.sourceVersion ?? read.entry.version;
+    state.analysisVersion = analysisVersion;
     this.textCharacters += analyzed.characters;
     if (analyzed.record.content !== 'name-only') this.analyzedCount += 1;
   }

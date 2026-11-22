@@ -27,6 +27,16 @@ export const WORKSPACE_GROUNDING_DEADLINE_MS = 1_200;
 const PER_DOCUMENT = 2;
 
 /**
+ * How far below the best passage's similarity another may be and still be
+ * sent. The profile's floor keeps out questions the workspace cannot answer,
+ * but in a person's notes many unrelated passages clear it too. Measured on
+ * the workspace-retrieval corpus (`npm run eval:workspace-retrieval`,
+ * bge-small, 2026-11-21): every answer the floor admits is still sent, while
+ * passages from unrelated notes fall from 44% of those sent to 24%.
+ */
+export const WORKSPACE_GROUNDING_MARGIN = 0.08;
+
+/**
  * A DNS-label catalog id for a workspace, as citation URIs require
  * (`knowledge://local/<catalog>/<path>`): `ws-` and a 64-bit FNV-1a hash.
  */
@@ -88,11 +98,18 @@ export async function findWorkspacePassages(
   }
   if (!hits) return [];
   const catalogId = workspaceCatalogId(workspaceId);
+  const best = Math.max(
+    ...hits.flatMap((hit) => (hit.meaning && hit.similarity !== undefined ? [hit.similarity] : [])),
+  );
   const passages: AiWorkspacePassage[] = [];
   let characters = 0;
   for (const hit of hits) {
     // Only what meaning found clears the bar Gezel holds unjudged passages to.
     if (!hit.meaning || !hit.text?.trim()) continue;
+    // Far behind the best passage: about something else that happens to clear the floor.
+    if (hit.similarity !== undefined && hit.similarity < best - WORKSPACE_GROUNDING_MARGIN) {
+      continue;
+    }
     if (passages.length >= AI_WIRE_LIMITS.workspacePassages) break;
     const passageText = hit.text.slice(0, AI_WIRE_LIMITS.workspacePassageCharacters);
     if (characters + passageText.length > AI_WIRE_LIMITS.workspacePassagesCharacters) continue;

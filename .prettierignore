@@ -18,3 +18,5 @@ packages/mobile/ios/App/App/capacitor.config.json
 packages/mobile/ios/App/App/config.xml
 packages/mobile/ios/capacitor-cordova-ios-plugins
 packages/mobile/native/ios/.build
+# A person's notes as written (the retrieval eval quotes them verbatim): not reformatted.
+packages/bench/fixtures/workspace-retrieval/notes

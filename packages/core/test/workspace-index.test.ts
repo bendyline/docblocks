@@ -598,6 +598,8 @@ describe('workspace index engines', () => {
       const hits = (await index.find?.('heron')) ?? [];
       expect(hits.map((hit) => hit.path)).to.deep.equal(['a.md']);
       expect(vectors).to.deep.equal([[5, 0]]);
+      // An engine handed in directly, without reporting how it opened, still ranks.
+      expect(index.getStatus().ranked).to.equal(true);
       index.dispose();
     });
 
@@ -706,6 +708,40 @@ describe('workspace index over a recursive listing', () => {
     await waitFor(() => index.getDocument('notes/b.md')?.title === 'Beta again', 'edit');
     expect(probe.reads.slice(reads)).to.deep.equal(['notes/b.md']);
     index.dispose();
+  });
+
+  it('reopens a persistent engine reading only what the listing says changed', async () => {
+    const provider = await seed({ 'a.md': '# Alpha\n', 'notes/b.md': '# Beta\n' });
+    // A store that outlives each launch, as a worker's SQLite file does.
+    const store = new Map<WorkspacePath, StoredDocument>();
+    const storeEngine = (): WorkspaceIndexEngine => {
+      const memory = createMemoryEngine();
+      return {
+        ...memory,
+        restore: () => Promise.resolve(new Map(store)),
+        async analyze(identity, version, data, options) {
+          const analysis = await memory.analyze(identity, version, data, options);
+          store.set(identity.path, { ...analysis, version });
+          return analysis;
+        },
+      };
+    };
+    const first = enumerating(provider);
+    const one = createIndex(first.source, { engine: storeEngine() });
+    one.start();
+    await waitFor(settled(one), 'first launch');
+    one.dispose();
+    expect([...first.probe.reads].sort()).to.deep.equal(['a.md', 'notes/b.md']);
+
+    await provider.writeFile(p('notes/b.md'), encode('# Beta again\n'));
+    const second = enumerating(provider);
+    const two = createIndex(second.source, { engine: storeEngine() });
+    two.start();
+    await waitFor(settled(two), 'relaunch');
+    expect(second.probe.reads).to.deep.equal(['notes/b.md']);
+    expect(two.getDocument('a.md')?.title).to.equal('Alpha');
+    expect(two.getDocument('notes/b.md')?.title).to.equal('Beta again');
+    two.dispose();
   });
 
   it('walks folders instead when the host cannot enumerate', async () => {

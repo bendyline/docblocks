@@ -128,6 +128,8 @@ export interface WorkspacePassageHit {
    * embedding profile's measured floor. Absent for a search by words alone.
    */
   readonly meaning?: boolean;
+  /** Cosine similarity to the query, for a passage found by meaning. */
+  readonly similarity?: number;
   /** The passage's full text, when `WorkspaceFindOptions.text` asked for it. */
   readonly text?: string;
 }

@@ -99,6 +99,7 @@
     "eval:ai-diagrams": "tsx scripts/eval-ai-diagrams.ts",
     "eval:ai-writing": "tsx scripts/eval-ai-writing.ts",
     "eval:ai-presentations": "tsx scripts/eval-ai-presentations.ts",
+    "eval:workspace-retrieval": "tsx scripts/eval-workspace-retrieval.ts",
     "docbench": "tsx packages/bench/src/cli.ts",
     "bench:index": "node --expose-gc --import tsx scripts/bench-index.ts",
     "test:eval:mcp": "mocha --no-config --require tsx packages/cli/test/mcp-eval-harness.test.ts",

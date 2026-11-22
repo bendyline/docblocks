@@ -122,6 +122,55 @@ describe('persistent workspace index (live index engine)', () => {
     two.index.dispose();
   });
 
+  it('finds exactly what the in-memory index finds, whatever the query', async () => {
+    const provider = await seed({
+      'quotes.md': '# Quotes\n\nShe said "hello" by the \\ backslash.\n',
+      'tabs.md': '# Tabs\n\n```\nname\tword\tvalue\n```\n\nA tab\tword here.\n',
+      'case.md': '# Case\n\nThe ſtrange Kelvin sign, a straße in Köln.\n',
+      'plain.md': '# Plain\n\nA word, another word, and words.\n',
+      'split.md': '# Split\n\nends with hel\nlo starts here\n',
+    });
+    const memory = createWorkspaceIndex({
+      workspaceId: 'memory',
+      source: reading(provider).source,
+      yieldControl: () => Promise.resolve(),
+      changeCoalesceMs: 0,
+      minRefreshIntervalMs: 0,
+    });
+    memory.start();
+    await ready(memory);
+    const live = launch(new DatabaseSync(':memory:'), reading(provider).source);
+    await ready(live.index);
+
+    const queries = [
+      { text: 'hello' },
+      { text: '"hello"' },
+      { text: '\\' },
+      { text: 'word', wholeWord: true },
+      { text: 'Word', matchCase: true },
+      { text: 'tab\tword' },
+      { text: 'value', wholeWord: true },
+      { text: 'strange' },
+      { text: 'kelvin' },
+      { text: 'KÖLN' },
+      { text: 'hel lo' },
+      { text: 'lo starts' },
+      { text: 'Quotes' },
+    ];
+    for (const query of queries) {
+      const expected = await memory.search(query);
+      const actual = await live.index.search(query);
+      expect(actual.documents, JSON.stringify(query)).to.deep.equal(expected.documents);
+      expect(actual.skippedDocuments, JSON.stringify(query)).to.equal(expected.skippedDocuments);
+    }
+    // The screen is not a no-op: these all find something.
+    for (const text of ['word', 'strange', 'kelvin', 'KÖLN', '"hello"', 'tab\tword']) {
+      expect((await live.index.search({ text })).documents, text).to.not.deep.equal([]);
+    }
+    memory.dispose();
+    live.index.dispose();
+  });
+
   it('starts over when the stored payloads belong to another format', async () => {
     const provider = await seed(files);
     const db = new DatabaseSync(':memory:');

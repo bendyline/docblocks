@@ -94,7 +94,9 @@ startEmbeddingScheduler (react) ◀────▶   pendingEmbeddings / storeEm
   found by meaning and leaving out the open note (`withWorkspaceGrounding` in
   `packages/react/src/Ai/workspace-grounding.ts`). Only passages the vector arm
   found above the profile's floor are offered, the bar Gezel holds unjudged
-  catalog passages to; a search that takes over 1.2 s offers none.
+  catalog passages to, and only those within 0.08 of the best one
+  (`WORKSPACE_GROUNDING_MARGIN`; see Retrieval quality). A search that takes
+  over 1.2 s offers none.
 - **Citations.** A workspace passage is cited as
   `knowledge://local/<ws-hash>/<path>#line=a-b` (`workspacePassageUri` in
   core), in the grammar Gezel accepts for an app's own passages: NFC, at most
@@ -123,6 +125,71 @@ note in this workspace.`
 - **Switch.** Settings → Search → "Use this workspace in AI answers", per
   workspace: on by default for an on-device provider, off for a remote one.
 
+## Retrieval quality
+
+`npm run eval:workspace-retrieval` scores search over a judged corpus in
+`packages/bench/fixtures/workspace-retrieval/`: 84 invented personal notes
+(home, work, study; 36k words, 574 passages) and 78 queries of four kinds:
+_lexical_ (shares the note's words), _paraphrase_ (shares none), _detail_ (one
+fact buried in a long note), and _none_ (nothing in the workspace answers it).
+Each answer is quoted verbatim, so a passage is scored on holding it, not just
+on coming from the right note. The eval runs the product's own code: the live
+engine with token chunking, Gezel's profile embedder on the bundled model, and
+`findWorkspacePassages`. It needs the staged model; `--quantized` swaps in the
+34 MB int8 graph. Reports go to `reports/workspace-retrieval-evals/`.
+`packages/bench/test/workspace-retrieval.test.ts` checks the fixture and holds
+search by words to its measured level in `npm test`.
+
+Measured 2026-11-21 (M5 Max):
+
+| Answerable queries (69)  | Note first | Note in top 5 | nDCG@10 | Answer passage in top 5 |
+| ------------------------ | ---------: | ------------: | ------: | ----------------------: |
+| Words only (no model)    |        74% |           88% |   0.812 |                     65% |
+| Best matches (hybrid)    |        86% |           96% |   0.907 |                     83% |
+| Meaning only, no floor   |        91% |           97% |   0.943 |                     88% |
+| Best matches, int8 model |        87% |           96% |   0.915 |                     84% |
+
+Paraphrase queries are where meaning earns its place: words alone put the
+right note first 43% of the time, Best matches 70%.
+
+**The vector floor (spike S4).** `bge-small-en-v1.5@1`'s floor of 0.55 holds as
+the gate for questions the workspace cannot answer: none of the nine reaches it
+(their best passages score 0.488–0.544, a thin margin). It is a poor gate
+within answerable questions: answer passages score 0.48–0.84 (median 0.68),
+11 of 69 fall below 0.55, and the best unrelated passage clears it for 44 of
+78 queries. Ranking is unaffected (a lower floor for Best matches gains
+nothing), but grounding sent passages from unrelated notes 44% of the time.
+Keeping only passages within 0.08 of the best one sends the same answers (49
+of 69 questions get the passage that answers them), cuts unrelated passages to
+24% of those sent, and sends 43% fewer passages. The int8 graph scores on the
+same scale (answers median 0.672, no-answer best 0.543), so the floor carries
+over; it embedded 21% slower than fp32 on this Mac.
+
+**Model size.** Compressed, the fp32 graph adds 73 MB to a download (127 MB
+installed) and the int8 graph 23 MB (33 MB). The packaged Mac app is 719 MB,
+129 MB of it the model.
+
+## Scale
+
+`npm run bench:index -- --sizes 5000,50000 --persistent` on the seeded fixture
+(~6 KB notes; Node's SQLite standing in for the worker's sqlite-wasm), measured
+2026-11-21 on an M5 Max:
+
+| Notes  | Database | First build | Relaunch after one edit | Literal search | Best matches |
+| ------ | -------: | ----------: | ----------------------: | -------------: | -----------: |
+| 4,496  |   100 MB |        17 s |    0.11 s (1 note read) |       53–98 ms |   0.1–1.1 ms |
+| 45,064 |   1.0 GB |       183 s |    1.07 s (1 note read) |     334–594 ms |   0.1–2.4 ms |
+
+Before the persistent engine, the index re-read every note at each launch
+(76 s at 50k) and kept text for only the first ~4,400 notes (the 24M-character
+page budget), so a term in the rest was silently not found. The first build
+is CPU: Markdown parsing (~1.2 ms a note) and token chunking (~1.2 ms; the
+chunker counts tokens about 60 times per note). The database is 3.6× the
+notes: each payload keeps the note's rendered search text (literal search
+needs it exactly), beside the body the full-text index reads, and FTS5 is
+another third. Literal search reads every payload but parses only those whose
+raw JSON can match (`payloadScreen` in `live-engine.ts`).
+
 ## Testing
 
 - Unit: `packages/core/test/workspace-index*.test.ts`,
@@ -135,4 +202,10 @@ note in this workspace.`
   uses a stand-in embedding utility (`e2e/fake-embedding-utility.cjs`) with
   deterministic vectors; launch with `DOCBLOCKS_EMBEDDINGS_ENTRY=''` to use the
   real model in a source build.
-- Scale: `npm run bench:index -- --sizes 5000,50000` writes a report to `reports/`.
+- Packaged: `packages/desktop/e2e/packaged-search.spec.ts` (in
+  `npm run test:e2e:packaged -w docblocks-desktop`) searches by meaning on the
+  real bundled model inside the electron-builder output.
+- Retrieval quality: see above.
+- Scale: `npm run bench:index -- --sizes 5000,50000` writes a report to
+  `reports/`; `--persistent` adds the desktop's persistent index (cold build,
+  relaunch after an edit, database size, query latency).

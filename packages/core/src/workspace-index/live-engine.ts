@@ -3,12 +3,13 @@ import type { WorkspacePath } from '../filesystem/workspace-path.js';
 import { analyzeDocumentBytes } from './analyze.js';
 import type { StoredDocument, WorkspaceIndexEngine } from './engine.js';
 import type { SearchText } from './search-text.js';
-import { searchDocuments, type SearchableDocument } from './search.js';
+import { buildLiteralMatcher, searchDocuments, type SearchableDocument } from './search.js';
 import type {
   IndexedDocument,
   WorkspaceFindOptions,
   WorkspacePassageHit,
   WorkspaceSearchLineKind,
+  WorkspaceSearchQuery,
 } from './types.js';
 
 /**
@@ -129,9 +130,12 @@ function encodePayload(
 
 /** A stored payload, or null when it is missing or not one this engine wrote. */
 function decodePayload(bytes: Uint8Array | null | undefined): StoredPayload | null {
-  if (!bytes) return null;
+  return bytes ? decodePayloadText(decoder.decode(bytes)) : null;
+}
+
+function decodePayloadText(json: string): StoredPayload | null {
   try {
-    const value = JSON.parse(decoder.decode(bytes)) as Partial<StoredPayload>;
+    const value = JSON.parse(json) as Partial<StoredPayload>;
     if (
       value.format !== LIVE_ENGINE_PAYLOAD_FORMAT ||
       !value.record ||
@@ -144,6 +148,30 @@ function decodePayload(bytes: Uint8Array | null | undefined): StoredPayload | nu
   } catch {
     return null;
   }
+}
+
+/** Text with no lines: what a document the screen rules out is searched as. */
+const NO_TEXT: SearchText = { lines: [], sourceLines: [], kinds: [], characters: 0 };
+
+/** Characters JSON writes escaped, so a stored payload does not hold them as typed. */
+// eslint-disable-next-line no-control-regex
+const JSON_ESCAPED = /["\\\u0000-\u001f]|[\ud800-\udfff]/u;
+
+/**
+ * A test that a stored payload, as raw JSON, might hold a match: the literal
+ * query's own pattern and case rule, run over the whole payload before it is
+ * parsed. Every search-text line sits in the JSON verbatim apart from
+ * escapes, so a document it rejects has no matching line; it only lets
+ * through extra (a match in the record, across lines, or not on a word
+ * boundary), which the real search then rules out. Null for a query holding
+ * a character JSON escapes, which the raw text would not show as typed.
+ */
+function payloadScreen(query: WorkspaceSearchQuery, maxQueryCharacters?: number): RegExp | null {
+  // Without whole-word bounds: an escape (`\t` for a tab) puts a word
+  // character where the line has none, which would fail a bound that holds.
+  const matcher = buildLiteralMatcher({ ...query, wholeWord: false }, maxQueryCharacters);
+  if (!matcher || JSON_ESCAPED.test(query.text.normalize('NFC'))) return null;
+  return new RegExp(matcher.source, matcher.flags.replace('g', ''));
 }
 
 function searchTextOf(payload: StoredPayload | null): SearchText | null {
@@ -204,15 +232,28 @@ export function createLiveIndexEngine(
       live.remove(path);
     },
     search(documents, query, searchOptions) {
-      const searchable: SearchableDocument[] = documents.map(({ record, pending }) => ({
-        record,
-        pending,
-        // Read on demand rather than held: a large workspace's text stays on disk.
-        get text(): SearchText | null {
-          if (pending || record.content === 'name-only') return null;
-          return searchTextOf(decodePayload(live.get(record.path)?.payload));
-        },
-      }));
+      const screen = payloadScreen(query, searchOptions.limits?.maxQueryCharacters);
+      const searchable: SearchableDocument[] = documents.map(({ record, pending }) => {
+        const hasText = !pending && record.content !== 'name-only';
+        let screened: SearchText | null | undefined;
+        return {
+          record,
+          pending,
+          hasText,
+          // Read on demand rather than held: a large workspace's text stays on disk.
+          get text(): SearchText | null {
+            if (!hasText) return null;
+            if (screened !== undefined) return screened;
+            const bytes = live.get(record.path)?.payload;
+            if (!bytes) return null;
+            const raw = decoder.decode(bytes);
+            if (!screen) return searchTextOf(decodePayloadText(raw));
+            // Held for the rest of this search: only documents that can match keep text.
+            screened = screen.test(raw) ? searchTextOf(decodePayloadText(raw)) : NO_TEXT;
+            return screened;
+          },
+        };
+      });
       return searchDocuments(searchable, query, searchOptions.checkpoint, searchOptions.limits);
     },
     find(query, findOptions = {}) {
@@ -227,6 +268,7 @@ export function createLiveIndexEngine(
         return {
           ...hit,
           ...(arms?.vector !== undefined || similarity !== undefined ? { meaning: true } : {}),
+          ...(similarity !== undefined ? { similarity } : {}),
           ...(passage !== undefined ? { text: passage.slice(0, MAX_PASSAGE_TEXT) } : {}),
         };
       });

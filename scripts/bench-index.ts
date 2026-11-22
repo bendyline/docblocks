@@ -13,6 +13,14 @@
  * - the desktop provider's folder-by-folder listing, which hashes file
  *   contents the first time it sees them, cold and then warm;
  * - today's index over the desktop provider (watch off): listing, reads, parse.
+ *
+ * Persistent (`--persistent`, implies `--disk`): the index the desktop app
+ * runs — Gezel's live index in a SQLite file, listing through `enumerate`,
+ * passages chunked in the bundled model's tokens when it is staged — built
+ * cold, then reopened after one note changed while it was closed: time to
+ * ready, notes read, database size, literal and ranked query latency. Node's
+ * native SQLite stands in for the app worker's sqlite-wasm on origin-private
+ * storage, so the app is somewhat slower than these figures.
  * The OS file cache is warm (the files were just written); a first launch
  * after a reboot reads from disk and is slower.
  *
@@ -21,16 +29,29 @@
  * Work runs without yielding to timers, so times are CPU cost on Node; the
  * browser's main thread adds its slice yields on top.
  */
+import { readFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { createRequire } from 'node:module';
+import { Tokenizer } from '@huggingface/tokenizers';
+import {
+  BGE_SMALL_EN_V15_1,
+  LiveIndex,
+  liveIndexEmbedding,
+  markdownChunksByCharacters,
+} from '@bendyline/gezel-retrieval';
 import { parseWorkspacePath as parseDesktopPath } from '@bendyline/docblocks/filesystem';
 import { MemoryFileSystemProviderV2 } from '../packages/core/src/filesystem/memory-provider-v2.js';
 import { parseWorkspacePath } from '../packages/core/src/filesystem/workspace-path.js';
 import {
+  LIVE_ENGINE_PAYLOAD_FORMAT,
+  WORKSPACE_INDEX_STORE_LIMITS,
+  createLiveIndexEngine,
   createWorkspaceIndex,
   type WorkspaceIndex,
+  type WorkspaceIndexEngine,
   type WorkspaceIndexSource,
   type WorkspaceIndexStatus,
 } from '../packages/core/src/workspace-index/index.js';
@@ -38,9 +59,13 @@ import { NodeWorkspaceFileSystemV2 } from '../packages/desktop/main/node-workspa
 import { getWorkspaceRoots } from '../packages/desktop/main/workspace-roots.js';
 import { createScaleFixture, type ScaleFixture } from './workspace-scale-fixture.js';
 
+type NodeSqlite = typeof import('node:sqlite');
+const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as NodeSqlite;
+
 interface Args {
   readonly sizes: readonly number[];
   readonly disk: boolean;
+  readonly persistent: boolean;
   readonly dir: string;
   readonly keep: boolean;
 }
@@ -48,6 +73,7 @@ interface Args {
 function parseArgs(argv: readonly string[]): Args {
   let sizes = [500, 5000];
   let disk = false;
+  let persistent = false;
   let dir = os.tmpdir();
   let keep = false;
   for (let index = 0; index < argv.length; index += 1) {
@@ -58,12 +84,13 @@ function parseArgs(argv: readonly string[]): Args {
         .map((value) => Number.parseInt(value, 10))
         .filter((value) => Number.isSafeInteger(value) && value > 0);
     } else if (arg === '--disk') disk = true;
+    else if (arg === '--persistent') persistent = disk = true;
     else if (arg === '--keep') keep = true;
     else if (arg === '--dir') dir = path.resolve(argv[++index] ?? dir);
     else throw new Error(`Unknown argument: ${arg}`);
   }
   if (!sizes.length) throw new Error('--sizes needs at least one positive integer.');
-  return { sizes, disk, dir, keep };
+  return { sizes, disk, persistent, dir, keep };
 }
 
 const gc = (globalThis as { gc?: () => void }).gc;
@@ -108,10 +135,15 @@ interface IndexRun {
   readonly index: WorkspaceIndex;
 }
 
-async function runIndex(source: WorkspaceIndexSource, timeoutMs: number): Promise<IndexRun> {
+async function runIndex(
+  source: WorkspaceIndexSource,
+  timeoutMs: number,
+  persistent?: { readonly engine: WorkspaceIndexEngine },
+): Promise<IndexRun> {
   const index = createWorkspaceIndex({
     workspaceId: 'bench',
     source,
+    ...(persistent ? { engine: persistent.engine, limits: WORKSPACE_INDEX_STORE_LIMITS } : {}),
     yieldControl: () => Promise.resolve(),
     changeCoalesceMs: 0,
     minRefreshIntervalMs: 0,
@@ -279,6 +311,132 @@ async function providerWalk(provider: NodeWorkspaceFileSystemV2): Promise<number
   return entries;
 }
 
+/**
+ * How the desktop chunks: in the bundled model's tokens when it is staged
+ * (`npm run stage:embedding-model -w docblocks-desktop`), else by characters.
+ */
+function benchChunking() {
+  const profile = BGE_SMALL_EN_V15_1;
+  const dir = path.resolve(
+    'packages/desktop/dist/embedding-model',
+    profile.model.repo,
+    profile.model.revision,
+  );
+  try {
+    const tokenizer = new Tokenizer(
+      JSON.parse(readFileSync(path.join(dir, 'tokenizer.json'), 'utf8')) as object,
+      JSON.parse(readFileSync(path.join(dir, 'tokenizer_config.json'), 'utf8')) as object,
+    );
+    return {
+      chunking: 'markdown-chunks@2 (bge tokens)',
+      shape: liveIndexEmbedding(
+        profile,
+        (text) => tokenizer.encode(text, { add_special_tokens: false }).ids.length,
+      ),
+    };
+  } catch {
+    return {
+      chunking: 'markdown-chunks@1 (characters)',
+      shape: { chunking: markdownChunksByCharacters() },
+    };
+  }
+}
+
+async function timeRanked(engine: ReturnType<typeof createLiveIndexEngine>, queries: string[]) {
+  return queries.map((query) => {
+    const samples: number[] = [];
+    let hits = 0;
+    for (let run = 0; run < 5; run += 1) {
+      const started = performance.now();
+      hits = engine.find(query, { limit: 60, perDocument: 3 }).length;
+      samples.push(performance.now() - started);
+    }
+    return { query, medianMs: round(median(samples)), maxMs: round(Math.max(...samples)), hits };
+  });
+}
+
+/** The desktop's persistent index: built cold, then reopened after one edit while closed. */
+async function persistentBench(
+  fixture: ScaleFixture,
+  root: string,
+  id: string,
+  roots: ReturnType<typeof getWorkspaceRoots>,
+) {
+  const database = `${root}.sqlite3`;
+  const { chunking, shape } = benchChunking();
+  const launch = async () => {
+    const db = new DatabaseSync(database);
+    const live = LiveIndex.open(db, {
+      ...shape,
+      appVersion: `docblocks-workspace-index@bench/${LIVE_ENGINE_PAYLOAD_FORMAT}`,
+    });
+    const engine = createLiveIndexEngine(live, { onDispose: () => db.close() });
+    const provider = new NodeWorkspaceFileSystemV2(id, 'Bench', root, roots);
+    let reads = 0;
+    const source = desktopIndexSource(provider, { enumerate: true });
+    const counted: WorkspaceIndexSource = {
+      ...source,
+      readFile: (target) => {
+        reads += 1;
+        return source.readFile(target);
+      },
+    };
+    const run = await runIndex(counted, 60 * 60_000, { engine });
+    return { run, engine, live, provider, reads: () => reads };
+  };
+  try {
+    const cold = await launch();
+    const stats = cold.live.stats();
+    const literal = await timeQueries(cold.run.index, fixture.terms);
+    const ranked = await timeRanked(cold.engine, [
+      fixture.terms.rare,
+      fixture.terms.mid,
+      `${fixture.terms.mid} ${fixture.terms.common}`,
+    ]);
+    const coldReads = cold.reads();
+    cold.run.index.dispose();
+    await cold.provider.dispose();
+    const databaseMb = round((await fs.stat(database)).size / (1024 * 1024));
+
+    // One note edited while the app was closed.
+    let edited: string | null = null;
+    for (const file of fixture.files()) {
+      if (file.path.endsWith('.md')) {
+        edited = file.path;
+        break;
+      }
+    }
+    if (edited) {
+      await fs.appendFile(path.join(root, ...edited.split('/')), '\nEdited while closed.\n');
+    }
+    const warm = await launch();
+    const warmReads = warm.reads();
+    warm.run.index.dispose();
+    await warm.provider.dispose();
+    return {
+      chunking,
+      databaseMb,
+      documents: stats.documents,
+      passages: stats.chunks,
+      cold: {
+        listedMs: round(cold.run.listedMs),
+        readyMs: round(cold.run.readyMs),
+        reads: coldReads,
+        status: cold.run.status,
+      },
+      relaunch: {
+        listedMs: round(warm.run.listedMs),
+        readyMs: round(warm.run.readyMs),
+        reads: warmReads,
+      },
+      literal,
+      ranked,
+    };
+  } finally {
+    await fs.rm(database, { force: true });
+  }
+}
+
 async function diskBench(size: number, args: Args) {
   const fixture = createScaleFixture({ files: size });
   await fs.mkdir(args.dir, { recursive: true });
@@ -318,7 +476,10 @@ async function diskBench(size: number, args: Args) {
     enumerated.index.dispose();
     await listed.dispose();
 
+    const persistent = args.persistent ? await persistentBench(fixture, root, id, roots) : null;
+
     return {
+      persistent,
       files: written,
       metadataWalk: { entries: metadataEntries, ms: round(metadataMs) },
       providerWalk: {
@@ -388,6 +549,37 @@ function summary(
       ),
       '',
       'The OS file cache was warm; a first launch after a reboot is slower.',
+    );
+  }
+  const persistent = disk.flatMap((run) =>
+    run.persistent ? [{ files: run.files, ...run.persistent }] : [],
+  );
+  if (persistent.length) {
+    lines.push(
+      '',
+      '## Persistent index (the desktop app)',
+      '',
+      `Chunking: ${persistent[0]!.chunking}. Node's native SQLite in place of the app worker's sqlite-wasm.`,
+      '',
+      '| Files | Documents / passages | Database MB | Cold: listed / ready ms (reads) | Relaunch after 1 edit: listed / ready ms (reads) |',
+      '| ---: | ---: | ---: | ---: | ---: |',
+      ...persistent.map(
+        (run) =>
+          `| ${run.files} | ${run.documents} / ${run.passages} | ${run.databaseMb} | ${run.cold.listedMs} / ${run.cold.readyMs} (${run.cold.reads}) | ${run.relaunch.listedMs} / ${run.relaunch.readyMs} (${run.relaunch.reads}) |`,
+      ),
+      '',
+      '| Files | Search | Query | Median ms | Max ms | Results |',
+      '| ---: | --- | --- | ---: | ---: | ---: |',
+      ...persistent.flatMap((run) => [
+        ...run.literal.map(
+          (query) =>
+            `| ${run.files} | literal | ${query.query} | ${query.medianMs} | ${query.maxMs} | ${query.documents} notes${query.truncated ? ' (truncated)' : ''} |`,
+        ),
+        ...run.ranked.map(
+          (query) =>
+            `| ${run.files} | Best matches | ${query.query} | ${query.medianMs} | ${query.maxMs} | ${query.hits} passages |`,
+        ),
+      ]),
     );
   }
   return `${lines.join('\n')}\n`;

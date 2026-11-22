@@ -1,0 +1,1061 @@
+[
+  {
+    "id": "a-01",
+    "query": "how often do I feed the sourdough starter",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "kitchen/sourdough-starter.md",
+        "grade": 2,
+        "evidence": "Feed it every 12 hours at room temperature"
+      },
+      {
+        "path": "kitchen/sourdough-dense-loaf-fixes.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "a-02",
+    "query": "red lentils how many cups for soup",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "kitchen/red-lentil-soup.md",
+        "grade": 2,
+        "evidence": "1 1/2 cups red lentils, rinsed until the water runs clear"
+      },
+      {
+        "path": "kitchen/pantry-and-freezer-inventory.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "a-03",
+    "query": "how far apart should tomato plants go",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "garden/tomato-planting-2026.md",
+        "grade": 2,
+        "evidence": "Space the plants 24 inches apart in the bed, with stakes driven in first"
+      },
+      {
+        "path": "garden/tomato-diseases.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "a-04",
+    "query": "how often should I turn the compost pile",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "garden/compost-and-mulch.md",
+        "grade": 2,
+        "evidence": "Turn the pile every 9 days with the fork, more often in July"
+      }
+    ]
+  },
+  {
+    "id": "a-05",
+    "query": "dishwasher error code E24",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "home/dishwasher-repair.md",
+        "grade": 2,
+        "evidence": "E24 on the display means the drain pump cannot empty the tub"
+      },
+      {
+        "path": "home/dryer-repair.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "a-06",
+    "query": "amoxicillin dose schedule times per day",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "health/antibiotic-and-pain-schedule.md",
+        "grade": 2,
+        "evidence": "Amoxicillin 500 mg, one capsule three times a day: 8 am, 2 pm, 10 pm"
+      }
+    ]
+  },
+  {
+    "id": "a-07",
+    "query": "next dentist cleaning appointment date",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "health/checkups-and-appointments.md",
+        "grade": 2,
+        "evidence": "Dentist cleaning: next appointment March 12, 2026 at 9:40 with Dr. Okafor"
+      }
+    ]
+  },
+  {
+    "id": "a-08",
+    "query": "which plug adapter type for Portugal",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "travel/packing-list.md",
+        "grade": 2,
+        "evidence": "Type F plug adapter, bring two, plus a small power strip"
+      },
+      {
+        "path": "travel/lisbon-trip-2025.md",
+        "grade": 2,
+        "evidence": "Plug type: F (two prongs, round)"
+      },
+      {
+        "path": "travel/porto-trip-2025.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "a-09",
+    "query": "loaf turns out heavy and wet in the middle",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "kitchen/sourdough-dense-loaf-fixes.md",
+        "grade": 2,
+        "evidence": "Dense, gummy crumb nearly always meant the shaping was fine but bulk fermentation ended too early"
+      },
+      {
+        "path": "kitchen/sourdough-starter.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "a-10",
+    "query": "how much liquid to add for fluffy steamed grain in the electric pot",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "kitchen/kitchen-fragments.md",
+        "grade": 2,
+        "evidence": "Rice cooker ratio is 1 cup jasmine to 1.1 cups water"
+      }
+    ]
+  },
+  {
+    "id": "a-11",
+    "query": "bullseye shaped dark marks low on the plant foliage",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "garden/tomato-diseases.md",
+        "grade": 2,
+        "evidence": "Early blight shows as brown rings like a target on the lower leaves"
+      },
+      {
+        "path": "garden/tomato-planting-2026.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "a-12",
+    "query": "small green bugs sucking the sap from my greens",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "garden/pest-fragments.md",
+        "grade": 2,
+        "evidence": "Aphids clustered on the kale stems again; blast with the hose, then spray soapy water"
+      }
+    ]
+  },
+  {
+    "id": "a-13",
+    "query": "clothes dryer runs but never gets warm",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "home/dryer-repair.md",
+        "grade": 2,
+        "evidence": "drum spun fine but the air stayed cold; the thermal fuse had blown, replaced with part 4390-77"
+      },
+      {
+        "path": "home/dishwasher-repair.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "a-14",
+    "query": "who to ring about water coming through the ceiling",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "home/trusted-contacts.md",
+        "grade": 2,
+        "evidence": "Dario the plumber: emergency line 555-0142, charges $140 call-out"
+      },
+      {
+        "path": "home/bathroom-renovation-log.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "a-15",
+    "query": "keep exterior faucet from splitting when temperatures drop",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "home/winter-house-checklist.md",
+        "grade": 2,
+        "evidence": "Drain the garden spigot and close the shutoff valve in the basement before the first hard freeze"
+      }
+    ]
+  },
+  {
+    "id": "a-16",
+    "query": "what stretchy strap workout did the therapist give me",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "health/physio-knee-exercises.md",
+        "grade": 2,
+        "evidence": "Terminal knee extensions with the green band: 3 sets of 15, every other day"
+      }
+    ]
+  },
+  {
+    "id": "a-17",
+    "query": "stopped drinking espresso late in the day",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "health/sleep-journal.md",
+        "grade": 2,
+        "evidence": "Cut off caffeine after noon starting Oct 3, and fell asleep faster within a week"
+      }
+    ]
+  },
+  {
+    "id": "a-18",
+    "query": "where did we eat the meaty sandwich smothered in beer sauce",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "travel/porto-trip-2025.md",
+        "grade": 2,
+        "evidence": "Francesinha at Tasca do Miguel was the best one, €11.50 with fries"
+      }
+    ]
+  },
+  {
+    "id": "a-19",
+    "query": "how long did I dry-brine the Thanksgiving turkey",
+    "kind": "detail",
+    "relevant": [
+      {
+        "path": "kitchen/thanksgiving-2025-plan.md",
+        "grade": 2,
+        "evidence": "Dry-brine the 14 lb bird for 52 hours, uncovered on the bottom shelf of the fridge"
+      }
+    ]
+  },
+  {
+    "id": "a-20",
+    "query": "when was the first frost in 2025",
+    "kind": "detail",
+    "relevant": [
+      {
+        "path": "garden/garden-year-log-2025.md",
+        "grade": 2,
+        "evidence": "First frost hit on October 28, 2025, six days later than the average"
+      }
+    ]
+  },
+  {
+    "id": "a-21",
+    "query": "pace for the 11 mile long run in week 6",
+    "kind": "detail",
+    "relevant": [
+      {
+        "path": "health/running-plan-summer-2026.md",
+        "grade": 2,
+        "evidence": "Week 6 (4 May): long run 11 miles at 10:05 per mile, Tuesday intervals 6 x 800 m"
+      }
+    ]
+  },
+  {
+    "id": "a-22",
+    "query": "how much per night was the Lisbon apartment",
+    "kind": "detail",
+    "relevant": [
+      {
+        "path": "travel/lisbon-trip-2025.md",
+        "grade": 2,
+        "evidence": "The Alfama apartment was €96 a night, plus a €40 cleaning fee"
+      },
+      {
+        "path": "travel/porto-trip-2025.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "a-23",
+    "query": "how much did the campground showers cost on the Oregon trip",
+    "kind": "detail",
+    "relevant": [
+      {
+        "path": "travel/oregon-coast-road-trip-2026.md",
+        "grade": 2,
+        "evidence": "Nehalem Bay site 41 had hot showers that took quarters, $1.50 for five minutes"
+      }
+    ]
+  },
+  {
+    "id": "a-24",
+    "query": "how do I tune a violin by ear",
+    "kind": "none",
+    "relevant": []
+  },
+  {
+    "id": "a-25",
+    "query": "scuba diving certification requirements",
+    "kind": "none",
+    "relevant": []
+  },
+  {
+    "id": "a-26",
+    "query": "how to file a patent application",
+    "kind": "none",
+    "relevant": []
+  },
+  {
+    "id": "b-01",
+    "query": "what did we decide about the firmware 4.2 release date",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "meetings/2026-03-04-platform-sync.md",
+        "grade": 2,
+        "evidence": "Firmware 4.2 ships April 14, not March 31, because the LoRa duty-cycle regression (TKT-2231) needs two more weeks of field soak."
+      },
+      {
+        "path": "projects/firmware-4-2-plan.md",
+        "grade": 1
+      },
+      {
+        "path": "meetings/2026-03-11-platform-sync.md",
+        "grade": 1
+      },
+      {
+        "path": "meetings/2026-05-06-all-hands-notes.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "b-02",
+    "query": "retry ceiling and dead-letter queue decision",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "meetings/2026-03-11-platform-sync.md",
+        "grade": 2,
+        "evidence": "Decision: retry ceiling is 5 attempts, failures go to the dead-letter queue `ingest-dlq`, and an alert fires if the dead-letter queue exceeds 200 messages."
+      },
+      {
+        "path": "runbooks/postmortem-2026-03-ingest-outage.md",
+        "grade": 1
+      },
+      {
+        "path": "projects/cairn-ingest-rewrite-plan.md",
+        "grade": 1
+      },
+      {
+        "path": "people/1on1-log-priya-n.md",
+        "grade": 1
+      },
+      {
+        "path": "meetings/2026-02-17-q1-planning-offsite.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "b-03",
+    "query": "INGEST_LAG_HIGH runbook steps",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "runbooks/runbook-alert-ingest-lag.md",
+        "grade": 2,
+        "evidence": "Fires when the age of the newest row in the time-series store is more than 15 minutes behind the gateway clock for 10 minutes."
+      },
+      {
+        "path": "runbooks/runbook-alert-queue-depth.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "b-04",
+    "query": "what triggers the QUEUE_DEPTH_HIGH alert",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "runbooks/runbook-alert-queue-depth.md",
+        "grade": 2,
+        "evidence": "Fires when the depth of `ingest-raw-02` exceeds 300,000 messages for 5 minutes."
+      },
+      {
+        "path": "runbooks/runbook-alert-ingest-lag.md",
+        "grade": 1
+      },
+      {
+        "path": "runbooks/postmortem-2026-03-ingest-outage.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "b-05",
+    "query": "Omar B embedded engineer hiring decision",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "people/hiring-embedded-engineer-omar-b.md",
+        "grade": 2,
+        "evidence": "No offer for Embedded II. Hana will ask him whether he would consider a one-level-lower role on the test team."
+      },
+      {
+        "path": "people/hiring-embedded-engineer-dana-k.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "b-06",
+    "query": "Dana K final offer base salary and signing bonus",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "people/hiring-embedded-engineer-dana-k.md",
+        "grade": 2,
+        "evidence": "We settled at $146,000 plus a signing bonus of $5,000."
+      },
+      {
+        "path": "people/hiring-embedded-engineer-omar-b.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "b-07",
+    "query": "Brightwater Plastics enclosure quote",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "projects/enclosure-supplier-switch.md",
+        "grade": 2,
+        "evidence": "Halvorsen raised unit price to $6.40; Brightwater quoted $5.15 with UV-stabilized ASA resin at no extra charge."
+      }
+    ]
+  },
+  {
+    "id": "b-08",
+    "query": "NATS JetStream decision record",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "projects/adr-0007-message-broker.md",
+        "grade": 2,
+        "evidence": "We adopt NATS JetStream. Streams are replicated three ways with 72 hours retention for raw telemetry."
+      },
+      {
+        "path": "projects/cairn-ingest-rewrite-plan.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "b-09",
+    "query": "which external expert audited our defenses",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "meetings/2026-04-22-security-review.md",
+        "grade": 2,
+        "evidence": "Attendees: Tomasz W, Joel M, Ingrid S (outside consultant, two-day engagement), Priya N"
+      },
+      {
+        "path": "customers/valley-water-district-account.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "b-10",
+    "query": "write-up about when data stopped arriving",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "runbooks/postmortem-2026-03-ingest-outage.md",
+        "grade": 2,
+        "evidence": "Total impact window was 3 hours 41 minutes plus about 50 minutes of catch-up lag."
+      },
+      {
+        "path": "runbooks/postmortem-2026-08-dashboard-outage.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "b-11",
+    "query": "why couldn't clients reach the web portal for two hours",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "runbooks/postmortem-2026-08-dashboard-outage.md",
+        "grade": 2,
+        "evidence": "Certificate renewal for `dash-lb-01` was handled by a cron job on a host that was decommissioned in June."
+      },
+      {
+        "path": "runbooks/postmortem-2026-03-ingest-outage.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "b-12",
+    "query": "what raise did the backend lead end up getting",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "people/1on1-log-priya-n.md",
+        "grade": 2,
+        "evidence": "The July adjustment came through: $176,500, not $178,000."
+      }
+    ]
+  },
+  {
+    "id": "b-13",
+    "query": "which vendor can guarantee the cost of radios until year end",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "meetings/2026-06-09-vendor-call-lora-modules.md",
+        "grade": 2,
+        "evidence": "They can hold the price through December 2026 only if we sign a purchase commitment by July 3."
+      }
+    ]
+  },
+  {
+    "id": "b-14",
+    "query": "what does the flashing light pattern for a broken transmitter indicate",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "people/onboarding-plan-support-hire.md",
+        "grade": 2,
+        "evidence": "solid amber means no GPS fix, three red blinks means radio fault E41"
+      },
+      {
+        "path": "customers/support-escalations-q1-2026.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "b-15",
+    "query": "which mountain client asked for advance warning before new releases",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "customers/2026-03-12-ridgeline-ski-patrol-call.md",
+        "grade": 2,
+        "evidence": "Early notice of firmware updates, at least one week"
+      },
+      {
+        "path": "customers/2025-09-18-ridgeline-ski-patrol-call.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "b-16",
+    "query": "how are we paying for people attending industry events",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "meetings/2026-05-06-all-hands-notes.md",
+        "grade": 2,
+        "evidence": "yes, one conference per engineer, approval via your manager, booked through Dev P."
+      },
+      {
+        "path": "meetings/2026-02-17-q1-planning-offsite.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "b-17",
+    "query": "price of the hardware vault for our update signing credentials",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "meetings/2026-04-22-security-review.md",
+        "grade": 2,
+        "evidence": "Budget: $4,200 for the module plus about two weeks of Tomasz's time."
+      }
+    ]
+  },
+  {
+    "id": "b-18",
+    "query": "when does our office rental run out",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "meetings/2026-02-17-q1-planning-offsite.md",
+        "grade": 2,
+        "evidence": "The current lease ends in November 2026."
+      }
+    ]
+  },
+  {
+    "id": "b-19",
+    "query": "what did the 17 short Kellogg probes cost us to replace",
+    "kind": "detail",
+    "relevant": [
+      {
+        "path": "customers/valley-water-district-account.md",
+        "grade": 2,
+        "evidence": "We replaced all 17 under warranty at a cost to us of about $2,600"
+      },
+      {
+        "path": "customers/support-escalations-q1-2026.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "b-20",
+    "query": "what invoice reference does the water district's accounts payable require",
+    "kind": "detail",
+    "relevant": [
+      {
+        "path": "customers/valley-water-district-account.md",
+        "grade": 2,
+        "evidence": "invoices must reference the district's contract number TVWD-2025-0417"
+      }
+    ]
+  },
+  {
+    "id": "b-21",
+    "query": "how long was the longest retry hold after lowering the ceiling to 5",
+    "kind": "detail",
+    "relevant": [
+      {
+        "path": "runbooks/postmortem-2026-03-ingest-outage.md",
+        "grade": 2,
+        "evidence": "After the ceiling was lowered to 5, the longest hold dropped to about 4 minutes."
+      },
+      {
+        "path": "meetings/2026-03-11-platform-sync.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "b-22",
+    "query": "how many rows was the table the migration rewrote",
+    "kind": "detail",
+    "relevant": [
+      {
+        "path": "runbooks/postmortem-2026-03-ingest-outage.md",
+        "grade": 2,
+        "evidence": "The migration added a column with a default to a 4.1 billion row table."
+      }
+    ]
+  },
+  {
+    "id": "b-23",
+    "query": "how much storage per node for 72 hours of raw retention",
+    "kind": "detail",
+    "relevant": [
+      {
+        "path": "projects/cairn-ingest-rewrite-plan.md",
+        "grade": 2,
+        "evidence": "Storage for 72 hours of raw retention is about 1.1 TB per node with three replicas."
+      },
+      {
+        "path": "projects/adr-0007-message-broker.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "b-24",
+    "query": "how do I register a boat with the state",
+    "kind": "none",
+    "relevant": []
+  },
+  {
+    "id": "b-25",
+    "query": "best way to book a wedding venue and pay the deposit",
+    "kind": "none",
+    "relevant": []
+  },
+  {
+    "id": "b-26",
+    "query": "what water chemistry does a reef aquarium need",
+    "kind": "none",
+    "relevant": []
+  },
+  {
+    "id": "c-01",
+    "query": "git reflog recover deleted branch",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "code/git-recovering-lost-commits.md",
+        "grade": 2,
+        "evidence": "git reflog shows every position HEAD has been at"
+      },
+      {
+        "path": "code/git-rebasing.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "c-02",
+    "query": "git rebase --onto move range of commits",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "code/git-rebasing.md",
+        "grade": 2,
+        "evidence": "move a range of commits onto a different base"
+      },
+      {
+        "path": "code/git-recovering-lost-commits.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "c-03",
+    "query": "what is the Chandrasekhar limit",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "courses/astro-lecture-04-stellar-life-cycle.md",
+        "grade": 2,
+        "evidence": "The Chandrasekhar limit is about 1.4 solar masses"
+      }
+    ]
+  },
+  {
+    "id": "c-04",
+    "query": "ser vs estar when to use which",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "languages/spanish-ser-vs-estar.md",
+        "grade": 2,
+        "evidence": "Ser is for what something is; estar is for how or where it is."
+      },
+      {
+        "path": "languages/spanish-preterite-vs-imperfect.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "c-05",
+    "query": "Roth IRA income limit single filers",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "money/roth-vs-traditional.md",
+        "grade": 2,
+        "evidence": "phases out between $150,000 and $165,000 of modified AGI for single filers"
+      },
+      {
+        "path": "money/401k-rollover.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "c-06",
+    "query": "SQL ROW_NUMBER PARTITION BY latest row per group",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "code/sql-cheatsheet.md",
+        "grade": 2,
+        "evidence": "ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY created_at DESC) numbers rows within each group"
+      }
+    ]
+  },
+  {
+    "id": "c-07",
+    "query": "Marcus Aurelius the obstacle is the way quote",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "books/meditations-marcus-aurelius.md",
+        "grade": 2,
+        "evidence": "The impediment to action advances action. What stands in the way becomes the way."
+      }
+    ]
+  },
+  {
+    "id": "c-08",
+    "query": "regex negative lookahead lines without a word",
+    "kind": "lexical",
+    "relevant": [
+      {
+        "path": "code/regex-cheatsheet.md",
+        "grade": 2,
+        "evidence": "A negative lookahead, (?!foo), matches a position only if foo does not follow"
+      }
+    ]
+  },
+  {
+    "id": "c-09",
+    "query": "what is left behind when a sun-like star ends its life",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "courses/astro-lecture-04-stellar-life-cycle.md",
+        "grade": 2,
+        "evidence": "the hot dense core that remains is a white dwarf, about the size of Earth."
+      },
+      {
+        "path": "courses/astro-lecture-09-exoplanet-detection.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "c-10",
+    "query": "finding worlds around other suns using tiny brightness dips",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "courses/astro-lecture-09-exoplanet-detection.md",
+        "grade": 2,
+        "evidence": "so a Jupiter-size planet blocks about 1% of the light from a Sun-like star"
+      },
+      {
+        "path": "courses/astro-lecture-04-stellar-life-cycle.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "c-11",
+    "query": "when do I use the past tense for an ongoing background situation",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "languages/spanish-preterite-vs-imperfect.md",
+        "grade": 2,
+        "evidence": "The imperfect paints the scenery of a story; the preterite moves the plot forward."
+      },
+      {
+        "path": "languages/spanish-ser-vs-estar.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "c-12",
+    "query": "can I take my own deposits back early",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "money/roth-vs-traditional.md",
+        "grade": 2,
+        "evidence": "Basis can be withdrawn at any time, tax-free and penalty-free; only the growth is locked up."
+      },
+      {
+        "path": "money/401k-rollover.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "c-13",
+    "query": "why do we escalate a failing project to justify earlier spending",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "courses/behavioral-economics-lecture-3.md",
+        "grade": 2,
+        "evidence": "Sunk cost fallacy: an unrecoverable outlay in the past keeps us committed to a losing course."
+      },
+      {
+        "path": "courses/behavioral-economics-biases-cheatsheet.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "c-14",
+    "query": "move money from my old employer retirement plan with no taxes taken out",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "money/401k-rollover.md",
+        "grade": 2,
+        "evidence": "A direct rollover sends the check payable to the new custodian, so nothing is withheld."
+      },
+      {
+        "path": "money/roth-vs-traditional.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "c-15",
+    "query": "shorter way to create a list from another list",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "code/python-snippets.md",
+        "grade": 2,
+        "evidence": "A comprehension replaces a loop plus append with a single bracketed expression."
+      }
+    ]
+  },
+  {
+    "id": "c-16",
+    "query": "which tiny word shows the theme of what I am saying",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "languages/japanese-particles-and-verbs.md",
+        "grade": 2,
+        "evidence": "は (pronounced wa) is the topic marker"
+      },
+      {
+        "path": "languages/japanese-hiragana-katakana-notes.md",
+        "grade": 1
+      }
+    ]
+  },
+  {
+    "id": "c-17",
+    "query": "how did Rome's perpetual dictator get assassinated",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "courses/roman-history-republic-to-empire.md",
+        "grade": 2,
+        "evidence": "Conspirators led by Brutus and Cassius stabbed him on the Ides of March, 44 BC, in the Theatre of Pompey."
+      }
+    ]
+  },
+  {
+    "id": "c-18",
+    "query": "why does my house loan barely shrink in the first years",
+    "kind": "paraphrase",
+    "relevant": [
+      {
+        "path": "money/amortization-table.md",
+        "grade": 2,
+        "evidence": "In month 1, $1,500.00 of the $1,798.65 payment is interest and only $298.65 reduces principal."
+      }
+    ]
+  },
+  {
+    "id": "c-19",
+    "query": "how many years did Darwin spend on barnacles?",
+    "kind": "detail",
+    "relevant": [
+      {
+        "path": "books/origin-of-species-notes.md",
+        "grade": 2,
+        "evidence": "Darwin spent eight years on barnacles between 1846 and 1854"
+      }
+    ]
+  },
+  {
+    "id": "c-20",
+    "query": "how many legions did Augustus keep after Actium?",
+    "kind": "detail",
+    "relevant": [
+      {
+        "path": "courses/roman-history-republic-to-empire.md",
+        "grade": 2,
+        "evidence": "He demobilised about 60 legions down to 28"
+      }
+    ]
+  },
+  {
+    "id": "c-21",
+    "query": "postgres case insensitive pattern match operator",
+    "kind": "detail",
+    "relevant": [
+      {
+        "path": "code/sql-cheatsheet.md",
+        "grade": 2,
+        "evidence": "Postgres has ILIKE for case-insensitive matching; MySQL's default collation already ignores case"
+      }
+    ]
+  },
+  {
+    "id": "c-22",
+    "query": "what is the preterite stem of tener?",
+    "kind": "detail",
+    "relevant": [
+      {
+        "path": "languages/spanish-preterite-vs-imperfect.md",
+        "grade": 2,
+        "evidence": "tener becomes tuv- (tuve, tuviste, tuvo, tuvimos, tuvieron)"
+      }
+    ]
+  },
+  {
+    "id": "c-23",
+    "query": "who discovered 51 Pegasi b and in what year?",
+    "kind": "detail",
+    "relevant": [
+      {
+        "path": "courses/astro-lecture-09-exoplanet-detection.md",
+        "grade": 2,
+        "evidence": "was found this way in 1995 by Michel Mayor and Didier Queloz"
+      }
+    ]
+  },
+  {
+    "id": "c-24",
+    "query": "how do I knit a cable stitch",
+    "kind": "none",
+    "relevant": []
+  },
+  {
+    "id": "c-25",
+    "query": "how to train a puppy to stop biting",
+    "kind": "none",
+    "relevant": []
+  },
+  {
+    "id": "c-26",
+    "query": "what to look for when choosing a motorcycle helmet",
+    "kind": "none",
+    "relevant": []
+  }
+]

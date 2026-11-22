@@ -72,6 +72,26 @@ describe('workspace grounding', () => {
     });
   });
 
+  it('leaves out passages far behind the best one by meaning', async () => {
+    const passages = await findWorkspacePassages(
+      fakeIndex([
+        // Fused order puts a word match first; similarity decides admission.
+        hit(1, { similarity: 0.6 }),
+        hit(2, { similarity: 0.71 }),
+        hit(3, { similarity: 0.63 }),
+        // No similarity (an older engine): judged by the floor alone, as before.
+        hit(4),
+      ]).index,
+      'w1',
+      'q',
+    );
+    expect(passages.map((passage) => passage.title)).to.deep.equal([
+      'Note 2 › Section',
+      'Note 3 › Section',
+      'Note 4 › Section',
+    ]);
+  });
+
   it('leaves out a note whose path the citation grammar cannot name', async () => {
     const long = `${'deep/'.repeat(60)}note.md`;
     const passages = await findWorkspacePassages(
