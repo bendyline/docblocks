@@ -84,13 +84,15 @@ export function Dialog({
 
       const dialog = dialogRef.current;
       if (!dialog) return;
-      // Settings keeps its inactive sections mounted but hidden; the browser
+      // Settings keeps its inactive sections mounted but hidden, and a
+      // comparison on a phone hides all but one version with CSS; the browser
       // skips them, so the wrap points must too.
       const focusable = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter(
         (element) =>
           !element.hasAttribute('disabled') &&
           element.getAttribute('aria-hidden') !== 'true' &&
-          element.closest('[hidden]') === null,
+          element.closest('[hidden]') === null &&
+          (typeof element.checkVisibility !== 'function' || element.checkVisibility()),
       );
       if (focusable.length === 0) {
         e.preventDefault();

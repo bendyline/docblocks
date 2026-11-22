@@ -86,7 +86,7 @@ test('shows another window’s saved edits without being touched', async ({ page
     timeout: 15_000,
   });
   // A clean window simply takes the newer text: nothing to decide, nothing set aside.
-  await expect(other.getByRole('button', { name: 'Compare versions' })).toHaveCount(0);
+  await expect(other.getByRole('button', { name: 'Resolve', exact: true })).toHaveCount(0);
   await expect(other.locator('.db-document-versions-notice')).toHaveCount(0);
   await other.close();
 });
@@ -103,16 +103,13 @@ test('combines separate edits from two windows, and Undo keeps the other version
   });
 
   const notice = page.locator('.db-document-session-notice');
-  await expect(notice).toContainText(
-    'Safely combined your edits with changes from another device.',
-    {
-      timeout: 20_000,
-    },
-  );
+  await expect(notice).toContainText('Combined your edits with changes from another device.', {
+    timeout: 20_000,
+  });
   // Both edits are in the document, and nothing asked the user to choose.
   await expect(editorOf(page)).toContainText('First paragraph. Changed here.');
   await expect(editorOf(page)).toContainText('Third paragraph. Changed in the other window.');
-  await expect(page.getByRole('button', { name: 'Compare versions' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Resolve', exact: true })).toHaveCount(0);
   await saved(page);
 
   // Undo puts back this window's own text...
@@ -143,7 +140,19 @@ test('combines separate edits from two windows, and Undo keeps the other version
       .first(),
   ).toBeVisible({ timeout: 20_000 });
 
-  await dialog.getByRole('button', { name: 'Use this version' }).click();
+  // On a phone: the choices first, then one version at a time behind tabs.
+  const desktopSize = page.viewportSize();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(dialog.getByRole('button', { name: 'Use other version' })).toBeInViewport();
+  await expect(dialog.getByRole('button', { name: 'Discard other version' })).toBeInViewport();
+  await expect(dialog.getByRole('tab')).toHaveText(['Document now', 'Changes', 'Other version']);
+  await dialog.getByRole('tab', { name: 'Other version' }).click();
+  await expect(version).toBeVisible();
+  await expect(dialog.getByRole('region', { name: 'The document now preview' })).toBeHidden();
+  await dialog.screenshot({ path: 'reports/document-versions/review-phone.png' });
+  if (desktopSize) await page.setViewportSize(desktopSize);
+
+  await dialog.getByRole('button', { name: 'Use other version' }).click();
   await expect(dialog).toBeHidden({ timeout: 15_000 });
   await expect(editorOf(page)).toContainText('Third paragraph. Changed in the other window.');
   await expect(editorOf(page)).not.toContainText('Changed here.');
@@ -163,7 +172,7 @@ test('asks when two windows change the same paragraph, and lets the user leave w
   });
 
   // Edits to the same paragraph are never joined without a person looking.
-  const compare = page.getByRole('button', { name: 'Compare versions' });
+  const compare = page.getByRole('button', { name: 'Resolve', exact: true });
   await expect(compare).toBeVisible({ timeout: 20_000 });
   await expect(page.locator('.db-document-session-notice')).toHaveCount(0);
 

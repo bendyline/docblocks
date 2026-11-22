@@ -385,8 +385,8 @@ export function DocumentVersionsLayer({
               id,
               message:
                 merges === 1
-                  ? `Safely combined your edits with changes from ${describeOrigin(event.externalOrigin)}.`
-                  : `Safely combined your edits with ${merges.toLocaleString()} other versions.`,
+                  ? `Combined your edits with changes from ${describeOrigin(event.externalOrigin)}.`
+                  : `Combined your edits with ${merges.toLocaleString()} other versions.`,
               merge: event,
               merges,
               kept: [

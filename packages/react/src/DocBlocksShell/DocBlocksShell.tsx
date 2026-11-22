@@ -350,14 +350,9 @@ import type { WorkspaceSearchOpenRequest } from '../WorkspaceSearch/WorkspaceSea
 import { findRequestForSearchOpen } from '../WorkspaceSearch/search-find-request.js';
 import { FindButton } from '../components/FindButton.js';
 import { focusFindInput } from '../components/find-input.js';
-import { DocumentConflictBanner, DocumentConflictNotice } from './DocumentConflictBanner.js';
+import { DocumentConflictNotice } from './DocumentConflictNotice.js';
 import { DocumentVersionsLayer } from './DocumentVersionsLayer.js';
 import { autoSavePacingFor } from './synced-storage.js';
-import {
-  dismissConflict,
-  isConflictDismissed,
-  type DismissedConflict,
-} from './conflict-dismissal.js';
 import {
   clearRegeneratedPageTemplateWarning,
   isPageTemplateWarningFor,
@@ -3180,13 +3175,15 @@ export function DocBlocksShell({
     return () => window.removeEventListener('click', handler, true);
   }, [activeWorkspaceId, selectedFile, closeWelcomeGateway]);
 
-  // Dismissing shrinks the conflict banner to a notice, not the conflict away:
-  // saving stays blocked, so the notice says so. A newer outside change, a
-  // blocked save or a blocked navigation brings the full banner back.
-  const [dismissedConflict, setDismissedConflict] = useState<DismissedConflict | null>(null);
+  // The comparison opens when the user asks (the conflict notice's Resolve)
+  // or tries to do something the conflict blocks: saving, or leaving the
+  // document. It never opens by itself, since a conflict can arrive mid-sentence.
+  const [showConflictComparison, setShowConflictComparison] = useState(false);
   const conflictTargetKey = documentSnapshot.conflict?.targetKey ?? null;
   useEffect(() => {
-    if (conflictTargetKey === null) setDismissedConflict(null);
+    // A conflict that settled by itself takes its comparison with it, so the
+    // next one does not open on its own.
+    if (conflictTargetKey === null) setShowConflictComparison(false);
   }, [conflictTargetKey]);
 
   const saveActiveDocument = useCallback(() => {
@@ -3195,7 +3192,7 @@ export function DocBlocksShell({
         await documentSession.flush('manual');
         showToast('success', 'Saved. You’re all set.');
       } catch (error: unknown) {
-        if (error instanceof DocumentSessionConflictError) setDismissedConflict(null);
+        if (error instanceof DocumentSessionConflictError) setShowConflictComparison(true);
         showToast(
           'error',
           isQuotaExceededError(error)
@@ -3406,7 +3403,7 @@ export function DocBlocksShell({
         if (!transitioned || requestId !== navigationRequestRef.current) return false;
         return true;
       } catch (error: unknown) {
-        if (error instanceof DocumentSessionConflictError) setDismissedConflict(null);
+        if (error instanceof DocumentSessionConflictError) setShowConflictComparison(true);
         showToast(
           'error',
           error instanceof Error
@@ -3419,7 +3416,6 @@ export function DocBlocksShell({
     [documentSession, showToast],
   );
 
-  const [showConflictComparison, setShowConflictComparison] = useState(false);
   const readConflictFile = useCallback(async () => {
     const path = selectedSourceFile ?? selectedFile;
     // Transient providers describe an in-memory copy, not the origin file's
@@ -6185,23 +6181,12 @@ export function DocBlocksShell({
             nothing for the user to decide and nothing to interrupt them with. */}
         {documentSnapshot.conflict &&
           !documentSnapshot.conflict.merging &&
-          // The comparison dialog says the same thing with more room; the
-          // banner would only sit across its top edge.
-          !showConflictComparison &&
-          (isConflictDismissed(documentSnapshot.conflict, dismissedConflict) ? (
-            <DocumentConflictNotice onReview={() => setDismissedConflict(null)} />
-          ) : (
-            <DocumentConflictBanner
-              conflict={documentSnapshot.conflict}
-              readSavedFile={readConflictFile}
-              onCompare={() => setShowConflictComparison(true)}
-              onDismiss={() =>
-                setDismissedConflict(
-                  documentSnapshot.conflict ? dismissConflict(documentSnapshot.conflict) : null,
-                )
-              }
+          !showConflictComparison && (
+            <DocumentConflictNotice
+              recoveredDraft={documentSnapshot.conflict.recoveredDraft === true}
+              onResolve={() => setShowConflictComparison(true)}
             />
-          ))}
+          )}
         {documentSnapshot.conflict && showConflictComparison && (
           <Suspense fallback={<div role="status">Loading version comparison…</div>}>
             <DocumentConflictDialog

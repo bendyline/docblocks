@@ -52,7 +52,7 @@ test('compares a recovered draft with the saved file and remembers the choice af
     );
   }, draft);
   await page.reload();
-  const compare = page.getByRole('button', { name: 'Compare versions' });
+  const compare = page.getByRole('button', { name: 'Resolve', exact: true });
   await expect(compare).toBeVisible({ timeout: 20_000 });
   await compare.click();
   const dialog = page.getByRole('dialog', { name: 'Compare document versions' });
@@ -89,18 +89,42 @@ test('compares a recovered draft with the saved file and remembers the choice af
   await expect(compare).toBeVisible();
   await compare.click();
   await page.setViewportSize({ width: 390, height: 844 });
-  const columns = dialog.locator('.db-conflict-version');
-  await expect
-    .poll(async () => {
-      const [left, right] = await Promise.all([
-        columns.nth(0).boundingBox(),
-        columns.nth(1).boundingBox(),
-      ]);
-      return !!left && !!right && right.y >= left.y + left.height;
-    })
-    .toBe(true);
-  await expect(dialog.getByRole('button', { name: 'Use saved file' })).toBeEnabled();
-  await dialog.getByRole('button', { name: 'Use saved file' }).click();
+  // On a phone the choices come first, on screen without scrolling, and the
+  // versions take turns behind tabs, starting on the differences.
+  const useSaved = dialog.getByRole('button', { name: 'Use saved file' });
+  await expect(dialog.getByRole('button', { name: 'Use draft' })).toBeInViewport();
+  await expect(useSaved).toBeInViewport();
+  await expect(dialog.getByRole('tab')).toHaveText(['Draft', 'Changes', 'Saved file']);
+  await expect(dialog.getByRole('tab', { name: 'Changes' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(dialog.getByRole('region', { name: 'Differences' })).toBeVisible();
+  await expect(recovered).toBeHidden();
+  await dialog.getByRole('tab', { name: 'Draft' }).click();
+  await expect(recovered).toBeVisible();
+  await expect(saved).toBeHidden();
+  // The version gets the width: no frames inside frames eating into it.
+  const draftBox = await recovered.boundingBox();
+  expect(draftBox?.width).toBeGreaterThanOrEqual(380);
+  await dialog.screenshot({ path: 'reports/document-recovery/comparison-phone-draft.png' });
+  await dialog.getByRole('tab', { name: 'Saved file' }).click();
+  await expect(saved).toBeVisible();
+  await expect(recovered).toBeHidden();
+  // A long version scrolls inside its pane; the choices stay where they are.
+  await expect(useSaved).toBeInViewport();
+  await dialog.getByRole('tab', { name: 'Changes' }).click();
+  // The diff was laid out while hidden behind another tab; it must draw again.
+  await expect(dialog.locator('.monaco-diff-editor .line-insert').first()).toBeVisible({
+    timeout: 10_000,
+  });
+  await dialog.screenshot({ path: 'reports/document-recovery/comparison-phone-changes.png' });
+  // The red and green that tie each choice to its side of the diff, in the dark theme too.
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await dialog.screenshot({ path: 'reports/document-recovery/comparison-phone-changes-dark.png' });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(useSaved).toBeEnabled();
+  await useSaved.click();
   await expect(dialog).toHaveCount(0);
   await expect(compare).toHaveCount(0);
   await page.setViewportSize({ width: 1280, height: 720 });

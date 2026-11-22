@@ -6769,67 +6769,9 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   pointer-events: none;
 }
 
-.db-document-conflict {
-  position: fixed;
-  top: calc(16px + var(--db-safe-top, 0px));
-  left: 50%;
-  z-index: 210;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  align-items: center;
-  box-sizing: border-box;
-  /* Sized by its content, not by the half of the screen right of its anchor:
-     on a phone that half, less the buttons, left the sentence one word wide. */
-  width: max-content;
-  max-width: min(720px, calc(100vw - 32px - var(--db-safe-left, 0px) - var(--db-safe-right, 0px)));
-  padding: 10px 12px;
-  color: var(--db-text);
-  background: var(--db-bg-elevated, var(--db-bg));
-  border: 1px solid var(--db-warning, #b7791f);
-  border-radius: 8px;
-  box-shadow: 0 6px 20px var(--db-shadow);
-  transform: translateX(-50%);
-}
-
-.db-document-conflict-text {
-  display: flex;
-  /* On a phone the sentence takes the first line and the buttons the next. */
-  flex: 1 1 260px;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.db-document-conflict-details {
-  color: var(--db-text-muted);
-  font-size: 12px;
-}
-
-.db-document-conflict-actions {
-  display: flex;
-  flex: none;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.db-document-conflict-actions button {
-  min-height: var(--db-target-min, 0);
-  padding: 5px 9px;
-  color: var(--db-text);
-  cursor: pointer;
-  background: var(--db-bg);
-  border: 1px solid var(--db-border);
-  border-radius: 5px;
-}
-
-.db-document-conflict-actions button:focus-visible {
-  outline: 2px solid var(--db-focus, var(--db-accent));
-  outline-offset: 2px;
-}
-
-/* After Dismiss: saving is still blocked, so a small notice stays clear of
-   the toolbar (top), the save toasts (bottom centre) and the status bar. */
+/* While a conflict blocks saving: a small notice, clear of the toolbar (top),
+   the save toasts (bottom centre) and the status bar, that leads straight to
+   the comparison. */
 .db-document-conflict-notice {
   position: fixed;
   right: 16px;
@@ -6850,6 +6792,7 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-document-conflict-notice button {
   flex: none;
+  min-height: var(--db-target-min, 0);
   padding: 4px 9px;
   color: var(--db-text);
   cursor: pointer;
@@ -6953,12 +6896,6 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 .db-versions-picker select:focus-visible {
   outline: 2px solid var(--db-accent);
   outline-offset: 2px;
-}
-
-.db-versions-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 /* A version that could not be opened yet: say so in the app's own type, with a way to retry. */
@@ -7120,9 +7057,114 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   font: inherit;
 }
 
-.db-conflict-consequence {
-  margin: 12px 0;
-  font-size: 12px;
+/* The choices sit above the versions, so they are on screen however long
+   the versions run. The choices proper stand out from the way to put the
+   decision off, which is pushed to the far end. */
+.db-dialog-body .db-compare-intro {
+  margin: 0 0 12px;
+}
+
+.db-compare-actions {
+  display: flex;
+  flex-wrap: wrap;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 16px;
+}
+
+.db-conflict-dialog .db-compare-actions .db-compare-choice {
+  font-weight: 600;
+  border-color: var(--db-border-strong, var(--db-border));
+}
+
+.db-conflict-dialog .db-compare-actions .db-compare-later {
+  margin-left: auto;
+  color: var(--db-text-secondary);
+  background: transparent;
+  border-color: transparent;
+}
+
+.db-dialog-body .db-compare-error {
+  margin: -8px 0 12px;
+  color: var(--db-danger, #b22b1b);
+}
+
+/* Tabs choose the version a phone shows; wider screens show all three. */
+.db-compare-tabs {
+  display: none;
+}
+
+/* Each version wears the colour and the mark of its side of the differences:
+   red and − for the one whose lines show as taken out, green and + for the
+   one whose lines show as added. Its choice, its tab and its column all
+   match, so which button keeps which text can be read off the diff. The mark
+   is there for anyone who cannot tell the two colours apart; screen readers
+   skip it (the second `content` value), since the words already say it. */
+.db-conflict-dialog [data-side='removed'] {
+  --db-compare-side: var(--db-git-deleted);
+}
+
+.db-conflict-dialog [data-side='inserted'] {
+  --db-compare-side: var(--db-git-added);
+}
+
+.db-conflict-dialog .db-compare-actions .db-compare-choice[data-side] {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--db-compare-side) 16%, var(--db-bg));
+  border-color: color-mix(in srgb, var(--db-compare-side) 70%, transparent);
+}
+
+.db-conflict-dialog .db-compare-actions .db-compare-choice[data-side]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--db-compare-side) 26%, var(--db-bg));
+}
+
+.db-conflict-dialog .db-compare-choice[data-side]::before,
+.db-conflict-dialog .db-conflict-version[data-side] > h3::before,
+.db-compare-tabs button[role='tab'][data-side]::before {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.3em;
+  height: 1.3em;
+  color: var(--db-bg);
+  font-weight: 700;
+  line-height: 1;
+  background: var(--db-compare-side);
+  border-radius: 4px;
+}
+
+.db-conflict-dialog .db-compare-choice[data-side='removed']::before,
+.db-conflict-dialog .db-conflict-version[data-side='removed'] > h3::before,
+.db-compare-tabs button[role='tab'][data-side='removed']::before {
+  content: '−';
+  content: '−' / '';
+}
+
+.db-conflict-dialog .db-compare-choice[data-side='inserted']::before,
+.db-conflict-dialog .db-conflict-version[data-side='inserted'] > h3::before,
+.db-compare-tabs button[role='tab'][data-side='inserted']::before {
+  content: '+';
+  content: '+' / '';
+}
+
+.db-conflict-dialog .db-conflict-version[data-side] {
+  border-top: 3px solid var(--db-compare-side);
+}
+
+.db-conflict-dialog .db-conflict-version[data-side] > h3 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.db-diff-mark[data-side] {
+  color: var(--db-compare-side);
+  font-weight: 700;
 }
 
 .db-conflict-dialog button:not(.db-dialog-close) {
@@ -7146,8 +7188,216 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   outline-offset: 2px;
 }
 
-[data-db-width='compact'] .db-conflict-columns {
-  grid-template-columns: minmax(0, 1fr);
+/* ── Comparing on a phone ──
+   One version at a time, chosen by tabs under the choices, filling the rest
+   of the sheet and scrolling inside it. The frames that separate three
+   columns on a wide screen (the body's padding, each pane's border and
+   padding, the preview's border) have nothing to separate here, and on a
+   phone they cost the document a fifth of its width, so they go. */
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-dialog-body {
+  padding: 0;
+  overflow: hidden;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-intro {
+  margin: 0;
+  padding: 10px 16px 0;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-actions {
+  margin: 0;
+  padding: 10px 16px 12px;
+}
+
+/* Two choices to a row, wide enough to hit; the lesser buttons keep their size. */
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-actions
+  .db-compare-choice {
+  flex: 1 1 140px;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-error {
+  margin: 0;
+  padding: 0 16px 10px;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-versions-picker {
+  margin: 0;
+  padding: 0 16px 10px;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-tabs {
+  display: flex;
+  flex: none;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--db-border);
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-tabs
+  button[role='tab'] {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 6px 4px;
+  color: var(--db-text-secondary);
+  font-weight: 600;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-tabs
+  button[role='tab'][aria-selected='true'] {
+  color: var(--db-text);
+  border-bottom-color: var(--db-accent);
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-tabs
+  button[role='tab'][data-side][aria-selected='true'] {
+  border-bottom-color: var(--db-compare-side);
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-tabs
+  button[role='tab'][data-side] {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-tabs
+  button[role='tab'][data-side]::before {
+  width: 1.15em;
+  height: 1.15em;
+  font-size: 0.9em;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-tabs
+  button[role='tab']:focus-visible {
+  outline-offset: -2px;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-columns {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 0;
+  min-height: 0;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-columns
+  > :not(.db-compare-pane--active) {
+  display: none;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-version,
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-diff {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+/* The tab already names the pane. */
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-version
+  > h3,
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-diff-header
+  > h3 {
+  display: none;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-diff-header {
+  padding: 8px 16px 0;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-diff-header:not(:has(> :not(h3))) {
+  display: none;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-metadata {
+  margin: 0;
+  padding: 6px 16px;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-preview {
+  min-height: 0;
+  border: 0;
+  border-top: 1px solid var(--db-border);
+  border-radius: 0;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-preview--rendered {
+  padding: 4px 8px;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-git-diff-host {
+  min-height: 0;
+  border: 0;
+  border-top: 1px solid var(--db-border);
+  border-radius: 0;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-combine {
+  min-height: 0;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-combine
+  .db-conflict-metadata {
+  padding-top: 0;
 }
 
 /* The grid is hidden, not unmounted, while combining: its previews keep
@@ -7165,10 +7415,6 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 .db-conflict-combine .db-git-diff-host {
   flex: 1;
   min-height: 240px;
-}
-
-.db-conflict-combine > button {
-  align-self: flex-start;
 }
 
 /* Browser PWA update notice. It is docked over the right side of Squisq's
@@ -9533,11 +9779,33 @@ button.db-git-file-row:hover {
 
 /* Diff dialog */
 .db-git-diff-host {
+  position: relative;
   flex: 1;
   min-height: 320px;
   border: 1px solid var(--db-border);
   border-radius: 5px;
   overflow: hidden;
+}
+
+/* Monaco fills the box and scrolls its own view... */
+.db-git-diff-editor {
+  position: absolute;
+  inset: 0;
+}
+
+/* ...except on a touch screen, where the editor is as tall as the diff (set
+   by GitDiffView) and the box scrolls it with the device's own scrolling.
+   The box keeps the size its layout gives it, as when Monaco filled it,
+   rather than growing to the diff. */
+.db-git-diff-host--scrolls {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  contain: size;
+}
+
+.db-git-diff-host--scrolls > .db-git-diff-editor {
+  position: relative;
+  inset: auto;
 }
 
 .db-git-diff-loading {

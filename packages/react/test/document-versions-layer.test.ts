@@ -154,9 +154,9 @@ describe('DocumentVersionsLayer', () => {
     await render();
     await until(() => button('Review') !== undefined, 'the notice');
     await click('Review');
-    await until(() => button('Use this version')?.disabled === false, 'the version to load');
+    await until(() => button('Use other version')?.disabled === false, 'the version to load');
     expect(text()).to.include('Saved on Mac');
-    await click('Use this version');
+    await click('Use other version');
     await until(() => session.getSnapshot().content === EXTERNAL, 'the replacement');
 
     expect(await provider.readFile(DOCUMENT)).to.equal(EXTERNAL);
@@ -193,10 +193,16 @@ describe('DocumentVersionsLayer', () => {
     await render();
     await until(() => button('Review') !== undefined, 'the notice');
     await click('Review');
-    await until(() => button('Discard the other version') !== undefined, 'the dialog');
+    await until(() => button('Discard other version') !== undefined, 'the dialog');
     expect(document.body.querySelectorAll('.db-versions-picker option')).to.have.length(2);
-    await click('Discard the other version');
-    await until(() => text().includes('Another version of this document'), 'one version left');
+    await click('Discard other version');
+    // One version left: still open on it, with no versions to pick between.
+    await until(
+      () =>
+        document.body.querySelector('.db-versions-picker') === null &&
+        button('Use other version') !== undefined,
+      'one version left',
+    );
     expect(await listConflictCopies(provider, SCOPE)).to.have.length(1);
     expect(session.getSnapshot().content).to.equal(BASE);
     expect(await provider.readFile(DOCUMENT)).to.equal(BASE);
@@ -239,7 +245,7 @@ describe('DocumentVersionsLayer', () => {
     refusals = 2;
     await click('Review');
     // No dead end, and nothing for the user to do: it loads once storage answers.
-    await until(() => button('Use this version')?.disabled === false, 'the version to load', 400);
+    await until(() => button('Use other version')?.disabled === false, 'the version to load', 400);
     expect(refusals).to.equal(0);
     expect(text()).not.to.include('could not be opened');
   });
@@ -260,8 +266,8 @@ describe('DocumentVersionsLayer', () => {
     await type(LOCAL);
     await savedElsewhere(EXTERNAL, "Mike's MacBook Pro");
     await until(() => session.getSnapshot().status === 'saved', 'the merged save');
-    await until(() => text().includes('Safely combined your edits'), 'the merge notice');
-    expect(text()).to.include("Safely combined your edits with changes from Mike's MacBook Pro.");
+    await until(() => text().includes('Combined your edits'), 'the merge notice');
+    expect(text()).to.include("Combined your edits with changes from Mike's MacBook Pro.");
     expect(await provider.readFile(DOCUMENT)).to.equal(MERGED);
 
     await click('Undo');
@@ -307,8 +313,8 @@ describe('DocumentVersionsLayer', () => {
       await setAside(EXTERNAL);
       await render();
       await until(() => session.getSnapshot().content === MERGED, 'the merge');
-      await until(() => text().includes('Safely combined your edits'), 'the merge notice');
-      expect(text()).to.include("Safely combined your edits with changes from Mike's MacBook Pro.");
+      await until(() => text().includes('Combined your edits'), 'the merge notice');
+      expect(text()).to.include("Combined your edits with changes from Mike's MacBook Pro.");
       await until(() => session.getSnapshot().status === 'saved', 'the merged save');
       expect(await provider.readFile(DOCUMENT)).to.equal(MERGED);
 
@@ -326,7 +332,7 @@ describe('DocumentVersionsLayer', () => {
       await typeAndSave(LOCAL);
       await setAside(EXTERNAL);
       await render();
-      await until(() => text().includes('Safely combined your edits'), 'the merge notice');
+      await until(() => text().includes('Combined your edits'), 'the merge notice');
       await click('Undo');
       await until(() => session.getSnapshot().content === LOCAL, 'the undo');
       await until(() => text().includes('1 other version to review'), 'the kept version');
@@ -354,8 +360,8 @@ describe('DocumentVersionsLayer', () => {
       await render();
       await until(() => session.getSnapshot().content === MERGED, 'the merge');
       expect(session.getSnapshot().generation).to.equal(generation + 1);
-      await until(() => text().includes('Safely combined your edits'), 'the merge notice');
-      expect(text()).to.include('Safely combined your edits with changes from another device.');
+      await until(() => text().includes('Combined your edits'), 'the merge notice');
+      expect(text()).to.include('Combined your edits with changes from another device.');
       await until(() => session.getSnapshot().status === 'saved', 'the merged save');
       expect(await provider.readFile(DOCUMENT)).to.equal(MERGED);
       // Its typing never left the document, so its set-aside copy is cleared.
@@ -393,7 +399,7 @@ describe('DocumentVersionsLayer', () => {
       // Nobody was asked anything, and nothing is left to review.
       stop();
       expect(asked).to.equal(false);
-      await until(() => text().includes('Safely combined your edits'), 'the merge notice');
+      await until(() => text().includes('Combined your edits'), 'the merge notice');
       for (let attempt = 0; attempt < 100; attempt += 1) {
         const left = await listConflictCopies(provider, SCOPE);
         if (!left.some((copy) => copy.origin === 'sync')) break;
@@ -434,7 +440,7 @@ describe('DocumentVersionsLayer', () => {
       await typeAndSave(LOCAL);
       await setAside(EXTERNAL);
       await render();
-      await until(() => text().includes('Safely combined your edits'), 'the merge notice');
+      await until(() => text().includes('Combined your edits'), 'the merge notice');
       // The kept texts have to be listed before there is anything to look at.
       await until(() => button('Review') !== undefined, 'the way to review');
       expect(text()).not.to.include('to review');
@@ -451,7 +457,7 @@ describe('DocumentVersionsLayer', () => {
         options.some((option) => option.startsWith("The version from Mike's MacBook Pro")),
       ).to.equal(true);
       // Nothing is waiting to be thrown away: the kept texts expire by themselves.
-      expect(button('Discard the other version')).to.equal(undefined);
+      expect(button('Discard other version')).to.equal(undefined);
 
       const picker = document.body.querySelector<HTMLSelectElement>('.db-versions-picker select')!;
       const mine = [...picker.options].find((option) =>
@@ -474,7 +480,7 @@ describe('DocumentVersionsLayer', () => {
       await setAside(doc('# Unicorns!', 'They are rare.', 'They like rainbows.'), 'iPad');
       await render();
       await until(
-        () => text().includes('Safely combined your edits with 2 other versions.'),
+        () => text().includes('Combined your edits with 2 other versions.'),
         'the counted notice',
       );
       expect(session.getSnapshot().content).to.equal(
@@ -609,7 +615,7 @@ describe('DocumentVersionsLayer', () => {
     await render();
     await type(LOCAL);
     await savedElsewhere(EXTERNAL);
-    await until(() => text().includes('Safely combined your edits'), 'the merge notice');
+    await until(() => text().includes('Combined your edits'), 'the merge notice');
     expect(text()).to.include('changes from another device');
     expect(button('Undo')).not.to.equal(undefined);
     await type(`${MERGED}\nMore.\n`);

@@ -665,7 +665,7 @@ test('keeping a local DBK conflict saves durable content without replaying the s
   await window.keyboard.press('Enter');
   await window.keyboard.insertText(sentinel);
 
-  await window.getByRole('button', { name: 'Compare versions' }).click({ timeout: 15_000 });
+  await window.getByRole('button', { name: 'Resolve', exact: true }).click({ timeout: 15_000 });
   const keepMine = window.getByRole('button', { name: 'Keep mine' });
   await expect(keepMine).toBeVisible({ timeout: 15_000 });
   await keepMine.click();

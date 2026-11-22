@@ -5,6 +5,8 @@ import type { MediaProvider } from '@bendyline/squisq/schemas';
 import type { ConflictCopy } from '@bendyline/docblocks/filesystem';
 import { Dialog } from '../components/Dialog.js';
 import { GitDiffView } from '../Git/GitDiffView.js';
+import { ComparePanes } from './ComparePanes.js';
+import { startsOnPhoneLayout } from './compare-layout.js';
 import { RenderedVersion, VersionText } from './ConflictVersionPreview.js';
 import { describeAge } from './conflict-summary.js';
 import { describeVersion, describeVersionSource } from './document-versions.js';
@@ -72,6 +74,11 @@ export default function DocumentVersionsDialog({
   const [now] = useState(() => Date.now());
   // Bumped by Try again, to read the selected version afresh.
   const [readRequest, setReadRequest] = useState(0);
+  // The pane a phone shows; wider screens show all three.
+  const [pane, setPane] = useState('changes');
+  // On a phone the differences hide unchanged text: a whole document
+  // scrolled past a few edits hides what there is to decide about.
+  const [changesOnly] = useState(startsOnPhoneLayout);
 
   // Keep a selection as versions are resolved; the last one closes the dialog.
   const selected = copies.find((copy) => copy.path === selectedPath) ?? copies[0] ?? null;
@@ -140,6 +147,9 @@ export default function DocumentVersionsDialog({
     }
   };
 
+  const ready = typeof content === 'string';
+  const versionTab = combined ? 'From before' : 'Other version';
+
   return (
     <Dialog
       title={combined ? 'Review combined versions' : 'Review other versions'}
@@ -149,26 +159,75 @@ export default function DocumentVersionsDialog({
         if (!busy) onClose();
       }}
       closeOnBackdrop={!busy}
-      footer={
-        <button type="button" disabled={busy} onClick={onClose}>
-          {combined ? 'Close' : 'Decide later'}
-        </button>
-      }
     >
-      {combined ? (
-        <p>
+      {/* Only when there is nothing to decide does the dialog need to say so. */}
+      {combined && (
+        <p className="db-compare-intro">
           Edits made in two places at once were combined into the document, which now has both.
           {copies.length === 1
             ? ' The text from before is kept for a week.'
             : ' The texts from before are kept for a week.'}{' '}
           There is nothing you need to do; compare if you want to check.
         </p>
-      ) : (
-        <p>
-          {copies.length === 1
-            ? 'Another version of this document was set aside instead of replacing it.'
-            : `${copies.length.toLocaleString()} other versions of this document were set aside instead of replacing it.`}{' '}
-          Compare each with the document as it is now. Nothing changes until you choose.
+      )}
+      {/* The choices come first, above the versions they choose between: on a
+          phone the versions run on for screens, and the decision must not
+          wait at the end of them. */}
+      <div className="db-compare-actions" role="group" aria-label="Choose a version">
+        <button
+          type="button"
+          className="db-compare-choice"
+          data-side="inserted"
+          disabled={busy || !ready}
+          onClick={() =>
+            void act(
+              () => onUse(selected, content as string),
+              'Could not switch to that version. Nothing was changed.',
+            )
+          }
+        >
+          {combined ? 'Go back to this version' : 'Use other version'}
+        </button>
+        {!combined && onKeepBoth && (
+          <button
+            type="button"
+            className="db-compare-choice"
+            disabled={busy || !ready}
+            title="Saves this version as a separate document beside this one"
+            onClick={() =>
+              void act(
+                () => onKeepBoth(selected, content as string),
+                'Could not save that version as its own document. It is still here.',
+              )
+            }
+          >
+            Keep both
+          </button>
+        )}
+        {!combined && (
+          <button
+            type="button"
+            className="db-compare-choice"
+            // Discarding it keeps the document as it is: the other side.
+            data-side="removed"
+            disabled={busy}
+            onClick={() =>
+              void act(
+                () => onDiscard(selected),
+                'Could not remove that version. It is still here.',
+              )
+            }
+          >
+            Discard other version
+          </button>
+        )}
+        <button type="button" className="db-compare-later" disabled={busy} onClick={onClose}>
+          {combined ? 'Close' : 'Decide later'}
+        </button>
+      </div>
+      {error && (
+        <p className="db-compare-error" role="alert">
+          {error}
         </p>
       )}
       {copies.length > 1 && (
@@ -188,121 +247,108 @@ export default function DocumentVersionsDialog({
         </label>
       )}
       <MediaContext.Provider value={mediaProvider ?? null}>
-        <div className="db-conflict-columns" aria-busy={busy || content === undefined}>
-          <section className="db-conflict-version" aria-label="The document now">
-            <h3>The document now</h3>
-            <p className="db-conflict-metadata">What is open in the editor</p>
-            {preview('The document now', currentContent)}
-            <p className="db-conflict-consequence">
-              {combined ? 'Has the edits from both.' : 'Keeps the document as it is.'}
-            </p>
-            {!combined && (
-              <div className="db-versions-actions">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() =>
-                    void act(
-                      () => onDiscard(selected),
-                      'Could not remove that version. It is still here.',
-                    )
-                  }
-                >
-                  Discard the other version
-                </button>
-              </div>
-            )}
-          </section>
-          <section className="db-conflict-diff" aria-label="Differences">
-            <div className="db-conflict-diff-header">
-              <h3>Differences</h3>
-            </div>
-            <p className="db-conflict-metadata">
-              {combined
-                ? '− Only in the document now · + Only in the text from before'
-                : '− Only in the document now · + Only in the other version'}
-            </p>
-            {typeof content === 'string' ? (
-              <GitDiffView
-                original={currentContent}
-                modified={content}
-                fileName={fileName}
-                language={fileKind.language}
-                theme={theme}
-                layout="inline"
-              />
-            ) : (
-              <div className="db-conflict-preview" role="status">
-                {content === undefined
-                  ? 'Loading this version…'
-                  : 'This version could not be opened just now.'}
-              </div>
-            )}
-          </section>
-          <section className="db-conflict-version" aria-label={label}>
-            <h3>{label}</h3>
-            <p className="db-conflict-metadata">{setAside}</p>
-            {typeof content === 'string' ? (
-              preview(label, content)
-            ) : (
-              <div className="db-conflict-preview db-versions-unread" role="status">
-                {content === undefined ? (
-                  'Loading this version…'
-                ) : (
-                  <>
-                    <span>
-                      This version could not be opened just now. It is still kept; nothing was lost.
-                      Storage is often busy for a moment after two devices save at once.
-                    </span>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => setReadRequest((request) => request + 1)}
-                    >
-                      Try again
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-            <p className="db-conflict-consequence">
-              {combined
-                ? 'Goes back to this text, without what was combined since. The text it replaces is kept for a week.'
-                : 'Replaces the document with this version. The text it replaces is kept for a week.'}
-            </p>
-            <div className="db-versions-actions">
-              <button
-                type="button"
-                disabled={busy || typeof content !== 'string'}
-                onClick={() =>
-                  void act(
-                    () => onUse(selected, content as string),
-                    'Could not switch to that version. Nothing was changed.',
-                  )
-                }
-              >
-                {combined ? 'Go back to this version' : 'Use this version'}
-              </button>
-              {onKeepBoth && (
-                <button
-                  type="button"
-                  disabled={busy || typeof content !== 'string'}
-                  title="Saves this version as a separate document beside this one"
-                  onClick={() =>
-                    void act(
-                      () => onKeepBoth(selected, content as string),
-                      'Could not save that version as its own document. It is still here.',
-                    )
-                  }
-                >
-                  Keep both
-                </button>
-              )}
-            </div>
-          </section>
-        </div>
+        <ComparePanes
+          active={pane}
+          onSelect={setPane}
+          busy={busy || content === undefined}
+          panes={[
+            {
+              key: 'now',
+              tab: 'Document now',
+              label: 'The document now',
+              className: 'db-conflict-version',
+              side: 'removed',
+              children: (
+                <>
+                  <h3>The document now</h3>
+                  <p className="db-conflict-metadata">
+                    {combined
+                      ? 'What is open in the editor, with the edits from both'
+                      : 'What is open in the editor'}
+                  </p>
+                  {preview('The document now', currentContent)}
+                </>
+              ),
+            },
+            {
+              key: 'changes',
+              tab: 'Changes',
+              label: 'Differences',
+              className: 'db-conflict-diff',
+              children: (
+                <>
+                  <div className="db-conflict-diff-header">
+                    <h3>Differences</h3>
+                  </div>
+                  <p className="db-conflict-metadata">
+                    <span className="db-diff-mark" data-side="removed">
+                      −
+                    </span>{' '}
+                    Only in the document now ·{' '}
+                    <span className="db-diff-mark" data-side="inserted">
+                      +
+                    </span>{' '}
+                    {combined ? 'Only in the text from before' : 'Only in the other version'}
+                  </p>
+                  {ready ? (
+                    <GitDiffView
+                      original={currentContent}
+                      modified={content}
+                      fileName={fileName}
+                      language={fileKind.language}
+                      theme={theme}
+                      layout="inline"
+                      changesOnly={changesOnly}
+                    />
+                  ) : (
+                    <div className="db-conflict-preview" role="status">
+                      {content === undefined
+                        ? 'Loading this version…'
+                        : 'This version could not be opened just now.'}
+                    </div>
+                  )}
+                </>
+              ),
+            },
+            {
+              key: 'version',
+              tab: versionTab,
+              label,
+              className: 'db-conflict-version',
+              side: 'inserted',
+              children: (
+                <>
+                  <h3>{label}</h3>
+                  <p className="db-conflict-metadata">{setAside}</p>
+                  {ready ? (
+                    preview(label, content)
+                  ) : (
+                    <div className="db-conflict-preview db-versions-unread" role="status">
+                      {content === undefined ? (
+                        'Loading this version…'
+                      ) : (
+                        <>
+                          <span>
+                            This version could not be opened just now. It is still kept; nothing was
+                            lost. Storage is often busy for a moment after two devices save at once.
+                          </span>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => setReadRequest((request) => request + 1)}
+                          >
+                            Try again
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </>
+              ),
+            },
+          ]}
+        />
       </MediaContext.Provider>
-      {error && <p role="alert">{error}</p>}
     </Dialog>
   );
 }

@@ -6,6 +6,9 @@
  * The diff editor and both text models are created imperatively into a
  * host div and disposed on unmount (the classic Monaco leak). Content and
  * theme changes update the existing editor without recreating it.
+ *
+ * On a touch screen a read-only diff is as tall as its content and the box
+ * around it does the scrolling, so it scrolls like every other page there.
  */
 
 // The default import serves the classic JSX transform the Mocha suite runs.
@@ -15,6 +18,12 @@ import {
   useMonacoLoader,
   type UseMonacoLoaderResult,
 } from '@bendyline/squisq-editor-react';
+import { useMediaQuery } from '../layout/useMediaQuery.js';
+
+/** A screen used with fingers: no hover, and a pointer as coarse as a fingertip. */
+const TOUCH_SCREEN_QUERY = '(hover: none) and (pointer: coarse)';
+
+const TOUCH_EVENTS = ['touchstart', 'touchmove', 'touchend', 'touchcancel'] as const;
 
 type MonacoModule = NonNullable<UseMonacoLoaderResult['monaco']>;
 type DiffEditorInstance = ReturnType<MonacoModule['editor']['createDiffEditor']>;
@@ -79,6 +88,8 @@ export function GitDiffView({
   const appliedModifiedRef = useRef<string | null>(null);
   const onModifiedChangeRef = useRef(onModifiedChange);
   onModifiedChangeRef.current = onModifiedChange;
+  // Editing keeps Monaco's own touch handling: a tap places the caret through it.
+  const browserScrolls = useMediaQuery(TOUCH_SCREEN_QUERY) && !editable;
 
   // Create the editor once monaco settles; dispose editor AND models on unmount.
   useEffect(() => {
@@ -114,6 +125,48 @@ export function GitDiffView({
       modifiedModel.dispose();
     };
   }, [monaco, editable]);
+
+  // Monaco scrolls its own view, and on a touch screen it does so by imitating
+  // touch scrolling: it moves with the finger, glides a moment, and stops
+  // dead, and while it handles a touch the browser's own scrolling is held
+  // off. Here, instead, the editor grows to the height of the diff and the box
+  // around it scrolls, so a flick carries on, slows, and bounces as anywhere
+  // else on the device.
+  useEffect(() => {
+    const editor = editorRef.current;
+    const host = hostRef.current;
+    if (!monaco || !editor || !host) return;
+    editor.updateOptions({
+      scrollbar: browserScrolls
+        ? { vertical: 'hidden', handleMouseWheel: false, alwaysConsumeMouseWheel: false }
+        : { vertical: 'auto', handleMouseWheel: true, alwaysConsumeMouseWheel: true },
+    });
+    if (!browserScrolls) return;
+    const sides = [editor.getOriginalEditor(), editor.getModifiedEditor()];
+    // Side by side, the two are padded to line up; inline, the hidden original
+    // is never the taller. Either way the taller side is the diff's height.
+    const fit = () => {
+      // Behind another tab the editor is laid out zero wide, wrapping every
+      // character onto a line of its own: no measure of anything. It is
+      // measured again when it is shown.
+      if (host.clientWidth === 0) return;
+      host.style.height = `${Math.ceil(Math.max(...sides.map((side) => side.getContentHeight())))}px`;
+    };
+    fit();
+    const sizing = sides.map((side) => side.onDidContentSizeChange(fit));
+    // Monaco takes touches through listeners on the document, and cancels the
+    // browser's scrolling for the ones it handles. Stopped here, they never
+    // reach it, and a tap still makes a click.
+    const keepFromMonaco = (event: TouchEvent) => event.stopPropagation();
+    for (const type of TOUCH_EVENTS) {
+      host.addEventListener(type, keepFromMonaco, { passive: true });
+    }
+    return () => {
+      for (const subscription of sizing) subscription.dispose();
+      for (const type of TOUCH_EVENTS) host.removeEventListener(type, keepFromMonaco);
+      host.style.height = '';
+    };
+  }, [monaco, editable, browserScrolls]);
 
   // Sync content + language into the existing models — never recreate the editor.
   useEffect(() => {
@@ -159,7 +212,13 @@ export function GitDiffView({
           <span>{labels.modified}</span>
         </div>
       )}
-      <div ref={hostRef} className="db-git-diff-host" />
+      <div
+        className={
+          browserScrolls ? 'db-git-diff-host db-git-diff-host--scrolls' : 'db-git-diff-host'
+        }
+      >
+        <div ref={hostRef} className="db-git-diff-editor" />
+      </div>
     </>
   );
 }
