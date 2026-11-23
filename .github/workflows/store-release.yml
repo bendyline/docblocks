@@ -18,13 +18,20 @@
 #     draft assets for each store, then delete the draft when it is no longer
 #     needed.
 #   - With `publish: testing` (the default), separate upload jobs send the Mac
-#     App Store and iOS builds to TestFlight and the Android bundle to Play
-#     internal testing, reading them back from the draft. None of those reach
-#     users or App Review from CI, and the Microsoft Store packages are always
-#     submitted by hand. The upload jobs hold the store credentials, so the
-#     build jobs' npm, Gradle, CocoaPods and electron-builder code never sees
-#     them, and a failed upload can be retried with "Re-run failed jobs"
-#     without rebuilding: a rerun keeps preflight's draft tag and build number.
+#     App Store and iOS builds to TestFlight, the Android bundle to Play
+#     internal testing, and the Windows packages to a Microsoft Store package
+#     flight, reading them back from the draft. None of those reach the public
+#     or App Review from CI; the flight is certified but goes only to its tester
+#     group. The upload jobs hold the store credentials, so the build jobs' npm,
+#     Gradle, CocoaPods and electron-builder code never sees them, and a failed
+#     upload can be retried with "Re-run failed jobs" without rebuilding: a
+#     rerun keeps preflight's draft tag and build number.
+#   - CI must never touch the public Microsoft Store listing. Every submission
+#     API update there resends the price, which the API cannot read back for a
+#     price set in Partner Center, and an empty price makes the paid app free
+#     without an error. Flight submissions carry no price. To release a build,
+#     start an update in Partner Center and, on its Packages page, copy the
+#     packages from the flight.
 #   - The VS Code extension is the exception: the Visual Studio Marketplace
 #     has no testing track, so publishing it reaches everyone. It is therefore
 #     not covered by `publish`; it uploads only when the separate
@@ -54,7 +61,7 @@
 # Prerequisites (one-time setup):
 #   Microsoft Store:  reserve the app in Partner Center, fill the appx: identity
 #                     values in electron-builder.yml. No signing cert needed
-#                     (the Store re-signs).
+#                     (the Store re-signs). The first submission is by hand.
 #   Mac App Store:    "Apple Distribution" + "Mac Installer Distribution" certs
 #                     and a Mac App Store provisioning profile for
 #                     com.bendyline.docblocks. Secrets:
@@ -86,6 +93,16 @@
 #                     plain text, not base64). Play's API cannot create the
 #                     first release: upload the first .aab to Internal testing
 #                     by hand.
+#     Microsoft Store: a Microsoft Entra app in the tenant linked to Partner
+#                     Center, with the Manager role there and a federated
+#                     credential for the subject
+#                     repo:bendyline/docblocks:environment:microsoft-store, so
+#                     no key is stored. The GitHub environment microsoft-store
+#                     allows only main. Secrets: MS_STORE_TENANT_ID and
+#                     MS_STORE_CLIENT_ID (the app's GUIDs), and
+#                     MS_STORE_FLIGHT_GROUP_ID (a Partner Center known user
+#                     group). upload-msix creates the flight itself: the API
+#                     cannot fill a flight made in Partner Center.
 #     VS Code Marketplace: a publisher whose ID matches "publisher" in
 #                     packages/vscode/package.json, with a Trusted Publishing
 #                     policy for this repository's owner and name, workflow
@@ -120,7 +137,7 @@ on:
         required: false
         type: string
       publish:
-        description: 'testing: also send macOS and iOS to TestFlight and Android to Play internal testing. Windows is never uploaded; VS Code has its own switch below.'
+        description: 'testing: also send macOS and iOS to TestFlight, Android to Play internal testing, and Windows to a Microsoft Store flight. VS Code has its own switch below.'
         required: true
         default: 'testing'
         type: choice
@@ -184,6 +201,9 @@ jobs:
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          MS_STORE_TENANT_ID: ${{ secrets.MS_STORE_TENANT_ID }}
+          MS_STORE_CLIENT_ID: ${{ secrets.MS_STORE_CLIENT_ID }}
+          MS_STORE_FLIGHT_GROUP_ID: ${{ secrets.MS_STORE_FLIGHT_GROUP_ID }}
         run: |
           case "$TARGET" in
             all) targets='windows macos android ios vscode' ;;
@@ -194,6 +214,7 @@ jobs:
           required=()
           app_store_upload=false
           play_upload=false
+          microsoft_store_upload=false
           # vscode needs no secret: its upload job uses Marketplace Trusted
           # Publishing (OIDC).
           for target in windows macos android ios vscode; do
@@ -210,6 +231,7 @@ jobs:
               case "$target" in
                 macos|ios) app_store_upload=true ;;
                 android) play_upload=true ;;
+                windows) microsoft_store_upload=true ;;
               esac
             fi
           done
@@ -218,6 +240,9 @@ jobs:
           fi
           if [ "$play_upload" = true ]; then
             required+=(GOOGLE_PLAY_SERVICE_ACCOUNT_JSON)
+          fi
+          if [ "$microsoft_store_upload" = true ]; then
+            required+=(MS_STORE_TENANT_ID MS_STORE_CLIENT_ID MS_STORE_FLIGHT_GROUP_ID)
           fi
           status=0
           for name in "${required[@]}"; do
@@ -247,6 +272,25 @@ jobs:
             ! python3 -c 'import json, os; a = json.loads(os.environ["GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"]); assert isinstance(a, dict) and a.get("client_email") and a.get("private_key")' 2>/dev/null; then
             echo "::error::GOOGLE_PLAY_SERVICE_ACCOUNT_JSON must be the service account's JSON key file, as plain text"
             status=1
+          fi
+          if [ "$microsoft_store_upload" = true ]; then
+            guid='^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$'
+            for name in MS_STORE_TENANT_ID MS_STORE_CLIENT_ID; do
+              if [ -n "${!name}" ] && ! [[ "${!name}" =~ $guid ]]; then
+                echo "::error::$name must be the GUID from the Entra app's Overview page"
+                status=1
+              fi
+            done
+            if [ -n "$MS_STORE_FLIGHT_GROUP_ID" ] && ! [[ "$MS_STORE_FLIGHT_GROUP_ID" =~ ^[0-9a-zA-Z-]+$ ]]; then
+              echo "::error::MS_STORE_FLIGHT_GROUP_ID must be the known user group's ID, not its name or address"
+              status=1
+            fi
+            # The microsoft-store environment would refuse the upload job anyway,
+            # an hour from now.
+            if [ "$GITHUB_REF" != refs/heads/main ]; then
+              echo "::error::The Microsoft Store upload runs only from main. Run this from main, choose publish: none, or choose a target without Windows"
+              status=1
+            fi
           fi
           echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
           # The Marketplace upload is opt-in and independent of `publish`: it
@@ -339,7 +383,7 @@ jobs:
             - Desktop version: `${{ steps.versions.outputs.desktop }}`
             - Mobile version: `${{ steps.versions.outputs.mobile }}`
             - Build number (Mac App Store, App Store, Google Play): `${{ needs.preflight.outputs.build_number }}`
-            - Sent to testers (TestFlight, Play internal testing): `${{ needs.preflight.outputs.publish }}`
+            - Sent to testers (TestFlight, Play internal testing, Microsoft Store flight): `${{ needs.preflight.outputs.publish }}`
             - VS Code extension version (the desktop version): `${{ steps.versions.outputs.desktop }}`
             - VS Code published to the Marketplace: `${{ needs.preflight.outputs.publish_vscode }}`
             - Source commit: `${{ github.sha }}`
@@ -727,10 +771,11 @@ jobs:
   # Store uploads (publish: testing; upload-vsix only with publish_vscode).
   # Each reads its verified package back from the private draft, so the store
   # credentials never meet the build jobs, and "Re-run failed jobs" retries an
-  # upload without rebuilding. Nothing here reaches users or review: TestFlight
-  # builds go to testers once Apple has processed them, and Play internal
-  # testing is limited to its tester list. The VS Code Marketplace is the
-  # exception (see the header), which is why it is a separate opt-in.
+  # upload without rebuilding. Nothing here reaches the public: TestFlight
+  # builds go to testers once Apple has processed them, Play internal testing is
+  # limited to its tester list, and the Microsoft Store flight to its user group
+  # once Microsoft has certified it. The VS Code Marketplace is the exception
+  # (see the header), which is why it is a separate opt-in.
   #
   # contents: write is needed only because GitHub lists draft releases to
   # tokens with push access. The token is passed to the download step alone.
@@ -890,9 +935,237 @@ jobs:
         if: always()
         run: rm -rf "$RUNNER_TEMP/app-store-connect"
 
+  # Entra trades this job's GitHub OIDC token for a one-hour Store token, so no
+  # key is stored anywhere. Only this job and upload-vsix may request an OIDC
+  # token. It calls the submission API directly because Microsoft's msstore CLI
+  # publishes a single package and does not take .appx. Every call stays under
+  # the flight (see the header): check-assurance-contract.ts enforces that.
+  upload-msix:
+    name: Submit Windows Packages to the Microsoft Store Flight
+    needs: [preflight, build-msix]
+    if: ${{ needs.preflight.outputs.publish == 'testing' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: microsoft-store
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Download Windows packages from private draft
+        id: download
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRAFT_TAG: ${{ needs.preflight.outputs.draft_tag }}
+        run: |
+          gh release download "$DRAFT_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern '*-win-*' --dir "$RUNNER_TEMP/store"
+          cd "$RUNNER_TEMP/store"
+          shopt -s nullglob
+          packages=()
+          version=
+          for arch in x64 arm64; do
+            files=(*-win-"$arch".appx *-win-"$arch".msix)
+            if [ "${#files[@]}" -ne 1 ]; then
+              echo "::error::Expected one $arch package on $DRAFT_TAG, found ${#files[@]}"
+              exit 1
+            fi
+            # The Store reports the manifest's version, so compare against that.
+            identity="$(unzip -p "${files[0]}" AppxManifest.xml | tr '\r\n' '  ' | grep -o '<Identity [^>]*>')"
+            package_version="$(sed -n 's/.* Version="\([0-9.]*\)".*/\1/p' <<< "$identity")"
+            if [ -z "$package_version" ] || [ "$package_version" != "${version:-$package_version}" ] ||
+              [[ "$identity" != *" ProcessorArchitecture=\"$arch\""* ]]; then
+              echo "::error::${files[0]} has an unexpected identity: $identity"
+              exit 1
+            fi
+            version="$package_version"
+            packages+=("${files[0]}")
+            echo "$arch=${files[0]}" >> "$GITHUB_OUTPUT"
+          done
+          # The packages are already compressed; the API takes them in one ZIP.
+          zip -q -0 packages.zip "${packages[@]}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Stops after Microsoft accepts the packages: certification takes hours to
+      # days and reports by email and in Partner Center.
+      - name: Submit to the package flight
+        shell: bash
+        env:
+          STORE_ID: 9MTLPD213DL0
+          FLIGHT_NAME: DocBlocks CI
+          MS_STORE_TENANT_ID: ${{ secrets.MS_STORE_TENANT_ID }}
+          MS_STORE_CLIENT_ID: ${{ secrets.MS_STORE_CLIENT_ID }}
+          MS_STORE_FLIGHT_GROUP_ID: ${{ secrets.MS_STORE_FLIGHT_GROUP_ID }}
+          VERSION: ${{ steps.download.outputs.version }}
+          X64_PACKAGE: ${{ steps.download.outputs.x64 }}
+          ARM64_PACKAGE: ${{ steps.download.outputs.arm64 }}
+          NOTES: DocBlocks opens with a Welcome document and needs no sign-in. AI assistance, dictation and read aloud are optional, off by default, and download their models only when chosen in Settings.
+        run: |
+          app="https://manage.devcenter.microsoft.com/v1.0/my/applications/$STORE_ID"
+          umask 077
+          work="$(mktemp -d "$RUNNER_TEMP/microsoft-store.XXXXXX")"
+          trap 'rm -rf "$work"' EXIT
+
+          # The subject claim must match the Entra app's federated credential.
+          assertion="$(curl -sS --fail --retry 3 -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api%3A%2F%2FAzureADTokenExchange" | jq -er .value)"
+          echo "::add-mask::$assertion"
+          sign_in="$(printf '%s' "$assertion" | curl -sS --retry 3 \
+            "https://login.microsoftonline.com/$MS_STORE_TENANT_ID/oauth2/v2.0/token" \
+            --data-urlencode grant_type=client_credentials \
+            --data-urlencode "client_id=$MS_STORE_CLIENT_ID" \
+            --data-urlencode scope=https://manage.devcenter.microsoft.com/.default \
+            --data-urlencode client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer \
+            --data-urlencode client_assertion@-)"
+          token="$(jq -r '.access_token // empty' <<< "$sign_in")"
+          if [ -z "$token" ]; then
+            echo "::error::Microsoft Entra refused the sign-in: $(jq -r '.error_description // .error // "no reason given"' <<< "$sign_in" | tr -d '\r' | head -n 1)"
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          printf 'Authorization: Bearer %s\n' "$token" > "$work/authorization"
+
+          # api METHOD PATH [BODY_FILE] prints the response. Only requests that are
+          # safe to repeat are retried.
+          api() {
+            local method="$1" path="$2" body="${3:-}" status
+            local args=(-sS --connect-timeout 30 --max-time 300 -X "$method" -o "$work/response"
+              -w '%{http_code}' -H "@$work/authorization" -H 'Accept: application/json')
+            case "$method" in
+              GET|PUT) args+=(--retry 5 --retry-delay 10) ;;
+              POST) [ -n "$body" ] || args+=(-H 'Content-Type:' --data '') ;;
+            esac
+            [ -z "$body" ] || args+=(-H 'Content-Type: application/json' --data-binary "@$body")
+            : > "$work/response"
+            status="$(curl "${args[@]}" "$app/$path")" || return 1
+            if [[ "$status" != 2?? ]]; then
+              echo "::error::Microsoft Store: $method $path returned $status: $(head -c 2000 "$work/response" | tr '\r\n' '  ')" >&2
+              return 1
+            fi
+            cat "$work/response"
+          }
+
+          # Sets flight_id, creating the flight when the app has none by this name.
+          find_or_create_flight() {
+            flight_id="$(api GET 'listflights?skip=0&top=100' |
+              jq -r --arg name "$FLIGHT_NAME" 'first(.value[]? | select(.friendlyName == $name) | .flightId) // empty')"
+            if [ -z "$flight_id" ]; then
+              jq -n --arg name "$FLIGHT_NAME" --arg group "$MS_STORE_FLIGHT_GROUP_ID" \
+                '{friendlyName: $name, groupIds: [$group], rankHigherThan: null}' > "$work/flight"
+              flight_id="$(api POST flights "$work/flight" | jq -er .flightId)"
+              echo "Created the package flight \"$FLIGHT_NAME\"."
+            fi
+          }
+
+          # Whether the submission on stdin holds both of this build's packages.
+          has_this_build() {
+            jq -e --arg version "$VERSION" '
+              [.flightPackages[]? | select(.fileStatus != "PendingDelete" and .version == $version)
+                | (.architecture // "" | ascii_downcase)]
+              | any(. == "x64") and any(. == "arm64")' > /dev/null
+          }
+
+          # Reports on the run's summary page.
+          report() {
+            echo "$1"
+            echo "$1" >> "$GITHUB_STEP_SUMMARY"
+          }
+
+          find_or_create_flight
+          flight="$(api GET "flights/$flight_id")"
+          published_id="$(jq -r '.lastPublishedFlightSubmission.id // empty' <<< "$flight")"
+          pending_id="$(jq -r '.pendingFlightSubmission.id // empty' <<< "$flight")"
+          if [ -n "$published_id" ]; then
+            submission="$(api GET "flights/$flight_id/submissions/$published_id")"
+            if has_this_build <<< "$submission"; then
+              report "\`$VERSION\` is already on the **Microsoft Store flight**; nothing was submitted."
+              exit 0
+            fi
+          fi
+          if [ -n "$pending_id" ]; then
+            submission="$(api GET "flights/$flight_id/submissions/$pending_id")"
+            status="$(jq -r '.status // "unknown"' <<< "$submission")"
+            case "$status" in
+              None|PendingCommit|Canceled|CommitFailed|PreProcessingFailed|CertificationFailed|ReleaseFailed|PublishFailed)
+                echo "Replacing the flight's unfinished submission ($status)."
+                api DELETE "flights/$flight_id/submissions/$pending_id"
+                # Deleting a flight's only submission deletes the flight with it.
+                find_or_create_flight
+                ;;
+              *)
+                if has_this_build <<< "$submission"; then
+                  report "\`$VERSION\` is already submitted to the **Microsoft Store flight** ($status)."
+                  exit 0
+                fi
+                echo "::error::The flight's previous submission is still in progress ($status). Wait for it to publish or cancel it in Partner Center, then re-run this job."
+                exit 1
+                ;;
+            esac
+          fi
+
+          submission="$(api POST "flights/$flight_id/submissions")"
+          submission_id="$(jq -er .id <<< "$submission")"
+          upload_url="$(jq -er .fileUploadUrl <<< "$submission")"
+          echo "::add-mask::$upload_url"
+          # A new submission copies the last one: replace every package it lists.
+          jq --arg x64 "$X64_PACKAGE" --arg arm64 "$ARM64_PACKAGE" --arg notes "$NOTES" '{
+            flightPackages: (
+              [.flightPackages[]? | {id, fileName, fileStatus: "PendingDelete", minimumDirectXVersion, minimumSystemRam}]
+              + [$x64, $arm64 | {fileName: ., fileStatus: "PendingUpload", minimumDirectXVersion: "None", minimumSystemRam: "None"}]
+            ),
+            packageDeliveryOptions,
+            targetPublishMode: "Immediate",
+            targetPublishDate,
+            notesForCertification: (if (.notesForCertification // "") == "" then $notes else .notesForCertification end)
+          }' <<< "$submission" > "$work/update"
+          api PUT "flights/$flight_id/submissions/$submission_id" "$work/update" > /dev/null
+          # The URL is a signed Azure blob. Naming a service version allows the
+          # whole ZIP in one request; the API leaves plus signs unescaped.
+          curl -sS --fail-with-body --connect-timeout 30 --max-time 900 --retry 2 --retry-all-errors \
+            -T "$RUNNER_TEMP/store/packages.zip" -H 'x-ms-blob-type: BlockBlob' -H 'x-ms-version: 2021-08-06' \
+            "${upload_url//+/%2B}"
+          api POST "flights/$flight_id/submissions/$submission_id/commit" > /dev/null
+
+          status=CommitStarted
+          for _ in {1..80}; do
+            sleep 15
+            state="$(api GET "flights/$flight_id/submissions/$submission_id/status")"
+            status="$(jq -r '.status // "unknown"' <<< "$state")"
+            case "$status" in PendingCommit|CommitStarted) ;; *) break ;; esac
+          done
+          jq -r '.statusDetails | .errors[]?, .warnings[]? | "\(.code): \(.details)"' <<< "$state"
+          case "$status" in
+            PreProcessing|Certification|Release|PendingPublication|Publishing|Published) ;;
+            *)
+              echo "::error::Microsoft Store did not accept the submission ($status). Its reasons are above; a rerun replaces it."
+              exit 1
+              ;;
+          esac
+
+          # The Store reads each package's version while preprocessing it.
+          confirmed=false
+          for _ in {1..20}; do
+            submission="$(api GET "flights/$flight_id/submissions/$submission_id")"
+            if has_this_build <<< "$submission"; then
+              confirmed=true
+              break
+            fi
+            sleep 15
+          done
+          if [ "$confirmed" = false ]; then
+            jq -r '.flightPackages[]? | "\(.fileName): \(.version // "not read yet") \(.architecture // "") \(.fileStatus)"' <<< "$submission"
+            if jq -e '[.flightPackages[]? | select((.version // "") == "")] | length == 0' <<< "$submission" > /dev/null; then
+              echo "::error::The flight submission does not hold x64 and arm64 $VERSION. Cancel it in Partner Center."
+              exit 1
+            fi
+            echo "::warning::Microsoft had not read the new packages' versions yet; check them in Partner Center."
+          fi
+          report "Submitted \`$VERSION\` (x64, arm64) to the **Microsoft Store flight**. Once certified it goes to its testers; to release it, start an update in Partner Center and copy the packages from the flight."
+
   # Marketplace Trusted Publishing: vsce trades this job's GitHub OIDC token for
-  # a 15-minute Marketplace credential, so no token is stored anywhere. This is
-  # the only job that may request an OIDC token. Unlike the other uploaders it
+  # a 15-minute Marketplace credential, so no token is stored anywhere. Besides
+  # upload-msix, no other job may request an OIDC token. Unlike the others it
   # needs one npm tool, vsce, so it installs from the lockfile (exact versions
   # under the cooldown) with --ignore-scripts: no install script and no
   # repository code runs here, only vsce itself. The checkout keeps no token.

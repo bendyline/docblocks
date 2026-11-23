@@ -338,8 +338,18 @@ for each architecture.
 The **Release Store Builds** workflow (`.github/workflows/store-release.yml`)
 builds the Mac App Store `.pkg` and x64 and arm64 Microsoft Store packages, with
 the mobile store builds, and attaches them only to a private draft release. With
-`publish: testing` (the default), a separate job sends the Mac App Store `.pkg`
-to TestFlight; the Microsoft Store packages are always submitted by hand.
+`publish: testing` (the default), separate jobs send the Mac App Store `.pkg` to
+TestFlight and the Windows packages to the `DocBlocks CI` package flight in the
+Microsoft Store.
+
+The flight job runs only from `main`. It stops once Microsoft accepts the
+packages; certification then takes hours to days, and the flight reaches only
+its tester group. Testers get the flight's package instead of the public one.
+To release a build, start an update in Partner Center after the flight is
+published, copy the packages from the flight on its Packages page, update What's
+new, and submit. CI never touches the public listing: the submission API resends
+the price with every update there, and can make the paid app free without an
+error.
 
 ```bash
 # MAS needs embedded.provisionprofile and the MAS signing identities.
