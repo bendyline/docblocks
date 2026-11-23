@@ -1966,11 +1966,11 @@ body.db-resizing-sidebar * {
   line-height: 1;
 }
 
-/* A touch screen gets Squisq's taller 44px status row; follow it. */
-@media (pointer: coarse) {
-  .db-shell-sidebar-footer {
-    height: calc(45px + var(--db-safe-bottom));
-  }
+/* A touch screen gets Squisq's taller 44px status row; follow it. Squisq
+   keys that row off `(pointer: coarse)`, the same query the stamped
+   `data-db-pointer` reads. */
+[data-db-pointer='coarse'] .db-shell-sidebar-footer {
+  height: calc(45px + var(--db-safe-bottom));
 }
 
 .db-shell-sidebar-footer > * {

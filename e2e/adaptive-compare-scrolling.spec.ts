@@ -1,4 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
+import { MONACO_COLD_LOAD_TIMEOUT } from './helpers/editor-regression.js';
 import { expect, test } from './helpers/test.js';
 import { welcomeDocumentContent } from '../packages/react/src/DocBlocksShell/welcome-document.js';
 
@@ -94,8 +95,11 @@ test.describe('comparing versions on a touch screen', () => {
     const resolve = page.getByRole('button', { name: 'Resolve', exact: true });
     await expect(resolve).toBeVisible({ timeout: 30_000 });
     await resolve.tap();
+    // The dialog is its own lazy chunk around Monaco's diff editor, whose first
+    // load on the dev server can outlast the default wait under a loaded
+    // machine: the burn-in caught it still showing "Loading version comparison…".
     const dialog = page.getByRole('dialog', { name: 'Compare document versions' });
-    await expect(dialog).toBeVisible();
+    await expect(dialog).toBeVisible({ timeout: MONACO_COLD_LOAD_TIMEOUT });
     // A phone opens on the differences; a tablet shows every pane at once.
     const changesTab = dialog.getByRole('tab', { name: 'Changes' });
     if (await changesTab.isVisible()) await changesTab.tap();
@@ -104,22 +108,39 @@ test.describe('comparing versions on a touch screen', () => {
     // The whole document, so there is a long way to scroll.
     await dialog.getByRole('combobox', { name: 'View' }).selectOption('inline');
 
-    // The box around the diff scrolls it, not Monaco.
+    // The box around the diff scrolls it, not Monaco. It mounts only once
+    // Monaco has loaded ("Loading diff…" until then), so it waits as long.
     const box = differences.locator('.db-git-diff-host');
-    await expect(box).toHaveClass(/\bdb-git-diff-host--scrolls\b/);
-    const editor = differences.locator('.db-git-diff-editor');
-    const editorHeight = () => editor.evaluate((element) => element.getBoundingClientRect().height);
-    await expect(differences).toContainText('There is no account to create.', { timeout: 20_000 });
-    await expect.poll(editorHeight).toBeGreaterThan(600);
+    await expect(box).toHaveClass(/\bdb-git-diff-host--scrolls\b/, {
+      timeout: MONACO_COLD_LOAD_TIMEOUT,
+    });
+    await expect(differences).toContainText('There is no account to create.', {
+      timeout: MONACO_COLD_LOAD_TIMEOUT,
+    });
+    // The box and the editor in one read: the editor follows Monaco's content
+    // height, which keeps growing while Monaco lays the diff out, so two
+    // separate reads could straddle a step (1969px, then 2121px).
+    const measure = () =>
+      box.evaluate((element) => ({
+        client: element.clientHeight,
+        scroll: element.scrollHeight,
+        editor: Math.round(
+          element.querySelector('.db-git-diff-editor')?.getBoundingClientRect().height ?? 0,
+        ),
+      }));
+    await expect.poll(async () => (await measure()).editor).toBeGreaterThan(600);
 
     // The editor is the whole diff's height; the box stays its own size.
-    const sizes = await box.evaluate((element) => ({
-      client: element.clientHeight,
-      scroll: element.scrollHeight,
-    }));
+    // Once Monaco settles, the box's scroll height is exactly the editor's.
+    await expect
+      .poll(async () => {
+        const { editor, scroll } = await measure();
+        return editor - scroll;
+      })
+      .toBe(0);
+    const sizes = await measure();
     expect(sizes.client).toBeGreaterThan(100);
     expect(sizes.scroll).toBeGreaterThan(sizes.client + 200);
-    expect(Math.round(await editorHeight())).toBe(sizes.scroll);
 
     // WebKit takes no synthetic touch drags; Chromium does, through the same
     // path a finger takes. Monaco, given the touch, would cancel the scroll.
