@@ -234,6 +234,14 @@ export {
 export * from './ai-knowledge.js';
 export * from './ai-images.js';
 export {
+  AI_SUGGESTION_MIN_BYTES,
+  aiDeviceFit,
+  parseAiDeviceFit,
+  suggestsLocalAi,
+  type AiDeviceFit,
+  type AiDeviceMemory,
+} from './ai-device.js';
+export {
   buildChatCompletionBody,
   isLocalEngineModel,
   type ChatCompletionBody,

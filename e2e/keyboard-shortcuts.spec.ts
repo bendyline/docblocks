@@ -1,11 +1,10 @@
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
+import { createDocument } from './helpers/new-document.js';
 
 test('F1, ? and the app menu open the keyboard shortcut sheet', async ({ page }) => {
   await openInitializedSite(page);
-  await page.getByRole('button', { name: 'New File', exact: true }).click();
-  await page.getByRole('textbox', { name: 'New file name' }).fill('shortcut-notes.md');
-  await page.getByRole('textbox', { name: 'New file name' }).press('Enter');
+  await createDocument(page, 'shortcut-notes.md');
   await expect(page).toHaveTitle('shortcut-notes - DocBlocks', { timeout: 15_000 });
   const editor = page.locator('.ProseMirror[contenteditable="true"]');
   await expect(editor).toBeVisible({ timeout: 15_000 });

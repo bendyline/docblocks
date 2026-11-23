@@ -47,18 +47,17 @@ The static pages allow no scripts, so a store going live is a markup change. Eve
 not live yet is a `.store-pending` plate with its live badge in a comment beside it.
 `grep -rn "store:" packages/site/public` finds every place.
 
-| Store                    | Marker                  | State   | Link                                                                    |
-| ------------------------ | ----------------------- | ------- | ----------------------------------------------------------------------- |
-| App Store (iPhone, iPad) | none                    | live    | `https://apps.apple.com/us/app/docblocks-markdown-editor/id6792768923`  |
-| Google Play              | none                    | live    | `https://play.google.com/store/apps/details?id=com.bendyline.docblocks` |
-| Mac App Store            | `store:mac-app-store`   | pending | the App Store link above (one listing, universal purchase)              |
-| Microsoft Store          | `store:microsoft-store` | pending | `https://apps.microsoft.com/detail/<Store ID>`                          |
+| Store                    | Marker                | State   | Link                                                                    |
+| ------------------------ | --------------------- | ------- | ----------------------------------------------------------------------- |
+| App Store (iPhone, iPad) | none                  | live    | `https://apps.apple.com/us/app/docblocks-markdown-editor/id6792768923`  |
+| Google Play              | none                  | live    | `https://play.google.com/store/apps/details?id=com.bendyline.docblocks` |
+| Mac App Store            | `store:mac-app-store` | pending | the App Store link above (one listing, universal purchase)              |
+| Microsoft Store          | none                  | live    | `https://apps.microsoft.com/detail/9MTLPD213DL0`                        |
 
 ### When a store approves DocBlocks
 
 1. In `public/apps/index.html` and `public/desktop/index.html`, delete that store's
-   `pending` comment and plate, and uncomment the `live` badge below it. For the Microsoft Store,
-   replace `STORE_ID` with the product's Store ID from Partner Center first.
+   `pending` comment and plate, and uncomment the `live` badge below it.
 2. Reword the sentences that say "coming to": the note under the computer cards on `/apps/`
    and the store panel on `/desktop/`. For the Mac, also add
    "One purchase covers iPhone, iPad, and Mac." to the iPhone and iPad card. Name the store in the

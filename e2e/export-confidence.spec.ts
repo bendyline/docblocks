@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { MONACO_COLD_LOAD_TIMEOUT } from './helpers/editor-regression.js';
 import { expect, test } from './helpers/test.js';
 import { showSourceView, showWriteView } from './helpers/toolbar.js';
+import { createDocument } from './helpers/new-document.js';
 
 test.use({ actionTimeout: 15_000 });
 
@@ -11,9 +12,7 @@ test('confirms a document download and previews the rendered video before saving
   test.setTimeout(180_000);
   await page.goto('/');
   await page.getByRole('button', { name: 'Create a document', exact: true }).click();
-  const create = page.getByRole('dialog', { name: 'New document' });
-  await create.getByLabel('Document name').fill('Client proposal');
-  await create.getByRole('button', { name: 'Create', exact: true }).click();
+  await createDocument(page, 'Client proposal', { openGallery: true });
   const editor = page.locator('.ProseMirror').first();
   await expect(editor).toContainText('Client proposal');
   // Seed exact export content without depending on rich-text caret navigation:

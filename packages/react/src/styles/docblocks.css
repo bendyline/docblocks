@@ -608,6 +608,22 @@
   justify-content: center;
 }
 
+/* A 360px phone's drawer leaves the toolbar about 290px for seven 40px touch
+   buttons. Narrowing them keeps every one in the row at full height; `min()`
+   leaves the 24px desktop buttons as they are. After the rule above, which
+   these override at the same specificity. */
+@container db-explorer-toolbar (max-width: 320px) {
+  .db-explorer-btn {
+    width: min(var(--db-control-size), 36px);
+  }
+}
+
+@container db-explorer-toolbar (max-width: 280px) {
+  .db-explorer-btn {
+    width: min(var(--db-control-size), 32px);
+  }
+}
+
 .db-explorer-btn:hover:not(:disabled) {
   background: var(--db-bg-hover);
   border-color: var(--db-border);
@@ -2367,21 +2383,29 @@ body.db-resizing-sidebar * {
   visibility: hidden;
 }
 
+/* A soft box at rest says the name can be edited; hover firms it up. */
 .db-document-title-input {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
   height: 29px;
   padding: 0 8px;
-  border: 1px solid transparent;
+  border: 1px solid var(--db-border);
   border-radius: 7px;
-  background: transparent;
+  background: var(--db-bg);
   color: var(--db-text);
   text-overflow: ellipsis;
 }
 
 .db-document-title-input:hover:not(:read-only) {
   border-color: var(--db-border-strong);
+}
+
+/* A name that cannot be edited (a generated page) is plain text. The field is
+   also read-only for the moment a rename runs; it keeps its box then. */
+.db-document-title-input:read-only:not([aria-busy='true']) {
+  border-color: transparent;
+  background: transparent;
 }
 
 /* A 2px accent ring drawn inside the field (WCAG 2.4.7). An outline would
@@ -3556,6 +3580,13 @@ body.db-resizing-sidebar * {
 
 .db-settings-ai-error {
   color: var(--db-danger);
+}
+
+/* A caution, not an error: the model works, it just reviews less well. */
+.db-settings-ai-docbench-warning {
+  padding-left: 8px;
+  border-left: 2px solid var(--db-accent);
+  color: var(--db-text-secondary);
 }
 
 .db-settings-ai-models {
@@ -6613,6 +6644,24 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   outline-offset: 2px;
 }
 
+/* Text or a file dragged over the welcome screen: it becomes a document. The
+   editor area's own "Drop to import" sits beneath this screen, unseen. */
+.db-welcome-gateway--dragging::after {
+  content: 'Drop to make it a document';
+  position: absolute;
+  inset: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--db-accent);
+  border-radius: 12px;
+  background: var(--db-accent-soft-08);
+  color: var(--db-accent);
+  font-size: 16px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
 /* Drawn by .db-close-button; this only places it. */
 .db-welcome-gateway-dismiss {
   position: absolute;
@@ -7774,6 +7823,47 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-ai-toolbar-menu {
   min-width: 220px;
+}
+
+/* AI is off, but this device runs a capable model: a dot asks for a look. */
+.db-ai-toolbar-trigger--invite {
+  position: relative;
+}
+
+.db-ai-toolbar-trigger--invite::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--db-accent);
+  box-shadow: 0 0 0 2px var(--db-bg);
+  pointer-events: none;
+}
+
+.db-ai-invite {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--db-text-secondary);
+  font-size: 12px;
+}
+
+.db-ai-invite-title {
+  color: var(--db-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.db-ai-invite-note {
+  color: var(--db-text-muted);
+  font-size: 11px;
+}
+
+.db-ai-invite-accept {
+  font-weight: 600;
 }
 
 /* Read aloud: the speech menu and its inline transport while playing. */
@@ -9743,21 +9833,187 @@ button.db-git-file-row:hover {
   box-sizing: border-box;
 }
 
-/* New document dialog: label/field pairs in two aligned columns */
-.db-new-document-fields {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 10px 8px;
-  margin: 10px 0;
+/* New document gallery: the type chips, then a grid of starter cards. A card
+   creates the document, so each is one large button. Wider than the other
+   wide dialogs so the six type chips stay on one row; a phone shows it as a
+   full-window sheet (above) whatever this says. */
+.db-dialog.db-new-document-gallery {
+  width: 700px;
+  max-height: min(100%, 720px);
 }
 
-.db-new-document-hint {
-  grid-column: 2;
-  margin: -4px 0 0;
+.db-new-document-gallery-folder {
+  margin: 0 0 10px;
+  color: var(--db-text-secondary);
+  font-size: 13px;
+}
+
+.db-new-document-gallery-type {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.db-new-document-gallery-hint {
+  margin: 0;
   color: var(--db-text-muted);
   font-size: 12px;
   line-height: 1.4;
+}
+
+.db-new-document-gallery-grid {
+  display: grid;
+  /* Four a row in the dialog, two on a phone. */
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.db-new-document-card {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 8px 8px 10px;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-new-document-card:hover:not(:disabled) {
+  border-color: var(--db-accent);
+  background: var(--db-bg-hover);
+}
+
+/* A starter that does not suit the chosen type keeps its place, dimmed, so
+   the gallery never changes size as the type changes. */
+.db-new-document-card:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.db-new-document-card:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 2px;
+}
+
+.db-template-thumb {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-bottom: 5px;
+  border-radius: 5px;
+  background: var(--db-bg-subtle);
+}
+
+.db-new-document-card-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.db-new-document-card-description {
+  color: var(--db-text-muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+/* The drawings. Tokens only, so they follow the theme and the accent. */
+.db-template-thumb-page,
+.db-template-thumb-slide {
+  fill: var(--db-bg);
+  stroke: var(--db-border-strong);
+  stroke-width: 0.8;
+}
+
+.db-template-thumb-slide {
+  fill: var(--db-accent-soft-10);
+}
+
+.db-template-thumb-slide-title,
+.db-template-thumb-accent {
+  fill: var(--db-accent);
+}
+
+.db-template-thumb-slide-text,
+.db-template-thumb-ink {
+  fill: var(--db-text-muted);
+  opacity: 0.45;
+}
+
+.db-template-thumb-box,
+.db-template-thumb-cell {
+  fill: none;
+  stroke: var(--db-text-muted);
+  stroke-width: 0.8;
+  opacity: 0.6;
+}
+
+/* Paste-or-drop dialog: one large paste target, and a file picker under it.
+   The whole body takes drops, so it carries the drag highlight. */
+.db-paste-document {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0;
+  padding: 2px;
+  border: 2px dashed transparent;
+  border-radius: 8px;
+}
+
+.db-paste-document--dragging {
+  border-color: var(--db-accent);
+  background: var(--db-accent-soft-08);
+}
+
+.db-paste-document > p {
+  margin: 0;
+  color: var(--db-text-secondary);
+  line-height: 1.5;
+}
+
+.db-paste-document > .db-paste-document-notice {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--db-accent-soft-10);
+  color: var(--db-text);
+}
+
+.db-paste-document-target {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 132px;
+  padding: 10px 12px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 6px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font: inherit;
+  font-size: var(--db-input-font-size);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.db-paste-document-target:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
+.db-paste-document-files {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--db-text-muted);
+  font-size: 13px;
 }
 
 /* ── Keyboard shortcut sheet ─────────────────────────────────── */

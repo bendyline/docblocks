@@ -5,6 +5,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { openInitializedSite } from './helpers/site.js';
 import { closeViewMenu, openViewMenu, showWriteView } from './helpers/toolbar.js';
+import { createDocument, newDocumentGallery } from './helpers/new-document.js';
 
 /**
  * Accessibility audits using axe-core against the DocBlocks site shell.
@@ -318,16 +319,16 @@ test.describe('a11y — workspace picker open', () => {
   });
 });
 
-test.describe('a11y — new file input visible', () => {
-  test('no WCAG A/AA violations with new-file input visible', async ({ page }, info) => {
+test.describe('a11y — New document gallery open', () => {
+  test('no WCAG A/AA violations with the New document gallery open', async ({ page }, info) => {
     await waitForShell(page);
     await page.getByRole('button', { name: 'New File' }).click();
-    await expect(page.locator('.db-new-item-input')).toBeVisible();
+    await expect(newDocumentGallery(page)).toBeVisible();
 
-    const violations = await scanAndReport(page, info, 'new-file-input');
+    const violations = await scanAndReport(page, info, 'new-document-gallery');
     expect(
       violations.length,
-      `${violations.length} violation(s) with new-file input visible:\n${formatViolations(
+      `${violations.length} violation(s) with the New document gallery open:\n${formatViolations(
         violations,
       )}`,
     ).toBe(0);
@@ -340,15 +341,8 @@ test.describe('a11y — editor open with a file', () => {
   }, info) => {
     await waitForShell(page);
 
-    // Create a file, then open it so the editor mounts.
-    await page.getByRole('button', { name: 'New File' }).click();
-    const input = page.locator('.db-new-item-input');
-    await input.fill('a11y-test-doc');
-    await page.locator('.db-new-item-add').click();
-
-    const treeRow = page.locator('.db-tree-row', { hasText: 'a11y-test-doc' });
-    await expect(treeRow).toBeVisible({ timeout: 5_000 });
-    await treeRow.click();
+    // Create a file; it opens in the editor.
+    await createDocument(page, 'a11y-test-doc');
 
     // Editor mounted = empty state gone.
     await expect(page.locator('.db-shell-empty')).not.toBeVisible({ timeout: 5_000 });

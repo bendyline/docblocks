@@ -11,6 +11,7 @@ import {
   BookOpen,
   ChevronLeft,
   ChevronRight,
+  ClipboardPaste,
   CircleCheck,
   Clock,
   Download,
@@ -84,6 +85,14 @@ export function NewFileIcon() {
 
 export function NewFolderIcon() {
   return <ShellIcon icon={FolderSparkle} />;
+}
+
+/**
+ * The familiar Paste glyph rather than the "new" sparkle New File and New
+ * Folder wear: what it makes a document from is what sets it apart.
+ */
+export function NewFromClipboardIcon() {
+  return <ShellIcon icon={ClipboardPaste} />;
 }
 
 export function ImportFilesIcon() {

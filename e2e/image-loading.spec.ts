@@ -2,6 +2,7 @@ import { expect, test } from './helpers/test.js';
 import { MONACO_COLD_LOAD_TIMEOUT } from './helpers/editor-regression.js';
 import { openInitializedSite } from './helpers/site.js';
 import { showSourceView, showWriteView } from './helpers/toolbar.js';
+import { createDocument } from './helpers/new-document.js';
 
 test('shows image upload progress, embeds durable media, and replaces broken image glyphs', async ({
   page,
@@ -12,10 +13,7 @@ test('shows image upload progress, embeds durable media, and replaces broken ima
       imageRequests.push(request.url());
   });
   await openInitializedSite(page);
-  await page.getByRole('button', { name: 'New File', exact: true }).click();
-  const name = page.getByRole('textbox', { name: 'New file name' });
-  await name.fill('image-loading.md');
-  await name.press('Enter');
+  await createDocument(page, 'image-loading.md');
   // The welcome document's editor is in Write too until this one replaces it.
   const editor = page.getByRole('textbox', { name: /^Edit \/?image-loading\.md$/ });
   await expect(editor).toBeVisible({ timeout: 15_000 });

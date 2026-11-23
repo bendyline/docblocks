@@ -274,6 +274,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'chat',
     'checkFacts',
     'connect',
+    'deviceFit',
     'disconnect',
     'getPreferences',
     'installModel',

@@ -12,6 +12,7 @@ import type {
 } from './export-options.js';
 import { FORMAT_LABELS, exportThemeChoices, saveExportOptions } from './export-options.js';
 import { loadTransformStyleSummaries, type ExportSummaryOption } from './transform-summaries.js';
+import { ChipRadioGroup } from '../components/ChipRadioGroup.js';
 import { Dialog } from '../components/Dialog.js';
 import { OpenAfterSaveCheckbox, type OpenAfterSaveControl } from './OpenAfterSaveCheckbox.js';
 
@@ -106,61 +107,6 @@ const HTML_BUNDLE_CHIPS: { key: HtmlBundle; label: string; hint: string }[] = [
     hint: 'A .zip with index.html plus separate image (and JS) files.',
   },
 ];
-
-interface ChipOption<T extends string> {
-  key: T;
-  label: string;
-  title?: string;
-}
-
-function ChipRadioGroup<T extends string>({
-  name,
-  value,
-  options,
-  onChange,
-}: {
-  name: string;
-  value: T;
-  options: ChipOption<T>[];
-  onChange: (next: T) => void;
-}) {
-  return (
-    <div className="db-export-chips" role="radiogroup" aria-label={name}>
-      {options.map((opt, index) => {
-        const active = opt.key === value;
-        return (
-          <button
-            key={opt.key}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            tabIndex={active ? 0 : -1}
-            className={`db-export-chip${active ? ' db-export-chip--active' : ''}`}
-            onClick={() => onChange(opt.key)}
-            onKeyDown={(event) => {
-              const delta =
-                event.key === 'ArrowRight' || event.key === 'ArrowDown'
-                  ? 1
-                  : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
-                    ? -1
-                    : 0;
-              if (!delta) return;
-              event.preventDefault();
-              const next = (index + delta + options.length) % options.length;
-              onChange(options[next]!.key);
-              event.currentTarget.parentElement
-                ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
-                [next]?.focus();
-            }}
-            title={opt.title}
-          >
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 export function ExportDialog({
   initial,

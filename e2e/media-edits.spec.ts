@@ -1,6 +1,7 @@
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
 import { openAttachments } from './helpers/toolbar.js';
+import { createDocument } from './helpers/new-document.js';
 
 /**
  * Media edits end to end on the site: a recording uploaded into a document is
@@ -48,13 +49,11 @@ test('cleans up a clip’s audio non-destructively and renders it in the backgro
   test.setTimeout(180_000);
   await openInitializedSite(page);
 
-  await page.getByRole('button', { name: 'New File' }).click();
-  await page.locator('.db-new-item-input').fill('media-take');
-  await page.locator('.db-new-item-add').click();
-
-  // New File opens the document. Clicking its row as well would reload it, and
-  // the reload replaces the editor and toolbar this test is about to use.
-  const content = page.getByRole('textbox', { name: 'Edit media-take.md', exact: true });
+  // Emptied, title included: a document with no body text, as this test needs.
+  // Clicking its row as well would reload it, and the reload replaces the
+  // editor and toolbar this test is about to use.
+  await createDocument(page, 'media-take', { empty: true });
+  const content = page.getByRole('textbox', { name: /^Edit \/?media-take\.md$/ });
   await expect(content).toBeVisible({ timeout: 30_000 });
 
   // Upload the recording through the Attachments panel: it is stored in

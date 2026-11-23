@@ -301,7 +301,11 @@ import {
 import { providerEntryExists, removeProviderEntry, writeProviderText } from './provider-io.js';
 import { usePromptDialog } from '../components/usePromptDialog.js';
 import { useConfirmDialog } from '../components/useConfirmDialog.js';
-import { NewDocumentDialog, type NewDocumentChoice } from '../components/NewDocumentDialog.js';
+import {
+  NewDocumentGallery,
+  type NewDocumentGalleryChoice,
+} from '../components/NewDocumentGallery.js';
+import { firstFreeDocumentPath, newDocumentMarkdown } from './new-document-templates.js';
 import { startTypedWhileOpening, type TypedWhileOpening } from './typedWhileOpening.js';
 import { EditorErrorBoundary } from './EditorErrorBoundary.js';
 import { localDateStamp } from '../local-date.js';
@@ -369,6 +373,14 @@ import {
 } from './page-template-warning.js';
 import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
 import { CompactWelcomeScreen, WelcomeScreen } from './WelcomeScreen.js';
+import { PasteDocumentDialog } from './PasteDocumentDialog.js';
+import {
+  fileNameForPastedTitle,
+  pastedContentToMarkdown,
+  readClipboardContent,
+  titleForPastedMarkdown,
+  type PastedContent,
+} from './pasted-document.js';
 import { WindowDragGrip } from './WindowDragGrip.js';
 import { useDocumentLinkProvider } from './useDocumentLinkProvider.js';
 import {
@@ -385,6 +397,7 @@ import {
   workspaceCatalogId,
 } from '../Ai/workspace-grounding.js';
 import type { AskNotice } from '../Ai/AiAskPanel.js';
+import { useAiInvitation } from '../Ai/ai-invitation.js';
 import type { WorkspaceAskSession } from '../Ai/workspace-ask.js';
 import {
   loadWorkspaceGroundingChoices,
@@ -703,6 +716,22 @@ function useOsTheme(): 'light' | 'dark' {
   }, []);
   return dark ? 'dark' : 'light';
 }
+
+/** How a document opens when it should not open in Write. */
+interface DocumentOpenView {
+  view: EditorView;
+  sharedMode: SharedDocumentMode | null;
+}
+
+/**
+ * Something a first-time visitor brought opens as slides: seeing their own
+ * words become a designed deck is the quickest way to show what DocBlocks
+ * does. Write is one tab away.
+ */
+const OPEN_AS_SLIDESHOW: DocumentOpenView = { view: 'preview', sharedMode: 'slideshow' };
+
+/** Where a paste-or-drop dialog was opened from, which decides how its result opens. */
+type PasteDialogOrigin = 'welcome' | 'clipboard';
 
 /** Encode workspace + optional file path into a URL hash. */
 function buildHash(workspaceId: string, filePath?: string | null): string {
@@ -1135,6 +1164,15 @@ export function DocBlocksShell({
     () => setSettingsRequest(({ count }) => ({ count: count + 1, section: 'search' })),
     [],
   );
+  // While AI is off, a device that runs a capable model is invited to turn it on.
+  const aiInvitation = useAiInvitation(hostAi);
+  const dismissAiInvitation = aiInvitation.dismiss;
+  const acceptAiInvitation = useCallback(async () => {
+    dismissAiInvitation();
+    // On before Settings opens, so it opens on the model download.
+    await hostAi?.setPreferences({ enabled: true }).catch(() => undefined);
+    openAiSettings();
+  }, [hostAi, dismissAiInvitation, openAiSettings]);
   // Squisq re-resolves a changed capability and cancels any session in
   // progress, so the provider must keep one identity for the bridge's life.
   const speechInput = useMemo(
@@ -1325,6 +1363,10 @@ export function DocBlocksShell({
     if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
     saveToastTimerRef.current = setTimeout(() => setSaveToast(null), 3000);
   }, []);
+  const declineAiInvitation = useCallback(() => {
+    dismissAiInvitation();
+    showToast('success', 'You can turn on AI any time in Settings › AI.');
+  }, [dismissAiInvitation, showToast]);
   // "Opening …" while a clicked document is still loading, so a slow open
   // (a cloud file downloading first) never looks like a dead click.
   const { notice: openingNotice, track: trackOpening } = useOpeningNotice();
@@ -1336,17 +1378,33 @@ export function DocBlocksShell({
   // The shell's stand-in for `window.prompt()`, which Electron's renderer does
   // not implement -- calling it there throws and the action dies silently.
   const { prompt: promptForText, promptDialog } = usePromptDialog();
-  const [newDocumentDialogOpen, setNewDocumentDialogOpen] = useState(false);
-  // The document the New document dialog just created, until its editor has
-  // the caret on the line beneath its title.
-  const [newDocumentCaretPath, setNewDocumentCaretPath] = useState<string | null>(null);
-  const clearNewDocumentCaret = useCallback(() => setNewDocumentCaretPath(null), []);
+  // The New document gallery, open for a folder ('' for the workspace's top).
+  const [newDocumentGallery, setNewDocumentGallery] = useState<{ folder: string } | null>(null);
+  // A just-created document still being named in the toolbar's title field:
+  // its path, and the `# Heading` it started with, which follows the name.
+  const [namingDocument, setNamingDocument] = useState<{
+    path: string;
+    heading: string;
+    template: boolean;
+  } | null>(null);
+  // A just-created (or just-named) document, until its editor has the caret:
+  // on the line beneath its title, or across a template's first sample line.
+  const [newDocumentCaret, setNewDocumentCaret] = useState<{
+    path: string;
+    at: 'end' | 'sample';
+    retitle: { from: string; to: string } | null;
+  } | null>(null);
+  const clearNewDocumentCaret = useCallback(() => setNewDocumentCaret(null), []);
   // Keys typed between Create and the new document's editor taking focus.
   const typedWhileOpeningRef = useRef<TypedWhileOpening | null>(null);
+  // What was typed after an Enter that named the document while it opened.
+  const typedAfterNamingRef = useRef('');
   const takeTypedWhileOpening = useCallback((): string => {
     const buffer = typedWhileOpeningRef.current;
     typedWhileOpeningRef.current = null;
-    return buffer ? buffer.take() : '';
+    const afterNaming = typedAfterNamingRef.current;
+    typedAfterNamingRef.current = '';
+    return afterNaming + (buffer ? buffer.take() : '');
   }, []);
   const cancelTypedWhileOpening = useCallback((): void => {
     typedWhileOpeningRef.current?.cancel();
@@ -4165,39 +4223,48 @@ export function DocBlocksShell({
   );
 
   // Every "New document" entry point (landing page, shortcut, menu, PWA
-  // shortcut) opens the dialog; createNewDocument acts on its answer.
-  const handleNewFile = useCallback(() => {
-    if (provider) setNewDocumentDialogOpen(true);
-  }, [provider]);
+  // shortcut, the file list's New File) opens the gallery; createFromGallery
+  // acts on its answer. The file list's opens it for its selected folder.
+  const handleNewFileIn = useCallback(
+    (folder: string) => {
+      if (provider) setNewDocumentGallery({ folder });
+    },
+    [provider],
+  );
+  // Takes no arguments: it is also wired straight to buttons' onClick.
+  const handleNewFile = useCallback(() => handleNewFileIn(''), [handleNewFileIn]);
 
   /**
-   * Create a document at `requestedPath` and open it in Write view with the
-   * caret ready, keeping what is typed while it opens (NewDocumentCaret).
-   * Both ways of creating a document come here: the New document dialog and
-   * the file list's New File form, which used to write the file and merely
-   * select it, so nothing had focus and the first words typed were lost.
-   * A Markdown document starts as its name as a `# Title`, or empty when
-   * `blank` (New File makes a plain file). Throws when the document cannot be
-   * created, so each entry point reports that its own way.
+   * Create a document from the gallery's choice and open it in Write, with
+   * the toolbar's title field focused and its starting name selected, so the
+   * first thing typed names it (DocumentTitleField's `naming`). It starts as
+   * `Untitled`, or the template's name, numbered past any document already
+   * called that. What is typed while it opens goes to that name. Throws when
+   * the document cannot be created, so the caller reports it.
    */
   const createAndOpenDocument = useCallback(
-    async (
-      path: string,
-      format: NewFileFormat,
-      { blank = false }: { blank?: boolean } = {},
-    ): Promise<void> => {
+    async ({ template, format }: NewDocumentGalleryChoice, folder: string): Promise<void> => {
       if (!provider) return;
       const requestId = ++navigationRequestRef.current;
       const createdRef: { current: EditableShellDocument | null } = { current: null };
-      // The dialog has closed; the editor will not have focus for a while.
-      // Hold what is typed meanwhile and give it to NewDocumentCaret.
+      let heading = template.name;
+      // The dialog has closed; the title field will not have focus for a
+      // while. Hold what is typed meanwhile and give it to the name.
       cancelTypedWhileOpening();
+      typedAfterNamingRef.current = '';
       typedWhileOpeningRef.current = startTypedWhileOpening();
       try {
         const transitioned = await documentSession.transitionWithLoad(async () => {
           if (requestId !== navigationRequestRef.current) return null;
+          const { path, stem } = await firstFreeDocumentPath(
+            provider,
+            folder,
+            template.name,
+            format,
+          );
+          heading = stem;
+          const content = newDocumentMarkdown(template, stem);
           if (format === 'markdown') {
-            const content = blank ? '' : '# ' + basenameOf(path).replace(/\.[^.]+$/, '') + '\n';
             await createMarkdownFile(provider, path, content);
             createdRef.current = {
               displayPath: path,
@@ -4212,6 +4279,7 @@ export function DocBlocksShell({
               path,
               newFileHtmlOutput(format),
               outsideInRenderRef.current,
+              content,
             );
           }
           if (requestId !== navigationRequestRef.current) return null;
@@ -4242,7 +4310,12 @@ export function DocBlocksShell({
       notifyWorkspaceChanged(activeWorkspaceId ?? provider.id, created.displayPath);
       rememberNewFileFormat(format);
       adoptSelectedDocument(created);
-      setNewDocumentCaretPath(created.displayPath);
+      setNewDocumentCaret(null);
+      setNamingDocument({
+        path: created.displayPath,
+        heading,
+        template: template.body !== '',
+      });
       // As selecting a document does: only the single-pane layout swaps the
       // file list for the editor.
       if (singlePane) setMobileShowEditor(true);
@@ -4274,10 +4347,10 @@ export function DocBlocksShell({
     ],
   );
 
-  const createNewDocument = useCallback(
-    async ({ filename, format }: NewDocumentChoice) => {
+  const createFromGallery = useCallback(
+    async (choice: NewDocumentGalleryChoice, folder: string) => {
       try {
-        await createAndOpenDocument('/' + filename, format);
+        await createAndOpenDocument(choice, folder);
       } catch (error: unknown) {
         showToast(
           'error',
@@ -4288,11 +4361,45 @@ export function DocBlocksShell({
     [createAndOpenDocument, showToast],
   );
 
-  /** The file list's New File form: a plain file, opened ready to type into. */
-  const createDocumentFromExplorer = useCallback(
-    (path: string, format: NewFileFormat) => createAndOpenDocument(path, format, { blank: true }),
-    [createAndOpenDocument],
+  /**
+   * Naming in the title field is over. When it ended with Enter or Escape
+   * and the document kept its name, the caret goes into the document now; a
+   * rename has already arranged that for the renamed document (see
+   * handleRenameOpenDocument). Leaving the field for somewhere else leaves
+   * focus where the person put it.
+   */
+  const handleNamingDone = useCallback(
+    (how: 'enter' | 'escape' | 'blur', typedAfter: string) => {
+      const naming = namingDocument;
+      setNamingDocument(null);
+      if (!naming || how === 'blur') return;
+      typedAfterNamingRef.current = typedAfter;
+      setNewDocumentCaret(
+        (pending) =>
+          pending ?? {
+            path: naming.path,
+            at: naming.template ? 'sample' : 'end',
+            retitle: null,
+          },
+      );
+    },
+    [namingDocument],
   );
+
+  // Enter or Escape is ending naming. Hold keys until the caret is in the
+  // document: a rename reopens it, and typing straight on would be lost.
+  const holdKeysAfterNaming = useCallback(() => {
+    cancelTypedWhileOpening();
+    typedWhileOpeningRef.current = startTypedWhileOpening();
+  }, [cancelTypedWhileOpening]);
+
+  // Opening another document ends naming: coming back later must not pull
+  // focus into the title field again.
+  useEffect(() => {
+    if (namingDocument && (!selectedFile || !sameProviderPath(namingDocument.path, selectedFile))) {
+      setNamingDocument(null);
+    }
+  }, [namingDocument, selectedFile]);
 
   const handleNewFolder = useCallback(async () => {
     if (!provider) return;
@@ -4603,7 +4710,12 @@ export function DocBlocksShell({
   // depends on -- see the `openTransient` + onOpenRequest effect below.
 
   const handleSelect = useCallback(
-    async (path: string, kind: 'file' | 'directory', createWikiArticle = false) => {
+    async (
+      path: string,
+      kind: 'file' | 'directory',
+      createWikiArticle = false,
+      openAs?: DocumentOpenView,
+    ) => {
       if (!provider || !activeWorkspaceId) return;
       const requestId = ++navigationRequestRef.current;
 
@@ -4681,10 +4793,11 @@ export function DocBlocksShell({
           adoptSelectedDocument(openedDocument);
           setSelectedFolder(null);
           setFolderEntries([]);
-          setInitialView('wysiwyg');
-          setInitialSharedMode(null);
+          setInitialView(openAs?.view ?? 'wysiwyg');
+          setInitialSharedMode(openAs?.sharedMode ?? null);
           closeWelcomeGateway();
           pushHash(activeWorkspaceId, path);
+          // A reload comes back to Write, wherever this one opened.
           saveLastState({ workspaceId: activeWorkspaceId, filePath: path, view: 'wysiwyg' });
           if (singlePane) setMobileShowEditor(true);
         } finally {
@@ -5303,9 +5416,20 @@ export function DocBlocksShell({
           'error',
           error instanceof Error ? error.message : 'The document could not be renamed.',
         );
+        return;
+      }
+      // A just-created document has its name now. Renaming reopens it, so
+      // its heading follows the name and the caret goes in once it has.
+      if (namingDocument && sameProviderPath(namingDocument.path, oldPath)) {
+        setNamingDocument(null);
+        setNewDocumentCaret({
+          path: newPath,
+          at: namingDocument.template ? 'sample' : 'end',
+          retitle: { from: namingDocument.heading, to: newName.replace(/\.[^.]+$/, '') },
+        });
       }
     },
-    [selectedFile, showToast],
+    [namingDocument, selectedFile, showToast],
   );
 
   const handlePinnedDocumentRename = useCallback(
@@ -5565,9 +5689,14 @@ export function DocBlocksShell({
    * Documents dropped onto the editor pane. Same import pipeline as the
    * explorer, with one addition: a single successful import opens straight
    * away, because someone who drags one file onto the page means "open this".
+   * `openFirst` opens the first of several too, for the paste-or-drop
+   * choices, where the person is waiting to see what they brought.
    */
   const handleImportFilesToEditor = useCallback(
-    async (files: File[]) => {
+    async (
+      files: File[],
+      { openAs, openFirst = false }: { openAs?: DocumentOpenView; openFirst?: boolean } = {},
+    ) => {
       if (!provider) return;
       const result = await withImportingNotice(files, () => importOrRestore(files));
       if (!result) return;
@@ -5576,14 +5705,12 @@ export function DocBlocksShell({
       const summary = summariseImport(result);
       if (summary) showToast(summary.kind, summary.message);
       const imported = result.imported;
-      if (
+      const opensOne =
         imported.length === 1 &&
         result.failed.length === 0 &&
-        !files.some((file) => /\.zip$/i.test(file.name))
-      ) {
-        const only = imported[0];
-        if (only) void handleSelect(only.path, 'file');
-      }
+        !files.some((file) => /\.zip$/i.test(file.name));
+      const first = imported[0];
+      if (first && (opensOne || openFirst)) void handleSelect(first.path, 'file', false, openAs);
     },
     [
       activeWorkspaceId,
@@ -5596,11 +5723,90 @@ export function DocBlocksShell({
     ],
   );
 
+  // A document dropped on the first-run welcome screen lands on the editor
+  // pane beneath it, and opens as slides like everything else brought there.
+  const welcomeScreenShownRef = useRef(welcomeScreenShown);
+  welcomeScreenShownRef.current = welcomeScreenShown;
   const editorDropActive = useEditorFileDrop(
     editorAreaRef,
     provider !== null,
-    (files) => void handleImportFilesToEditor(files),
+    (files) =>
+      void handleImportFilesToEditor(
+        files,
+        welcomeScreenShownRef.current ? { openAs: OPEN_AS_SLIDESHOW, openFirst: true } : {},
+      ),
   );
+
+  /**
+   * Make a Markdown document of pasted or dragged-in text, named from what
+   * it says, and open it. It is written through the import pipeline, so a
+   * name already taken becomes `Name (2).md` instead of replacing anything.
+   */
+  const createDocumentFromPaste = useCallback(
+    async (content: PastedContent, openAs?: DocumentOpenView) => {
+      if (!provider) return;
+      let markdown: string;
+      try {
+        markdown = await pastedContentToMarkdown(content);
+      } catch {
+        showToast('error', 'DocBlocks could not read that text. Try pasting it as plain text.');
+        return;
+      }
+      if (!markdown.trim()) {
+        showToast('error', 'There was no text to make a document from.');
+        return;
+      }
+      const name = fileNameForPastedTitle(titleForPastedMarkdown(markdown));
+      const file = new File([markdown], name, { type: 'text/markdown' });
+      const result = await importDroppedFiles([file], provider);
+      const created = result.imported[0];
+      if (!created) {
+        showToast(
+          'error',
+          result.failed[0]?.message
+            ? `Could not create the document: ${result.failed[0].message}`
+            : 'Could not create the document.',
+        );
+        return;
+      }
+      notifyWorkspaceChanged(activeWorkspaceId);
+      setExplorerKey((k) => k + 1);
+      await handleSelect(created.path, 'file', false, openAs);
+    },
+    [activeWorkspaceId, handleSelect, notifyWorkspaceChanged, provider, showToast],
+  );
+
+  const [pasteDialog, setPasteDialog] = useState<{
+    origin: PasteDialogOrigin;
+    notice: string | null;
+  } | null>(null);
+
+  /**
+   * The file pane's "New document from clipboard": read the clipboard and
+   * make a document of it in one step. Where the platform will not share the
+   * clipboard (a refused browser prompt, Android's WebView), the paste dialog
+   * takes over: a paste into a field needs no permission.
+   */
+  const handleNewFromClipboard = useCallback(async () => {
+    if (!provider) return;
+    const read = await readClipboardContent();
+    if (read.kind === 'content') {
+      await createDocumentFromPaste(read.content);
+      return;
+    }
+    if (read.kind === 'empty') {
+      showToast('error', 'The clipboard has no text to make a document from.');
+      return;
+    }
+    setPasteDialog({
+      origin: 'clipboard',
+      notice: 'DocBlocks can’t read the clipboard here. Paste into the box below instead.',
+    });
+  }, [createDocumentFromPaste, provider, showToast]);
+
+  const openWelcomePasteDialog = useCallback(() => {
+    setPasteDialog({ origin: 'welcome', notice: null });
+  }, []);
 
   const handleEditorChange = useCallback(
     (source: string) => {
@@ -6196,12 +6402,35 @@ export function DocBlocksShell({
             <KeyboardShortcutsDialog onClose={() => setShortcutsOpen(false)} />
           </Suspense>
         )}
-        {newDocumentDialogOpen && (
-          <NewDocumentDialog
+        {newDocumentGallery && (
+          <NewDocumentGallery
             initialFormat={defaultNewFileFormat}
+            folder={newDocumentGallery.folder || null}
             onSettle={(choice) => {
-              setNewDocumentDialogOpen(false);
-              if (choice) void createNewDocument(choice);
+              const { folder } = newDocumentGallery;
+              setNewDocumentGallery(null);
+              if (choice) void createFromGallery(choice, folder);
+            }}
+          />
+        )}
+        {pasteDialog && (
+          <PasteDocumentDialog
+            title={
+              pasteDialog.origin === 'welcome'
+                ? 'Start from something you have'
+                : 'New document from clipboard'
+            }
+            notice={pasteDialog.notice}
+            onClose={() => setPasteDialog(null)}
+            onContent={(content) => {
+              const openAs = pasteDialog.origin === 'welcome' ? OPEN_AS_SLIDESHOW : undefined;
+              setPasteDialog(null);
+              void createDocumentFromPaste(content, openAs);
+            }}
+            onFiles={(files) => {
+              const openAs = pasteDialog.origin === 'welcome' ? OPEN_AS_SLIDESHOW : undefined;
+              setPasteDialog(null);
+              void handleImportFilesToEditor(files, { openAs, openFirst: true });
             }}
           />
         )}
@@ -6490,7 +6719,8 @@ export function DocBlocksShell({
               outsideInRender={outsideInRenderRef.current}
               defaultNewFileFormat={defaultNewFileFormat}
               onNewFileFormatUsed={rememberNewFileFormat}
-              onCreateDocument={createDocumentFromExplorer}
+              onRequestNewDocument={handleNewFileIn}
+              onCreateFromClipboard={() => void handleNewFromClipboard()}
               activeFileVersionCount={selectedFile ? openDocumentVersionCount : null}
               metadataRefreshKey={`${documentSnapshot.targetKey ?? ''}:${documentSnapshot.persistedRevision}`}
               activeWorkspaceId={activeWorkspaceId}
@@ -6797,6 +7027,13 @@ export function DocBlocksShell({
                                     // Generated outputs are rewritten under their
                                     // configured name on the next build.
                                     readOnly={selectedManagedOutput !== undefined}
+                                    naming={
+                                      namingDocument !== null &&
+                                      sameProviderPath(namingDocument.path, selectedFile)
+                                    }
+                                    takeTypedText={takeTypedWhileOpening}
+                                    onNamingDone={handleNamingDone}
+                                    onNamingCommit={holdKeysAfterNaming}
                                   />
                                 </>
                               }
@@ -6840,6 +7077,9 @@ export function DocBlocksShell({
                                         onOpenPanel={setAiPanel}
                                         onOpenSettings={openAiSettings}
                                         canAskWorkspace={semanticSearchAvailable}
+                                        invite={aiInvitation.invite}
+                                        onAcceptInvite={() => void acceptAiInvitation()}
+                                        onDeclineInvite={declineAiInvitation}
                                       />
                                     </Suspense>
                                   )}
@@ -6894,11 +7134,14 @@ export function DocBlocksShell({
                                 </>
                               }
                               toolbarSlotRight={
-                                newDocumentCaretPath === selectedFile ? (
+                                newDocumentCaret &&
+                                sameProviderPath(newDocumentCaret.path, selectedFile) ? (
                                   <Suspense fallback={null}>
                                     <NewDocumentCaret
                                       onPlaced={clearNewDocumentCaret}
                                       takeTypedText={takeTypedWhileOpening}
+                                      retitle={newDocumentCaret.retitle}
+                                      at={newDocumentCaret.at}
                                     />
                                   </Suspense>
                                 ) : undefined
@@ -7006,6 +7249,16 @@ export function DocBlocksShell({
                 onCreateDocument={handleNewFile}
                 onTour={handleTourWelcome}
                 onDismiss={handleTourWelcome}
+                onBringContent={openWelcomePasteDialog}
+                onPasteContent={(content) =>
+                  void createDocumentFromPaste(content, OPEN_AS_SLIDESHOW)
+                }
+                onDropFiles={(files) =>
+                  void handleImportFilesToEditor(files, {
+                    openAs: OPEN_AS_SLIDESHOW,
+                    openFirst: true,
+                  })
+                }
                 offerApps={hostEnvironment === null}
                 greeting={firstRunGreeting}
               />
@@ -7021,6 +7274,7 @@ export function DocBlocksShell({
               setMobileShowEditor(true);
             }}
             onDismiss={closeWelcomeGateway}
+            onBringContent={openWelcomePasteDialog}
             greeting={firstRunGreeting}
           />
         )}

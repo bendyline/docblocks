@@ -39,6 +39,7 @@ import {
   ImportFilesIcon,
   NewFileIcon,
   NewFolderIcon,
+  NewFromClipboardIcon,
   OpenFolderIcon,
   SearchIcon,
   SortByLastModifiedIcon,
@@ -233,6 +234,17 @@ export interface FileExplorerProps {
    * with the message the form shows when the file cannot be created.
    */
   onCreateDocument?: (path: string, format: NewFileFormat) => Promise<void>;
+  /**
+   * New File asks the host to create a document instead of opening the
+   * inline name form: the shell shows its New document gallery. Called with
+   * the selected folder, or `''` for the workspace's top level.
+   */
+  onRequestNewDocument?: (folder: string) => void;
+  /**
+   * Shows a "New document from clipboard" button. The host reads the
+   * clipboard, names the document from what it says, and opens it.
+   */
+  onCreateFromClipboard?: () => void;
   /** Shows a Search button that switches the sidebar to workspace search. */
   onShowSearch?: () => void;
   /** Tooltip shortcut for the Search button, e.g. `Ctrl+Shift+F`. */
@@ -273,6 +285,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
     defaultNewFileFormat = 'markdown',
     onNewFileFormatUsed,
     onCreateDocument,
+    onRequestNewDocument,
+    onCreateFromClipboard,
     onShowSearch,
     searchShortcutLabel,
     className,
@@ -985,6 +999,12 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
             className="db-explorer-btn"
             disabled={newItemCreationPending}
             onClick={() => {
+              if (onRequestNewDocument) {
+                onRequestNewDocument(
+                  tree.selectedKind === 'directory' && tree.selectedPath ? tree.selectedPath : '',
+                );
+                return;
+              }
               setNewItemError(null);
               setNewFileFormat(defaultNewFileFormat);
               setNewItemType('file');
@@ -994,6 +1014,18 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
           >
             <NewFileIcon />
           </button>
+          {onCreateFromClipboard && (
+            <button
+              type="button"
+              className="db-explorer-btn"
+              disabled={newItemCreationPending}
+              onClick={onCreateFromClipboard}
+              title="New document from clipboard"
+              aria-label="New document from clipboard"
+            >
+              <NewFromClipboardIcon />
+            </button>
+          )}
           {onImportFiles && (
             <>
               <button

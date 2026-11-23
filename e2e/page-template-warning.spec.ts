@@ -3,6 +3,7 @@ import { MONACO_COLD_LOAD_TIMEOUT } from './helpers/editor-regression.js';
 import { openInitializedSite } from './helpers/site.js';
 import { expect, test } from './helpers/test.js';
 import { showSourceView } from './helpers/toolbar.js';
+import { createDocument } from './helpers/new-document.js';
 
 /**
  * A Web page whose page template is missing still saves its Markdown, and the
@@ -20,8 +21,11 @@ function treeRow(page: Page, path: string) {
  * editor instead, so wait for this page's editor first.
  */
 async function openPageSource(page: Page) {
-  await expect(page.getByRole('textbox', { name: /^Edit \/?hello_files\/hello\.md$/ })).toBeVisible(
-    { timeout: 30_000 },
+  // Named in the title field, so its companion keeps the name it was created under.
+  await expect(page.getByRole('textbox', { name: /^Edit \/?hello_files\/[^/]+\.md$/ })).toBeVisible(
+    {
+      timeout: 30_000,
+    },
   );
   await showSourceView(page);
 }
@@ -32,10 +36,7 @@ test('saves the Markdown and warns when a Web page names a missing page template
   test.setTimeout(120_000);
   await openInitializedSite(page);
 
-  await page.getByRole('button', { name: 'New File', exact: true }).click();
-  await page.getByLabel('New file type').selectOption('web-static');
-  await page.locator('.db-new-item-input').fill('hello');
-  await page.locator('.db-new-item-input').press('Enter');
+  await createDocument(page, 'hello.html', { type: 'Static web page' });
   await expect(treeRow(page, 'hello.html')).toBeVisible({ timeout: 30_000 });
 
   await openPageSource(page);

@@ -2,7 +2,10 @@ import { expect } from 'chai';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 
-import { placeNewDocumentCaret } from '../src/DocBlocksShell/placeNewDocumentCaret.js';
+import {
+  placeNewDocumentCaret,
+  retitleNewDocument,
+} from '../src/DocBlocksShell/placeNewDocumentCaret.js';
 
 type CaretEditor = Parameters<typeof placeNewDocumentCaret>[0];
 
@@ -99,5 +102,59 @@ describe('placing the caret in a new document', () => {
     placeNewDocumentCaret(editor as unknown as CaretEditor, () => '');
 
     expect(editor.view.hasFocus()).to.equal(true);
+  });
+});
+
+/**
+ * A document from the New document gallery is named in the toolbar's title
+ * field after it opens. Its `# Heading` started as the same name, so it
+ * follows the new one; and a template's caret selects its first line of
+ * sample text, so typing replaces it.
+ */
+describe('a document named after it opened', () => {
+  let editor: Editor;
+
+  function open(html: string): void {
+    const element = document.createElement('div');
+    document.body.append(element);
+    editor = new Editor({ element, extensions: [StarterKit], content: html });
+  }
+
+  afterEach(() => {
+    editor.destroy();
+    document.body.replaceChildren();
+  });
+
+  it('renames the heading that still has the starting name', () => {
+    open('<h1>Untitled</h1><p>Body</p>');
+    retitleNewDocument(editor as unknown as CaretEditor, 'Untitled', 'Trip notes');
+    expect(editor.getText({ blockSeparator: '|' })).to.equal('Trip notes|Body');
+  });
+
+  it('leaves a heading the person already changed, or one that is not the title', () => {
+    open('<h1>My own title</h1>');
+    retitleNewDocument(editor as unknown as CaretEditor, 'Untitled', 'Trip notes');
+    expect(editor.getText()).to.equal('My own title');
+    editor.destroy();
+    open('<h2>Untitled</h2>');
+    retitleNewDocument(editor as unknown as CaretEditor, 'Untitled', 'Trip notes');
+    expect(editor.getText()).to.equal('Untitled');
+  });
+
+  it('selects a template’s first sample line, so typing replaces it', () => {
+    open('<h1>Project plan</h1><h2>Goals</h2><p>What this plan delivers.</p><p>More</p>');
+    placeNewDocumentCaret(editor as unknown as CaretEditor, () => 'Ship by June.', {
+      at: 'sample',
+    });
+    expect(editor.getText({ blockSeparator: '|' })).to.equal(
+      'Project plan|Goals|Ship by June.|More',
+    );
+    expect(editor.view.hasFocus()).to.equal(true);
+  });
+
+  it('falls back to a new line at the end when a template has no sample line', () => {
+    open('<h1>Budget</h1><h2>Income</h2>');
+    placeNewDocumentCaret(editor as unknown as CaretEditor, () => 'Note', { at: 'sample' });
+    expect(editor.getText({ blockSeparator: '|' })).to.equal('Budget|Income|Note');
   });
 });

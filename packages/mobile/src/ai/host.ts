@@ -1,5 +1,6 @@
 import {
   AI_WIRE_LIMITS,
+  aiDeviceFit,
   knowledgeChatEvent,
   WORKSPACE_KNOWLEDGE_CATALOG_ID,
   WORKSPACE_KNOWLEDGE_NAME,
@@ -10,6 +11,7 @@ import {
   parseAiPreferencesPatch,
   type AiChatCompletion,
   type AiChatEvent,
+  type AiDeviceFit,
   type AiModelInfo,
   type AiPreferences,
   type AiResult,
@@ -48,6 +50,11 @@ export interface MobileAiOptions {
   busyRetryDelaysMs?: readonly number[];
   /** Waits before each new look at a chosen model native briefly refused on start. */
   heldRetryDelaysMs?: readonly number[];
+  /**
+   * The device's memory, read without starting a model, or null when the
+   * runtime does not report it. Decides whether to suggest AI while it is off.
+   */
+  deviceMemoryBytes?(): Promise<number | null>;
 }
 const defaults: AiPreferences = { enabled: false, model: null, reviewMode: 'explicit' };
 const provider = { name: 'Gezel', version: '0.1.0', mode: 'hosted' as const };
@@ -111,6 +118,8 @@ export function foldSystemMessages(messages: readonly ChatMessage[]): ChatMessag
 
 export function createMobileAi(options: MobileAiOptions) {
   let preferences = parseAiPreferences(options.readPreferences()) ?? defaults;
+  // Measured once: a phone's memory does not change while the app runs.
+  let deviceFit: Promise<AiDeviceFit> | undefined;
   let status: AiStatus = {
     kind: 'unavailable',
     reason: preferences.enabled ? 'disconnected' : 'opt-out',
@@ -282,6 +291,11 @@ export function createMobileAi(options: MobileAiOptions) {
       },
     },
     providerInstalled: async () => false,
+    deviceFit: () =>
+      (deviceFit ??= (options.deviceMemoryBytes?.() ?? Promise.resolve(null)).then(
+        (bytes) => aiDeviceFit('mobile', bytes),
+        () => aiDeviceFit('mobile', null),
+      )),
     status: async () => {
       if (preferences.enabled && !suspended) {
         if (embedding.state !== 'ready') await start();

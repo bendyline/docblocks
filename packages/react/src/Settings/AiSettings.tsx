@@ -98,6 +98,26 @@ function docbenchSentence(docbench: AiModelDocbench): string {
   return `Docbench ${Math.round(docbench.score)} for document work${families.length > 0 ? `: ${families.join(', ')}` : ''}`;
 }
 
+/**
+ * Models scoring under this on docbench get a caution beside the picker: in
+ * docbench runs they miss too much in a review, and their suggestions are
+ * weaker, to recommend them without saying so.
+ */
+const LOW_DOCBENCH_SCORE = 70;
+
+const LOW_DOCBENCH_WARNING =
+  'This model has a lower-end DocBench score, and may not give good review or content recommendations.';
+
+/** Whether a model's measured score earns the caution. An unmeasured one does not. */
+function hasLowDocbench(model: { readonly docbench?: AiModelDocbench } | null): boolean {
+  // Rounded as the pickers show it, so "docbench 70" never carries the caution.
+  return model?.docbench !== undefined && Math.round(model.docbench.score) < LOW_DOCBENCH_SCORE;
+}
+
+function LowDocbenchWarning() {
+  return <p className="db-settings-hint db-settings-ai-docbench-warning">{LOW_DOCBENCH_WARNING}</p>;
+}
+
 function modelReady(model: AiModelInfo): boolean {
   return model.availability === undefined || model.availability === 'available';
 }
@@ -378,6 +398,10 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
   const connecting = status.kind === 'connecting';
   const code = status.kind === 'connecting' ? status.verificationCode : null;
   const defaultModel = models.find((model) => model.isDefault) ?? null;
+  // The model the picker names: the chosen one, or the default it falls back to.
+  const modelInUse = preferences.model
+    ? (models.find((model) => model.id === preferences.model) ?? null)
+    : defaultModel;
   const hasReadyModels = models.some(modelReady);
   const unavailableModels = models.filter((model) => !modelReady(model));
   const modelManagement = Boolean(ai.availableModels && ai.installModel);
@@ -474,6 +498,7 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
                   ))}
                 </select>
               </label>
+              {hasReadyModels && hasLowDocbench(modelInUse) && <LowDocbenchWarning />}
               {unavailableModels.map((model) => (
                 <p className="db-settings-hint" key={model.id}>
                   {model.label}:{' '}
@@ -513,6 +538,9 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
                         : 'Recommended for this device.'}{' '}
                       Downloads continue when Settings is closed.
                     </p>
+                  )}
+                  {offerRecommended && hasLowDocbench(recommendedDownload) && (
+                    <LowDocbenchWarning />
                   )}
 
                   {showModelDownloads && (
@@ -561,6 +589,7 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
                               {docbenchSentence(selectedDownload.docbench)}
                             </p>
                           )}
+                          {hasLowDocbench(selectedDownload) && <LowDocbenchWarning />}
                           <button
                             type="button"
                             className="db-settings-action"

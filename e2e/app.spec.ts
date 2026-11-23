@@ -15,6 +15,7 @@ import {
 import { WELCOME_DOCUMENT_CONTENT } from '../packages/react/src/DocBlocksShell/welcome-document.js';
 import { parseMarkdown } from '@bendyline/squisq/markdown';
 import { markdownDocToXlsx } from '@bendyline/squisq-formats/xlsx';
+import { createDocument, documentTitleField, newDocumentGallery } from './helpers/new-document.js';
 
 test.describe('SEO bootstrap shell', () => {
   test('resembles the app chrome before React mounts', async ({ page }) => {
@@ -411,7 +412,8 @@ test.describe('DocBlocks App', () => {
     await expect(toolbar).toBeVisible();
 
     const buttons = toolbar.locator('.db-explorer-btn');
-    await expect(buttons).toHaveCount(6); // Two sort controls, Search, +F, +D and Import.
+    // Two sort controls, Search, +D, +F, New from clipboard and Import.
+    await expect(buttons).toHaveCount(7);
     await expect(
       toolbar.getByRole('button', { name: 'Search workspace' }).locator('svg.lucide-search'),
     ).toBeVisible();
@@ -426,6 +428,11 @@ test.describe('DocBlocks App', () => {
     await expect(newFileIcon).toBeVisible();
     await expect(newFileIcon).toHaveAttribute('stroke-width', '1.75');
     await expect(newFolderButton.locator('svg.lucide-folder-sparkle')).toBeVisible();
+    await expect(
+      toolbar
+        .getByRole('button', { name: 'New document from clipboard' })
+        .locator('svg.lucide-clipboard-paste'),
+    ).toBeVisible();
 
     await expect(page.locator('.db-ws-settings-btn svg.lucide-settings-2')).toBeVisible();
   });
@@ -484,36 +491,37 @@ test.describe('File operations', () => {
   });
 
   test('can create a new file', async ({ page }) => {
-    const newFileBtn = page.getByRole('button', { name: 'New File' });
-    await newFileBtn.click();
-
-    const input = page.locator('.db-new-item-input');
-    await expect(input).toBeVisible();
-    await input.fill('test-doc');
-
-    await page.locator('.db-new-item-add').click();
+    await createDocument(page, 'test-doc');
 
     // File should appear in tree
     const treeRow = page.locator('.db-tree-row', { hasText: 'test-doc' });
     await expect(treeRow).toBeVisible({ timeout: 5_000 });
   });
 
-  test('can create a file and see editor', async ({ page }) => {
-    const newFileBtn = page.getByRole('button', { name: 'New File' });
-    await newFileBtn.click();
+  test('New File starts from the gallery and names the document in its title field', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'New File', exact: true }).click();
+    const gallery = newDocumentGallery(page);
+    await expect(gallery.getByRole('button', { name: 'Blank', exact: true })).toBeFocused();
+    await gallery.getByRole('button', { name: 'Report', exact: true }).click();
 
-    const input = page.locator('.db-new-item-input');
-    await input.fill('edit-me');
-    await page.locator('.db-new-item-add').click();
+    // It opens at once under its starting name, selected so typing replaces it.
+    const title = documentTitleField(page);
+    await expect(title).toBeFocused({ timeout: 15_000 });
+    await expect(title).toHaveValue('Report');
+    await expect(page.locator('.db-tree-row', { hasText: 'Report' })).toBeVisible();
+    await page.keyboard.type('Quarterly results');
+    await page.keyboard.press('Enter');
 
-    // Click the file to open it
-    const treeRow = page.locator('.db-tree-row', { hasText: 'edit-me' });
-    await expect(treeRow).toBeVisible({ timeout: 5_000 });
-    await treeRow.click();
-
-    // Editor should appear (empty state should be gone)
-    await expect(page.locator('.db-shell-empty')).not.toBeVisible();
-    await expect(page).toHaveTitle('edit-me - DocBlocks');
+    // The file and its title follow the name; the caret goes to the sample line.
+    const editor = page.getByRole('textbox', { name: 'Edit /Quarterly results.md', exact: true });
+    await expect(editor).toBeFocused({ timeout: 15_000 });
+    await expect(page).toHaveTitle('Quarterly results - DocBlocks');
+    await expect(editor.getByRole('heading', { level: 1 })).toHaveText('Quarterly results');
+    await page.keyboard.type('Revenue grew every quarter.');
+    await expect(editor.locator('p').first()).toHaveText('Revenue grew every quarter.');
+    await expect(editor.getByRole('heading', { name: 'Key figures' })).toBeVisible();
   });
 
   test('can create a folder', async ({ page }) => {
@@ -597,15 +605,10 @@ test.describe('File operations', () => {
   });
 
   test('can drag a file into a folder and back to the workspace root', async ({ page }) => {
-    await page.getByRole('button', { name: 'New File' }).click();
-    await page.locator('.db-new-item-input').fill('drag-me');
-    await page.locator('.db-new-item-add').click();
-    // New File opens the document with the caret ready. Until it has, the
+    // Resolves once the named document has the caret. Until it has, the
     // file list is still settling: the form a New Folder click opens can
     // close under the test as the creation finishes.
-    await expect(page.getByRole('textbox', { name: 'Edit drag-me.md', exact: true })).toBeFocused({
-      timeout: 30_000,
-    });
+    await createDocument(page, 'drag-me');
 
     await page.getByRole('button', { name: 'New Folder' }).click();
     await page.locator('.db-new-item-input').fill('drop-here');
@@ -730,8 +733,7 @@ test.describe('Welcome gateway', () => {
     await expect(gateway).toBeVisible();
 
     await gateway.getByRole('button', { name: 'Create a document' }).click();
-    await dialog.getByRole('textbox', { name: 'Document name' }).fill('first-draft');
-    await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+    await createDocument(page, 'first-draft', { openGallery: true });
     await expect(gateway).not.toBeVisible();
     await expect(page.locator('.db-tree-row', { hasText: 'first-draft' })).toHaveAttribute(
       'aria-selected',

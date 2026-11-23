@@ -1,12 +1,11 @@
 import { expect, test } from './helpers/test.js';
 import { viewButton } from './helpers/toolbar.js';
 import { openInitializedSite } from './helpers/site.js';
+import { createDocument } from './helpers/new-document.js';
 
 test('Ctrl/Cmd+F opens one find bar in Write and Source', async ({ page }) => {
   await openInitializedSite(page);
-  await page.getByRole('button', { name: 'New File', exact: true }).click();
-  await page.getByRole('textbox', { name: 'New file name' }).fill('find-shortcut.md');
-  await page.getByRole('textbox', { name: 'New file name' }).press('Enter');
+  await createDocument(page, 'find-shortcut.md');
   // The welcome document's editor is in Write too until this one replaces it.
   const editor = page.getByRole('textbox', { name: /^Edit \/?find-shortcut\.md$/ });
   await expect(editor).toBeVisible({ timeout: 15_000 });

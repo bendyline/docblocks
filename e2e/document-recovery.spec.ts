@@ -1,14 +1,12 @@
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
+import { createDocument } from './helpers/new-document.js';
 
 test('compares a recovered draft with the saved file and remembers the choice after restart', async ({
   page,
 }) => {
   await openInitializedSite(page);
-  await page.getByRole('button', { name: 'New File', exact: true }).click();
-  const name = page.getByRole('textbox', { name: 'New file name' });
-  await name.fill('recovery-comparison.md');
-  await name.press('Enter');
+  await createDocument(page, 'recovery-comparison.md', { empty: true });
   // The welcome document's editor is in Write too until this one replaces it.
   const editor = page.getByRole('textbox', { name: /^Edit \/?recovery-comparison\.md$/ });
   await expect(editor).toBeVisible();

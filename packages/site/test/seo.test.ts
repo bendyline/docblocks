@@ -177,7 +177,8 @@ describe('site SEO surface', () => {
       expect(html).to.include('href="/web/"');
       expect(html.indexOf('href="/web/"')).to.be.lessThan(html.indexOf('href="/desktop/"'));
       expect(html, `${route} footer`).to.match(
-        /DocBlocks is free open-source software by\s*<a href="https:\/\/bendyline\.com">Bendyline<\/a>\./,
+        // Where DocBlocks is free, since the phone apps and store editions are not.
+        /DocBlocks is open-source software by\s*<a href="https:\/\/bendyline\.com">Bendyline<\/a>, free on the web\s*and desktop\./,
       );
       const title = html.match(/<title>([^<]+)<\/title>/)?.[1];
       expect(typeof title, `${route} title type`).to.equal('string');

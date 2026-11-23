@@ -3,7 +3,9 @@ import * as React from 'react';
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
+  COMPACT_WELCOME_BRING_CONTENT_LABEL,
   CompactWelcomeScreen,
+  WELCOME_BRING_CONTENT_LABEL,
   WELCOME_GREETING,
   WelcomeScreen,
 } from '../src/DocBlocksShell/WelcomeScreen.js';
@@ -91,6 +93,117 @@ describe('CompactWelcomeScreen', () => {
       await act(async () => root.unmount());
       container.remove();
     }
+  });
+});
+
+describe('bringing something to the welcome screen', () => {
+  const handlers = {
+    onCreateDocument: () => undefined,
+    onTour: () => undefined,
+    onDismiss: () => undefined,
+  };
+
+  async function render(element: React.ReactElement) {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => root.render(element));
+    return {
+      container,
+      async cleanup() {
+        await act(async () => root.unmount());
+        container.remove();
+      },
+    };
+  }
+
+  function buttonNamed(container: HTMLElement, name: string): HTMLButtonElement | undefined {
+    return Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === name,
+    );
+  }
+
+  /** A paste event as a browser dispatches one, with its clipboard flavours. */
+  function pasteEvent(flavours: Record<string, string>): Event {
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', {
+      value: { getData: (type: string) => flavours[type] ?? '' },
+    });
+    return event;
+  }
+
+  it('offers the third choice only when the host can take it', async () => {
+    const without = await render(createElement(WelcomeScreen, handlers));
+    const opened: string[] = [];
+    const wide = await render(
+      createElement(WelcomeScreen, { ...handlers, onBringContent: () => opened.push('wide') }),
+    );
+    const compact = await render(
+      createElement(CompactWelcomeScreen, {
+        ...handlers,
+        onBringContent: () => opened.push('compact'),
+      }),
+    );
+    try {
+      expect(buttonNamed(without.container, WELCOME_BRING_CONTENT_LABEL)).to.equal(undefined);
+      // Second of the three, right after Create.
+      const wideLabels = Array.from(
+        wide.container.querySelectorAll('.db-welcome-gateway-actions button'),
+      ).map((button) => button.textContent?.trim());
+      expect(wideLabels).to.deep.equal([
+        'Create a document',
+        WELCOME_BRING_CONTENT_LABEL,
+        'Tour the welcome document',
+      ]);
+      buttonNamed(wide.container, WELCOME_BRING_CONTENT_LABEL)?.click();
+      buttonNamed(compact.container, COMPACT_WELCOME_BRING_CONTENT_LABEL)?.click();
+      expect(opened).to.deep.equal(['wide', 'compact']);
+    } finally {
+      await without.cleanup();
+      await wide.cleanup();
+      await compact.cleanup();
+    }
+  });
+
+  it('turns a paste with nothing focused into a document', async () => {
+    const pasted: Array<{ text: string; html?: string | null }> = [];
+    const view = await render(
+      createElement(WelcomeScreen, {
+        ...handlers,
+        onBringContent: () => undefined,
+        onPasteContent: (content) => pasted.push(content),
+      }),
+    );
+    const field = document.createElement('textarea');
+    document.body.append(field);
+    try {
+      const event = pasteEvent({ 'text/plain': '# Plan', 'text/html': '<h1>Plan</h1>' });
+      document.body.dispatchEvent(event);
+      expect(event.defaultPrevented).to.equal(true);
+      // A field takes its own paste, and so does a handler that already did.
+      field.dispatchEvent(pasteEvent({ 'text/plain': 'typed elsewhere' }));
+      const handled = pasteEvent({ 'text/plain': 'dialog' });
+      handled.preventDefault();
+      document.body.dispatchEvent(handled);
+      expect(pasted).to.deep.equal([{ text: '# Plan', html: '<h1>Plan</h1>' }]);
+    } finally {
+      field.remove();
+      await view.cleanup();
+    }
+  });
+
+  it('leaves pastes alone once it has gone', async () => {
+    const pasted: unknown[] = [];
+    const view = await render(
+      createElement(WelcomeScreen, {
+        ...handlers,
+        onBringContent: () => undefined,
+        onPasteContent: (content) => pasted.push(content),
+      }),
+    );
+    await view.cleanup();
+    document.body.dispatchEvent(pasteEvent({ 'text/plain': 'later' }));
+    expect(pasted).to.deep.equal([]);
   });
 });
 

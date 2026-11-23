@@ -48,5 +48,13 @@ export function installMobileAi() {
       }
     },
     writePreferences: (preferences) => localStorage.setItem(key, JSON.stringify(preferences)),
+    // Listing models reports the device's memory without loading one. iOS
+    // reports it; a runtime that does not leaves AI unsuggested.
+    deviceMemoryBytes: async () => {
+      const { GezelRuntime } = await import('@bendyline/gezel-capacitor');
+      const inventory: { physicalMemoryBytes?: unknown } = await GezelRuntime.listModels();
+      const bytes = inventory.physicalMemoryBytes;
+      return typeof bytes === 'number' && Number.isFinite(bytes) ? bytes : null;
+    },
   });
 }

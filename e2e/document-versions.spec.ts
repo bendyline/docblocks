@@ -1,6 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
+import { createDocument } from './helpers/new-document.js';
 
 /**
  * Two windows on one workspace are two devices as far as a document is
@@ -53,10 +54,7 @@ async function editAtTheSameTime(
 /** Create the document in the first window and open the same one in a second. */
 async function openInTwoWindows(page: Page): Promise<Page> {
   await openInitializedSite(page);
-  await page.getByRole('button', { name: 'New File', exact: true }).click();
-  const name = page.getByRole('textbox', { name: 'New file name' });
-  await name.fill(FILE);
-  await name.press('Enter');
+  await createDocument(page, FILE, { empty: true });
   const editor = editorOf(page);
   await expect(editor).toBeVisible();
   await editor.click();

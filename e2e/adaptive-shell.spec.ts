@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './helpers/test.js';
 import { showUseView, viewButton } from './helpers/toolbar.js';
+import { documentTitleField, newDocumentGallery } from './helpers/new-document.js';
 
 /**
  * Layout behaviour of the adaptive shell. Runs on the touch-emulating device
@@ -237,12 +238,20 @@ test.describe('adaptive shell on a phone', () => {
     });
 
     await create.click();
-    await page.getByRole('textbox', { name: 'Document name', exact: true }).fill('first-draft');
-    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await newDocumentGallery(page).getByRole('button', { name: 'Blank', exact: true }).click();
+    // Created and open: its name waits in the title field. One editor so far.
+    await expect(documentTitleField(page)).toBeFocused({ timeout: 30_000 });
+    await expect(page.locator('.ProseMirror')).toHaveCount(1);
+    expect(
+      await page.evaluate(() => (window as Window & { editorMounts?: number }).editorMounts),
+      'creating a document mounted a throwaway editor first',
+    ).toBe(1);
+    await documentTitleField(page).fill('first-draft');
+    await documentTitleField(page).press('Enter');
 
-    // Settled: the shell has adopted the new path, and the welcome document's
-    // editor is gone. Tiptap destroys a replaced editor on a deferred tick, so
-    // a second mount, had there been one, has happened by now.
+    // Settled: the shell has adopted the renamed path, and the welcome
+    // document's editor is gone. Tiptap destroys a replaced editor on a
+    // deferred tick, so a further mount, had there been one, has happened.
     // By path rather than role: the closed drawer is outside the accessibility
     // tree on WebKit, and getByRole skips hidden elements.
     await expect(
@@ -258,10 +267,9 @@ test.describe('adaptive shell on a phone', () => {
       page.locator('.ProseMirror').getByRole('heading', { level: 1, name: /^first-draft\b/ }),
     ).toBeVisible();
 
-    const mounts = await page.evaluate(
-      () => (window as Window & { editorMounts?: number }).editorMounts,
-    );
-    expect(mounts, 'creating a document mounted a throwaway editor first').toBe(1);
+    // Naming it reopens it under the new name. Keys are held until the
+    // caret is in that editor, so how many times it reopens is not counted.
+    await expect(page.locator('.ProseMirror')).toBeFocused();
   });
 
   test('gives every shell control a reachable touch target', async ({ page }, testInfo) => {

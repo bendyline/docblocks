@@ -6,6 +6,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import {
   parseAiChatEvent,
+  parseAiDeviceFit,
   parseAiFactCheck,
   parseAiFactCheckRequest,
   parseAiKnowledgeState,
@@ -422,6 +423,11 @@ const aiApi: DocBlocksHostAiAPI = {
   models: () => ipcRenderer.invoke('ai:models'),
   async availableModels() {
     return parseAvailableModelsResult(await ipcRenderer.invoke('ai:availableModels'));
+  },
+  async deviceFit() {
+    const fit = parseAiDeviceFit(await ipcRenderer.invoke('ai:deviceFit'));
+    if (!fit) throw new Error('Invalid AI device fit');
+    return fit;
   },
   installModel(modelId, onProgress) {
     const requestId = mintId('ai-model');

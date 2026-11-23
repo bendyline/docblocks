@@ -2,14 +2,13 @@ import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
 import { MONACO_COLD_LOAD_TIMEOUT } from './helpers/editor-regression.js';
 import { showSourceView, showUseView, showWriteView } from './helpers/toolbar.js';
+import { createDocument } from './helpers/new-document.js';
 
 test('wiki completion drills into folders in Write and Source and preserves friendly names', async ({
   page,
 }) => {
   await openInitializedSite(page);
-  await page.getByRole('button', { name: 'New File', exact: true }).click();
-  await page.getByRole('textbox', { name: 'New file name' }).fill('wiki-completion.md');
-  await page.getByRole('textbox', { name: 'New file name' }).press('Enter');
+  await createDocument(page, 'wiki-completion.md');
   const editor = page.getByRole('textbox', { name: /^Edit \/?wiki-completion\.md$/ });
   await expect(editor).toBeVisible({ timeout: 15_000 });
   await editor.click();
@@ -114,9 +113,7 @@ test('wiki completion drills into folders in Write and Source and preserves frie
 
 test('wiki link editing can change a target and clear its friendly name', async ({ page }) => {
   await openInitializedSite(page);
-  await page.getByRole('button', { name: 'New File', exact: true }).click();
-  await page.getByRole('textbox', { name: 'New file name' }).fill('wiki-edit.md');
-  await page.getByRole('textbox', { name: 'New file name' }).press('Enter');
+  await createDocument(page, 'wiki-edit.md');
   const editor = page.getByRole('textbox', { name: /^Edit \/?wiki-edit\.md$/ });
   await expect(editor).toBeVisible({ timeout: 15_000 });
   await showSourceView(page);
@@ -203,11 +200,9 @@ test('an HTML workspace default creates wiki pages outside-in beside the public 
     await showWriteView(page);
   };
   await page.keyboard.press('ControlOrMeta+KeyN');
-  const dialog = page.getByRole('dialog', { name: 'New document' });
-  await dialog.getByLabel('Type').selectOption('web-static');
-  await dialog.getByLabel('Document name').fill('wiki-html');
-  await dialog.getByRole('button', { name: 'Create', exact: true }).click();
-  const source = page.getByRole('textbox', { name: /^Edit \/?wiki-html_files\/wiki-html\.md$/ });
+  await createDocument(page, 'wiki-html.html', { type: 'Static web page', openGallery: true });
+  // Named in the title field, so its companion keeps the name it was created under.
+  const source = page.getByRole('textbox', { name: /^Edit \/?wiki-html_files\/[^/]+\.md$/ });
   await expect(source).toBeVisible({ timeout: 30_000 });
   // Seed a body link through Source, preserving the outside-in frontmatter.
   // A Write-view end shortcut can land beside the heading's inert badges and
@@ -242,9 +237,7 @@ test('wiki articles create on follow, preserve the source, and reopen without ov
   page,
 }) => {
   await openInitializedSite(page);
-  await page.getByRole('button', { name: 'New File', exact: true }).click();
-  await page.getByRole('textbox', { name: 'New file name' }).fill('wiki-source.md');
-  await page.getByRole('textbox', { name: 'New file name' }).press('Enter');
+  await createDocument(page, 'wiki-source.md', { empty: true });
   const editor = page.getByRole('textbox', { name: /^Edit \/?wiki-source\.md$/ });
   await expect(editor).toBeVisible({ timeout: 15_000 });
   const sourceUrl = page.url();
@@ -287,9 +280,7 @@ test('wiki articles create on follow, preserve the source, and reopen without ov
 
 test('traversal wiki syntax remains inert in Write mode', async ({ page }) => {
   await openInitializedSite(page);
-  await page.getByRole('button', { name: 'New File', exact: true }).click();
-  await page.getByRole('textbox', { name: 'New file name' }).fill('wiki-traversal.md');
-  await page.getByRole('textbox', { name: 'New file name' }).press('Enter');
+  await createDocument(page, 'wiki-traversal.md');
   const editor = page.getByRole('textbox', { name: /^Edit \/?wiki-traversal\.md$/ });
   await expect(editor).toBeVisible({ timeout: 15_000 });
   await editor.click();

@@ -11,7 +11,7 @@
     <title>DocBlocks Apps — iPhone, iPad, Android, Mac, Windows, Linux &amp; Web</title>
     <meta
       name="description"
-      content="Get DocBlocks on the App Store and Google Play, download it for Mac, Windows, or Linux, or open it in a browser. One Markdown editor on every screen, with no account."
+      content="Get DocBlocks on the App Store, Google Play, and the Microsoft Store, download it free for Mac, Windows, or Linux, or open it in a browser. Write once and share it as slides, Word, or PDF, with no account."
     />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <link rel="canonical" href="https://docblocks.com/apps/" />
@@ -60,10 +60,10 @@
     <!--
       Store listings on this page.
 
-      Live:    App Store (iPhone and iPad), Google Play.
-      Pending: Mac App Store, Microsoft Store. Each pending plate below sits
-               next to a comment that holds its live badge. When a store
-               approves the app, follow "When a store approves DocBlocks" in
+      Live:    App Store (iPhone and iPad), Google Play, Microsoft Store.
+      Pending: Mac App Store. Its pending plate below sits next to a comment
+               that holds its live badge. When Apple approves the Mac app,
+               follow "When a store approves DocBlocks" in
                packages/site/README.md; searching this folder for `store:`
                finds every place to change.
     -->
@@ -72,9 +72,9 @@
         <div>
           <h1>Get DocBlocks</h1>
           <p class="lede">
-            DocBlocks is on the App Store and Google Play. It is a free download for Mac, Windows,
-            and Linux, and it runs in any browser. Every version opens the same plain Markdown
-            files, and none of them needs an account.
+            DocBlocks is on the App Store, Google Play, and the Microsoft Store. It is also a free
+            download for Mac, Windows, and Linux, and it runs in any browser. Every version opens
+            the same plain Markdown files, and none of them needs an account.
           </p>
           <div class="hero-actions store-row">
             <a
@@ -95,6 +95,13 @@
                 width="564"
                 height="168"
             /></a>
+            <a class="store-badge" href="https://apps.microsoft.com/detail/9MTLPD213DL0"
+              ><img
+                src="/marketing/stores/microsoft-store-badge.svg"
+                alt="Download from the Microsoft Store"
+                width="161"
+                height="44"
+            /></a>
           </div>
           <p class="dl-note">
             <a href="#computer">Downloads for Mac, Windows, and Linux ↓</a>
@@ -107,6 +114,7 @@
               Free in a browser, on Mac, Windows, and Linux, in VS Code, and on the command line
             </li>
             <li>$9.99 once on iPhone, iPad, and Android</li>
+            <li>$9.99 once for the Microsoft Store edition, which supports DocBlocks</li>
             <li>No subscription or in-app purchases</li>
             <li>No account, ads, or tracking</li>
           </ul>
@@ -241,8 +249,8 @@
           </div>
           <p class="section-copy">
             The desktop app is free. It opens folders on your computer and saves ordinary Markdown
-            files there. It also has native menus, video export, and optional AI and speech tools
-            that run on your computer.
+            files there. It also has native menus and video export, and optional tools that run on
+            your computer: an AI review of your draft, writing help, dictation, and read aloud.
           </p>
         </div>
         <div class="app-grid app-grid--three">
@@ -322,35 +330,13 @@
             <p>For 64-bit (x64) and ARM64 PCs.</p>
             <div class="app-card__actions">
               <a class="button" href="/desktop/">Download for Windows</a>
-              <!-- store:microsoft-store pending — remove this plate when the listing is live. -->
-              <span class="store-pending">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <circle cx="12" cy="12" r="9" />
-                  <path d="M12 7v5l3 2" />
-                </svg>
-                <span class="store-pending__text">
-                  <span class="store-pending__status">Coming soon</span>
-                  <span class="store-pending__name">Microsoft Store</span>
-                </span>
-              </span>
-              <!-- store:microsoft-store live — uncomment when the listing is live, and
-                   replace STORE_ID with the product's Store ID from Partner Center.
-              <a class="store-badge" href="https://apps.microsoft.com/detail/STORE_ID"
+              <a class="store-badge" href="https://apps.microsoft.com/detail/9MTLPD213DL0"
                 ><img
                   src="/marketing/stores/microsoft-store-badge.svg"
                   alt="Download from the Microsoft Store"
                   width="161"
                   height="44"
               /></a>
-              -->
             </div>
           </article>
           <article class="app-card">
@@ -378,13 +364,14 @@
             </div>
           </article>
         </div>
-        <!-- store:mac-app-store store:microsoft-store — when either listing is live, name
-             it in the first sentence in place of "are coming to". -->
+        <!-- store:mac-app-store — when the Mac listing is live, name it beside the Microsoft
+             Store in the first sentence and drop the second. -->
         <p class="section-note">
-          Supporter Editions are coming to the Mac App Store and Microsoft Store for $9.99. They are
-          the same app, built from the same source. Your store keeps them up to date, and buying one
-          supports DocBlocks. On a Mac, dictation, read aloud, and Git are only in the free
-          download, because App Store apps run in Apple&rsquo;s sandbox.
+          The Supporter Edition for Windows is $9.99 on the Microsoft Store. One for the Mac is
+          coming to the Mac App Store. Each is the same app as the free download, built from the
+          same source. Your store keeps it up to date, and buying it supports DocBlocks. On a Mac,
+          dictation, read aloud, and Git are only in the free download, because App Store apps run
+          in Apple&rsquo;s sandbox.
         </p>
       </section>
 
@@ -447,7 +434,10 @@
               <h3>VS Code</h3>
               <span class="price-tag">Free</span>
             </div>
-            <p>Open any Markdown file as a visual document inside VS Code.</p>
+            <p>
+              Open any Markdown file as a visual document inside VS Code. The extension comes with
+              each release as a <code>.vsix</code> file.
+            </p>
             <div class="app-card__actions">
               <a href="/vscode/">VS Code extension and setup</a>
             </div>
@@ -481,19 +471,19 @@
         </div>
       </section>
 
-      <!-- store:mac-app-store store:microsoft-store — when a listing is live, name its store
-           here too: "Mac App Store is a service mark of Apple Inc." and "Microsoft Store is a
-           trademark of the Microsoft group of companies." -->
+      <!-- store:mac-app-store — when the Mac listing is live, name its store here too:
+           "Mac App Store is a service mark of Apple Inc." -->
       <p class="legal-note">
         Apple, the Apple logo, iPhone, and iPad are trademarks of Apple Inc. App Store is a service
         mark of Apple Inc. Google Play and the Google Play logo are trademarks of Google LLC.
+        Microsoft Store is a trademark of the Microsoft group of companies.
       </p>
     </main>
 
     <footer class="site-footer">
       <p>
-        DocBlocks is free open-source software by
-        <a href="https://bendyline.com">Bendyline</a>.
+        DocBlocks is open-source software by
+        <a href="https://bendyline.com">Bendyline</a>, free on the web and desktop.
       </p>
       <nav class="footer-nav" aria-label="Footer navigation">
         <a href="/desktop/">Desktop downloads</a>

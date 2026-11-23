@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import type { Locator } from '@playwright/test';
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
+import { createDocument } from './helpers/new-document.js';
 
 test.use({
   viewport: { width: 1440, height: 1000 },
@@ -24,10 +25,7 @@ test('records document narration with tracked words and slides side by side', as
   page,
 }, testInfo) => {
   await openInitializedSite(page);
-  await page.getByRole('button', { name: 'New File', exact: true }).click();
-  const name = page.getByRole('textbox', { name: 'New file name' });
-  await name.fill('narration-slides.md');
-  await name.press('Enter');
+  await createDocument(page, 'narration-slides.md');
   // The welcome document's editor is in Write too until this one replaces it.
   const editor = page.getByRole('textbox', { name: /^Edit \/?narration-slides\.md$/ });
   await expect(editor).toBeVisible();

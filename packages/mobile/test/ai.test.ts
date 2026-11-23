@@ -289,6 +289,48 @@ describe('mobile AI through the Gezel App SDK', () => {
     assert.equal((await f.ai.chat(request, () => {}).done).ok, false);
     assert.deepEqual(f.calls, []);
   });
+  it('measures the phone for the AI invitation while off, without loading the runtime', async () => {
+    const GIB = 1024 ** 3;
+    for (const [bytes, suggestAi] of [
+      [11.2 * GIB, true],
+      [7.5 * GIB, false],
+      [null, false],
+    ] as const) {
+      let asked = 0;
+      let loaded = 0;
+      const { ai } = createMobileAi({
+        load: async () => {
+          loaded += 1;
+          throw new Error('Not loaded for a device question');
+        },
+        readPreferences: () => ({ enabled: false, model: null, reviewMode: 'explicit' }),
+        writePreferences: () => undefined,
+        deviceMemoryBytes: async () => {
+          asked += 1;
+          return bytes;
+        },
+      });
+      assert.deepEqual(await ai.deviceFit!(), { memory: 'mobile', bytes, suggestAi });
+      await ai.deviceFit!();
+      assert.equal(asked, 1, 'measured once');
+      assert.equal(loaded, 0);
+    }
+    const unmeasured = createMobileAi({
+      load: async () => {
+        throw new Error('unused');
+      },
+      readPreferences: () => ({ enabled: false, model: null, reviewMode: 'explicit' }),
+      writePreferences: () => undefined,
+      deviceMemoryBytes: async () => {
+        throw new Error('listModels failed');
+      },
+    });
+    assert.deepEqual(await unmeasured.ai.deviceFit!(), {
+      memory: 'mobile',
+      bytes: null,
+      suggestAi: false,
+    });
+  });
   it('streams the real SDK transport, reconciles suffixes, caps context and keeps capabilities honest', async () => {
     const f = fixture();
     const events: AiChatEvent[] = [];

@@ -471,6 +471,11 @@ export interface DocBlocksHostAiAPI {
   /** Catalog models this host can download. Optional for older providers. */
   availableModels?(): Promise<AiResult<readonly AiModelDownloadInfo[]>>;
   /**
+   * Whether this device is worth suggesting AI on (see `ai-device.ts`). Cheap,
+   * and never starts a provider, so it may be asked while AI is off.
+   */
+  deviceFit?(): Promise<import('./ai-device.js').AiDeviceFit>;
+  /**
    * Find sentences whose names, dates, numbers or quotations appear in none of
    * the evidence or the person's own text. Mechanical: no model call.
    */
