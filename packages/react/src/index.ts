@@ -5,6 +5,7 @@
 // FileExplorer
 export { FileExplorer } from './FileExplorer/index.js';
 export type {
+  FileExplorerHandle,
   FileExplorerProps,
   FileExplorerSortMode,
   FileTreeChange,

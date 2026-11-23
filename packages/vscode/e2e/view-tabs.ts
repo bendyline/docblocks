@@ -1,21 +1,37 @@
-import type { Frame, FrameLocator } from '@playwright/test';
+import type { Frame, FrameLocator, Locator } from '@playwright/test';
 import { expect } from './test.js';
 
+type Editor = Frame | FrameLocator;
+
 /**
- * Switch the webview editor to Source. Source is chosen from the Write mode
- * menu, not a tab of its own; the first tab then reads Source and carries
- * `data-view="raw"`. Choosing it through the menu also takes the same path
- * as a user, which is what preloads Monaco on pointer intent.
+ * The toolbar's one view control. It is named after the view on screen
+ * ("View: Write", "View: Slideshow", …) and opens the View menu; those names
+ * follow the chosen layout or Use mode, so `data-active-view` is the stable
+ * hook for which view is showing.
  */
-export async function showSource(editor: Frame | FrameLocator): Promise<void> {
-  await editor.getByRole('button', { name: 'Choose Write mode', exact: true }).click();
-  const item = editor
-    .getByRole('menu', { name: 'Write mode', exact: true })
-    .getByRole('menuitemradio', { name: 'Source', exact: true });
-  await item.click();
-  await expect(item).toBeHidden();
-  await expect(editor.locator('[role="tab"][data-view="raw"]')).toHaveAttribute(
-    'aria-selected',
-    'true',
-  );
+export function viewButton(editor: Editor): Locator {
+  return editor.locator('.squisq-toolbar-view-button');
+}
+
+/** Picks a view from one of the View menu's groups, as a user does. */
+async function chooseView(editor: Editor, group: 'Edit' | 'Use', name: string): Promise<void> {
+  const menu = editor.getByRole('menu', { name: 'View', exact: true });
+  await viewButton(editor).click();
+  await menu
+    .getByRole('group', { name: group, exact: true })
+    .getByRole('menuitemradio', { name, exact: true })
+    .click();
+  await expect(menu).toBeHidden();
+}
+
+/** Switch the webview editor to Source, chosen from View › Edit. */
+export async function showSource(editor: Editor): Promise<void> {
+  await chooseView(editor, 'Edit', 'Source');
+  await expect(viewButton(editor)).toHaveAttribute('data-active-view', 'raw');
+}
+
+/** Switch the webview editor to a Use mode, chosen from View › Use. */
+export async function showUse(editor: Editor, mode = 'Slideshow'): Promise<void> {
+  await chooseView(editor, 'Use', mode);
+  await expect(viewButton(editor)).toHaveAttribute('data-active-view', 'preview');
 }

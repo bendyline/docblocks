@@ -90,9 +90,10 @@ test.describe('editor toolbar on a narrow desktop viewport', () => {
     await expect(page.locator('.squisq-toolbar .db-export-toolbar')).toBeAttached();
 
     const controls = await toolbarControls(page);
-    // The view tabs claim a row of their own, which is what pushes the
-    // formatting and host controls onto a second row.
-    expect(controls.sharingTabRow).toEqual([]);
+    // The view tabs claim a row of their own -- shared only with the document
+    // name before them -- which is what pushes the formatting and host
+    // controls onto a second row.
+    expect(controls.sharingTabRow).toEqual(['db-document-title']);
     expect(controls.height).toBeGreaterThan(80);
     // The regression this guards: the actions lane collapsing to nothing.
     expect(controls.formatting).toBeGreaterThanOrEqual(5);

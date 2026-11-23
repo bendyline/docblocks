@@ -1,9 +1,10 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './helpers/test.js';
+import { viewButton } from './helpers/toolbar.js';
 
 /**
  * The Summarization designer in a small panel. The designer is Squisq's, shown
- * inline in Write › Summarize when Custom is chosen. Its two columns, the slide
+ * inline in View › Edit › Summaries when Custom is chosen. Its two columns, the slide
  * list beside the selected slide, would each scroll in a sliver in a VS Code
  * editor pane or on a phone, so below a width the list becomes a picker and the
  * designer scrolls as one. The panel's own size decides, not the shell's
@@ -36,20 +37,20 @@ async function openWelcome(page: Page): Promise<void> {
 }
 
 /**
- * Write › Summarize, then Custom. A resize can re-render the toolbar and close
- * a menu opened in the same frame, so retry the whole open until it shows.
+ * View › Edit › Summaries, then Custom. A resize can re-render the toolbar and
+ * close a menu opened in the same frame, so retry the whole open until it shows.
  */
 async function openDesigner(page: Page) {
-  const summarize = page.getByRole('region', { name: 'Summarize', exact: true });
+  const summarize = page.getByRole('region', { name: 'Summaries', exact: true });
   const designer = summarize.getByRole('region', { name: 'Summarization designer', exact: true });
+  const viewMenu = page.getByRole('menu', { name: 'View', exact: true });
   await expect(async () => {
     if (await designer.isVisible()) return;
     if (!(await summarize.isVisible())) {
-      await page
-        .getByRole('button', { name: 'Choose Write mode', exact: true })
-        .click({ timeout: 2_000 });
-      await page
-        .getByRole('menuitemradio', { name: 'Summarize', exact: true })
+      if (!(await viewMenu.isVisible())) await viewButton(page).click({ timeout: 2_000 });
+      await viewMenu
+        .getByRole('group', { name: 'Edit', exact: true })
+        .getByRole('menuitemradio', { name: 'Summaries', exact: true })
         .click({ timeout: 2_000 });
     }
     await summarize.getByRole('radio', { name: 'Custom', exact: true }).check({ timeout: 2_000 });

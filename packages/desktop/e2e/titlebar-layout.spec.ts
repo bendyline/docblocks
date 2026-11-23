@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { centerOf, windowDragsAt } from './drag-regions.js';
 import { expect, test, tourWelcome } from './fixtures.js';
-import { showWriteView } from '../../../e2e/helpers/toolbar.js';
+import { showWriteView, viewButton } from '../../../e2e/helpers/toolbar.js';
 
 async function collapseSidebar(window: Page): Promise<void> {
   const resizer = window.getByRole('separator', { name: 'Resize sidebar' });
@@ -99,7 +99,9 @@ test('keeps toolbar controls outside the native caption button area', async ({ l
   expect(Math.abs(spaceAbove - spaceBelow)).toBeLessThan(physicalPixel);
   for (const control of geometry.controls) {
     expect(control.right, control.className).toBeLessThanOrEqual(geometry.toolbar.right);
-    if (control.className !== 'squisq-toolbar-view-tabs') {
+    // The tab row holds the document name and the view tabs; everything
+    // else wraps below it.
+    if (!['squisq-toolbar-view-tabs', 'db-document-title'].includes(control.className)) {
       expect(control.top, control.className).toBeGreaterThanOrEqual(
         (geometry.viewTabsBottom ?? Infinity) - physicalPixel,
       );
@@ -217,11 +219,9 @@ test('keeps the collapsed titlebar draggable over a scrolled document', async ({
     };
   });
   expect(tabRowGap.empty).toBe(true);
-  const writeTab = toolbar.locator('[role="tab"][data-view="wysiwyg"]');
-  expect(await windowDragsAt(window, [tabRowGap.point, await centerOf(writeTab)])).toEqual([
-    true,
-    false,
-  ]);
+  expect(
+    await windowDragsAt(window, [tabRowGap.point, await centerOf(viewButton(toolbar))]),
+  ).toEqual([true, false]);
 
   // The file drawer slides over that header but precedes it in the document,
   // so the covered header must not decide the drawer's own titlebar: its

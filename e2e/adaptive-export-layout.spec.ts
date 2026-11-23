@@ -1,6 +1,12 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from './helpers/test.js';
-import { openDocumentAction, selectWriteMode, showWriteView } from './helpers/toolbar.js';
+import {
+  closeViewMenu,
+  openDocumentAction,
+  openViewMenu,
+  selectWriteMode,
+  showWriteView,
+} from './helpers/toolbar.js';
 
 async function openWelcome(page: Page) {
   await page.goto('/');
@@ -30,13 +36,14 @@ for (const width of [320, 390, 412]) {
     const editor = page.locator('.ProseMirror').first();
     for (const mode of ['Blocks', 'Timeline'] as const) {
       await selectWriteMode(page, mode);
-      await page.getByRole('button', { name: 'View options', exact: true }).click();
-      const previews = page.getByRole('menuitemcheckbox', {
-        name: 'Show block previews',
+      const viewMenu = await openViewMenu(page);
+      const previews = viewMenu.getByRole('menuitemcheckbox', {
+        name: 'Block previews',
         exact: true,
       });
       if ((await previews.getAttribute('aria-checked')) !== 'true') await previews.click();
-      await page.keyboard.press('Escape');
+      await expect(previews).toHaveAttribute('aria-checked', 'true');
+      await closeViewMenu(page);
       // Hiding the decorative panel must reclaim editing space, not just clip it.
       await expect(page.locator('.squisq-block-preview-panel')).toBeHidden();
       await expect

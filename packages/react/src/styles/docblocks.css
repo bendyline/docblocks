@@ -1937,11 +1937,12 @@ body.db-resizing-sidebar * {
   }
 }
 
-/* Squisq's status bar leaves line-height at `normal`, so its height depends on
-   the installed UI font's metrics — 16px on Segoe UI, 14px on the Linux CI
-   stack. The footer below pins itself to a fixed height, so an unpinned status
-   bar makes their shared top border jog by 2px on some platforms. Pin the line
-   box here so both chrome regions are 25px everywhere. */
+/* Squisq sizes its status bar as one fixed row in every view
+   (`--squisq-status-row-height`: 32px, 44px on a touch screen) plus a 1px top
+   border, and the sidebar footer below matches that height. Squisq leaves
+   line-height at `normal`, which follows the installed UI font's metrics
+   (16px on Segoe UI, 14px on the Linux CI stack), so pin the line box too:
+   text in the bar then sits the same everywhere. */
 .db-shell .squisq-status-bar {
   line-height: 16px;
   font-family: var(--db-meta-font);
@@ -1953,14 +1954,23 @@ body.db-resizing-sidebar * {
   display: flex;
   align-items: center;
   gap: 6px;
-  /* Match the status bar's pinned line box + 8px vertical padding + 1px border. */
-  height: calc(25px + var(--db-safe-bottom));
+  /* Match the status bar beside it, so the two share one top border: Squisq's
+     32px row (`--squisq-status-row-height`, declared on the bar itself, so
+     out of reach here) plus its 1px border. */
+  height: calc(33px + var(--db-safe-bottom));
   /* Clears the iOS home indicator; 0px on every other surface. */
   padding: 0 12px var(--db-safe-bottom) 18px;
   border-top: 1px solid var(--db-border-strong);
   flex-shrink: 0;
   font-size: 11px;
   line-height: 1;
+}
+
+/* A touch screen gets Squisq's taller 44px status row; follow it. */
+@media (pointer: coarse) {
+  .db-shell-sidebar-footer {
+    height: calc(45px + var(--db-safe-bottom));
+  }
 }
 
 .db-shell-sidebar-footer > * {
@@ -2302,6 +2312,149 @@ body.db-resizing-sidebar * {
   margin-right: calc(-1 * var(--db-toolbar-wrapped-inline-end));
   height: var(--db-toolbar-wrapped-row);
   border-right: 0;
+}
+
+/* ── Document title field ─────────────────────────────────────────
+   The open document's name, renamable in place, at the toolbar's left edge
+   just before the View button (DocumentTitleField). The field sizes to the
+   name, up to `--db-document-title-width`. That cap is declared on the
+   toolbar so its `cqi` resolves against the toolbar, a size container;
+   Squisq's image-mode header is not one, hence the fallbacks. The field
+   publishes its rendered width as `--db-document-title-used`, which the rows
+   below size the View section against. */
+.db-shell .squisq-toolbar {
+  --db-document-title-width: clamp(8rem, 24cqi, 15rem);
+}
+
+/* In the two-row layouts the name shares the first row with only the View
+   button, so it can take more of it. */
+.db-shell--mobile .squisq-toolbar,
+.db-shell--desktop-toolbar-wrapped .squisq-toolbar {
+  --db-document-title-width: clamp(7rem, 40cqi, 18rem);
+}
+
+/* One grid cell holds the input and, invisibly, the name it shows: the
+   cell — and so the field — takes the name's width, growing as it is typed.
+   The negative margin closes the toolbar's 1px item gap, which would
+   otherwise show the toolbar's color as a seam beside the View section. */
+.db-document-title {
+  display: grid;
+  align-items: center;
+  align-self: stretch;
+  box-sizing: border-box;
+  flex: 0 1 auto;
+  min-width: 6rem;
+  max-width: var(--db-document-title-width, 15rem);
+  margin-right: -1px;
+  padding-left: 6px;
+}
+
+.db-document-title::after,
+.db-document-title-input {
+  grid-area: 1 / 1;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* The input's padding plus its border, and a space of room for the caret. */
+.db-document-title::after {
+  content: attr(data-value) ' ';
+  height: 0;
+  overflow: hidden;
+  padding: 0 9px;
+  white-space: pre;
+  visibility: hidden;
+}
+
+.db-document-title-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 29px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--db-text);
+  text-overflow: ellipsis;
+}
+
+.db-document-title-input:hover:not(:read-only) {
+  border-color: var(--db-border-strong);
+}
+
+/* A 2px accent ring drawn inside the field (WCAG 2.4.7). An outline would
+   reach past the field's edge and pass under the View section beside it. */
+.db-document-title-input:focus {
+  outline: none;
+  border-color: var(--db-accent);
+  box-shadow: inset 0 0 0 1px var(--db-accent);
+  background: var(--db-bg);
+  text-overflow: clip;
+}
+
+.db-document-title-input:read-only {
+  cursor: default;
+}
+
+/* With the outline pane open, Squisq widens the View section to the pane's
+   width so their dividers line up. The name now comes first, so the two
+   share that width: the name is capped clear of the View button's ~130px,
+   and the View section's floor gives back what the name uses. The
+   single-row toolbar only — the two-row layouts run the View row full width. */
+.db-shell:not(.db-shell--mobile):not(.db-shell--desktop-toolbar-wrapped)
+  .squisq-editor-shell[data-outline-visible='true']
+  .squisq-toolbar:has(> .db-document-title) {
+  --db-document-title-width: clamp(6rem, calc(var(--squisq-outline-width, 240px) - 9rem), 15rem);
+}
+
+.db-shell:not(.db-shell--mobile):not(.db-shell--desktop-toolbar-wrapped)
+  .squisq-editor-shell[data-outline-visible='true']
+  .squisq-toolbar
+  > .db-document-title {
+  flex-shrink: 0;
+}
+
+.db-shell:not(.db-shell--mobile):not(.db-shell--desktop-toolbar-wrapped)
+  .squisq-editor-shell[data-outline-visible='true']
+  .squisq-toolbar:has(> .db-document-title)
+  .squisq-toolbar-view-tabs {
+  min-width: max(
+    0px,
+    calc(
+      var(--squisq-outline-width, 240px) -
+        var(--db-document-title-used, var(--db-document-title-width))
+    )
+  );
+}
+
+/* The two-row layouts: the name, then the View section filling the rest of
+   the first row exactly, which is what breaks the actions onto the second.
+   The name must not shrink, or the width it published would be stale. The
+   View section is sized half a pixel short and grows into it, so subpixel
+   rounding can never push it onto a row of its own. */
+.db-shell--desktop-toolbar-wrapped .squisq-toolbar > .db-document-title,
+.db-shell--mobile .squisq-toolbar > .db-document-title {
+  flex-shrink: 0;
+}
+
+.db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile)
+  .squisq-toolbar:has(> .db-document-title)
+  .squisq-toolbar-view-tabs {
+  flex-grow: 1;
+  width: calc(
+    100% + var(--db-toolbar-wrapped-inline-end) -
+      var(--db-document-title-used, var(--db-document-title-width)) - 0.5px
+  );
+}
+
+/* Compact: 45px is the files button and the item gap after it. */
+.db-shell--mobile .squisq-toolbar:has(> .db-document-title) .squisq-toolbar-view-tabs {
+  flex-basis: calc(
+    100% - 45px - var(--db-document-title-used, var(--db-document-title-width)) - 0.5px
+  );
+  width: auto;
 }
 
 .db-mobile-back {
@@ -4296,7 +4449,8 @@ body.db-resizing-sidebar * {
   --squisq-toolbar-icon: var(--db-text-muted);
 }
 
-.db-shell[data-theme='dark'] .squisq-toolbar-view-tabs {
+.db-shell[data-theme='dark'] .squisq-toolbar-view-tabs,
+.db-shell[data-theme='dark'] .squisq-toolbar > .db-document-title {
   background: var(--db-editor-canvas);
 }
 
@@ -4590,7 +4744,11 @@ body.db-resizing-sidebar * {
   border-bottom-color: var(--db-border-strong);
 }
 
-.db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-toolbar-view-tabs {
+.db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-toolbar-view-tabs,
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-toolbar
+  > .db-document-title {
   background: var(--db-bg);
 }
 

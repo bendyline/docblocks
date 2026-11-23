@@ -116,10 +116,12 @@ import { restoreBrowserBackup } from './restore-backup.js';
 import { pickEmptyDocumentPrompt, useResponsivePreviewViewportPreset } from '../editor.js';
 import {
   FileExplorer,
+  type FileExplorerHandle,
   type FileExplorerSortMode,
   type FileTreeChange,
   type FileTreeMutationHandler,
 } from '../FileExplorer/FileExplorer.js';
+import { DocumentTitleField } from './DocumentTitleField.js';
 import { filterVisibleFileEntries } from '../FileExplorer/entry-visibility.js';
 import { renameDraft, renamedFileName } from '../FileExplorer/file-names.js';
 import { WorkspacePicker } from '../WorkspacePicker/WorkspacePicker.js';
@@ -2101,6 +2103,8 @@ export function DocBlocksShell({
     return pickEmptyDocumentPrompt();
   }, [editorKey]);
   const [explorerKey, setExplorerKey] = useState(0);
+  /** The mounted explorer, so the toolbar's title field renames through it. */
+  const explorerRef = useRef<FileExplorerHandle>(null);
   // Over providers that cannot watch (IndexedDB, File System Access), catalog
   // writes are invisible until something re-reads: the explorer for a newly
   // created file, and the workspace index (quick open's only route to the
@@ -5269,6 +5273,41 @@ export function DocBlocksShell({
     });
   }, []);
 
+  /**
+   * The toolbar title field's rename. It runs the explorer's own rename, so
+   * the document's companion folder moves with it, the open session follows,
+   * and the tree keeps its expanded folders — the same as renaming the row.
+   */
+  const handleRenameOpenDocument = useCallback(
+    async (newName: string) => {
+      const oldPath = selectedFile;
+      const explorer = explorerRef.current;
+      if (!oldPath || !explorer) return;
+      if (/[\\/]/.test(newName)) {
+        showToast('error', 'Use a document name without slashes.');
+        return;
+      }
+      // Swap the name in place, keeping the path's own form as the tree does.
+      const newPath = `${oldPath.slice(0, oldPath.lastIndexOf('/') + 1)}${newName}`;
+      try {
+        parseWorkspacePath(newPath);
+      } catch {
+        showToast('error', 'Use a valid document name.');
+        return;
+      }
+      if (sameProviderPath(newPath, oldPath)) return;
+      try {
+        await explorer.renameEntry(oldPath, newPath, 'file');
+      } catch (error: unknown) {
+        showToast(
+          'error',
+          error instanceof Error ? error.message : 'The document could not be renamed.',
+        );
+      }
+    },
+    [selectedFile, showToast],
+  );
+
   const handlePinnedDocumentRename = useCallback(
     async (document: PinnedDocumentListItem) => {
       if (document.availability === 'missing') {
@@ -6440,6 +6479,7 @@ export function DocBlocksShell({
               </Suspense>
             )}
             <FileExplorer
+              ref={explorerRef}
               key={explorerKey}
               loading={workspaceStarting}
               // Hidden, not unmounted, while search shows: it keeps its expanded folders.
@@ -6739,17 +6779,26 @@ export function DocBlocksShell({
                                 ) : undefined
                               }
                               toolbarSlotLeft={
-                                singlePane ? (
-                                  <button
-                                    className="db-mobile-back"
-                                    onClick={() => setMobileShowEditor(false)}
-                                    aria-label="Show file list"
-                                  >
-                                    <span className="db-mobile-files-icon">
-                                      <FolderGlyph />
-                                    </span>
-                                  </button>
-                                ) : undefined
+                                <>
+                                  {singlePane && (
+                                    <button
+                                      className="db-mobile-back"
+                                      onClick={() => setMobileShowEditor(false)}
+                                      aria-label="Show file list"
+                                    >
+                                      <span className="db-mobile-files-icon">
+                                        <FolderGlyph />
+                                      </span>
+                                    </button>
+                                  )}
+                                  <DocumentTitleField
+                                    fileName={basenameOf(selectedFile)}
+                                    onRename={handleRenameOpenDocument}
+                                    // Generated outputs are rewritten under their
+                                    // configured name on the next build.
+                                    readOnly={selectedManagedOutput !== undefined}
+                                  />
+                                </>
                               }
                               summarizationAssistant={presentationAssistant}
                               toolbarSlotQuickTools={

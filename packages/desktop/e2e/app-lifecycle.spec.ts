@@ -18,7 +18,12 @@ import { MemoryContentContainer } from '@bendyline/squisq/storage';
 import { containerToZip, zipToContainer } from '@bendyline/squisq-formats/container';
 import { getPartBinary, openPackage } from '@bendyline/squisq-formats/ooxml';
 import { deriveWorkspaceId } from '../main/workspace-id.js';
-import { openDocumentAction } from '../../../e2e/helpers/toolbar.js';
+import {
+  openDocumentAction,
+  selectWriteMode,
+  showWriteView,
+  viewButton,
+} from '../../../e2e/helpers/toolbar.js';
 
 test('boots and renders the shell', async ({ launchApp }) => {
   const { window } = await launchApp();
@@ -115,31 +120,17 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   expect(Math.abs(chrome.headerBottomDelta ?? Infinity)).toBeLessThan(physicalPixel);
   expect(chrome.appRegion).toBe('drag');
 
-  // The shared shell lifts the tabs within its roomier 48px browser toolbar.
-  // Desktop must win that equal-specificity rule so labels stay centered in
-  // the compact 42px titlebar instead of riding against its top edge.
-  const writeTab = toolbar.getByRole('tab', { name: 'Write' });
-  const tabMetrics = await writeTab.evaluate((element) => {
-    const style = getComputedStyle(element);
-    const label = element.querySelector('.squisq-toolbar-view-tab-label--long');
-    const labelRect = label?.getBoundingClientRect();
-    const tabsRect = element.closest('.squisq-toolbar-view-tabs')?.getBoundingClientRect();
-    return {
-      paddingTop: style.paddingTop,
-      paddingBottom: style.paddingBottom,
-      centerDelta:
-        labelRect && tabsRect
-          ? labelRect.top + labelRect.height / 2 - (tabsRect.top + tabsRect.height / 2)
-          : null,
-    };
+  // The view button sits centred in the compact 42px titlebar band rather
+  // than riding against its top or bottom edge.
+  const viewMetrics = await viewButton(toolbar).evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const band = element.closest('.squisq-toolbar-view-tabs')?.getBoundingClientRect();
+    return band ? rect.top + rect.height / 2 - (band.top + band.height / 2) : null;
   });
-  expect(tabMetrics.paddingTop).toBe('4px');
-  expect(tabMetrics.paddingBottom).toBe('7px');
-  expect(tabMetrics.centerDelta).not.toBeNull();
-  // Chromium can place text boxes on quarter pixels, so allow the label's
-  // geometric center to differ slightly while still catching the old 48px
-  // toolbar padding override.
-  expect(Math.abs(tabMetrics.centerDelta ?? Infinity)).toBeLessThanOrEqual(1.5);
+  expect(viewMetrics).not.toBeNull();
+  // Chromium can place boxes on quarter pixels, so allow the centres to
+  // differ slightly.
+  expect(Math.abs(viewMetrics ?? Infinity)).toBeLessThanOrEqual(1.5);
 
   // The sidebar titlebar ends with a desktop-only dotted grip so the
   // draggable space beside the workspace gear is visually discoverable.
@@ -199,8 +190,7 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   // Squisq's flexible actions lane owns the empty space between its final
   // formatting control and the fixed document controls. That exact gap must
   // remain draggable even though the lane clips overflowing action buttons.
-  await writeTab.click();
-  await expect(writeTab).toHaveClass(/squisq-toolbar-view-tab--active/);
+  await showWriteView(toolbar);
   const actionsLane = toolbar.locator('.squisq-toolbar-actions');
   const actionsGap = await actionsLane.evaluate((element) => {
     const style = getComputedStyle(element);
@@ -228,11 +218,11 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   // Interactive controls inside the drag region must remain clickable.
   await sidebarHeader.getByRole('button', { name: 'Workspace settings' }).click();
   await expect(window.getByRole('menuitem', { name: /Workspace settings/ })).toBeVisible();
-  // Source is chosen from the Write menu; the editing tab then carries its name.
-  await toolbar.getByRole('button', { name: 'Choose Write mode', exact: true }).click();
-  await window.getByRole('menuitemradio', { name: 'Source', exact: true }).click();
-  const sourceTab = toolbar.getByRole('tab', { name: 'Source' });
-  await expect(sourceTab).toHaveClass(/squisq-toolbar-view-tab--active/);
+  // Source is chosen with a click from the View menu, whose button then
+  // carries its name.
+  await selectWriteMode(window, 'Source');
+  await expect(viewButton(toolbar)).toHaveAttribute('data-active-view', 'raw');
+  await expect(viewButton(toolbar)).toHaveAccessibleName('View: Source');
 
   // macOS owns its global application menu outside the BrowserWindow;
   // Windows/Linux should have no in-window File/Edit/View menu row.

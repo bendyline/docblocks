@@ -1,7 +1,7 @@
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
 import { MONACO_COLD_LOAD_TIMEOUT } from './helpers/editor-regression.js';
-import { showSourceView, showWriteView } from './helpers/toolbar.js';
+import { showSourceView, showUseView, showWriteView } from './helpers/toolbar.js';
 
 test('wiki completion drills into folders in Write and Source and preserves friendly names', async ({
   page,
@@ -229,7 +229,7 @@ test('an HTML workspace default creates wiki pages outside-in beside the public 
   await expect(
     page.getByRole('button', { name: 'Open article: reference/blah', exact: true }),
   ).toBeEnabled();
-  await page.locator('[data-view="preview"]').click();
+  await showUseView(page);
   await page.getByRole('button', { name: 'Next slide', exact: true }).click();
   const link = page.getByTestId('preview-panel').locator('a[href="/reference/blah.html"]');
   await link.click({ timeout: 10_000 });
@@ -255,13 +255,13 @@ test('wiki articles create on follow, preserve the source, and reopen without ov
   await expect(editor).toHaveText('Wiki source reference/blah');
 
   // Rendering a presentation must neither link nor create a missing article.
-  await page.locator('[data-view="preview"]').click();
+  await showUseView(page);
   await page.getByRole('button', { name: 'Next slide', exact: true }).click();
   await expect(page.getByTestId('preview-panel')).toContainText('reference/blah');
   await expect(
     page.getByTestId('preview-panel').locator('a[href="reference/blah.md"]'),
   ).toHaveCount(0);
-  await page.locator('[data-view="wysiwyg"]').click();
+  await showWriteView(page);
   await create.click();
   await expect(page).toHaveURL(/reference%2Fblah\.md$|reference\/blah\.md$/);
   const article = page.getByRole('textbox', { name: /^Edit \/?reference\/blah\.md$/ });
@@ -277,7 +277,7 @@ test('wiki articles create on follow, preserve the source, and reopen without ov
     page.getByRole('button', { name: 'Open article: reference/blah', exact: true }),
   ).toBeEnabled();
   await expect(editor).toContainText('Wiki source');
-  await page.locator('[data-view="preview"]').click();
+  await showUseView(page);
   await page.getByRole('button', { name: 'Next slide', exact: true }).click();
   const existing = page.getByTestId('preview-panel').locator('a[href="reference/blah.md"]');
   await expect(existing).toBeVisible();

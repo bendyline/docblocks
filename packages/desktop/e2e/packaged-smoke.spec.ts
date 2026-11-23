@@ -5,6 +5,7 @@ import type { DocBlocksHostAiAPI } from '@bendyline/docblocks/host';
 import { excludedDesktopDependencies } from '../../../scripts/desktop-runtime-policy.js';
 import { FUSE_STATE, readFuseWires, resolvePackagedArtifact } from './packaged-artifact.js';
 import { expect, test } from './packaged-fixtures.js';
+import { showUseView } from '../../../e2e/helpers/toolbar.js';
 
 const EXPECTED_FUSES = [
   FUSE_STATE.disabled, // RunAsNode
@@ -269,7 +270,7 @@ test('grants capture only to the trusted renderer and exposes only working prese
   if (await gateway.isVisible()) {
     await packaged.window.locator('.db-welcome-gateway-cta').click();
   }
-  await packaged.window.locator('[role="tab"][data-view="preview"]').click();
+  await showUseView(packaged.window);
   const presentationOptions = packaged.window.getByRole('button', {
     name: 'Presentation options',
   });

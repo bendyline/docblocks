@@ -24,7 +24,7 @@ import {
   parsePresentationHints,
   PRESENTATION_HINTS_KEY,
 } from '@bendyline/squisq/transform';
-import { openDocumentAction } from '../../../e2e/helpers/toolbar.js';
+import { openDocumentAction, selectWriteMode } from '../../../e2e/helpers/toolbar.js';
 
 const SCRIPT = `# Give your ideas a voice
 
@@ -44,16 +44,12 @@ Review your presentation. Export a narrated video. One document carries the sour
 `;
 
 function summarizeView(window: Page) {
-  return window.getByRole('region', { name: 'Summarize', exact: true });
+  return window.getByRole('region', { name: 'Summaries', exact: true });
 }
 
-/** Opens Write › Summarize and chooses Custom, whose designer (Squisq's) it returns. */
+/** Opens View › Edit › Summaries and chooses Custom, whose designer (Squisq's) it returns. */
 async function openDesigner(window: Page, screenshotPath?: string) {
-  await window.getByRole('button', { name: 'Choose Write mode', exact: true }).click();
-  await window
-    .getByRole('menu', { name: 'Write mode', exact: true })
-    .getByRole('menuitemradio', { name: 'Summarize', exact: true })
-    .click();
+  await selectWriteMode(window, 'Summaries');
   await summarizeView(window).getByRole('radio', { name: 'Custom', exact: true }).check();
   if (screenshotPath) await summarizeView(window).screenshot({ path: screenshotPath });
   return summarizeView(window).getByRole('region', {
@@ -64,14 +60,10 @@ async function openDesigner(window: Page, screenshotPath?: string) {
 
 /** Returns Write to the whole-document editor. */
 async function openWrite(window: Page) {
-  await window.getByRole('button', { name: 'Choose Write mode', exact: true }).click();
-  await window
-    .getByRole('menu', { name: 'Write mode', exact: true })
-    .getByRole('menuitemradio', { name: 'Write', exact: true })
-    .click();
+  await selectWriteMode(window, 'Write');
 }
 
-test('designs Custom summaries in Write › Summarize and exports a timed MP4', async ({
+test('designs Custom summaries in View › Summaries and exports a timed MP4', async ({
   launchApp,
   userDataDir,
   workspaceDir,

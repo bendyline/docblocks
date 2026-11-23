@@ -4,7 +4,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { openInitializedSite } from './helpers/site.js';
-import { showWriteView } from './helpers/toolbar.js';
+import { closeViewMenu, openViewMenu, showWriteView } from './helpers/toolbar.js';
 
 /**
  * Accessibility audits using axe-core against the DocBlocks site shell.
@@ -73,25 +73,20 @@ for (const theme of ['Light', 'Dark']) {
         hovered.violations,
         `${theme} / ${accent} active hover: ${formatViolations(hovered.violations)}`,
       ).toEqual([]);
-      for (const menu of ['Write mode', 'Use mode']) {
-        await page.getByRole('button', { name: `Choose ${menu}`, exact: true }).click();
-        // Measure the settled menu, not the partially transparent entrance frame.
-        await page.locator('.squisq-view-mode-menu').evaluate(async (element) => {
-          await Promise.all(
-            element.getAnimations({ subtree: true }).map((entry) => entry.finished),
-          );
-        });
-        const menuScan = await new AxeBuilder({ page })
-          .include('.squisq-view-mode-menu')
-          .withRules(['color-contrast'])
-          .analyze();
-        expect(
-          menuScan.violations,
-          `${theme} / ${accent} ${menu} menu: ${formatViolations(menuScan.violations)}`,
-        ).toEqual([]);
-        await page.keyboard.press('Escape');
-        await expect(page.locator('.squisq-view-mode-menu')).toHaveCount(0);
-      }
+      const viewMenu = await openViewMenu(page);
+      // Measure the settled menu, not the partially transparent entrance frame.
+      await viewMenu.evaluate(async (element) => {
+        await Promise.all(element.getAnimations({ subtree: true }).map((entry) => entry.finished));
+      });
+      const menuScan = await new AxeBuilder({ page })
+        .include('.squisq-view-mode-menu')
+        .withRules(['color-contrast'])
+        .analyze();
+      expect(
+        menuScan.violations,
+        `${theme} / ${accent} View menu: ${formatViolations(menuScan.violations)}`,
+      ).toEqual([]);
+      await closeViewMenu(page);
     }
   });
 }

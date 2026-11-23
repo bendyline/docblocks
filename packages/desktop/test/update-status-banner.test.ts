@@ -56,7 +56,7 @@ describe('desktop update status', () => {
     });
 
     const progress = container.querySelector('.db-desktop-update-status');
-    expect(progress?.parentElement?.classList.contains('squisq-status-bar')).to.equal(true);
+    expect(progress?.closest('.squisq-status-bar')).to.not.equal(null);
   });
 
   it('uses Hanken Grotesk for desktop updater text', () => {

@@ -15,12 +15,12 @@ This notice is included in the published npm tarball. Transitive packages instal
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
 | @antfu/install-pkg | 2.1.0 | MIT | https://github.com/antfu-collective/install-pkg |
-| @bendyline/squisq | 2.14.0 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-cli | 2.9.38 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-formats | 2.8.23 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq | 2.14.1 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-cli | 2.9.39 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-formats | 2.8.24 | MIT | https://github.com/bendyline/squisq |
 | @bendyline/squisq-graph | 2.13.1 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-react | 2.12.34 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-video | 2.4.27 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-react | 2.12.35 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-video | 2.4.28 | MIT | https://github.com/bendyline/squisq |
 | @braintree/sanitize-url | 7.1.2 | MIT | https://github.com/braintree/sanitize-url |
 | @chevrotain/types | 11.1.2 | Apache-2.0 | https://github.com/Chevrotain/chevrotain |
 | @ffmpeg/ffmpeg | 0.12.15 | MIT | https://github.com/ffmpegwasm/ffmpeg.wasm |
@@ -162,7 +162,7 @@ This notice is included in the published npm tarball. Transitive packages instal
 | depd | 2.0.0 | MIT | https://github.com/dougwilson/nodejs-depd |
 | dequal | 2.0.3 | MIT | https://github.com/lukeed/dequal |
 | devlop | 1.1.0 | MIT | https://github.com/wooorm/devlop |
-| dompurify | 3.4.17 | (MPL-2.0 OR Apache-2.0) | https://github.com/cure53/DOMPurify |
+| dompurify | 3.4.18 | (MPL-2.0 OR Apache-2.0) | https://github.com/cure53/DOMPurify |
 | dunder-proto | 1.0.1 | MIT | https://github.com/es-shims/dunder-proto |
 | ee-first | 1.1.1 | MIT | https://github.com/jonathanong/ee-first |
 | encodeurl | 2.0.0 | MIT | https://github.com/pillarjs/encodeurl |
@@ -409,7 +409,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-cli@2.9.38, @bendyline/squisq-formats@2.8.23, @bendyline/squisq-graph@2.13.1, @bendyline/squisq-react@2.12.34, @bendyline/squisq-video@2.4.27, @bendyline/squisq@2.14.0
+Components: @bendyline/squisq-cli@2.9.39, @bendyline/squisq-formats@2.8.24, @bendyline/squisq-graph@2.13.1, @bendyline/squisq-react@2.12.35, @bendyline/squisq-video@2.4.28, @bendyline/squisq@2.14.1
 Source files: node_modules/@bendyline/squisq-cli/LICENSE, node_modules/@bendyline/squisq-formats/LICENSE, node_modules/@bendyline/squisq-graph/LICENSE, node_modules/@bendyline/squisq-react/LICENSE, node_modules/@bendyline/squisq-video/LICENSE, node_modules/@bendyline/squisq/LICENSE
 ==============================================================================
 MIT License
@@ -679,7 +679,7 @@ This software contains code derived from the Puppeteer project (https://github.c
 available under the Apache 2.0 license (https://github.com/puppeteer/puppeteer/blob/master/LICENSE).
 
 ==============================================================================
-Components: @bendyline/squisq-cli@2.9.38
+Components: @bendyline/squisq-cli@2.9.39
 Source files: node_modules/@bendyline/squisq-cli/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-cli
@@ -699,7 +699,7 @@ Copyright and complete license texts for these dependencies are included in
 their respective npm distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-cli@2.9.38
+Components: @bendyline/squisq-cli@2.9.39
 Source files: node_modules/@bendyline/squisq-cli/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-cli
@@ -6039,7 +6039,7 @@ The above copyright notice and this permission notice shall be included in all c
 **THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.**
 
 ==============================================================================
-Components: @bendyline/squisq-formats@2.8.23
+Components: @bendyline/squisq-formats@2.8.24
 Source files: node_modules/@bendyline/squisq-formats/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-formats
@@ -6065,7 +6065,7 @@ texts for these dependencies are included in their respective npm
 distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-formats@2.8.23
+Components: @bendyline/squisq-formats@2.8.24
 Source files: node_modules/@bendyline/squisq-formats/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-formats
@@ -6838,7 +6838,7 @@ repository license, the pinned upstream copy is vendored and identified below.
 COMPONENTS
 
 ==============================================================================
-Components: @bendyline/squisq-react@2.12.34
+Components: @bendyline/squisq-react@2.12.35
 Source files: node_modules/@bendyline/squisq-react/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-react
@@ -6863,7 +6863,7 @@ third-party license texts for the complete standalone bundle graph are shipped
 in THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq-react@2.12.34
+Components: @bendyline/squisq-react@2.12.35
 Source files: node_modules/@bendyline/squisq-react/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-react
@@ -11962,7 +11962,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-video@2.4.27
+Components: @bendyline/squisq-video@2.4.28
 Source files: node_modules/@bendyline/squisq-video/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-video
@@ -11987,7 +11987,7 @@ Copyright and complete license texts for the listed dependencies are included
 in their respective npm distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-video@2.4.27
+Components: @bendyline/squisq-video@2.4.28
 Source files: node_modules/@bendyline/squisq-video/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-video
@@ -11999,7 +11999,7 @@ repository license, the pinned upstream copy is vendored and identified below.
 COMPONENTS
 
 ==============================================================================
-Components: @bendyline/squisq@2.14.0
+Components: @bendyline/squisq@2.14.1
 Source files: node_modules/@bendyline/squisq/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq
@@ -12030,7 +12030,7 @@ third-party license texts for bundled code and data are shipped in
 THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq@2.14.0
+Components: @bendyline/squisq@2.14.1
 Source files: node_modules/@bendyline/squisq/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq
@@ -12238,7 +12238,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: @chevrotain/types@11.1.2, dompurify@3.4.17
+Components: @chevrotain/types@11.1.2, dompurify@3.4.18
 Source files: node_modules/@chevrotain/types/LICENSE.txt, node_modules/dompurify/LICENSE
 ==============================================================================
 
@@ -13861,7 +13861,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: dompurify@3.4.17
+Components: dompurify@3.4.18
 Source files: node_modules/dompurify/LICENSE-MPL
 ==============================================================================
 Mozilla Public License Version 2.0

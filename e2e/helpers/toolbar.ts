@@ -1,58 +1,107 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect } from './test.js';
 
+/** The editor's three views, as the view button's `data-active-view` names them. */
+export type EditorView = 'wysiwyg' | 'raw' | 'preview';
+
+/** The View menu's Edit views: the Write layouts, and Source. */
+export type EditMode = 'Write' | 'Source' | 'Blocks' | 'Timeline' | 'Summaries';
+
+/** The View menu's Use views. Narrate is listed only where the host allows it. */
+export type UseMode =
+  | 'Slideshow'
+  | 'Video'
+  | 'Page'
+  | 'Document'
+  | 'Dashboard'
+  | 'Narrate'
+  | 'Flashcards';
+
+const VIEW_SHORTCUTS: Record<EditorView, string> = { wysiwyg: '1', raw: '2', preview: '3' };
+
 /**
- * Switch to the Write view. Clicking the tab you're already on opens its
- * Write mode menu instead, which then sits over whatever the test clicks
- * next, so only click when another view is selected. `data-view` is the
- * stable hook: the tab's label follows the Write mode (Write, Blocks,
- * Timeline).
- *
- * Write and Source share the first tab, which shows whichever of the two was
- * chosen last. From Source there is no Write tab to click, so press its
- * shortcut, which returns to Write in the layout it was in.
+ * The toolbar's one view control. It is named after the view on screen
+ * ("View: Write", "View: Slideshow", …) and opens the View menu. Those names
+ * follow the chosen layout or Use mode, so `data-active-view` is the stable
+ * hook for which view is showing.
  */
+export function viewButton(scope: Page | Locator): Locator {
+  return scope.locator('.squisq-toolbar-view-button');
+}
+
+/**
+ * Switch views the way the keyboard does (Ctrl/Cmd+Shift+1/2/3, handled on
+ * the editor shell), which returns to each view as it was left: Write in its
+ * layout, Use in its mode. Going through the keyboard rather than the menu
+ * keeps a re-rendering toolbar from closing a menu under the click.
+ */
+export async function switchView(scope: Page | Locator, view: EditorView): Promise<void> {
+  const button = viewButton(scope);
+  if ((await button.getAttribute('data-active-view')) !== view) {
+    await button.press(`ControlOrMeta+Shift+Digit${VIEW_SHORTCUTS[view]}`);
+  }
+  await expect(button).toHaveAttribute('data-active-view', view);
+}
+
+/** Switch to Write, in whichever layout it was last in (Write, Blocks, …). */
 export async function showWriteView(scope: Page | Locator): Promise<void> {
-  const tab = scope.locator('[role="tab"][data-view="wysiwyg"]');
-  const source = scope.locator('[role="tab"][data-view="raw"]');
-  if ((await tab.count()) === 0 && (await source.count()) > 0) {
-    await source.press('ControlOrMeta+Shift+Digit1');
-  }
-  if ((await tab.getAttribute('aria-selected')) !== 'true') await tab.click();
-  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  await switchView(scope, 'wysiwyg');
+}
+
+/** Switch to Source, the whole file as Markdown. */
+export async function showSourceView(scope: Page | Locator): Promise<void> {
+  await switchView(scope, 'raw');
+}
+
+/** Switch to Use, in whichever mode it was last in (Slideshow, Page, …). */
+export async function showUseView(scope: Page | Locator): Promise<void> {
+  await switchView(scope, 'preview');
 }
 
 /**
- * Switch to Source. It is chosen from the Write mode menu, after which the
- * first tab reads Source and carries `data-view="raw"`; from Use, that tab
- * returns to it.
+ * Open the View menu from the view button. A resize or a late re-render can
+ * close a menu opened in the same frame, so each attempt clicks on a short
+ * limit and the next one looks again; the button toggles, so only click while
+ * the menu is closed.
  */
-export async function showSourceView(page: Page): Promise<void> {
-  const tab = page.locator('[role="tab"][data-view="raw"]');
-  if ((await tab.count()) > 0) {
-    if ((await tab.getAttribute('aria-selected')) !== 'true') await tab.click();
-  } else {
-    await page.getByRole('button', { name: 'Choose Write mode', exact: true }).click();
-    const item = page
-      .getByRole('menu', { name: 'Write mode', exact: true })
-      .getByRole('menuitemradio', { name: 'Source', exact: true });
-    await item.click();
-    await expect(item).toBeHidden();
-  }
-  await expect(tab).toHaveAttribute('aria-selected', 'true');
+export async function openViewMenu(page: Page): Promise<Locator> {
+  const menu = page.getByRole('menu', { name: 'View', exact: true });
+  const timeout = 2_000;
+  await expect(async () => {
+    if (!(await menu.isVisible())) await viewButton(page).click({ timeout });
+    await expect(menu).toBeVisible({ timeout });
+  }).toPass({ timeout: 30_000 });
+  return menu;
 }
 
-/** Picks a Write layout from the menu beside the Write tab; it also enters Write. */
-export async function selectWriteMode(
-  page: Page,
-  mode: 'Write' | 'Blocks' | 'Timeline',
-): Promise<void> {
-  await page.getByRole('button', { name: 'Choose Write mode', exact: true }).click();
-  const item = page
-    .getByRole('menu', { name: 'Write mode', exact: true })
-    .getByRole('menuitemradio', { name: mode, exact: true });
-  await item.click();
-  await expect(item).toBeHidden();
+/** Picks a Write layout, or Source, from View › Edit. It also enters that view. */
+export async function selectWriteMode(page: Page, mode: EditMode): Promise<void> {
+  const menu = await openViewMenu(page);
+  await menu
+    .getByRole('group', { name: 'Edit', exact: true })
+    .getByRole('menuitemradio', { name: mode, exact: true })
+    .click();
+  await expect(menu).toBeHidden();
+}
+
+/** Picks a Use mode from View › Use. It also enters Use. */
+export async function selectUseMode(page: Page, mode: UseMode): Promise<void> {
+  const menu = await openViewMenu(page);
+  await menu
+    .getByRole('group', { name: 'Use', exact: true })
+    .getByRole('menuitemradio', { name: mode, exact: true })
+    .click();
+  await expect(menu).toBeHidden();
+}
+
+/**
+ * Close the View menu. Its toggles (panes, block tags, the Files row) leave
+ * it open so several can change in one visit.
+ */
+export async function closeViewMenu(page: Page): Promise<void> {
+  const menu = page.getByRole('menu', { name: 'View', exact: true });
+  if (await menu.isVisible()) await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
 }
 
 /**
@@ -91,19 +140,17 @@ export async function openAttachments(page: Page): Promise<void> {
 /**
  * Open the first heading's picker for appearance assertions. The default
  * selected/hovered tags disappear whenever the editor loses focus. Choose
- * persistent tags through View options so the ordinary click
- * can wait for layout to settle without depending on that transient focus.
+ * persistent tags in the View menu so the ordinary click can wait for
+ * layout to settle without depending on that transient focus.
  */
 export async function openBlockTypePicker(page: Page): Promise<Locator> {
-  const viewOptions = page.getByRole('button', { name: 'View options', exact: true });
-  await viewOptions.click();
-  const alwaysShow = page
+  const menu = await openViewMenu(page);
+  const alwaysShow = menu
     .getByRole('group', { name: 'Show block tags', exact: true })
     .getByRole('menuitemradio', { name: 'Always show', exact: true });
   await alwaysShow.click();
   await expect(alwaysShow).toHaveAttribute('aria-checked', 'true');
-  await viewOptions.click();
-  await expect(page.getByRole('menu', { name: 'View options', exact: true })).toBeHidden();
+  await closeViewMenu(page);
 
   const heading = page.locator('.tiptap.ProseMirror').locator('h1, h2, h3').first();
   await heading.locator('.squisq-template-badge').first().click();

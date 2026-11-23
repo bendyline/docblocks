@@ -5,7 +5,15 @@
  * for creating new files/folders.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   isFileSystemMoveStateError,
   parseWorkspacePath,
@@ -82,6 +90,18 @@ export type FileTreeMutationHandler = (
   change: FileTreeChange,
   mutate: (options?: FileSystemEntryMoveOptions) => Promise<void>,
 ) => Promise<void>;
+
+/** What a host can ask of a mounted explorer from outside the tree. */
+export interface FileExplorerHandle {
+  /**
+   * Rename or move an entry exactly as the tree's own rename does: the
+   * `onTreeMutation` / `onTreeChange` hooks run, the tree carries its
+   * selection and expanded folders to the new path, and listings reload.
+   * Rejects with the failure rather than showing it in the explorer, so a
+   * caller outside the tree reports it where the user is looking.
+   */
+  renameEntry: (oldPath: string, newPath: string, kind: 'file' | 'directory') => Promise<void>;
+}
 
 export interface WorkspaceMoveDestination {
   id: string;
@@ -221,41 +241,44 @@ export interface FileExplorerProps {
   className?: string;
 }
 
-export function FileExplorer({
-  provider,
-  loading = false,
-  metadataRefreshKey,
-  activeFilePath,
-  activeFileVersionCount = null,
-  sortMode,
-  hiddenPaths,
-  onSortModeChange,
-  activeWorkspaceId,
-  workspaceName,
-  pinnedDocuments = [],
-  pinnedPaths = [],
-  onPinnedDocumentSelect,
-  onPinnedDocumentUnpin,
-  onPinnedDocumentRename,
-  onPinnedDocumentDelete,
-  onTogglePin,
-  onSelect,
-  onOpenWorkspaceFolder,
-  actionsForEntry,
-  onTreeMutation,
-  onTreeChange,
-  onImportFiles,
-  confirmDelete,
-  moveDestinations = [],
-  onMoveToWorkspace,
-  outsideInRender,
-  defaultNewFileFormat = 'markdown',
-  onNewFileFormatUsed,
-  onCreateDocument,
-  onShowSearch,
-  searchShortcutLabel,
-  className,
-}: FileExplorerProps) {
+export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(function FileExplorer(
+  {
+    provider,
+    loading = false,
+    metadataRefreshKey,
+    activeFilePath,
+    activeFileVersionCount = null,
+    sortMode,
+    hiddenPaths,
+    onSortModeChange,
+    activeWorkspaceId,
+    workspaceName,
+    pinnedDocuments = [],
+    pinnedPaths = [],
+    onPinnedDocumentSelect,
+    onPinnedDocumentUnpin,
+    onPinnedDocumentRename,
+    onPinnedDocumentDelete,
+    onTogglePin,
+    onSelect,
+    onOpenWorkspaceFolder,
+    actionsForEntry,
+    onTreeMutation,
+    onTreeChange,
+    onImportFiles,
+    confirmDelete,
+    moveDestinations = [],
+    onMoveToWorkspace,
+    outsideInRender,
+    defaultNewFileFormat = 'markdown',
+    onNewFileFormatUsed,
+    onCreateDocument,
+    onShowSearch,
+    searchShortcutLabel,
+    className,
+  }: FileExplorerProps,
+  ref,
+) {
   const tree = useFileTree(provider, metadataRefreshKey, activeFilePath);
   const { childEntries, childIssues } = tree;
   const { reveal } = tree;
@@ -507,9 +530,8 @@ export function FileExplorer({
     [tree, runTreeMutation],
   );
 
-  const handleRename = useCallback(
+  const renameEntry = useCallback(
     async (oldPath: string, newPath: string, kind: 'file' | 'directory') => {
-      setMoveError(null);
       const change: FileTreeChange = { type: 'move', oldPath, newPath, kind };
       try {
         await runTreeMutation(change, (options) =>
@@ -520,11 +542,25 @@ export function FileExplorer({
         if (isFileSystemMoveStateError(error) && error.documentLocation === 'destination') {
           onTreeChange?.(change);
         }
-        setMoveError(error instanceof Error ? error.message : 'Unable to move this entry.');
+        throw error;
       }
     },
     [tree, runTreeMutation, onTreeChange],
   );
+
+  const handleRename = useCallback(
+    async (oldPath: string, newPath: string, kind: 'file' | 'directory') => {
+      setMoveError(null);
+      try {
+        await renameEntry(oldPath, newPath, kind);
+      } catch (error: unknown) {
+        setMoveError(error instanceof Error ? error.message : 'Unable to move this entry.');
+      }
+    },
+    [renameEntry],
+  );
+
+  useImperativeHandle(ref, () => ({ renameEntry }), [renameEntry]);
 
   const handleMove = useCallback(
     async (entry: FileSystemEntry, directoryPath: string) => {
@@ -1192,4 +1228,4 @@ export function FileExplorer({
       )}
     </div>
   );
-}
+});
