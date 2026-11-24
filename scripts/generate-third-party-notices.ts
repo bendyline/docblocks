@@ -127,7 +127,7 @@ const surfaces: readonly Surface[] = [
     id: 'mobile',
     title: 'DocBlocks Capacitor distribution',
     description:
-      'Packages in the mobile renderer output graph, its copied WASM engines, the third-party code compiled into @bendyline/gezel-capacitor, and the Capacitor native runtime. Android framework dependencies have their native notice alongside this notice.',
+      'Packages in the mobile renderer output graph, its copied WASM engines, the third-party code compiled into @bendyline/gezel-capacitor, the Capacitor native runtime, and the Capacitor local notifications plugin that schedules reminders. Android framework dependencies have their native notice alongside this notice.',
     artifactManifest: 'packages/mobile/dist/THIRD_PARTY_COMPONENTS.json',
     bundledLicenseManifests: [
       'node_modules/@bendyline/gezel-capacitor/dist/licenses/npm/manifest.json',
@@ -136,6 +136,8 @@ const surfaces: readonly Surface[] = [
       '@capacitor/core',
       '@capacitor/ios',
       '@capacitor/android',
+      // Native code only: the renderer reaches it by name (packages/mobile/src/notifications.ts).
+      '@capacitor/local-notifications',
       '@ironcalc/wasm',
       'harper.js',
     ],

@@ -1,6 +1,6 @@
 import { tryParseFileSystemVersion } from '../filesystem/v2.js';
 import type { WorkspacePath } from '../filesystem/workspace-path.js';
-import { analyzeDocumentBytes } from './analyze.js';
+import { DOCUMENT_ANALYZER_REVISION, analyzeDocumentBytes } from './analyze.js';
 import type { StoredDocument, WorkspaceIndexEngine } from './engine.js';
 import type { SearchText } from './search-text.js';
 import { buildLiteralMatcher, searchDocuments, type SearchableDocument } from './search.js';
@@ -27,6 +27,8 @@ export interface LiveIndexLike {
   }): unknown;
   remove(path: string): boolean;
   get(path: string): { readonly payload: Uint8Array | null } | null;
+  /** The body as indexed, or null; absent on an older live index. */
+  body?(path: string): string | null;
   documents(batchSize?: number): Iterable<{
     readonly path: string;
     readonly version: string;
@@ -97,11 +99,17 @@ export interface LiveIndexEngine extends WorkspaceIndexEngine {
 /**
  * Bumped when the stored payload changes shape; the host passes it as part
  * of the live index's `appVersion`, so an older index starts empty.
+ *
+ * A record gaining optional fields is not a change of shape: the payload
+ * records which analyzer revision built it (`analyzer`), and the index brings
+ * older records up to date one document at a time instead.
  */
 export const LIVE_ENGINE_PAYLOAD_FORMAT = 1;
 
 interface StoredPayload {
   readonly format: typeof LIVE_ENGINE_PAYLOAD_FORMAT;
+  /** `DOCUMENT_ANALYZER_REVISION` when `record` was built; absent before revision 2. */
+  readonly analyzer?: number;
   readonly record: IndexedDocument;
   readonly characters: number;
   readonly text: {
@@ -121,6 +129,7 @@ function encodePayload(
 ): Uint8Array {
   const payload: StoredPayload = {
     format: LIVE_ENGINE_PAYLOAD_FORMAT,
+    analyzer: DOCUMENT_ANALYZER_REVISION,
     record,
     characters,
     text: text ? { lines: text.lines, sourceLines: text.sourceLines, kinds: text.kinds } : null,
@@ -211,6 +220,7 @@ export function createLiveIndexEngine(
           record: payload.record,
           characters: payload.characters,
           version,
+          analyzer: typeof payload.analyzer === 'number' ? payload.analyzer : 1,
         });
       }
       return Promise.resolve(stored);
@@ -224,6 +234,28 @@ export function createLiveIndexEngine(
         title: analyzed.record.title,
         // Only text that analyzed as UTF-8 is chunked; name-only documents keep their title.
         body: analyzed.text ? decoder.decode(data) : '',
+        payload: encodePayload(analyzed.record, characters, analyzed.text),
+      });
+      return { record: analyzed.record, characters };
+    },
+    async reanalyze(identity, version, analyzeOptions) {
+      const body = live.body?.(identity.path);
+      // Nothing to rebuild from: a name-only document keeps no body.
+      if (!body) return null;
+      const data = encoder.encode(body);
+      const analyzed = await analyzeDocumentBytes(
+        identity,
+        data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer,
+        analyzeOptions,
+      );
+      const characters = analyzed.text?.characters ?? 0;
+      // The same body under the same version: its passages hash as before, so
+      // the vectors already stored for them stay attached.
+      live.upsert({
+        path: identity.path,
+        version,
+        title: analyzed.record.title,
+        body: analyzed.text ? body : '',
         payload: encodePayload(analyzed.record, characters, analyzed.text),
       });
       return { record: analyzed.record, characters };

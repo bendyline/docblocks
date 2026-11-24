@@ -3,10 +3,10 @@ Run `npm run generate:notices` from the repository root.
 
 # Third-Party Notices: DocBlocks Capacitor distribution
 
-Packages in the mobile renderer output graph, its copied WASM engines, the third-party code compiled into @bendyline/gezel-capacitor, and the Capacitor native runtime. Android framework dependencies have their native notice alongside this notice.
+Packages in the mobile renderer output graph, its copied WASM engines, the third-party code compiled into @bendyline/gezel-capacitor, the Capacitor native runtime, and the Capacitor local notifications plugin that schedules reminders. Android framework dependencies have their native notice alongside this notice.
 
 Inventory source: node_modules/@bendyline/gezel-capacitor/dist/licenses/npm/manifest.json, package-lock.json and packages/mobile/dist/THIRD_PARTY_COMPONENTS.json.
-Components: 222.
+Components: 223.
 
 Fonts and their license texts ship under fonts/. The native app bundles this notice and all WASM licenses for offline access.
 The narration frontend compiled in from `@bendyline/gezel` embeds Kokoro's phoneme vocabulary (https://github.com/hexgrad/kokoro) and pronunciation readings generated from misaki's dictionaries (https://github.com/hexgrad/misaki), both Apache-2.0; the Apache License 2.0 text is reproduced below. The pronunciation dictionaries ship gzipped as `assets/lexicon-*-en-*.bin`, from `@bendyline/gezel-capacitor/kokoro-lexicon/`, which carries their license.
@@ -35,6 +35,7 @@ Other AI models, speech models, and voices are not part of this distribution. Th
 | @capacitor/android | 8.5.2 | MIT | https://github.com/ionic-team/capacitor |
 | @capacitor/core | 8.5.2 | MIT | https://github.com/ionic-team/capacitor |
 | @capacitor/ios | 8.5.2 | MIT | https://github.com/ionic-team/capacitor |
+| @capacitor/local-notifications | 8.3.1 | MIT | https://github.com/ionic-team/capacitor-local-notifications |
 | @ffmpeg/ffmpeg | 0.12.15 | MIT | https://github.com/ffmpegwasm/ffmpeg.wasm |
 | @huggingface/tokenizers | 0.2.0 | Apache-2.0 | https://www.npmjs.com/package/@huggingface/tokenizers |
 | @iconify/utils | 3.1.7 | MIT | https://github.com/iconify/iconify |
@@ -10664,6 +10665,34 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+==============================================================================
+Components: @capacitor/local-notifications@8.3.1
+Source files: node_modules/@capacitor/local-notifications/LICENSE
+==============================================================================
+Copyright 2020-present Ionic
+https://ionic.io
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
 Components: @iconify/utils@3.1.7

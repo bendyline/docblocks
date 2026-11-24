@@ -11,6 +11,8 @@ import type {
 } from '@bendyline/docblocks/host';
 
 import { AiAskPanel, type AskNotice } from '../src/Ai/AiAskPanel.js';
+import type { AskActions } from '../src/Ai/ask-proposals.js';
+import type { ProposedAction } from '../src/Ai/chat-actions.js';
 import { noteTitleFor, type WorkspaceAskSession } from '../src/Ai/workspace-ask.js';
 
 (globalThis as typeof globalThis & { React: typeof React }).React = React;
@@ -21,11 +23,20 @@ const passage = {
   text: 'Aphids cluster on new growth in May.',
 };
 
-function fakeAi() {
+function fakeAi(suggestions = '{"actions":[]}') {
   const requests: AiChatRequest[] = [];
   const ai = {
     chat(request: AiChatRequest, onEvent: (event: AiChatEvent) => void) {
       requests.push(request);
+      if (request.responseFormat) {
+        return {
+          done: Promise.resolve({
+            ok: true as const,
+            value: { text: suggestions, model: 'm', finishReason: 'stop' as const, usage: null },
+          }),
+          cancel: () => undefined,
+        };
+      }
       onEvent({
         kind: 'knowledge',
         knowledge: {
@@ -74,7 +85,7 @@ describe('AiAskPanel', () => {
     host.remove();
   });
 
-  async function mount(ai = fakeAi().ai, notice: AskNotice | null = null) {
+  async function mount(ai = fakeAi().ai, notice: AskNotice | null = null, actions?: AskActions) {
     await act(async () => {
       root.render(
         createElement(EditorProvider, {
@@ -90,11 +101,16 @@ describe('AiAskPanel', () => {
               saved.push({ title, markdown: markdownFor(`${title}.md`) });
             },
             onClose: () => undefined,
+            ...(actions ? { actions } : {}),
           }),
         }),
       );
     });
   }
+
+  const button = (label: string) =>
+    [...host.querySelectorAll('button')].find((candidate) => candidate.textContent === label);
+  const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 
   async function ask(question: string) {
     const field = host.querySelector('textarea')!;
@@ -166,6 +182,75 @@ describe('AiAskPanel', () => {
     );
     await act(async () => allow?.click());
     expect(allowed).to.equal(1);
+  });
+
+  it('suggests tasks after an answer and does each only once confirmed', async () => {
+    const { ai, requests } = fakeAi(
+      JSON.stringify({
+        actions: [
+          { type: 'create_task', title: 'Spray the roses', due: '2026-05-01' },
+          { type: 'append_to_document', path: 'garden/rose bed.md', markdown: 'Sprayed.' },
+        ],
+      }),
+    );
+    const run: ProposedAction[] = [];
+    const openedPaths: string[] = [];
+    await mount(ai, null, {
+      run: async (action) => {
+        run.push(action);
+        return { path: 'Tasks/Active/Spray the roses.md' };
+      },
+      open: (path) => openedPaths.push(path),
+    });
+    await ask('When do aphids come?');
+    await act(async () => button('Suggest tasks and notes')?.click());
+    await settle();
+    // Edits were not allowed, so only the task is offered, and nothing has run yet.
+    expect(requests[1]?.responseFormat?.name).to.equal('docblocks_actions');
+    const cards = host.querySelectorAll('.db-ai-proposal');
+    expect(
+      [...cards].map((card) => card.querySelector('.db-ai-proposal-what')?.textContent),
+    ).to.deep.equal(['New task “Spray the roses”, due 2026-05-01']);
+    expect(run).to.deep.equal([]);
+    await act(async () => button('Do it')?.click());
+    await settle();
+    expect(run).to.deep.equal([
+      { kind: 'create-task', title: 'Spray the roses', due: '2026-05-01' },
+    ]);
+    expect(host.querySelector('.db-ai-proposal')?.getAttribute('data-state')).to.equal('done');
+    await act(async () => button('Open')?.click());
+    expect(openedPaths).to.deep.equal(['Tasks/Active/Spray the roses.md']);
+  });
+
+  it('offers edits to cited notes only after they are allowed', async () => {
+    const { ai, requests } = fakeAi(
+      JSON.stringify({
+        actions: [{ type: 'append_to_document', path: 'garden/rose bed.md', markdown: 'Sprayed.' }],
+      }),
+    );
+    await mount(ai, null, {
+      run: async () => ({ path: 'garden/rose bed.md' }),
+      open: () => undefined,
+    });
+    await ask('When do aphids come?');
+    const allow = host.querySelector<HTMLInputElement>('.db-ai-ask-allow input')!;
+    await act(async () => allow.click());
+    await act(async () => button('Suggest tasks, notes and edits')?.click());
+    await settle();
+    expect(requests[1]?.messages[1]?.content).to.contain('- garden/rose bed.md (Rose bed › Pests)');
+    const card = host.querySelector('.db-ai-proposal');
+    expect(card?.classList.contains('db-ai-proposal--edit')).to.equal(true);
+    expect(button('Make this change')).not.to.equal(undefined);
+    // A new conversation starts with edits not allowed.
+    await act(async () => button('New conversation')?.click());
+    expect(host.querySelector<HTMLInputElement>('.db-ai-ask-allow input')?.checked).to.equal(false);
+  });
+
+  it('offers no suggestions where the shell cannot carry them out', async () => {
+    await mount();
+    await ask('When do aphids come?');
+    expect(button('Suggest tasks and notes')).to.equal(undefined);
+    expect(host.querySelector('.db-ai-ask-allow')).to.equal(null);
   });
 
   it('names a note for its question', () => {

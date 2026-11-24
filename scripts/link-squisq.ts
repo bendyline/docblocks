@@ -12,6 +12,8 @@ import path from 'path';
 const packages: [string, string][] = [
   ['core', '@bendyline/squisq'],
   ['calc', '@bendyline/squisq-calc'],
+  // Pulled in by core (2.13.0+); check-linked-squisq.ts requires it linked too.
+  ['graph', '@bendyline/squisq-graph'],
   ['react', '@bendyline/squisq-react'],
   ['grid-react', '@bendyline/squisq-grid-react'],
   ['editor-react', '@bendyline/squisq-editor-react'],

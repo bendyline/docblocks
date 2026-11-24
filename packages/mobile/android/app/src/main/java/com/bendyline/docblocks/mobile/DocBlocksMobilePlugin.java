@@ -184,24 +184,36 @@ public class DocBlocksMobilePlugin extends Plugin {
         if (call.getData().length() != 0 || storage == null) { call.reject("Invalid import request."); return; }
         getActivity().runOnUiThread(() -> {
             java.util.List<Uri> sources = new java.util.ArrayList<>(MainActivity.incoming); MainActivity.incoming.clear();
+            java.util.List<String[]> texts = new java.util.ArrayList<>(MainActivity.sharedText); MainActivity.sharedText.clear();
             submit(call, () -> {
-                try {
-                    org.json.JSONArray requests = new org.json.JSONArray();
-                    for (Uri source : sources) {
-                        String name;
+                // Each item stands alone: one unreadable file does not lose the others.
+                org.json.JSONArray requests = new org.json.JSONArray(); Exception failure = null;
+                for (Uri source : sources) {
+                    try {
+                        String name = null;
                         try (android.database.Cursor cursor = getContext().getContentResolver().query(source, new String[]{android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) {
-                            if (cursor == null || !cursor.moveToFirst()) throw new java.io.IOException("Document unavailable"); name = cursor.getString(0);
+                            if (cursor != null && cursor.moveToFirst()) name = cursor.getString(0);
                         }
                         try (java.io.InputStream stream = getContext().getContentResolver().openInputStream(source)) {
                             if (stream == null) throw new java.io.IOException("Document unavailable");
-                            String path = storage.importDocument(name, stream);
-                            requests.put(Storage.object("kind", "workspace-file", "workspaceId", "local", "path", "/" + path));
+                            requests.put(openRequest(storage.importDocument(SharedNotes.documentName(name), stream)));
                         }
-                    }
-                    call.resolve(new JSObject().put("requests", requests));
-                } catch (Exception e) { call.reject("The document could not be imported. The original file was not changed.", e); }
+                    } catch (Exception e) { failure = e; }
+                }
+                for (String[] text : texts) {
+                    try {
+                        SharedNotes.Note note = SharedNotes.fromText(text[0], text[1]);
+                        requests.put(openRequest(storage.importDocument(note.name, new java.io.ByteArrayInputStream(note.markdown.getBytes(java.nio.charset.StandardCharsets.UTF_8)))));
+                    } catch (Exception e) { failure = e; }
+                }
+                if (failure != null && requests.length() == 0) { call.reject("The document could not be imported. The original file was not changed.", failure); return; }
+                try { call.resolve(new JSObject().put("requests", requests)); }
+                catch (Exception e) { call.reject("The document could not be imported. The original file was not changed.", e); }
             });
         });
+    }
+    private static org.json.JSONObject openRequest(String path) throws Exception {
+        return Storage.object("kind", "workspace-file", "workspaceId", "local", "path", "/" + path);
     }
     @PluginMethod public void exportFile(PluginCall call) {
         JSObject request = call.getObject("request");

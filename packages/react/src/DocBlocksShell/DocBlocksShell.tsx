@@ -23,6 +23,7 @@ import {
   useMemo,
   lazy,
   Suspense,
+  type ReactNode,
 } from 'react';
 import type {
   CalcEngineFactory,
@@ -60,6 +61,8 @@ import {
   decodeUtf8Text,
   FsError,
   getFileSystemProviderV2,
+  imageEditCompanionPath,
+  isEditableImagePath,
   isQuotaExceededError,
   moveFileSystemEntry,
   rewriteCompanionReferences,
@@ -109,9 +112,20 @@ import {
   unregisterTransientWorkspace,
   appendWorkspaceBackup,
   finishWorkspaceBackup,
+  readWorkspaceDigests,
   type BackupWorkspace,
 } from '@bendyline/docblocks/workspace';
 import { AppMenu, type AppSettingsSection } from '../AppMenu/AppMenu.js';
+import {
+  DEVICE_WORKSPACE_ID,
+  chooseUnfiledDrawer,
+  declineInboxIds,
+  fileIncomingDocument,
+  isPhoneInboxPath,
+  listPhoneInbox,
+  loadDeclinedInboxIds,
+  type PhoneInboxItem,
+} from './incoming-share.js';
 import { restoreBrowserBackup } from './restore-backup.js';
 import { pickEmptyDocumentPrompt, useResponsivePreviewViewportPreset } from '../editor.js';
 import {
@@ -228,6 +242,21 @@ const AiAskPanel = lazy(() =>
     default: module.AiAskPanel,
   })),
 );
+// Home, Tasks, and the pages of folders that say what they are for.
+const ShellPage = lazy(() =>
+  import('../Home/pages.js').then((module) => ({ default: module.ShellPage })),
+);
+const KindFolderPage = lazy(() =>
+  import('../Home/pages.js').then((module) => ({ default: module.KindFolderPage })),
+);
+const AskPage = lazy(() =>
+  import('../Home/AskPage.js').then((module) => ({ default: module.AskPage })),
+);
+const DocumentPropertiesStrip = lazy(() =>
+  import('../Properties/DocumentPropertiesStrip.js').then((module) => ({
+    default: module.DocumentPropertiesStrip,
+  })),
+);
 const TextFromNarration = lazy(() =>
   import('../Speech/TextFromNarration.js').then((module) => ({
     default: module.TextFromNarration,
@@ -279,6 +308,7 @@ import { decodeDbkWorkspace } from './dbk-import.js';
 import { resolveShellEditorLinkTarget } from './editor-link-navigation.js';
 import { ensureShellWikiArticle, wikiArticleExtension } from './wiki-articles.js';
 import { importDroppedFiles, summariseImport } from './import-files.js';
+import { createImageWriteBack } from './image-write-back.js';
 import { importingMessage } from './import-file-types.js';
 import {
   createNewOutsideInDocument,
@@ -373,6 +403,39 @@ import {
 } from './page-template-warning.js';
 import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
 import { CompactWelcomeScreen, WelcomeScreen } from './WelcomeScreen.js';
+import {
+  kindFolderFor,
+  kindFoldersOf,
+  locateTask,
+  orderBuckets,
+  type FolderKind,
+} from '@bendyline/docblocks/folders';
+import { DOCUMENT_PROPERTY_KEYS, localDateOf } from '@bendyline/docblocks/properties';
+import { createPageActions, describeActionError } from '../Home/page-actions.js';
+import { amendDigestAfterToggle, toggleTaskElsewhere } from '../Home/elsewhere-tasks.js';
+import { keepDocumentVersion } from '../Home/keep-version.js';
+import type { ShellPageContext } from '../Home/page-context.js';
+import { ShellNav, type ShellNavItem } from '../Home/ShellNav.js';
+import {
+  buildShellPageHash,
+  parseShellPageHash,
+  type ShellPageLocation,
+  type ShellRoute,
+} from '../Home/shell-routes.js';
+import { useToday } from '../Home/useToday.js';
+import { loadLaunchView } from '../preferences/launch-view.js';
+import {
+  loadReminderPreferences,
+  saveReminderPreferences,
+  type ReminderPreferences,
+} from '../preferences/reminders.js';
+import { useReminderSync } from '../Home/useReminderSync.js';
+import { taskFacts } from '../Ai/task-context.js';
+import { useWorkspaceTasks } from '../Home/useWorkspaceTasks.js';
+import { parseHomeDigest, projectHomeDigest } from '../Home/home-digest.js';
+import { useHomeDigests, type HomeDigestSources } from '../Home/useHomeDigests.js';
+import { sectionTasks, type TaskItem } from '../Tasks/task-model.js';
+import { createProviderTaskGateway, type TaskGateway } from '../Tasks/task-operations.js';
 import { PasteDocumentDialog } from './PasteDocumentDialog.js';
 import {
   fileNameForPastedTitle,
@@ -397,6 +460,7 @@ import {
   workspaceCatalogId,
 } from '../Ai/workspace-grounding.js';
 import type { AskNotice } from '../Ai/AiAskPanel.js';
+import type { AskActions } from '../Ai/ask-proposals.js';
 import { useAiInvitation } from '../Ai/ai-invitation.js';
 import type { WorkspaceAskSession } from '../Ai/workspace-ask.js';
 import {
@@ -777,6 +841,17 @@ interface PageTemplateOption {
  */
 function editorPageTemplateProps(pageTemplates: PageTemplateOption | null): object {
   return pageTemplates ? { pageTemplates } : {};
+}
+
+/**
+ * `EditorShell`'s `documentHeaderSlot` (the row between the toolbar and the
+ * document), spread untyped for the same reason: a Squisq release without it
+ * leaves the row out and the document works as before. The keys the row
+ * edits go with it (`hostFrontmatterKeys`), so Squisq's own Properties list
+ * does not offer them a second time.
+ */
+function editorDocumentHeaderProps(header: ReactNode): object {
+  return header ? { documentHeaderSlot: header, hostFrontmatterKeys: DOCUMENT_PROPERTY_KEYS } : {};
 }
 
 function basenameOf(p: string): string {
@@ -2057,6 +2132,14 @@ export function DocBlocksShell({
   );
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [folderEntries, setFolderEntries] = useState<FileSystemEntry[]>([]);
+  /** Home or Tasks, when one of the shell's own pages is showing instead of a document. */
+  const [shellPage, setShellPage] = useState<Exclude<ShellRoute, { kind: 'folder' }> | null>(null);
+  /** A page route waiting for its workspace to finish opening (startup, Back, Forward). */
+  const [pendingShellRoute, setPendingShellRoute] = useState<ShellPageLocation | null>(null);
+  // Opening a document or a folder replaces whichever page was showing.
+  useEffect(() => {
+    if (selectedFile !== null || selectedFolder !== null) setShellPage(null);
+  }, [selectedFile, selectedFolder]);
   const hiddenOutputPaths = useMemo(
     () => hiddenCatalogOutputPaths(workspaceSettings.settings, workspaceOutputs.status.result),
     [workspaceSettings.settings, workspaceOutputs.status.result],
@@ -2218,6 +2301,53 @@ export function DocBlocksShell({
     },
     [gitScheduleRefresh, notifyWorkspaceChanged],
   );
+
+  // A PNG, JPEG, or WebP in a folder workspace opens in Squisq's layered image
+  // editor, outside-in: the picture stays the file, its layers live in the
+  // hidden `<name.ext>_files/` companion, and saving or leaving writes the
+  // flattened picture back. Loose files and opened bundles have no folder to
+  // keep layers in, and other formats cannot be saved back, so they open in
+  // the viewer.
+  const selectedImageEditable =
+    selectedImage !== undefined &&
+    selectedFile !== null &&
+    provider !== null &&
+    activeWorkspaceId !== null &&
+    getTransientWorkspace(activeWorkspaceId) === null &&
+    isEditableImagePath(selectedFile);
+  const imageEditorContainer = useMemo(
+    () =>
+      selectedImageEditable && provider && selectedFile
+        ? new FileSystemContentContainer(provider, imageEditCompanionPath(selectedFile))
+        : undefined,
+    [provider, selectedFile, selectedImageEditable],
+  );
+  const handleImageWriteBack = useMemo(() => {
+    if (!selectedImageEditable || !provider || !selectedFile || !activeWorkspaceId) {
+      return undefined;
+    }
+    const path = selectedFile;
+    const workspaceId = activeWorkspaceId;
+    return createImageWriteBack({
+      provider,
+      path,
+      onWritten: (data, mimeType) => {
+        afterWorkspaceCommit(workspaceId, path);
+        // Keep the open picture current, so the editor (were it to remount)
+        // checks its layers against what is on disk now. A leave that lands
+        // after another file opened must not replace that file's picture.
+        if (selectedFileRef.current === path) setSelectedImage({ data, mimeType });
+      },
+      onLeaveFailed: (message) => showToast('error', message),
+    });
+  }, [
+    activeWorkspaceId,
+    afterWorkspaceCommit,
+    provider,
+    selectedFile,
+    selectedImageEditable,
+    showToast,
+  ]);
 
   // Saving a page template regenerates the pages generated through it, one
   // pass at a time; saves during a pass coalesce into one more pass after it.
@@ -2544,6 +2674,11 @@ export function DocBlocksShell({
       window.history.pushState(null, '', hash);
     }
   }, []);
+  /** Push a history entry for one of the shell's pages. */
+  const pushPageHash = useCallback((wsId: string, route: ShellRoute) => {
+    const hash = buildShellPageHash(wsId, route);
+    if (window.location.hash !== hash) window.history.pushState(null, '', hash);
+  }, []);
 
   /** Open a workspace (and optionally a file) from identifiers.
    *  Returns the FileSystemProvider on success, or null on failure. */
@@ -2625,6 +2760,7 @@ export function DocBlocksShell({
           adoptSelectedDocument(acceptedDocument);
           setSelectedFolder(null);
           setFolderEntries([]);
+          setShellPage(null);
           const effectiveView = view ?? 'wysiwyg';
           setInitialView(effectiveView);
           setInitialSharedMode(sharedMode);
@@ -2641,6 +2777,7 @@ export function DocBlocksShell({
           adoptSelectedDocument(null);
           setSelectedFolder(null);
           setFolderEntries([]);
+          setShellPage(null);
           setInitialSharedMode(null);
         }
 
@@ -2939,6 +3076,26 @@ export function DocBlocksShell({
         return;
       }
 
+      // A page of the shell's own (Home, Tasks, a folder's page): open its
+      // workspace, then show the page once the workspace is in place.
+      const pageRoute = parseShellPageHash(window.location.hash);
+      if (pageRoute) {
+        const restoredWorkspaceId =
+          workspaceIdRemap[pageRoute.workspaceId] ?? pageRoute.workspaceId;
+        const restoredProvider = await startupOpenFromIdsRef.current(
+          restoredWorkspaceId,
+          null,
+          false,
+          undefined,
+          requestId,
+        );
+        if (!isCurrent()) return;
+        if (restoredProvider) {
+          setPendingShellRoute({ workspaceId: restoredWorkspaceId, route: pageRoute.route });
+          return;
+        }
+      }
+
       // Try restoring an ordinary workspace route from the URL hash first.
       const hashState = parseHash();
       if (hashState) {
@@ -2965,6 +3122,27 @@ export function DocBlocksShell({
             );
           }
           return;
+        }
+      }
+
+      // Asked to open on Home: the last session's workspace, showing Home.
+      // A first run has no last session and still sees the welcome screen.
+      if (loadLaunchView() === 'home') {
+        const last = loadLastState();
+        if (last) {
+          const homeWorkspaceId = workspaceIdRemap[last.workspaceId] ?? last.workspaceId;
+          const opened = await startupOpenFromIdsRef.current(
+            homeWorkspaceId,
+            null,
+            false,
+            undefined,
+            requestId,
+          );
+          if (!isCurrent()) return;
+          if (opened) {
+            setPendingShellRoute({ workspaceId: homeWorkspaceId, route: { kind: 'home' } });
+            return;
+          }
         }
       }
 
@@ -3133,7 +3311,13 @@ export function DocBlocksShell({
       const requestedHash = window.location.hash;
       const restoreCurrentHash = () => {
         if (!activeWorkspaceId || window.location.hash !== requestedHash) return;
-        window.history.replaceState(null, '', buildHash(activeWorkspaceId, selectedFile));
+        window.history.replaceState(
+          null,
+          '',
+          shellPage && !selectedFile
+            ? buildShellPageHash(activeWorkspaceId, shellPage)
+            : buildHash(activeWorkspaceId, selectedFile),
+        );
       };
       const sharedHash = parseSharedDocumentHash(requestedHash);
       if (sharedHash.kind === 'invalid') {
@@ -3159,6 +3343,21 @@ export function DocBlocksShell({
         return;
       }
 
+      const pageRoute = parseShellPageHash(requestedHash);
+      if (pageRoute) {
+        if (pageRoute.workspaceId === activeWorkspaceId) {
+          setPendingShellRoute(pageRoute);
+          return;
+        }
+        void openFromIds(pageRoute.workspaceId, null, false)
+          .then((opened) => {
+            if (opened) setPendingShellRoute(pageRoute);
+            else restoreCurrentHash();
+          })
+          .catch(() => restoreCurrentHash());
+        return;
+      }
+
       const hashState = parseHash();
       if (hashState) {
         void openFromIds(hashState.workspaceId, hashState.filePath, false)
@@ -3178,7 +3377,7 @@ export function DocBlocksShell({
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [activeWorkspaceId, openFromIds, openSharedDocument, selectedFile, showToast]);
+  }, [activeWorkspaceId, openFromIds, openSharedDocument, selectedFile, shellPage, showToast]);
 
   useEffect(() => {
     if (!showBrowserStorageWarning || typeof navigator === 'undefined') return;
@@ -4727,7 +4926,7 @@ export function DocBlocksShell({
         const entries = await readProviderDirectory(provider, path);
         if (requestId !== navigationRequestRef.current) return;
         setFolderEntries(entries);
-        pushHash(activeWorkspaceId, null);
+        pushPageHash(activeWorkspaceId, { kind: 'folder', path });
       } else {
         // Already open: stay on it. Loading it again shows the same text, but
         // ends its undo history and discards what its panels hold, such as
@@ -4809,6 +5008,7 @@ export function DocBlocksShell({
       provider,
       activeWorkspaceId,
       pushHash,
+      pushPageHash,
       singlePane,
       closeWelcomeGateway,
       adoptSelectedDocument,
@@ -4821,6 +5021,727 @@ export function DocBlocksShell({
       defaultNewFileFormat,
     ],
   );
+
+  /**
+   * Show one of the shell's own pages. Leaving a document goes through the
+   * session exactly as opening a folder does, so nothing typed is lost.
+   */
+  const showShellRoute = useCallback(
+    async (route: ShellRoute) => {
+      if (!provider || !activeWorkspaceId) return;
+      if (route.kind === 'folder') {
+        await handleSelect(route.path, 'directory');
+        // From the list of places, a folder's page is the point: show it on a phone too.
+        closeWelcomeGateway();
+        if (singlePane) setMobileShowEditor(true);
+        return;
+      }
+      const requestId = ++navigationRequestRef.current;
+      if (!(await transitionAwayFromDocument(requestId))) return;
+      if (requestId !== navigationRequestRef.current) return;
+      adoptSelectedDocument(null);
+      setSelectedFolder(null);
+      setFolderEntries([]);
+      setShellPage(route);
+      pushPageHash(activeWorkspaceId, route);
+      closeWelcomeGateway();
+      if (singlePane) setMobileShowEditor(true);
+    },
+    [
+      provider,
+      activeWorkspaceId,
+      handleSelect,
+      closeWelcomeGateway,
+      singlePane,
+      transitionAwayFromDocument,
+      adoptSelectedDocument,
+      pushPageHash,
+    ],
+  );
+  const showShellRouteRef = useRef(showShellRoute);
+  showShellRouteRef.current = showShellRoute;
+
+  // A page route from startup or Back/Forward, once its workspace is open.
+  useEffect(() => {
+    if (!pendingShellRoute || !provider || activeWorkspaceId !== pendingShellRoute.workspaceId) {
+      return;
+    }
+    setPendingShellRoute(null);
+    void showShellRouteRef.current(pendingShellRoute.route);
+  }, [pendingShellRoute, provider, activeWorkspaceId]);
+
+  const today = useToday();
+  const workspaceTasks = useWorkspaceTasks(
+    workspaceIndex.index,
+    activeWorkspaceId ?? '',
+    workspaceIndex.status.generation,
+  );
+  const kindFoldersRef = useRef(workspaceTasks.kindFolders);
+  kindFoldersRef.current = workspaceTasks.kindFolders;
+  /** The open workspace when an OS request arrives (see fileIncomingShare). */
+  const openWorkspaceRef = useRef({ workspaceId: activeWorkspaceId });
+  openWorkspaceRef.current = { workspaceId: activeWorkspaceId };
+  const shellPagesAvailable =
+    provider !== null &&
+    activeWorkspaceId !== null &&
+    workspaceIndexMode !== 'off' &&
+    getTransientWorkspace(activeWorkspaceId) === null;
+
+  /**
+   * How tasks reach their files. The open document changes through its
+   * session (so the editor shows it), moves go through the file tree's own
+   * rename (so the session, pins, history and listings follow), and anything
+   * else goes straight to storage with a conditional write.
+   */
+  const taskGateway = useMemo<TaskGateway | null>(() => {
+    if (!provider || !getFileSystemProviderV2(provider)) return null;
+    const storage = createProviderTaskGateway(provider);
+    const openSource = selectedSourceFile ?? selectedFile;
+    const isOpen = (path: string) => openSource !== null && sameProviderPath(openSource, path);
+    return {
+      ...storage,
+      read: (path) =>
+        isOpen(path) ? Promise.resolve(documentSession.getSnapshot().content) : storage.read(path),
+      async rewrite(path, transform) {
+        if (!isOpen(path)) return storage.rewrite(path, transform);
+        // Conditional, like the storage path: a transform can wait on I/O (an
+        // Ask edit keeps a version first), and typing or a merged change made
+        // meanwhile must not be overwritten. Redo it once on the new text.
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const current = documentSession.getSnapshot().content;
+          const next = await transform(current);
+          if (documentSession.getSnapshot().content !== current) continue;
+          if (next !== current) await documentSession.replaceContent(next);
+          return;
+        }
+        throw new Error('It changed while this was being done. Try again.');
+      },
+      async move(oldPath, newPath) {
+        const explorer = explorerRef.current;
+        const from = `/${parseWorkspacePath(oldPath)}`;
+        const to = `/${parseWorkspacePath(newPath)}`;
+        if (explorer) await explorer.renameEntry(from, to, 'file');
+        else await storage.move(from, to);
+      },
+    };
+  }, [provider, selectedFile, selectedSourceFile, documentSession]);
+
+  const pageActions = useMemo(() => {
+    if (!taskGateway || !provider || !activeWorkspaceId || !shellPagesAvailable) return null;
+    const storage = getFileSystemProviderV2(provider);
+    if (!storage) return null;
+    const workspaceId = activeWorkspaceId;
+    const watching = storage.capabilities.watch;
+    let treeRefresh: ReturnType<typeof setTimeout> | null = null;
+    return createPageActions({
+      gateway: taskGateway,
+      storage,
+      kindFolders: () => kindFoldersRef.current,
+      documentPaths: () =>
+        workspaceIndexRef.current?.getDocuments().map((document) => document.path) ?? [],
+      today: () => localDateOf(new Date()),
+      now: () => new Date(),
+      confirmDelete: confirmDeleteEntry,
+      report: showToast,
+      changed: (path) => {
+        notifyWorkspaceChanged(workspaceId, path);
+        if (watching) return;
+        // Storage that cannot report its own changes: re-read the tree once a burst settles.
+        if (treeRefresh !== null) clearTimeout(treeRefresh);
+        treeRefresh = setTimeout(() => {
+          treeRefresh = null;
+          void explorerRef.current?.refresh();
+        }, 150);
+      },
+      openDocument: (path) => void handleSelect(path, 'file'),
+      openFolder: (path) => void showShellRouteRef.current({ kind: 'folder', path }),
+      // Before an edit Ask proposed, the document's text is kept as a version
+      // in its companion folder, the same place the editor keeps them, even
+      // where saving versions automatically is turned off.
+      ...(allowVersioning
+        ? {
+            keepVersion: (path: string, source: string) =>
+              keepDocumentVersion(provider, path, source),
+          }
+        : {}),
+    });
+  }, [
+    allowVersioning,
+    taskGateway,
+    provider,
+    activeWorkspaceId,
+    shellPagesAvailable,
+    confirmDeleteEntry,
+    showToast,
+    notifyWorkspaceChanged,
+    handleSelect,
+  ]);
+
+  const shellNavItems = useMemo<readonly ShellNavItem[]>(() => {
+    if (!shellPagesAvailable) return [];
+    const items: ShellNavItem[] = [{ key: 'home', label: 'Home', route: { kind: 'home' } }];
+    const { kindFolders, items: tasks, documents } = workspaceTasks;
+    if (kindFoldersOf(kindFolders, 'tasks').length > 0 || tasks.length > 0) {
+      const sections = sectionTasks(tasks, today);
+      const due = sections.overdue.length + sections.today.length;
+      items.push({
+        key: 'tasks',
+        label: 'Tasks',
+        route: { kind: 'tasks' },
+        count: due,
+        countLabel: due === 1 ? '1 due now' : `${due} due now`,
+      });
+    }
+    if (ai && semanticSearchAvailable) {
+      items.push({ key: 'ask', label: 'Ask', route: { kind: 'ask' } });
+    }
+    for (const folder of kindFolders) {
+      if (folder.settings.kind === 'tasks') continue;
+      const label = folder.path.slice(folder.path.lastIndexOf('/') + 1) || 'Workspace';
+      const waiting =
+        folder.settings.kind === 'unfiled'
+          ? documents.filter((document) => document.path.startsWith(`${folder.path}/`)).length
+          : undefined;
+      items.push({
+        key: `folder:${folder.path}`,
+        label,
+        route: { kind: 'folder', path: `/${folder.path}` },
+        ...(waiting !== undefined
+          ? { count: waiting, countLabel: waiting === 1 ? '1 waiting' : `${waiting} waiting` }
+          : {}),
+      });
+    }
+    return items;
+  }, [shellPagesAvailable, workspaceTasks, today, ai, semanticSearchAvailable]);
+
+  /** The folder showing in the main pane, when it is a folder that says what it is. */
+  const selectedKindFolder = useMemo(() => {
+    if (selectedFolder === null || selectedFile !== null) return null;
+    let canonical;
+    try {
+      canonical = parseWorkspacePath(selectedFolder);
+    } catch {
+      return null;
+    }
+    const nearest = kindFolderFor(workspaceTasks.kindFolders, canonical, true);
+    return nearest && nearest.path === canonical ? nearest : null;
+  }, [selectedFolder, selectedFile, workspaceTasks.kindFolders]);
+
+  const currentNavKey = shellPage
+    ? shellPage.kind
+    : selectedKindFolder && selectedKindFolder.settings.kind !== 'tasks'
+      ? `folder:${selectedKindFolder.path}`
+      : selectedKindFolder
+        ? 'tasks'
+        : null;
+
+  // What the open workspace looks like from Home, kept on this device so the
+  // other workspaces' pages can show it while it is closed. Only a settled
+  // index is digested: a half-read workspace would hide tasks it has not reached.
+  const activeHomeDigest = useMemo(() => {
+    if (!shellPagesAvailable || !activeWorkspaceId) return null;
+    const status = workspaceIndex.status;
+    if (status.phase !== 'ready' || status.upgrading || status.truncated) return null;
+    const now = new Date();
+    return projectHomeDigest({
+      workspaceId: activeWorkspaceId,
+      kindFolders: workspaceTasks.kindFolders,
+      documents: workspaceTasks.documents,
+      items: workspaceTasks.items,
+      today,
+      now,
+    });
+  }, [shellPagesAvailable, activeWorkspaceId, workspaceIndex.status, workspaceTasks, today]);
+  const homeDigestSources = useMemo<HomeDigestSources>(
+    () => ({
+      async listWorkspaces() {
+        const electron = hostSupports('nativeWorkspaces');
+        return (await listWorkspaces())
+          .filter((workspace) =>
+            electron ? workspace.type === 'host-native' : workspace.type !== 'host-native',
+          )
+          .filter((workspace) => workspace.type !== 'transient')
+          .map((workspace) => ({ id: workspace.id, name: workspace.name }));
+      },
+      async openSilently(workspaceId) {
+        const workspace = await getWorkspace(workspaceId);
+        if (!workspace) return null;
+        let opened: FileSystemProvider | null = null;
+        if (workspace.type === 'indexeddb') {
+          opened = await createIndexedDbFileSystemProvider(workspace.id, workspace.name);
+        } else if (workspace.type === 'host-native' && hostSupports('nativeWorkspaces')) {
+          opened = await createHostProviderFromWorkspace(workspace);
+        }
+        // A browser-granted folder may ask for permission again: never in the background.
+        if (!opened) return null;
+        const provider = opened;
+        return {
+          provider,
+          release: async () => {
+            await getFileSystemProviderV2(provider)?.dispose();
+          },
+        };
+      },
+    }),
+    [],
+  );
+  const homeDigests = useHomeDigests({
+    enabled: shellPagesAvailable,
+    activeWorkspaceId,
+    activeDigest: activeHomeDigest,
+    refreshOthers: shellPage !== null,
+    sources: homeDigestSources,
+  });
+  const otherWorkspaces = homeDigests.summaries;
+  const amendHomeDigest = homeDigests.amend;
+
+  /**
+   * Storage for any workspace on this device: the open one's own, or one
+   * opened for the call and released after. Read through a ref: callers run
+   * after awaits, when the workspace that was open may have changed.
+   */
+  const acquireWorkspaceProviderRef = useRef<
+    ((document: PinnedDocument) => Promise<PinnedDocumentProviderAccess>) | null
+  >(null);
+  const withWorkspaceStorage = useCallback(
+    async <T,>(
+      workspaceId: string,
+      run: (storage: FileSystemProvider) => Promise<T>,
+    ): Promise<{ readonly result: T } | { readonly unavailable: string | null }> => {
+      const acquire = acquireWorkspaceProviderRef.current;
+      if (!acquire) return { unavailable: null };
+      const access = await acquire({ workspaceId, workspaceName: '', path: '' });
+      if (access.kind !== 'ready') {
+        return { unavailable: access.kind === 'unavailable' ? access.workspace.name : null };
+      }
+      try {
+        return { result: await run(access.provider) };
+      } finally {
+        if (access.owned) {
+          await Promise.resolve(getFileSystemProviderV2(access.provider)?.dispose()).catch(
+            () => undefined,
+          );
+        }
+      }
+    },
+    [],
+  );
+
+  /**
+   * A task from another workspace's digest, ticked on Home or the Tasks page:
+   * finished (or reopened) on that workspace's storage, then shown from an
+   * amended digest. Pins and recent documents follow a task that moved.
+   */
+  const toggleTaskInWorkspace = useCallback(
+    async (item: TaskItem) => {
+      const title = `“${item.title.length > 60 ? `${item.title.slice(0, 59)}…` : item.title}”`;
+      const doing = item.done ? `reopen ${title}` : `finish ${title}`;
+      const name =
+        otherWorkspaces.find((summary) => summary.workspaceId === item.workspaceId)?.name ??
+        'that workspace';
+      try {
+        const outcome = await withWorkspaceStorage(item.workspaceId, (storage) =>
+          toggleTaskElsewhere(storage, item, localDateOf(new Date())),
+        );
+        if (!('result' in outcome)) {
+          showToast(
+            'error',
+            outcome.unavailable === null
+              ? `Couldn't ${doing}. “${name}” is no longer on this device.`
+              : `Couldn't ${doing}. DocBlocks couldn't open “${outcome.unavailable}”: open it, then try again.`,
+          );
+          return;
+        }
+        const change = outcome.result;
+        const now = new Date();
+        amendHomeDigest(item.workspaceId, (digest) =>
+          amendDigestAfterToggle(digest, item, change, localDateOf(now), now),
+        );
+        if (change.path !== item.path) {
+          setPinnedDocuments((current) =>
+            relocatePinnedDocuments(current, item.workspaceId, item.path, change.path),
+          );
+          relocateRecentDocuments(item.workspaceId, item.path, change.path);
+        }
+        if (change.next) showToast('success', `Done. ${title} comes round again.`);
+      } catch (error: unknown) {
+        showToast('error', `Couldn't ${doing}. ${describeActionError(error)}`);
+      }
+    },
+    [otherWorkspaces, withWorkspaceStorage, amendHomeDigest, showToast],
+  );
+
+  // Documents shared to a phone before there was a drawer to file them in
+  // wait in its Inbox. The open workspace's drawer offers them, once each, on
+  // Home and on the drawer's own page.
+  const unfiledHere = kindFoldersOf(workspaceTasks.kindFolders, 'unfiled')[0]?.path;
+  const [phoneInbox, setPhoneInbox] = useState<readonly PhoneInboxItem[]>([]);
+  const [phoneInboxScan, setPhoneInboxScan] = useState(0);
+  const offerPhoneInbox =
+    mobileHost &&
+    shellPagesAvailable &&
+    unfiledHere !== undefined &&
+    (shellPage?.kind === 'home' || selectedKindFolder?.settings.kind === 'unfiled');
+  useEffect(() => {
+    if (!offerPhoneInbox) {
+      setPhoneInbox([]);
+      return;
+    }
+    let cancelled = false;
+    void withWorkspaceStorage(DEVICE_WORKSPACE_ID, (device) => listPhoneInbox(device))
+      .then((outcome) => {
+        if (cancelled) return;
+        const declined = loadDeclinedInboxIds();
+        setPhoneInbox(
+          'result' in outcome ? outcome.result.filter((item) => !declined.has(item.id)) : [],
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [offerPhoneInbox, activeWorkspaceId, unfiledHere, phoneInboxScan, withWorkspaceStorage]);
+
+  const filePhoneInbox = useCallback(async () => {
+    const items = phoneInbox;
+    const target = provider;
+    const workspaceId = activeWorkspaceId;
+    const folder = unfiledHere;
+    if (items.length === 0 || !target || !workspaceId || folder === undefined) return;
+    const drawerName = folder.slice(folder.lastIndexOf('/') + 1) || 'the workspace';
+    try {
+      const outcome = await withWorkspaceStorage(DEVICE_WORKSPACE_ID, async (device) => {
+        let moved = 0;
+        const stayed: string[] = [];
+        for (const item of items) {
+          const filed = await fileIncomingDocument({
+            source: device,
+            path: item.path,
+            target,
+            folder,
+          });
+          if (filed) moved += 1;
+          else stayed.push(item.id);
+        }
+        return { moved, stayed };
+      });
+      if (!('result' in outcome)) {
+        showToast('error', "Couldn't reach this phone's Inbox. Try again.");
+        return;
+      }
+      const { moved, stayed } = outcome.result;
+      // Offered once: what could not be moved stays in the Inbox folder, unasked.
+      declineInboxIds(stayed);
+      if (moved > 0) {
+        notifyWorkspaceChanged(workspaceId, folder);
+        if (workspaceId !== DEVICE_WORKSPACE_ID) notifyWorkspaceChanged(DEVICE_WORKSPACE_ID);
+        void explorerRef.current?.refresh();
+      }
+      const movedText =
+        moved === 1
+          ? `Moved 1 document to ${drawerName}.`
+          : `Moved ${moved} documents to ${drawerName}.`;
+      const stayedText =
+        stayed.length === 0
+          ? ''
+          : stayed.length === 1
+            ? "1 couldn't be moved and is still in this phone's Inbox folder."
+            : `${stayed.length} couldn't be moved and are still in this phone's Inbox folder.`;
+      showToast(
+        moved > 0 ? 'success' : 'error',
+        moved > 0 ? `${movedText}${stayedText ? ` ${stayedText}` : ''}` : stayedText,
+      );
+    } finally {
+      setPhoneInboxScan((scan) => scan + 1);
+    }
+  }, [
+    phoneInbox,
+    provider,
+    activeWorkspaceId,
+    unfiledHere,
+    withWorkspaceStorage,
+    notifyWorkspaceChanged,
+    showToast,
+  ]);
+
+  const declinePhoneInbox = useCallback(() => {
+    declineInboxIds(phoneInbox.map((item) => item.id));
+    setPhoneInbox([]);
+  }, [phoneInbox]);
+
+  // Reminders: every workspace's open tasks, from the open one's index and the
+  // others' digests, handed to the host whenever they change.
+  const notificationsHost = maybeGetDocBlocksHost()?.notifications ?? null;
+  const [reminderPreferences, setReminderPreferences] = useState(loadReminderPreferences);
+  const { reminderItems, reminderWorkspaceNames } = useMemo(() => {
+    const names = new Map<string, string>();
+    if (activeWorkspaceId) names.set(activeWorkspaceId, activeWorkspaceDescriptor?.name ?? '');
+    const items: TaskItem[] = [...workspaceTasks.items];
+    for (const summary of otherWorkspaces) {
+      names.set(summary.workspaceId, summary.name);
+      if (summary.digest) items.push(...summary.digest.items);
+    }
+    return { reminderItems: items, reminderWorkspaceNames: names };
+  }, [workspaceTasks.items, otherWorkspaces, activeWorkspaceId, activeWorkspaceDescriptor?.name]);
+  // Every Ask question carries the task list's facts, read when it is asked.
+  const askFactsRef = useRef<() => string | null>(() => null);
+  askFactsRef.current = () => taskFacts(reminderItems, today, reminderWorkspaceNames);
+  const askFacts = useCallback(() => askFactsRef.current(), []);
+  // What Ask suggests after an answer is carried out through the page actions,
+  // so a suggested task lands where a typed one would.
+  const askActions = useMemo<AskActions | undefined>(
+    () =>
+      pageActions
+        ? {
+            run: async (action) =>
+              (await import('../Ai/chat-actions.js')).applyProposedAction(action, pageActions),
+            open: (path) => void handleSelect(`/${path.replace(/^\/+/, '')}`, 'file'),
+          }
+        : undefined,
+    [pageActions, handleSelect],
+  );
+  useReminderSync({
+    notifications: notificationsHost,
+    // Only turning reminders off cancels them. A loose file opened from the
+    // OS, or no workspace yet, leaves the tasks unknown: the kept set stands.
+    enabled: reminderPreferences.enabled,
+    allDayTime: reminderPreferences.allDayTime,
+    items: reminderItems,
+    workspaceNames: reminderWorkspaceNames,
+    today,
+    ready:
+      shellPagesAvailable &&
+      workspaceIndex.status.phase === 'ready' &&
+      !workspaceIndex.status.upgrading,
+  });
+  const changeReminderPreferences = useCallback(
+    async (next: ReminderPreferences): Promise<string | null> => {
+      if (next.enabled && !reminderPreferences.enabled && notificationsHost) {
+        let permission;
+        try {
+          permission = await notificationsHost.requestPermission();
+        } catch {
+          permission = 'unavailable' as const;
+        }
+        if (permission === 'denied') {
+          return 'Notifications are turned off for DocBlocks. Turn them on in your system settings, then try again.';
+        }
+        if (permission === 'unavailable') return 'This device cannot show reminders.';
+      }
+      setReminderPreferences(next);
+      saveReminderPreferences(next);
+      return null;
+    },
+    [reminderPreferences.enabled, notificationsHost],
+  );
+
+  const shellPageContext = useMemo<ShellPageContext | null>(() => {
+    if (!shellPagesAvailable || !activeWorkspaceId) return null;
+    const actions = pageActions;
+    return {
+      workspaceId: activeWorkspaceId,
+      workspaceName: activeWorkspaceDescriptor?.name ?? 'Workspace',
+      index: workspaceIndex.index,
+      generation: workspaceIndex.status.generation,
+      listing: !workspaceIndex.status.listed,
+      today,
+      actions: pageActions,
+      singlePane,
+      onShowFiles: () => setMobileShowEditor(false),
+      openDocument: (path) => void handleSelect(path, 'file'),
+      openFolder: (path) => void showShellRouteRef.current({ kind: 'folder', path }),
+      openRoute: (route) => void showShellRouteRef.current(route),
+      otherWorkspaces,
+      openInWorkspace: (workspaceId, path) => void openFromIds(workspaceId, `/${path}`, true),
+      toggleInWorkspace: toggleTaskInWorkspace,
+      ...(phoneInbox.length > 0 && unfiledHere !== undefined
+        ? {
+            phoneInbox: {
+              count: phoneInbox.length,
+              drawerName: unfiledHere.slice(unfiledHere.lastIndexOf('/') + 1) || 'Unfiled',
+              fileAll: filePhoneInbox,
+              decline: declinePhoneInbox,
+            },
+          }
+        : {}),
+      reminders: notificationsHost
+        ? { preferences: reminderPreferences, change: changeReminderPreferences }
+        : null,
+      ...(actions && provider
+        ? {
+            importToUnfiled: async (files: readonly File[]) => {
+              const folder = await actions.ensureUnfiled();
+              if (folder === null) return;
+              const result = await importDroppedFiles(files, provider, { folder });
+              notifyWorkspaceChanged(activeWorkspaceId, folder);
+              void explorerRef.current?.refresh();
+              const summary = summariseImport(result);
+              if (summary) showToast(summary.kind, summary.message);
+            },
+          }
+        : {}),
+    };
+  }, [
+    shellPagesAvailable,
+    activeWorkspaceId,
+    activeWorkspaceDescriptor?.name,
+    otherWorkspaces,
+    openFromIds,
+    toggleTaskInWorkspace,
+    phoneInbox,
+    unfiledHere,
+    filePhoneInbox,
+    declinePhoneInbox,
+    notificationsHost,
+    reminderPreferences,
+    changeReminderPreferences,
+    provider,
+    notifyWorkspaceChanged,
+    showToast,
+    workspaceIndex.index,
+    workspaceIndex.status.generation,
+    workspaceIndex.status.listed,
+    today,
+    pageActions,
+    singlePane,
+    handleSelect,
+  ]);
+
+  /** Right-click actions that change what a folder is for. */
+  const folderKindActionsRef = useRef<
+    (entry: FileSystemEntry) => readonly { label: string; onSelect: () => void }[]
+  >(() => []);
+  folderKindActionsRef.current = (entry) => {
+    if (!pageActions) return [];
+    if (entry.kind === 'file') {
+      if (!/\.(?:md|markdown|mdown)$/i.test(entry.name)) return [];
+      return [
+        {
+          label: 'Add a due date or tags',
+          onSelect: () => {
+            try {
+              setDetailsRequestedFor(parseWorkspacePath(entry.path));
+            } catch {
+              return;
+            }
+            void handleSelect(entry.path, 'file');
+          },
+        },
+      ];
+    }
+    if (entry.kind !== 'directory') return [];
+    let path;
+    try {
+      path = parseWorkspacePath(entry.path);
+    } catch {
+      return [];
+    }
+    const kindFolders = workspaceTasks.kindFolders;
+    const own = kindFolders.find((folder) => folder.path === path);
+    if (own) {
+      return [
+        {
+          label: 'Make an ordinary folder',
+          onSelect: () => void pageActions.clearKind(entry.path),
+        },
+      ];
+    }
+    // A folder inside a tasks folder is one of its lists, not a place for a new kind.
+    if (kindFolderFor(kindFolders, path)?.settings.kind === 'tasks') return [];
+    const make = (kind: FolderKind, label: string) => ({
+      label,
+      onSelect: () => void pageActions.makeKind(entry.path, kind),
+    });
+    return [
+      make('tasks', 'Make this a tasks folder'),
+      make('journal', 'Make this a journal'),
+      ...(kindFoldersOf(kindFolders, 'unfiled').length === 0
+        ? [make('unfiled', 'Make this the Unfiled drawer')]
+        : []),
+    ];
+  };
+
+  /** A document whose details row was asked for although it carries no details yet. */
+  const [detailsRequestedFor, setDetailsRequestedFor] = useState<string | null>(null);
+  const openSourcePath = selectedSourceFile ?? selectedFile;
+  const documentHeader = useMemo(() => {
+    if (!pageActions || !openSourcePath || !/\.(?:md|markdown|mdown)$/i.test(openSourcePath)) {
+      return null;
+    }
+    let path: ReturnType<typeof parseWorkspacePath>;
+    try {
+      path = parseWorkspacePath(openSourcePath);
+    } catch {
+      return null;
+    }
+    const location = locateTask(workspaceTasks.kindFolders, path);
+    const directories = workspaceIndex.index?.getDirectories() ?? [];
+    const task = location
+      ? {
+          bucket: location.placement.bucket,
+          done: location.placement.done,
+          buckets: orderBuckets(
+            location.folder,
+            directories
+              .filter((candidate) => candidate.startsWith(`${location.folder.path}/`))
+              .map((candidate) => candidate.slice(location.folder.path.length + 1))
+              .filter((relative) => relative !== '' && !relative.includes('/')),
+          ).map((bucket) => ({ name: bucket.name, done: bucket.done })),
+        }
+      : null;
+    const categories = [
+      ...new Set(
+        workspaceTasks.documents
+          .map((document) => document.category)
+          .filter((category): category is string => Boolean(category)),
+      ),
+    ].sort((left, right) => left.localeCompare(right));
+    const itemFor = (): TaskItem =>
+      workspaceTasks.items.find((item) => item.path === path) ?? {
+        workspaceId: activeWorkspaceId ?? '',
+        path,
+        title: path.slice(path.lastIndexOf('/') + 1).replace(/\.[^.]+$/, ''),
+        done: location?.placement.done ?? false,
+        folder: location?.folder.path ?? null,
+        bucket: location?.placement.bucket ?? null,
+        group: location?.placement.group ?? '',
+        pending: false,
+        lastModified: '',
+      };
+    return (
+      <Suspense fallback={null}>
+        <DocumentPropertiesStrip
+          key={path}
+          task={task}
+          categories={categories}
+          forceOpen={detailsRequestedFor === path}
+          today={today}
+          onSetDone={(done) =>
+            done ? pageActions.complete(itemFor()) : pageActions.reopen(itemFor())
+          }
+          onMoveToBucket={(bucket) => pageActions.moveToBucket(itemFor(), bucket)}
+          onClose={() => setDetailsRequestedFor(null)}
+        />
+      </Suspense>
+    );
+    // `generation` re-reads the index's folders when it publishes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    pageActions,
+    openSourcePath,
+    workspaceTasks,
+    workspaceIndex.index,
+    workspaceIndex.status.generation,
+    detailsRequestedFor,
+    today,
+    activeWorkspaceId,
+  ]);
+
+  // The pages read the workspace index; make sure it is running while one shows.
+  const ensureIndexForPages = workspaceIndex.ensure;
+  useEffect(() => {
+    if (shellPage || selectedKindFolder || shellPagesAvailable) ensureIndexForPages();
+  }, [shellPage, selectedKindFolder, shellPagesAvailable, ensureIndexForPages]);
 
   const wikiNavigationRef = useRef(handleSelect);
   wikiNavigationRef.current = handleSelect;
@@ -4984,7 +5905,11 @@ export function DocBlocksShell({
         nativeWorkspaceId,
         maybeGetDocBlocksHost(),
       );
-      return [...nativeActions, ...outsideInActionsForEntry(entry)];
+      return [
+        ...nativeActions,
+        ...outsideInActionsForEntry(entry),
+        ...folderKindActionsRef.current(entry),
+      ];
     },
     [nativeWorkspaceId, outsideInActionsForEntry],
   );
@@ -5080,9 +6005,12 @@ export function DocBlocksShell({
   const handleSaveAnswerNote = useCallback(
     async (title: string, markdownFor: (path: string) => string) => {
       if (!provider) throw new Error('Open a workspace to save the answer as a note.');
-      let path = `${title}.md`;
+      // Into the Unfiled drawer when the workspace has one, to be filed later.
+      const unfiled = kindFoldersOf(kindFoldersRef.current, 'unfiled')[0]?.path;
+      const folder = unfiled ? `${unfiled}/` : '';
+      let path = `${folder}${title}.md`;
       for (let n = 2; await providerEntryExists(provider, path); n += 1) {
-        path = `${title} ${n}.md`;
+        path = `${folder}${title} ${n}.md`;
       }
       await createMarkdownFile(provider, path, markdownFor(path));
       notifyWorkspaceChanged(activeWorkspaceId ?? provider.id, path);
@@ -5365,6 +6293,7 @@ export function DocBlocksShell({
     },
     [activeWorkspaceId, provider],
   );
+  acquireWorkspaceProviderRef.current = acquirePinnedDocumentProvider;
 
   const markRelocatedPinnedDocument = useCallback((document: PinnedDocument, newPath: string) => {
     const relocated: PinnedDocument = {
@@ -5928,6 +6857,54 @@ export function DocBlocksShell({
     [adoptTransientWorkspace],
   );
 
+  /**
+   * A phone share or "Open with" lands in the device workspace's Inbox. When
+   * there is an Unfiled drawer for it (the open workspace's, or the only one
+   * among the other workspaces) it is filed there instead, and this resolves
+   * to where it went; null leaves it in the Inbox.
+   */
+  const fileIncomingShare = useCallback(
+    async (
+      workspaceId: string,
+      path: string,
+    ): Promise<{ workspaceId: string; path: string } | null> => {
+      if (!mobileHost || !isPhoneInboxPath(workspaceId, path)) return null;
+      const openId = openWorkspaceRef.current.workspaceId;
+      // A share that launched the app arrives before the index has found the
+      // open workspace's markers; the digests know where every drawer was.
+      const [workspaces, digests] = await Promise.all([
+        homeDigestSources.listWorkspaces().catch(() => []),
+        readWorkspaceDigests().catch(() => new Map<string, unknown>()),
+      ]);
+      const savedDrawers = new Map<string, string>();
+      for (const workspace of workspaces) {
+        const drawer = parseHomeDigest(digests.get(workspace.id), workspace.id)?.folders.find(
+          (folder) => folder.kind === 'unfiled',
+        );
+        if (drawer) savedDrawers.set(workspace.id, drawer.path);
+      }
+      const drawer = chooseUnfiledDrawer({
+        openWorkspaceId: openId,
+        openDrawer: kindFoldersOf(kindFoldersRef.current, 'unfiled')[0]?.path,
+        savedDrawers,
+      });
+      if (!drawer) return null;
+      // Both workspaces are opened for this alone unless one is the open one;
+      // the Inbox's and the drawer's may also be the same workspace.
+      const outcome = await withWorkspaceStorage(DEVICE_WORKSPACE_ID, async (source) => {
+        const filing = await withWorkspaceStorage(drawer.workspaceId, (target) =>
+          fileIncomingDocument({ source, path, target, folder: drawer.folder }),
+        );
+        return 'result' in filing ? filing.result : null;
+      });
+      const filed = 'result' in outcome ? outcome.result : null;
+      if (!filed) return null;
+      notifyWorkspaceChanged(drawer.workspaceId);
+      return { workspaceId: drawer.workspaceId, path: `/${filed}` };
+    },
+    [mobileHost, homeDigestSources, withWorkspaceStorage, notifyWorkspaceChanged],
+  );
+
   // Subscribe to OS open-file / deep-link requests.
   useEffect(() => {
     const host = maybeGetDocBlocksHost();
@@ -5939,9 +6916,12 @@ export function DocBlocksShell({
       const requestId = ++navigationRequestRef.current;
       void (
         req.kind === 'workspace-file'
-          ? workspaceAuthorityBarrier.wait().then(() => {
+          ? workspaceAuthorityBarrier.wait().then(async () => {
               if (requestId !== navigationRequestRef.current) return null;
-              return openFromIds(req.workspaceId, req.path, true, undefined, requestId).then(
+              const filed = await fileIncomingShare(req.workspaceId, req.path);
+              if (requestId !== navigationRequestRef.current) return null;
+              const target = filed ?? req;
+              return openFromIds(target.workspaceId, target.path, true, undefined, requestId).then(
                 (opened) => {
                   if (!opened && requestId === navigationRequestRef.current) {
                     throw new Error('The requested workspace file is no longer available.');
@@ -5963,7 +6943,14 @@ export function DocBlocksShell({
         );
       });
     });
-  }, [openFromIds, openTransient, workspaceAuthorityBarrier, showToast, closeWelcomeGateway]);
+  }, [
+    openFromIds,
+    openTransient,
+    workspaceAuthorityBarrier,
+    showToast,
+    closeWelcomeGateway,
+    fileIncomingShare,
+  ]);
 
   /**
    * Web counterpart of `openTransient`: a `.md` or `.dbk` launched into the
@@ -6411,6 +7398,15 @@ export function DocBlocksShell({
               setNewDocumentGallery(null);
               if (choice) void createFromGallery(choice, folder);
             }}
+            {...(pageActions
+              ? {
+                  onStartTasksFolder: () => {
+                    const { folder } = newDocumentGallery;
+                    setNewDocumentGallery(null);
+                    void pageActions.createKindFolder(folder, 'tasks');
+                  },
+                }
+              : {})}
           />
         )}
         {pasteDialog && (
@@ -6707,6 +7703,13 @@ export function DocBlocksShell({
                 />
               </Suspense>
             )}
+            {shellNavItems.length > 0 && (
+              <ShellNav
+                items={shellNavItems}
+                current={currentNavKey}
+                onNavigate={(route) => void showShellRoute(route)}
+              />
+            )}
             <FileExplorer
               ref={explorerRef}
               key={explorerKey}
@@ -6932,6 +7935,11 @@ export function DocBlocksShell({
                               fileName={selectedSourceFile ?? selectedFile}
                               imageSrc={selectedImageUrl}
                               imageAlt={basenameOf(selectedFile)}
+                              imageMode={
+                                imageEditorContainer && handleImageWriteBack ? 'edit' : 'view'
+                              }
+                              imageEditorContainer={imageEditorContainer}
+                              onImageWriteBack={handleImageWriteBack}
                               saveCoverImageOutput={saveRenderedImageOutput}
                               saveDashboardImageOutput={saveRenderedImageOutput}
                               saveMediaEditOutput={saveRenderedImageOutput}
@@ -6944,6 +7952,7 @@ export function DocBlocksShell({
                               defaultThemeId={workspaceDefaultThemeId}
                               defaultThemeLabel="Workspace default"
                               {...editorPageTemplateProps(pageTemplates)}
+                              {...editorDocumentHeaderProps(documentHeader)}
                               writeCanvasSettings={editorWriteCanvasSettings}
                               height="100%"
                               placeholder={editorPlaceholder}
@@ -6965,7 +7974,12 @@ export function DocBlocksShell({
                               allowNarratePopOut={allowNarratePopOut}
                               documentLinkProvider={documentLinkProvider}
                               workspaceContainer={versionsContainer ?? undefined}
-                              allowVersioning={selectedImage === undefined && effectiveVersioning}
+                              // An editable image keeps its history in its own
+                              // companion; Squisq builds no text history for it.
+                              allowVersioning={
+                                (selectedImage === undefined || selectedImageEditable) &&
+                                effectiveVersioning
+                              }
                               viewPreferences={editorViewPreferences}
                               onViewPreferencesChange={handleViewPreferencesChange}
                               findMode={findMode}
@@ -6999,6 +8013,8 @@ export function DocBlocksShell({
                                         onOpenNote={handleOpenCitedNote}
                                         onSaveNote={handleSaveAnswerNote}
                                         onClose={() => setAiPanel(null)}
+                                        facts={askFacts}
+                                        {...(askActions ? { actions: askActions } : {})}
                                       />
                                     ) : aiPanel === 'images' ? (
                                       <AiImagePanel ai={ai} onClose={() => setAiPanel(null)} />
@@ -7153,6 +8169,10 @@ export function DocBlocksShell({
                     </GeneratedFileFrame>
                   )}
                 </>
+              ) : selectedFolder && selectedKindFolder && shellPageContext ? (
+                <Suspense fallback={<div className="db-shell-empty">Loading…</div>}>
+                  <KindFolderPage context={shellPageContext} folder={selectedKindFolder} />
+                </Suspense>
               ) : selectedFolder ? (
                 <div className="db-folder-view">
                   {singlePane && (
@@ -7188,6 +8208,27 @@ export function DocBlocksShell({
                     </ul>
                   )}
                 </div>
+              ) : shellPage?.kind === 'ask' && ai ? (
+                <Suspense fallback={<div className="db-shell-empty">Loading…</div>}>
+                  <AskPage
+                    sessionHolder={askSessionRef}
+                    ai={ai}
+                    findPassages={askFindPassages}
+                    notice={askNotice}
+                    coverage={askCoverage}
+                    onOpenNote={handleOpenCitedNote}
+                    onSaveNote={handleSaveAnswerNote}
+                    onClose={() => void showShellRoute({ kind: 'home' })}
+                    facts={askFacts}
+                    {...(askActions ? { actions: askActions } : {})}
+                    singlePane={singlePane}
+                    onShowFiles={() => setMobileShowEditor(false)}
+                  />
+                </Suspense>
+              ) : shellPage && shellPage.kind !== 'ask' && shellPageContext ? (
+                <Suspense fallback={<div className="db-shell-empty">Loading…</div>}>
+                  <ShellPage context={shellPageContext} route={shellPage} />
+                </Suspense>
               ) : (
                 <div className="db-shell-empty db-shell-empty--workspace">
                   {singlePane && (

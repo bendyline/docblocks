@@ -63,7 +63,8 @@ import { handleOpenFileArg, handleOpenUrl } from './open-requests.js';
 import { PendingOpenRequests } from './pending-open-requests.js';
 import { MainWindowSlot } from './main-window.js';
 import { showAndFocusWindow, showWhenReady } from './window-activation.js';
-import { registerTray, resolveIconPath } from './tray.js';
+import { registerTray, resolveIconPath, trayVisible } from './tray.js';
+import { createNotificationService, type NotificationService } from './ipc-notifications.js';
 import { startAccessingBookmark, releaseAllScopedResources } from './security-scoped.js';
 import {
   attachWindowCloseGuard,
@@ -176,6 +177,7 @@ let aiService: AiService | null = null;
 let aiImageService: AiImageService | null = null;
 let speechService: SpeechService | null = null;
 let embeddingService: EmbeddingService | null = null;
+let notificationService: NotificationService | null = null;
 let appExitApproved = false;
 let appExitPreparing = false;
 const pendingOpenRequests = new PendingOpenRequests();
@@ -472,6 +474,7 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
   showWhenReady(win, () => {
     // Drain any pending open requests received before the window existed.
     drainPendingOpenRequests(win);
+    notificationService?.windowReady(win);
     handleOpenFileArg(win, process.argv);
   });
 
@@ -701,6 +704,9 @@ async function bootstrap(): Promise<void> {
   // again at what it shows, as a phone does when its app returns.
   const announceResume = () => {
     cloudConflicts?.refresh();
+    // Reminders that came due while asleep are shown now, before any new set
+    // from the renderer could leave them out.
+    notificationService?.scheduler.wake();
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send('lifecycle:resume');
     }
@@ -738,6 +744,11 @@ async function bootstrap(): Promise<void> {
   // Checks files only; the model's utility process starts on the first batch.
   embeddingService = createEmbeddingService();
   registerEmbeddingsIpc(embeddingService);
+  // Re-arms kept reminders and shows any that came due while closed.
+  notificationService = await createNotificationService({
+    getWindow: () => mainWindow.current(),
+    ensureWindow: () => mainWindow.ensure(),
+  });
   // Before the window loads: the shell publishes its pinned documents as soon
   // as it mounts, and the tray has to be listening already.
   registerTray(
@@ -761,6 +772,7 @@ async function bootstrap(): Promise<void> {
   // narrow interval where an OS event still observed no main window after the
   // first drain and therefore queued one late request.
   drainPendingOpenRequests(win);
+  notificationService?.windowReady(win);
 
   buildMenu(() => mainWindow.current(), gitAvailable, {
     stt: speechService?.sttAvailable ?? false,
@@ -816,6 +828,9 @@ app.on('window-all-closed', () => {
   // failure can leave a headless Electron process (and Playwright worker)
   // alive indefinitely.
   if (process.platform !== 'darwin' || isAutomation) {
+    // With the tray icon on and a reminder still to come, keep running so it
+    // fires (Windows and Linux; macOS apps stay running anyway).
+    if (!isAutomation && trayVisible() && notificationService?.hasPending()) return;
     app.quit();
   }
 });
@@ -826,6 +841,7 @@ async function reopenWindow(): Promise<void> {
   const win = await createWindow(developmentWorkspace?.id);
   mainWindow.set(win);
   drainPendingOpenRequests(win);
+  notificationService?.windowReady(win);
   buildMenu(() => mainWindow.current(), gitAvailable, {
     stt: speechService?.sttAvailable ?? false,
     tts: speechService?.ttsAvailable ?? false,

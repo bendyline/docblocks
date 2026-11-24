@@ -1,6 +1,13 @@
-import type { FileSystemProviderCapabilities, FileSystemProviderV2 } from '../filesystem/v2.js';
+import type {
+  FileSystemProviderCapabilities,
+  FileSystemProviderV2,
+  FileSystemVersion,
+} from '../filesystem/v2.js';
 import type { WorkspacePath } from '../filesystem/workspace-path.js';
+import type { FolderSettings } from '../folders/folder-settings.js';
 import type { CatalogDocumentFormat, CatalogOutlineEntry } from '../workspace-settings/catalog.js';
+import type { ChecklistProgress } from '../properties/checklist.js';
+import type { DueValue, LocalDate, RepeatRule } from '../properties/dates.js';
 import type { WorkspaceIndexEngine } from './engine.js';
 
 /**
@@ -30,6 +37,8 @@ export interface WorkspaceIndexLimits {
   readonly maxParseBytes: number;
   /** Total searchable text kept in memory, in UTF-16 code units. */
   readonly maxTextCharacters: number;
+  /** Folders whose `.docblocks/folder.json` is read; the rest are ordinary folders. */
+  readonly maxFolderMarkers: number;
 }
 
 export const WORKSPACE_INDEX_LIMITS: Readonly<WorkspaceIndexLimits> = Object.freeze({
@@ -40,6 +49,7 @@ export const WORKSPACE_INDEX_LIMITS: Readonly<WorkspaceIndexLimits> = Object.fre
   maxDocumentBytes: 4 * 1024 * 1024,
   maxParseBytes: 1024 * 1024,
   maxTextCharacters: 24_000_000,
+  maxFolderMarkers: 256,
 });
 
 /**
@@ -84,7 +94,13 @@ export interface WorkspaceIndexOptions {
 
 export type WorkspaceIndexPhase = 'idle' | 'listing' | 'analyzing' | 'ready' | 'error' | 'disposed';
 
-export type WorkspaceIndexTruncation = 'entries' | 'directories' | 'depth' | 'documents' | 'text';
+export type WorkspaceIndexTruncation =
+  | 'entries'
+  | 'directories'
+  | 'depth'
+  | 'documents'
+  | 'text'
+  | 'folder-markers';
 
 export interface WorkspaceIndexStatus {
   readonly phase: WorkspaceIndexPhase;
@@ -107,6 +123,12 @@ export interface WorkspaceIndexStatus {
   readonly persistence?: 'memory' | 'persistent';
   /** True when `find()` ranks passages (the engine has a full-text index). */
   readonly ranked?: boolean;
+  /**
+   * Documents whose stored record was built by an earlier version of the app
+   * and is being brought up to date. Until it reaches zero, fields that
+   * version did not know (`due`, `checklist`, ...) may be missing from them.
+   */
+  readonly upgrading?: number;
 }
 
 /** A passage ranked by relevance (BM25 over titles, headings and text). */
@@ -155,6 +177,25 @@ export interface WorkspaceFindOptions {
 
 export type WorkspaceIndexFileKind = 'markdown' | 'outside-in' | 'other';
 
+/**
+ * A folder that carries `.docblocks/folder.json`, and what the file says.
+ * A file that cannot be used is reported, never passed over: a tasks folder
+ * whose settings failed to read is not an ordinary folder.
+ */
+export interface IndexedFolderMarker {
+  /** The folder the settings describe. */
+  readonly path: WorkspacePath;
+  /**
+   * `ok`: `settings` holds. `unreadable`: the read failed, and `settings` are
+   * the last ones read, if any. The others: the file is there but is not
+   * settings this version can use.
+   */
+  readonly status: 'ok' | 'invalid' | 'unsupported-version' | 'unsupported-kind' | 'unreadable';
+  readonly settings: FolderSettings | null;
+  /** Version of the settings file, for writing over what was read. */
+  readonly version: FileSystemVersion | null;
+}
+
 export interface WorkspaceIndexFile {
   readonly path: WorkspacePath;
   readonly name: string;
@@ -189,6 +230,16 @@ export interface IndexedDocument {
   readonly excerpt?: string;
   readonly description?: string;
   readonly tags?: readonly string[];
+  /** When the document is due, from frontmatter `due`: a day, or a time on it. */
+  readonly due?: DueValue;
+  /** Its one category, from frontmatter `category`. */
+  readonly category?: string;
+  /** How often it comes due again once done, from frontmatter `repeat`. */
+  readonly repeat?: RepeatRule;
+  /** Done: the day it was finished, or `true` when frontmatter does not say when. */
+  readonly completed?: LocalDate | true;
+  /** Checklist items ticked out of how many, when the document has any. */
+  readonly checklist?: ChecklistProgress;
   /** `full` = parsed text, `lines` = raw source lines, `name-only` = not searchable by content. */
   readonly content: IndexedDocumentContent;
   readonly issue?: IndexedDocumentIssue;
@@ -269,6 +320,11 @@ export interface WorkspaceIndex {
   getFiles(): readonly WorkspaceIndexFile[];
   /** Discoverable folders, including empty folders; sorted within a generation. */
   getDirectories(): readonly WorkspacePath[];
+  /**
+   * Folders that say what they are for through `.docblocks/folder.json`,
+   * sorted by path; the same array within a generation.
+   */
+  getFolderMarkers(): readonly IndexedFolderMarker[];
   /** Every document (Markdown and outside-in), sorted by path. */
   getDocuments(): readonly IndexedDocument[];
   getDocument(path: string): IndexedDocument | null;

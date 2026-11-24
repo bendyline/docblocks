@@ -37,6 +37,12 @@ export interface NewDocumentGalleryProps {
   initialFormat?: NewFileFormat;
   /** The folder the document goes in, when it is not the workspace's top level. */
   folder?: string | null;
+  /**
+   * Offer a "Tasks folder" starter, which sets up a new task list in the
+   * folder instead of creating a document. Picking it ends the gallery in
+   * place of `onSettle`. Absent where task lists cannot work.
+   */
+  onStartTasksFolder?: () => void;
 }
 
 const MARKDOWN_HINT = 'A plain .md file that any app can open.';
@@ -47,6 +53,7 @@ export function NewDocumentGallery({
   onSettle,
   initialFormat = 'markdown',
   folder = null,
+  onStartTasksFolder,
 }: NewDocumentGalleryProps) {
   const [format, setFormat] = useState<NewFileFormat>(initialFormat);
   const firstCardRef = useRef<HTMLButtonElement>(null);
@@ -114,6 +121,33 @@ export function NewDocumentGallery({
           );
         })}
       </ul>
+      {onStartTasksFolder && (
+        <>
+          {/* A folder, not a document: whatever the type, its tasks are Markdown notes. */}
+          <h3 id={`${hintId}-folders`} className="db-new-document-gallery-heading">
+            Or start a folder
+          </h3>
+          <ul className="db-new-document-gallery-grid" aria-labelledby={`${hintId}-folders`}>
+            <li>
+              <button
+                type="button"
+                className="db-new-document-card"
+                aria-label="Tasks folder"
+                aria-describedby={`${hintId}-tasks-folder`}
+                onClick={onStartTasksFolder}
+              >
+                <TasksFolderThumbnail />
+                <span className="db-new-document-card-label" aria-hidden="true">
+                  Tasks folder
+                </span>
+                <span id={`${hintId}-tasks-folder`} className="db-new-document-card-description">
+                  A task list: each task is a note, and finished ones move to Done.
+                </span>
+              </button>
+            </li>
+          </ul>
+        </>
+      )}
     </Dialog>
   );
 }
@@ -275,6 +309,32 @@ function thumbnailBody(id: NewDocumentTemplateId) {
         </Page>
       );
   }
+}
+
+/** A tasks folder: a board of two buckets, Active with tasks to tick and Done. */
+function TasksFolderThumbnail() {
+  return (
+    <svg className="db-template-thumb" viewBox="0 0 96 72" aria-hidden="true" focusable="false">
+      <path
+        className="db-template-thumb-page"
+        d="M12 10 h22 l5 5 h45 a3 3 0 0 1 3 3 v47 a3 3 0 0 1 -3 3 h-72 a3 3 0 0 1 -3 -3 v-52 a3 3 0 0 1 3 -3 z"
+      />
+      <rect className={accent} x={18} y={22} width={20} height={4} rx={1.5} />
+      {[32, 41, 50].map((y) => (
+        <g key={y}>
+          <rect className="db-template-thumb-box" x={18} y={y - 1.25} width={5} height={5} rx={1} />
+          <Line x={26} y={y} width={y === 41 ? 14 : 18} />
+        </g>
+      ))}
+      <rect className={ink} x={50} y={22} width={14} height={4} rx={1.5} />
+      {[32, 41].map((y) => (
+        <g key={y}>
+          <rect className={accent} x={50} y={y - 1.25} width={5} height={5} rx={1} />
+          <Line x={58} y={y} width={y === 32 ? 18 : 14} />
+        </g>
+      ))}
+    </svg>
+  );
 }
 
 /** A drawing of what the template holds; the card's label says it in words. */

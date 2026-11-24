@@ -96,6 +96,13 @@
   /* Git status colors — file badges, sync chips. Deleted/conflicted reuse
      the danger hue on purpose; renamed gets the one cool accent. */
   --db-git-modified: #9a6b00;
+  /* Category colours on tasks: one per hue, readable as text on the page. */
+  --db-hue-green: #2e7d32;
+  --db-hue-blue: #1565c0;
+  --db-hue-violet: #6a3fa0;
+  --db-hue-amber: #8a5f00;
+  --db-hue-rose: #a82c63;
+  --db-hue-teal: #00695c;
   --db-git-added: #2e7d32;
   --db-git-untracked: #2e7d32;
   --db-git-renamed: #1565c0;
@@ -319,6 +326,12 @@
      match it instead of bracketing it in a brighter frame. */
   --db-gutter-bg: #16110b;
   --db-git-modified: #e5b567;
+  --db-hue-green: #81c784;
+  --db-hue-blue: #64b5f6;
+  --db-hue-violet: #b99be0;
+  --db-hue-amber: #e5b567;
+  --db-hue-rose: #e98bb4;
+  --db-hue-teal: #4db6ac;
   --db-git-added: #81c784;
   --db-git-untracked: #81c784;
   --db-git-renamed: #64b5f6;
@@ -364,6 +377,12 @@
     --db-shadow: rgba(0, 0, 0, 0.4);
     --db-gutter-bg: #16110b;
     --db-git-modified: #e5b567;
+    --db-hue-green: #81c784;
+    --db-hue-blue: #64b5f6;
+    --db-hue-violet: #b99be0;
+    --db-hue-amber: #e5b567;
+    --db-hue-rose: #e98bb4;
+    --db-hue-teal: #4db6ac;
     --db-git-added: #81c784;
     --db-git-untracked: #81c784;
     --db-git-renamed: #64b5f6;
@@ -8343,6 +8362,17 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   align-items: center;
 }
 
+/* Ask as a page: the side panel's conversation, at reading width. */
+.db-ask-page > .db-ai-ask-panel {
+  width: 100%;
+  min-width: 0;
+  max-width: 820px;
+  flex: 1 1 auto;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
 .db-ai-ask-panel .db-ai-review-header > div {
   flex: 1 1 auto;
 }
@@ -8453,6 +8483,101 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 .db-ai-ask-actions .db-ai-note {
   flex-basis: 100%;
   margin: 0;
+}
+
+/* What Ask suggests after an answer: one card per action, each confirmed on its own. */
+.db-ai-proposals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.db-ai-proposals > .db-ai-note {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.db-ai-proposal-list {
+  display: flex;
+  flex-basis: 100%;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.db-ai-proposal {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: var(--db-bg-raised);
+}
+
+/* A change to an existing document carries the accent edge, so it never reads as a new one. */
+.db-ai-proposal--edit {
+  border-left: 3px solid var(--db-accent);
+}
+
+.db-ai-proposal[data-state='skipped'] {
+  opacity: 0.6;
+}
+
+.db-ai-proposal-what {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.db-ai-proposal-preview {
+  margin-top: 4px;
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+.db-ai-proposal-preview pre {
+  max-height: 160px;
+  margin: 4px 0 0;
+  overflow: auto;
+  font:
+    12px/1.45 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.db-ai-proposal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.db-ai-proposal-actions .db-ai-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.db-ai-ask-allow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px 0;
+  border-top: 1px solid var(--db-border);
+  background: var(--db-bg-raised);
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+.db-ai-ask-allow + .db-ai-ask-form {
+  border-top: 0;
 }
 
 .db-ai-ask-form {
@@ -9862,6 +9987,14 @@ button.db-git-file-row:hover {
   line-height: 1.4;
 }
 
+/* Above the folder starters, which follow the documents' grid. */
+.db-new-document-gallery-heading {
+  margin: 16px 0 8px;
+  color: var(--db-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .db-new-document-gallery-grid {
   display: grid;
   /* Four a row in the dialog, two on a phone. */
@@ -10894,4 +11027,872 @@ button.db-git-file-row:hover {
 
 .db-search-snippet {
   flex: 1 1 auto;
+}
+
+/* ── Home, Tasks, Journal and Unfiled ───────────────────────────────────
+   The shell's own pages. Each renders inside a .db-folder-view, so the
+   desktop titlebar drag strip and the phone back bar apply unchanged. */
+
+.db-shell-nav {
+  flex-shrink: 0;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--db-border);
+}
+
+.db-shell-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.db-shell-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--db-row-min-height);
+  padding: 3px 8px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--db-text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-shell-nav-item:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-shell-nav-item[aria-current='page'] {
+  background: var(--db-bg-selected);
+  color: var(--db-text-on-selected);
+  box-shadow: inset 2px 0 0 var(--db-selected-rule);
+}
+
+.db-shell-nav-item:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -2px;
+}
+
+.db-shell-nav-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-shell-nav-count {
+  flex-shrink: 0;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--db-accent-soft-15);
+  color: var(--db-text);
+  font-family: var(--db-meta-font);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.db-page {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-inline: max(16px, 4vw);
+}
+
+.db-page > * {
+  width: 100%;
+  max-width: 880px;
+  margin-inline: auto;
+  box-sizing: border-box;
+}
+
+/* A board needs the room; everything above it widens to stay aligned. */
+.db-page--wide > * {
+  max-width: 1240px;
+}
+
+.db-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.db-page-heading {
+  min-width: 0;
+}
+
+.db-page-eyebrow,
+.db-page-subtitle {
+  margin: 0;
+  color: var(--db-text-muted);
+  font-size: 13px;
+}
+
+.db-page-eyebrow {
+  font-family: var(--db-meta-font);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.db-page-title {
+  margin: 2px 0;
+  color: var(--db-text);
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.db-page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.db-page-primary,
+.db-page-secondary {
+  min-height: var(--db-target-min);
+  padding: 4px 14px;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.db-page-primary {
+  border: 1px solid var(--db-accent);
+  background: var(--db-accent);
+  color: var(--db-text-on-accent);
+  font-weight: 600;
+}
+
+.db-page-primary:hover:not(:disabled) {
+  border-color: var(--db-accent-hover);
+  background: var(--db-accent-hover);
+}
+
+.db-page-secondary {
+  border: 1px solid var(--db-border-strong);
+  background: transparent;
+  color: var(--db-text);
+}
+
+.db-page-secondary:hover:not(:disabled) {
+  background: var(--db-bg-hover);
+}
+
+.db-page-primary:disabled,
+.db-page-secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.db-page-link {
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  color: var(--db-accent);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.db-page-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.db-page-link--danger {
+  color: var(--db-danger);
+}
+
+.db-page-primary:focus-visible,
+.db-page-secondary:focus-visible,
+.db-page-link:focus-visible,
+.db-task-title:focus-visible,
+.db-home-tile:focus-visible,
+.db-journal-open:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 2px;
+}
+
+.db-page-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.db-page-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  color: var(--db-text-secondary);
+  font-family: var(--db-meta-font);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.db-page-count {
+  color: var(--db-text-muted);
+  font-family: var(--db-meta-font);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.db-page-section-action {
+  margin-left: auto;
+  font-family: var(--db-ui-font);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.db-page-empty {
+  margin-block: 4px;
+  color: var(--db-text-muted);
+  font-size: 14px;
+}
+
+.db-page-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+/* An offer at the top of a page: documents shared to the phone earlier,
+   waiting in its Inbox. Wraps its buttons under the text when narrow. */
+.db-page-offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  background: var(--db-bg-subtle);
+}
+
+.db-page-offer-text {
+  flex: 1 1 240px;
+  margin: 0;
+  color: var(--db-text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.db-page-offer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.db-capture {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.db-capture-label {
+  color: var(--db-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.db-capture-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.db-capture-input {
+  flex: 1 1 260px;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: var(--db-target-min);
+  padding: 4px 10px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font-family: inherit;
+  font-size: var(--db-input-font-size);
+}
+
+.db-task-column-input {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: var(--db-target-min);
+  padding: 4px 10px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font-family: inherit;
+  font-size: var(--db-input-font-size);
+}
+
+.db-capture-input:focus-visible,
+.db-task-column-input:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
+.db-capture-input::placeholder,
+.db-task-column-input::placeholder {
+  color: var(--db-text-placeholder);
+}
+
+.db-capture-hint {
+  min-height: 1.3em;
+  margin: 0;
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+.db-task-list,
+.db-home-recent,
+.db-journal-list,
+.db-unfiled-list,
+.db-task-cards {
+  /* Block margins only: a list placed straight in a page keeps its centring. */
+  margin-block: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.db-task-list,
+.db-journal-list,
+.db-unfiled-list {
+  border-top: 1px solid var(--db-border);
+}
+
+.db-task-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 10px;
+  padding: 7px 2px;
+  border-bottom: 1px solid var(--db-border);
+}
+
+[data-db-layout='single-pane'] .db-task-row {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+[data-db-layout='single-pane'] .db-task-row > .db-task-meta {
+  grid-column: 2;
+  justify-content: flex-start;
+}
+
+.db-task-check {
+  width: 17px;
+  height: 17px;
+  margin: 3px 0 0;
+  accent-color: var(--db-accent);
+  cursor: pointer;
+}
+
+[data-db-pointer='coarse'] .db-task-check {
+  width: 22px;
+  height: 22px;
+}
+
+.db-task-row-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.db-task-title {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--db-text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.db-task-title:hover {
+  color: var(--db-accent);
+  text-decoration: underline;
+}
+
+.db-task-row[data-done] .db-task-title,
+.db-task-card[data-done] .db-task-title {
+  color: var(--db-text-muted);
+  font-weight: 400;
+  text-decoration: line-through;
+}
+
+.db-task-row[aria-busy='true'],
+.db-task-card[aria-busy='true'],
+.db-unfiled-item[aria-busy='true'] {
+  opacity: 0.6;
+}
+
+.db-task-where {
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+.db-task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px 10px;
+  padding-top: 2px;
+  color: var(--db-text-secondary);
+  font-size: 12px;
+}
+
+.db-task-meta-steps {
+  font-family: var(--db-meta-font);
+  font-variant-numeric: tabular-nums;
+}
+
+.db-task-category {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.db-task-category::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--db-task-hue, var(--db-text-muted));
+}
+
+.db-task-category[data-hue='green'] {
+  --db-task-hue: var(--db-hue-green);
+}
+
+.db-task-category[data-hue='blue'] {
+  --db-task-hue: var(--db-hue-blue);
+}
+
+.db-task-category[data-hue='violet'] {
+  --db-task-hue: var(--db-hue-violet);
+}
+
+.db-task-category[data-hue='amber'] {
+  --db-task-hue: var(--db-hue-amber);
+}
+
+.db-task-category[data-hue='rose'] {
+  --db-task-hue: var(--db-hue-rose);
+}
+
+.db-task-category[data-hue='teal'] {
+  --db-task-hue: var(--db-hue-teal);
+}
+
+.db-task-due {
+  padding: 0 6px;
+  border: 1px solid var(--db-border-strong);
+  border-radius: 4px;
+  font-family: var(--db-meta-font);
+  white-space: nowrap;
+}
+
+.db-task-due[data-status='today'] {
+  border-color: var(--db-accent);
+  background: var(--db-accent-soft-12);
+  color: var(--db-text);
+}
+
+.db-task-due[data-status='overdue'] {
+  border-color: var(--db-danger);
+  color: var(--db-danger);
+}
+
+.db-home-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.db-home-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  background: var(--db-bg-subtle);
+  color: var(--db-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-home-tile:hover:not(:disabled) {
+  border-color: var(--db-border-strong);
+  background: var(--db-bg-hover);
+}
+
+.db-home-tile-title {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.db-home-tile-text {
+  color: var(--db-text-secondary);
+  font-size: 13px;
+}
+
+.db-home-starts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.db-home-start {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 12px 0;
+  border-top: 1px solid var(--db-border);
+}
+
+.db-home-start-title {
+  margin: 0;
+  color: var(--db-text);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.db-home-start-text {
+  flex: 1 1 auto;
+  margin: 0 0 4px;
+  color: var(--db-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.db-home-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.db-task-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+[data-db-layout='single-pane'] .db-task-board {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.db-task-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  background: var(--db-bg-subtle);
+}
+
+.db-task-column[data-drop] {
+  border-color: var(--db-accent);
+  background: var(--db-accent-soft-08);
+}
+
+.db-task-column-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  color: var(--db-text);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.db-task-column-add {
+  display: flex;
+}
+
+.db-task-column-add .db-task-column-input {
+  flex: 1 1 auto;
+  border-style: dashed;
+}
+
+.db-task-column-empty {
+  margin: 2px 0;
+  color: var(--db-text-muted);
+  font-size: 13px;
+}
+
+.db-task-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.db-task-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px;
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: var(--db-bg);
+}
+
+.db-task-card[draggable='true'] {
+  cursor: grab;
+}
+
+.db-task-card-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+}
+
+.db-task-card-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding-left: 26px;
+}
+
+.db-task-card-bottom .db-task-meta {
+  justify-content: flex-start;
+  padding-top: 0;
+}
+
+.db-task-move {
+  max-width: 100%;
+  min-height: 26px;
+  padding: 1px 4px;
+  border: 1px solid var(--db-border);
+  border-radius: 4px;
+  background: var(--db-bg);
+  color: var(--db-text-secondary);
+  font-family: inherit;
+  font-size: var(--db-input-font-size);
+}
+
+.db-task-add-bucket {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.db-task-add-bucket .db-task-column-input {
+  flex: 0 1 320px;
+}
+
+.db-journal-entry,
+.db-unfiled-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--db-border);
+}
+
+.db-journal-open {
+  display: flex;
+  flex: 1 1 320px;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--db-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-journal-open:hover .db-journal-excerpt {
+  color: var(--db-accent);
+}
+
+.db-journal-date {
+  flex-shrink: 0;
+  min-width: 7.5em;
+  color: var(--db-text-secondary);
+  font-family: var(--db-meta-font);
+  font-size: 13px;
+}
+
+.db-journal-excerpt {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-journal-done {
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+.db-unfiled-main {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.db-unfiled-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The details row between the editor's toolbar and the document. */
+.db-properties {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--db-border);
+  background: var(--db-bg-subtle);
+  color: var(--db-text-secondary);
+  font-size: 13px;
+}
+
+.db-properties-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--db-text);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.db-properties-done .db-task-check {
+  margin: 0;
+}
+
+.db-properties-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.db-properties-label {
+  font-family: var(--db-meta-font);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.db-properties-input {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 1px 6px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 4px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font-family: inherit;
+  font-size: var(--db-input-font-size);
+}
+
+.db-properties-input:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
+.db-properties-problem {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--db-danger);
+  font-size: 12px;
+}
+
+.db-page[data-dropping] {
+  outline: 2px dashed var(--db-accent);
+  outline-offset: -8px;
+  background: var(--db-accent-soft-08);
+}
+
+.db-home-elsewhere {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.db-home-elsewhere + .db-home-elsewhere {
+  margin-top: 10px;
+}
+
+.db-home-elsewhere-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0;
+  color: var(--db-text);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.db-home-launch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--db-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.db-home-launch input {
+  accent-color: var(--db-accent);
+}
+
+.db-home-reminders {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }

@@ -152,6 +152,7 @@ describe('mobile native wire', () => {
           { name: 'big', kind: 'directory' },
           { name: 'locked', kind: 'directory' },
           { name: '.git', kind: 'directory' },
+          { name: '.docblocks', kind: 'directory' },
         ],
       ],
       [
@@ -200,9 +201,13 @@ describe('mobile native wire', () => {
     const pages = [];
     for await (const page of provider.enumerate(parseWorkspacePath(''))) pages.push(page);
     expect(pages.length).to.be.greaterThan(1);
-    expect(pages.flatMap((page) => page.entries)).to.have.length(2 + 2_500);
+    const entries = pages.flatMap((page) => page.entries);
+    expect(entries).to.have.length(3 + 2_500);
     expect(pages.flatMap((page) => page.unreadable)).to.deep.equal(['locked']);
-    // A tool folder is neither listed nor entered.
+    // A tool folder is neither listed nor entered. The metadata folder is
+    // listed, so folder settings can be found, and not entered.
+    expect(entries.some((entry) => entry.path === '.git')).to.equal(false);
+    expect(entries.find((entry) => entry.path === '.docblocks')).to.include({ kind: 'directory' });
     expect(listed).to.deep.equal(['', 'big', 'locked']);
   });
 

@@ -1,4 +1,6 @@
 import {
+  createContext,
+  useContext,
   useEffect,
   useId,
   useMemo,
@@ -7,6 +9,7 @@ import {
   useSyncExternalStore,
   type FormEvent,
   type KeyboardEvent,
+  type ReactNode,
 } from 'react';
 import { useEditorContext } from '@bendyline/squisq-editor-react';
 import {
@@ -20,6 +23,8 @@ import {
 import { CloseIcon } from '../icons.js';
 import { AiGenerationStatus } from './AiGenerationStatus.js';
 import { AiFactsIndicator, AiKnowledgeIndicator } from './AiKnowledgeIndicator.js';
+import { AllowEditsToggle, TurnProposalsBlock } from './AskProposals.js';
+import { resetAskProposals, type AskActions } from './ask-proposals.js';
 import { citationsToFootnotes, stripCitationMarkers } from './knowledge-citations.js';
 import {
   ASK_QUESTION_CHARACTERS,
@@ -55,6 +60,41 @@ export interface AiAskPanelProps {
   /** Writes a new note named for `title`, built for the path it lands at, and opens it. */
   onSaveNote: (title: string, markdownFor: (path: string) => string) => Promise<void>;
   onClose: () => void;
+  /**
+   * Inside the editor (the side panel): answers can be inserted into the
+   * document. False for the Ask page, where there is no document to insert into.
+   */
+  inEditor?: boolean;
+  /** Facts from the task list to answer from, alongside the notes. */
+  facts?: () => string | null;
+  /**
+   * Carries out the tasks, notes and edits Ask suggests after an answer, once
+   * the person confirms each. Absent: no suggestions are offered.
+   */
+  actions?: AskActions;
+}
+
+/** Inserting an answer into the open document; null where there is none. */
+interface AnswerInsert {
+  readonly markdownSource: string;
+  readonly fileName: string | null;
+  readonly insert: (markdown: string) => boolean;
+}
+
+const AnswerInsertContext = createContext<AnswerInsert | null>(null);
+
+/** Provides insertion from the editor the panel is docked in. */
+function EditorAnswerInsert({ children }: { children: ReactNode }) {
+  const { insertBlockAfterCursor, markdownSource, fileName } = useEditorContext();
+  const value = useMemo<AnswerInsert>(
+    () => ({
+      markdownSource,
+      fileName: fileName ?? null,
+      insert: (markdown) => insertBlockAfterCursor(() => markdown, { placement: 'afterBlock' }),
+    }),
+    [insertBlockAfterCursor, markdownSource, fileName],
+  );
+  return <AnswerInsertContext.Provider value={value}>{children}</AnswerInsertContext.Provider>;
 }
 
 function Inline({
@@ -141,7 +181,7 @@ function TurnActions({
   turn: AskTurn;
   onSaveNote: AiAskPanelProps['onSaveNote'];
 }) {
-  const { insertBlockAfterCursor, markdownSource, fileName } = useEditorContext();
+  const editor = useContext(AnswerInsertContext);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const used = turn.knowledge?.outcome === 'used' ? turn.knowledge : null;
@@ -152,8 +192,9 @@ function TurnActions({
       : stripCitationMarkers(turn.answer);
 
   const insert = () => {
-    const markdown = withSources(markdownSource, fileName ?? null);
-    const inserted = insertBlockAfterCursor(() => markdown, { placement: 'afterBlock' });
+    if (!editor) return;
+    const markdown = withSources(editor.markdownSource, editor.fileName);
+    const inserted = editor.insert(markdown);
     setMessage(
       inserted
         ? 'Inserted after the block holding the cursor.'
@@ -174,9 +215,11 @@ function TurnActions({
   };
   return (
     <div className="db-ai-ask-actions">
-      <button type="button" onClick={insert}>
-        Insert into document
-      </button>
+      {editor && (
+        <button type="button" onClick={insert}>
+          Insert into document
+        </button>
+      )}
       <button type="button" disabled={saving} onClick={() => void save()}>
         Save as note
       </button>
@@ -241,13 +284,16 @@ export function AiAskPanel({
   onOpenNote,
   onSaveNote,
   onClose,
+  inEditor = true,
+  facts,
+  actions,
 }: AiAskPanelProps) {
   const session = useMemo(
     () => (sessionHolder.current ??= createWorkspaceAskSession()),
     [sessionHolder],
   );
   // Before any question can be asked, and again whenever the shell's AI changes.
-  session.configure({ ai, findPassages });
+  session.configure({ ai, findPassages, ...(facts ? { facts } : {}) });
   const { turns, generation } = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const [draft, setDraftState] = useState(session.draft);
   const setDraft = (value: string) => {
@@ -279,14 +325,21 @@ export function AiAskPanel({
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) submit(event);
   };
 
-  return (
+  const panel = (
     <aside className="db-ai-review-panel db-ai-ask-panel" aria-label="Ask your workspace">
       <div className="db-ai-review-header">
         <div>
           <h2>Ask your workspace</h2>
         </div>
         {turns.length > 0 && (
-          <button type="button" className="db-ai-ask-new" onClick={() => session.clear()}>
+          <button
+            type="button"
+            className="db-ai-ask-new"
+            onClick={() => {
+              session.clear();
+              resetAskProposals(session);
+            }}
+          >
             New conversation
           </button>
         )}
@@ -360,11 +413,21 @@ export function AiAskPanel({
             {turn.status === 'done' && turn.answer && (
               <TurnActions turn={turn} onSaveNote={onSaveNote} />
             )}
+            {turn.status === 'done' && turn.answer && actions && (
+              <TurnProposalsBlock
+                turn={turn}
+                session={session}
+                ai={ai}
+                facts={facts}
+                actions={actions}
+              />
+            )}
           </section>
         ))}
         <div ref={endRef} />
       </div>
 
+      {actions && !notice && <AllowEditsToggle session={session} />}
       <form className="db-ai-ask-form" onSubmit={submit}>
         <label htmlFor={inputId} className="db-visually-hidden">
           Question
@@ -398,4 +461,5 @@ export function AiAskPanel({
       </form>
     </aside>
   );
+  return inEditor ? <EditorAnswerInsert>{panel}</EditorAnswerInsert> : panel;
 }

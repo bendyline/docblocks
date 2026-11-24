@@ -65,6 +65,13 @@ startEmbeddingScheduler (react) ◀────▶   pendingEmbeddings / storeEm
   on (reciprocal rank fusion, k = 60). Vectors below the profile's measured
   floor are dropped.
 
+- **Properties and folder settings.** Each document's record carries its
+  frontmatter properties (`due`, `category`, `repeat`, `completed`) and
+  checklist progress, and the index publishes the folders that hold
+  `.docblocks/folder.json` (`getFolderMarkers()`). A record a previous version
+  stored is rebuilt from the stored body (`reanalyze`) rather than re-read.
+  See [`home-and-folders.md`](home-and-folders.md).
+
 ## Semantic search
 
 - **Profile.** `bge-small-en-v1.5@1` (384 dimensions, English). The vectors, the

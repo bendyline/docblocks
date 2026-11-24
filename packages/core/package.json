@@ -85,6 +85,16 @@
       "import": "./dist/workspace-index/index.js",
       "default": "./dist/workspace-index/index.js"
     },
+    "./properties": {
+      "types": "./dist/properties/index.d.ts",
+      "import": "./dist/properties/index.js",
+      "default": "./dist/properties/index.js"
+    },
+    "./folders": {
+      "types": "./dist/folders/index.d.ts",
+      "import": "./dist/folders/index.js",
+      "default": "./dist/folders/index.js"
+    },
     "./host": {
       "types": "./dist/host/index.d.ts",
       "import": "./dist/host/index.js",

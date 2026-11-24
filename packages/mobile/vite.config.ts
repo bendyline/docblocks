@@ -154,6 +154,8 @@ export default defineConfig({
         'workspace',
         'workspace-index',
         'workspace-settings',
+        'properties',
+        'folders',
         'host',
         'document',
       ].map((entry) => ({

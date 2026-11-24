@@ -195,3 +195,37 @@ same companion layout instead of flattening it into a standalone Markdown file.
 Common source, plaintext, data, and image files are copied byte-for-byte under
 their original name. A rejected file type produces an error instead of being
 silently omitted from the drop.
+
+## Images
+
+PNG, JPEG, and WebP files in a folder workspace open in Squisq's layered image
+editor (`ImageFileEditor`, mounted by `EditorShell` through `imageMode: 'edit'`
+and `onImageWriteBack`). The picture stays the file people see and share. Its
+layers, shapes, text, and version history live in a hidden companion named
+after the whole file name, so `photo.png` and `photo.jpg` in one folder never
+share one:
+
+```text
+photo.png
+photo.png_files/
+  state.json          layers
+  assets/source.png   the original picture
+  writeback.json      layer signature and digest of the last picture written
+  .versions/
+```
+
+**Save** flattens the layers over `photo.png` in the file's own format.
+Leaving the image with edits the file lacks (opening another file, closing)
+does the same. A failed save shows in the editor. A failed write-back while
+leaving shows as a toast. Before the layers load, the picture is checked
+against the digest in `writeback.json` (or, before any write-back, against
+`assets/source.*`). A picture replaced outside DocBlocks matches neither, so
+its stale layers are dropped and re-seeded from the file instead of being
+flattened over it. The editor's **Export** menu downloads a copy in any
+format and never writes over the file.
+
+Animated GIF, PNG, or WebP pictures, other image formats, and images in loose
+files or opened bundles open in the read-only viewer. Renaming or moving an
+edited image carries its companion with it. Deleting the image leaves the
+companion behind, as it does for a document. A later file with the same name
+starts fresh because its picture matches neither check.

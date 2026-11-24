@@ -7,12 +7,19 @@
  * Callers must pair every acquire with release(); the watcher closes when
  * the last acquisition releases. Dot-entries and tool-managed folders such as
  * `node_modules` are ignored (which also keeps `.git` churn out of these
- * events — git state has its own watcher).
+ * events — git state has its own watcher). The one exception is a folder's
+ * settings file, `<folder>/.docblocks/folder.json`: it decides what the
+ * folder is (a tasks folder, a journal), so a change to it from outside the
+ * app has to be seen.
  */
 
 import fss from 'node:fs';
 import path from 'node:path';
-import { isIgnoredWorkspaceEntryName } from '@bendyline/docblocks/filesystem';
+import {
+  WORKSPACE_METADATA_DIRECTORY_NAME,
+  isIgnoredWorkspaceEntryName,
+} from '@bendyline/docblocks/filesystem';
+import { FOLDER_SETTINGS_FILE_NAME } from '@bendyline/docblocks/folders';
 import chokidar, { type FSWatcher } from 'chokidar';
 
 export interface WorkspaceWatcherEvent {
@@ -44,10 +51,29 @@ interface WatcherState {
 
 const watchers = new Map<string, WatcherState>();
 
+/**
+ * Whether a path below a watched root (relative to it) is left unwatched.
+ * Anything at or under an ignored name is, except a metadata folder and the
+ * one file in it that says what its folder is; the rest of a metadata folder
+ * (settings the app re-reads itself, cached media) stays unwatched.
+ */
+export function isIgnoredWatchPath(relative: string): boolean {
+  if (relative === '') return false;
+  const segments = relative.split(/[/\\]/);
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index]!;
+    if (!isIgnoredWorkspaceEntryName(segment)) continue;
+    if (segment !== WORKSPACE_METADATA_DIRECTORY_NAME) return true;
+    const below = segments.slice(index + 1);
+    if (below.length === 0) return false;
+    return !(below.length === 1 && below[0] === FOLDER_SETTINGS_FILE_NAME);
+  }
+  return false;
+}
+
 /** Match segments below the root only, so a dot-folder above the workspace does not silence it. */
 function isIgnoredBelowRoot(root: string, candidate: string): boolean {
-  const relative = path.relative(root, path.resolve(candidate));
-  return relative !== '' && relative.split(/[/\\]/).some(isIgnoredWorkspaceEntryName);
+  return isIgnoredWatchPath(path.relative(root, path.resolve(candidate)));
 }
 
 function canonicalWatcherRoot(rootPath: string): string {
@@ -92,6 +118,11 @@ export function acquireWorkspaceWatcher(rootPath: string): WorkspaceWatcherHandl
     ) => {
       const relative = path.relative(key, path.resolve(absPath));
       if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        return;
+      }
+      // A metadata folder is watched for its settings file alone. Reporting the
+      // folder itself would have consumers scan everything else inside it.
+      if (kind === 'directory' && path.basename(relative) === WORKSPACE_METADATA_DIRECTORY_NAME) {
         return;
       }
       const rel = '/' + relative.replace(/\\/g, '/');

@@ -18,6 +18,8 @@ test('shows native path actions in a file context menu', async ({ launchApp, wor
     'Pin',
     'Open containing folder',
     'Copy full path',
+    // Any Markdown document can be given a due date, category or tags.
+    'Add a due date or tags',
     'Delete',
   ]);
 });
@@ -142,6 +144,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
           'ai',
           'speech',
           'embeddings',
+          'notifications',
         ].map((key) => [key, functionKeys(host[key])]),
       ),
       aiImages: functionKeys((host.ai as Record<string, unknown> | undefined)?.images),
@@ -178,6 +181,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'git',
     'lifecycle',
     'menu',
+    'notifications',
     'onMenuCommand',
     'onOpenRequest',
     'shell',
@@ -314,6 +318,12 @@ test('preload exposes the complete typed host and reaches representative IPC han
   ]);
   // The fixture runs the stand-in embedding utility, so semantic search is present.
   expect(contract.methods.embeddings).toEqual(['embed', 'status', 'tokenizer']);
+  expect(contract.methods.notifications).toEqual([
+    'requestPermission',
+    'setBadge',
+    'status',
+    'syncReminders',
+  ]);
   expect(contract.methods.git).toEqual([
     'capabilities',
     'checkoutBranch',

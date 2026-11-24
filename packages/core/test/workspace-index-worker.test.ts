@@ -121,6 +121,67 @@ describe('workspace index engine in a worker', () => {
     close();
   });
 
+  it('asks the served engine to rebuild a stored record, and answers null when it cannot', async () => {
+    const { page, worker, close } = channel();
+    const asked: Array<{ path: string; version: string; maxParseBytes: number }> = [];
+    const rebuilding: WorkspaceIndexEngine = Object.assign(createMemoryEngine(), {
+      reanalyze: (async (identity, version, options) => {
+        asked.push({ path: identity.path, version, maxParseBytes: options.maxParseBytes });
+        if (identity.path !== 'kept.md') return null;
+        return {
+          record: {
+            path: identity.path,
+            sourcePath: identity.sourcePath,
+            format: identity.format,
+            lastModified: identity.lastModified,
+            title: 'Rebuilt',
+            outline: [],
+            wordCount: 1,
+            due: '2026-12-05',
+            content: 'full' as const,
+          },
+          characters: 4,
+        };
+      }) satisfies NonNullable<WorkspaceIndexEngine['reanalyze']>,
+    });
+    serveWorkspaceIndexEngine(worker, async () => served(rebuilding));
+    const engine = createWorkerEngine(page, { workspaceKey: 'w-rebuild', persist: false });
+    const identity = (path: string) => ({
+      path: parseWorkspacePath(path),
+      sourcePath: parseWorkspacePath(path),
+      format: 'markdown' as const,
+      lastModified: '',
+    });
+
+    const rebuilt = await engine.reanalyze!(identity('kept.md'), 'v1' as never, {
+      maxParseBytes: 99,
+    });
+    expect(rebuilt).to.deep.include({ characters: 4 });
+    expect(rebuilt?.record).to.include({ title: 'Rebuilt', due: '2026-12-05' });
+    expect(
+      await engine.reanalyze!(identity('gone.md'), 'v2' as never, { maxParseBytes: 99 }),
+    ).to.equal(null);
+    expect(asked).to.deep.equal([
+      { path: 'kept.md', version: 'v1', maxParseBytes: 99 },
+      { path: 'gone.md', version: 'v2', maxParseBytes: 99 },
+    ]);
+    engine.dispose();
+    close();
+
+    // An engine with no rebuild of its own answers null rather than failing.
+    const plain = channel();
+    serveWorkspaceIndexEngine(plain.worker, async () => served());
+    const withFallback = withMemoryFallback(
+      createWorkerEngine(plain.page, { workspaceKey: 'w-plain', persist: false }),
+      createMemoryEngine,
+    );
+    expect(
+      await withFallback.reanalyze!(identity('kept.md'), 'v1' as never, { maxParseBytes: 99 }),
+    ).to.equal(null);
+    withFallback.dispose();
+    plain.close();
+  });
+
   it('fails every request when the store cannot open', async () => {
     const { page, worker, close } = channel();
     serveWorkspaceIndexEngine(worker, () => Promise.reject(new Error('No storage here.')));

@@ -34,7 +34,12 @@ export {
   type LivePassageHit,
   type LivePendingPassage,
 } from './live-engine.js';
-export { analyzeDocumentBytes, type AnalyzedDocument, type DocumentIdentity } from './analyze.js';
+export {
+  DOCUMENT_ANALYZER_REVISION,
+  analyzeDocumentBytes,
+  type AnalyzedDocument,
+  type DocumentIdentity,
+} from './analyze.js';
 export {
   buildLiteralMatcher,
   buildSnippet,
@@ -50,6 +55,7 @@ export {
   type IndexedDocument,
   type IndexedDocumentContent,
   type IndexedDocumentIssue,
+  type IndexedFolderMarker,
   type WorkspaceIndex,
   type WorkspaceIndexFile,
   type WorkspaceIndexFileKind,

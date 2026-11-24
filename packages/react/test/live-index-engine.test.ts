@@ -74,6 +74,16 @@ async function ready(index: WorkspaceIndex): Promise<void> {
   throw new Error('index never settled');
 }
 
+/** Settled, with no stored record still waiting to be brought up to date. */
+async function upToDate(index: WorkspaceIndex): Promise<void> {
+  await ready(index);
+  for (let attempt = 0; attempt < 500; attempt += 1) {
+    if (!index.getStatus().upgrading) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error('stored records were never brought up to date');
+}
+
 describe('persistent workspace index (live index engine)', () => {
   const files = {
     'garden.md': '# Garden notes\n\n## Pests\n\nAphids gather under the leaves.\n',
@@ -169,6 +179,63 @@ describe('persistent workspace index (live index engine)', () => {
     }
     memory.dispose();
     live.index.dispose();
+  });
+
+  it('brings records an earlier version stored up to date without reading the workspace', async () => {
+    const provider = await seed({
+      'task.md': '---\ndue: 2026-12-05\n---\n\n# Renew passport\n\n- [x] Photos\n- [ ] Form\n',
+      'plain.md': '# Plain\n\nRoast the tomatoes slowly.\n',
+    });
+    const db = new DatabaseSync(':memory:');
+    const one = launch(db, reading(provider).source);
+    await ready(one.index);
+    const chunksBefore = one.live.stats();
+
+    // Put back what the app stored before it read properties: no analyzer
+    // revision, and none of the fields that revision added.
+    const decoder = new TextDecoder();
+    for (const document of [...one.live.documents()]) {
+      const payload = JSON.parse(decoder.decode(document.payload!)) as {
+        analyzer?: number;
+        record: Record<string, unknown>;
+      };
+      delete payload.analyzer;
+      delete payload.record.due;
+      delete payload.record.checklist;
+      one.live.upsert({
+        path: document.path,
+        version: document.version,
+        title: String(payload.record.title),
+        body: one.live.body(document.path) ?? '',
+        payload: encode(JSON.stringify(payload)),
+      });
+    }
+    one.index.dispose();
+
+    const second = reading(provider);
+    const two = launch(db, second.source);
+    await upToDate(two.index);
+    expect(second.reads).to.deep.equal([]);
+    expect(two.index.getDocument('task.md')).to.include({
+      title: 'Renew passport',
+      due: '2026-12-05',
+    });
+    expect(two.index.getDocument('task.md')?.checklist).to.deep.equal({ done: 1, total: 2 });
+    expect(two.index.getDocument('plain.md')?.due).to.equal(undefined);
+    expect(two.live.stats()).to.deep.equal(chunksBefore);
+    const found = await two.index.search({ text: 'tomatoes' });
+    expect(found.documents.map((document) => document.path)).to.deep.equal(['plain.md']);
+    two.index.dispose();
+
+    // Rebuilt records were stored: the next launch has nothing left to do.
+    const third = reading(provider);
+    const three = launch(db, third.source);
+    await ready(three.index);
+    expect(three.index.getStatus().upgrading).to.equal(undefined);
+    expect(three.index.getDocument('task.md')?.due).to.equal('2026-12-05');
+    expect(third.reads).to.deep.equal([]);
+    three.index.dispose();
+    await provider.dispose();
   });
 
   it('starts over when the stored payloads belong to another format', async () => {

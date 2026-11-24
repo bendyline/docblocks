@@ -5,8 +5,9 @@ import { parseFileSystemCapabilities } from '../filesystem/capabilities.js';
 import { FsError, deserializeFsError, isSerializedFsError } from '../filesystem/fs-error.js';
 import {
   SQUISQ_RUNTIME_DIRECTORY_NAME,
+  WORKSPACE_METADATA_DIRECTORY_NAME,
   isCompanionDirectoryName,
-  isIgnoredWorkspaceEntryName,
+  isEnumeratedWorkspaceEntryName,
 } from '../filesystem/workspace-entry-rules.js';
 import type { FileSystemEntrySnapshot } from '../filesystem/v2.js';
 import {
@@ -329,12 +330,16 @@ export function createMobileFileSystemBridge(
         continue;
       }
       for (const child of children) {
-        if (isIgnoredWorkspaceEntryName(child.name)) continue;
+        if (!isEnumeratedWorkspaceEntryName(child.name)) continue;
+        // The metadata folder is listed as a folder only, and never entered.
+        if (child.name === WORKSPACE_METADATA_DIRECTORY_NAME && child.kind !== 'directory')
+          continue;
         walk.entries.push(child);
         if (
           child.kind === 'directory' &&
           !isCompanionDirectoryName(child.name) &&
-          child.name !== SQUISQ_RUNTIME_DIRECTORY_NAME
+          child.name !== SQUISQ_RUNTIME_DIRECTORY_NAME &&
+          child.name !== WORKSPACE_METADATA_DIRECTORY_NAME
         ) {
           walk.queue.push(child.path);
         }

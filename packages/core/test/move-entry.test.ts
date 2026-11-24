@@ -132,6 +132,33 @@ describe('moveFileSystemEntry', () => {
     expect(await fs.readFile('/archive/Phoenix_files/tucson.md')).to.equal('# Tucson');
   });
 
+  it('moves an edited image with its layers, leaving a same-stem document’s media alone', async () => {
+    const fs = new MemoryFileSystemProvider('image-move', 'Image move');
+    await fs.writeBinary('/shot.png', new Uint8Array([1, 2, 3]));
+    await fs.writeFile('/shot.png_files/state.json', '{"version":1}');
+    await fs.writeFile('/shot.md', '![](shot_files/a.png)');
+    await fs.writeBinary('/shot_files/a.png', new Uint8Array([4]));
+    await fs.createDirectory('/archive');
+
+    await moveFileSystemEntry(fs, '/shot.png', '/archive/hero.png', 'file');
+
+    expect(await fs.exists('/shot.png_files')).to.equal(false);
+    expect(await fs.readFile('/archive/hero.png_files/state.json')).to.equal('{"version":1}');
+    expect(await fs.exists('/shot_files/a.png')).to.equal(true);
+  });
+
+  it('moves an image that was never edited on its own', async () => {
+    const fs = new MemoryFileSystemProvider('plain-image-move', 'Plain image move');
+    await fs.writeBinary('/shot.jpg', new Uint8Array([1, 2, 3]));
+    await fs.writeBinary('/shot_files/a.png', new Uint8Array([4]));
+
+    await moveFileSystemEntry(fs, '/shot.jpg', '/hero.jpg', 'file');
+
+    expect(await fs.exists('/hero.jpg')).to.equal(true);
+    expect(await fs.exists('/shot_files/a.png')).to.equal(true);
+    expect(await fs.exists('/hero.jpg_files')).to.equal(false);
+  });
+
   it('rejects a move when the destination or companion destination exists', async () => {
     const fs = new MemoryFileSystemProvider('collision', 'Collision');
     await fs.writeFile('/notes.md', 'notes');

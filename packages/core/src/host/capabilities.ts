@@ -94,6 +94,10 @@ export interface HostCapabilities {
   readonly speechModelManagement: boolean;
   /** The host embeds text with a local model, for semantic workspace search. */
   readonly semanticEmbeddings: boolean;
+  /** The host fires reminders when tasks come due, with the system's notifications. */
+  readonly reminders: boolean;
+  /** The host can show a count on the app icon. */
+  readonly appBadge: boolean;
   /** Documents live in the web origin (IndexedDB) rather than on the host. */
   readonly browserOriginStorage: boolean;
   /** The host draws the window chrome, so the shell must leave room for it. */
@@ -135,6 +139,8 @@ const NO_CAPABILITIES: HostCapabilities = Object.freeze({
   speechOutput: false,
   speechModelManagement: false,
   semanticEmbeddings: false,
+  reminders: false,
+  appBadge: false,
   // A browser with no host keeps its documents in the origin.
   browserOriginStorage: true,
   ownsWindowChrome: false,
@@ -260,6 +266,11 @@ export function deriveHostCapabilities(host: unknown): HostCapabilities {
       hasMethod(host.embeddings, 'status') &&
       hasMethod(host.embeddings, 'embed') &&
       hasMethod(host.embeddings, 'tokenizer'),
+    reminders:
+      hasMethod(host.notifications, 'status') &&
+      hasMethod(host.notifications, 'requestPermission') &&
+      hasMethod(host.notifications, 'syncReminders'),
+    appBadge: hasMethod(host.notifications, 'setBadge'),
     // A host that owns workspace roots keeps documents outside the web origin.
     browserOriginStorage: !hasMethod(workspaces, 'register'),
     ownsWindowChrome: environment.surface === 'electron',

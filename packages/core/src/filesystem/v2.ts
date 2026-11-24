@@ -261,8 +261,9 @@ export interface FileSystemProviderV2 {
    * pages, from metadata alone: it never reads or hashes a file and never
    * downloads an online-only one, so it costs a directory read per folder.
    * Names `isIgnoredWorkspaceEntryName` hides are neither listed nor entered;
-   * companion folders (`*_files`) and the Squisq runtime folder are listed
-   * but not entered. A provider without a cheap recursive listing leaves it
+   * companion folders (`*_files`), the Squisq runtime folder and the metadata
+   * folder (`.docblocks`, the one ignored name that is listed: see
+   * `isEnumeratedWorkspaceEntryName`) are listed but not entered. A provider without a cheap recursive listing leaves it
    * out, or throws `not-supported` from the first page (an older host
    * bridge); callers then walk `readDirectory`.
    */

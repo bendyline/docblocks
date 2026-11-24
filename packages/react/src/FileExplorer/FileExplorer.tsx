@@ -102,6 +102,11 @@ export interface FileExplorerHandle {
    * caller outside the tree reports it where the user is looking.
    */
   renameEntry: (oldPath: string, newPath: string, kind: 'file' | 'directory') => Promise<void>;
+  /**
+   * Re-read the listings after something outside the tree created or removed
+   * entries. A provider that reports changes itself needs no call.
+   */
+  refresh: () => Promise<void>;
 }
 
 export interface WorkspaceMoveDestination {
@@ -574,7 +579,11 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
     [renameEntry],
   );
 
-  useImperativeHandle(ref, () => ({ renameEntry }), [renameEntry]);
+  const refreshTree = tree.refresh;
+  useImperativeHandle(ref, () => ({ renameEntry, refresh: refreshTree }), [
+    renameEntry,
+    refreshTree,
+  ]);
 
   const handleMove = useCallback(
     async (entry: FileSystemEntry, directoryPath: string) => {

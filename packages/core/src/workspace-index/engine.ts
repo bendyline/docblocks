@@ -19,6 +19,13 @@ export interface StoredDocument {
   readonly characters: number;
   /** Version of `record.sourcePath` when it was analyzed. */
   readonly version: FileSystemVersion;
+  /**
+   * Revision of the analyzer that built `record` (`DOCUMENT_ANALYZER_REVISION`
+   * at the time). A record from an earlier revision is used as it is and then
+   * rebuilt. Absent from an engine that does not track revisions, whose
+   * records are taken as current.
+   */
+  readonly analyzer?: number;
 }
 
 export interface EngineAnalysis {
@@ -60,6 +67,18 @@ export interface WorkspaceIndexEngine {
     data: ArrayBuffer,
     options: { readonly maxParseBytes: number; readonly signal?: AbortSignal },
   ): Promise<EngineAnalysis>;
+  /**
+   * Rebuild a kept document's record with the current analyzer from the text
+   * the engine itself holds, and keep the result under the same version. Null
+   * when the engine holds no text for it; the index then reads the file as it
+   * would a changed one. Lets records an earlier version of the app stored be
+   * brought up to date without reading the workspace again.
+   */
+  reanalyze?(
+    identity: DocumentIdentity,
+    version: FileSystemVersion,
+    options: { readonly maxParseBytes: number; readonly signal?: AbortSignal },
+  ): Promise<EngineAnalysis | null>;
   /** Stop keeping a document: it is gone, or no longer searchable by content. */
   forget(path: WorkspacePath): void;
   /** Literal search over the documents the index currently lists, in path order. */

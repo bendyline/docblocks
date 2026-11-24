@@ -672,6 +672,13 @@ nearest ancestor `_squisq/squisq-player.js`. Keep companion path/frontmatter
 rules in `@bendyline/squisq-formats/outside-in`; hosts own filesystem authority,
 transaction ordering, visibility, and lifecycle behavior.
 
+PNG, JPEG, and WebP files in a folder workspace are edited the same way through
+Squisq's `ImageFileEditor`. Layers live in `<name.ext>_files/`
+(`imageEditCompanionPath`, whole file name, so `photo.png` and `photo.jpg` never
+share one), and `createImageWriteBack` in `DocBlocksShell/image-write-back.ts`
+writes the flattened picture over the file on Save and on leave. Squisq owns the
+picture-replaced-outside check; see [`docs/outside-in.md`](docs/outside-in.md#images).
+
 ### Workspace settings live in `.docblocks/workspace.json`
 
 Settings that belong to a folder — the default document theme, catalog
@@ -704,10 +711,41 @@ CLI (`docblocks workspace refresh`) supply only IO and a renderer.
 - Every durable commit in a folder workspace reaches `afterWorkspaceCommit`
   in `DocBlocksShell`. A new mutation path must call `notifyWorkspaceChanged`
   with the workspace ID it acted on, never the currently active one.
-- Desktop chokidar ignores dot-folders and IndexedDB/native providers cannot
-  watch, so settings are re-read on activation, focus, resume, and after a git
-  pull or branch switch. VS Code writes catalogs only in trusted, writable
+- Desktop chokidar ignores dot-folders (except `<folder>/.docblocks/folder.json`)
+  and IndexedDB/native providers cannot watch, so settings are re-read on
+  activation, focus, resume, and after a git pull or branch switch. VS Code writes catalogs only in trusted, writable
   folders.
+
+### Tasks, journals and Unfiled are folders of Markdown files
+
+- A folder says what it is for in `<folder>/.docblocks/folder.json`
+  (`@bendyline/docblocks/folders`), parsed with the exact v1 shape; an unknown
+  kind or newer version leaves it an ordinary folder. Never record a folder's
+  kind anywhere else: the file travels with the folder.
+- Task state is the file's place: the first folder below a tasks folder is its
+  bucket, and the folder wins over `completed` in frontmatter. Moves go
+  through `moveFileSystemEntry` (or the tree's `renameEntry` for the active
+  workspace) so the `_files` companion, pins and the open session follow.
+- Properties (`due`, `category`, `tags`, `repeat`, `completed`) are read
+  tolerantly and written key by key (`@bendyline/docblocks/properties`).
+  Dates are calendar days kept as `YYYY-MM-DD` text, never `Date`-parsed.
+- `enumerate` lists a `.docblocks` folder (and never enters it) so the index
+  finds folder settings without probing each folder. Adding a field to
+  `IndexedDocument` means bumping `DOCUMENT_ANALYZER_REVISION`, not
+  `LIVE_ENGINE_PAYLOAD_FORMAT`: older stored records are rebuilt from the
+  engine's own text instead of wiping every stored index.
+- Page routes are `#<workspace>/:home`, `:tasks`, `:ask` and `:folder/<path>`.
+  The pages are one lazy chunk under `packages/react/src/Home/`.
+- Reminders cross the host seam as a whole set (`host.notifications.syncReminders`,
+  `packages/core/src/host/notifications.ts`): the renderer decides what to
+  remind about, the host keeps, re-arms and fires them.
+- What Ask suggests doing is structured output checked by
+  `parseProposedActions` (`packages/react/src/Ai/chat-actions.ts`), never
+  tool calls, and nothing is written until the person confirms each card.
+  Edits are offered only after "Allow edits to cited notes", only for cited
+  documents, and keep a version first (`Home/keep-version.ts`).
+
+See [`docs/home-and-folders.md`](docs/home-and-folders.md).
 
 ### Squisq is a dependency, not a fork
 
@@ -839,14 +877,15 @@ Tracked repository skills:
 
 ## Where to look first
 
-| Task                       | Start with                                                                                                   |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Add a storage backend      | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture                  |
-| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`                   |
-| Add a CLI command          | `docs/cli.md` → `packages/cli/src/commands/` → register in `packages/cli/src/program.ts`                     |
-| Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides        |
-| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                          |
-| Add a workspace setting    | `core/src/workspace-settings/settings.ts` + `schema.ts` → `react/src/Settings/WorkspaceSettingsControls.tsx` |
-| Add a new format converter | Linked Squisq CLI registry in `..\squisq`; then `docs/mcp.md` and MCP target/fidelity exposure               |
-| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes                     |
-| Retone the Squisq editor   | The `--squisq-*` bridge in `docblocks.css` (search "Squisq chrome palette") — not a new per-selector rule    |
+| Task                           | Start with                                                                                                   |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| Add a storage backend          | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture                  |
+| Add an Electron capability     | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`                   |
+| Add a CLI command              | `docs/cli.md` → `packages/cli/src/commands/` → register in `packages/cli/src/program.ts`                     |
+| Add a VS Code message          | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides        |
+| Add a shared UI component      | `packages/react/src/` — exported via `src/index.ts`                                                          |
+| Add a workspace setting        | `core/src/workspace-settings/settings.ts` + `schema.ts` → `react/src/Settings/WorkspaceSettingsControls.tsx` |
+| Add a folder kind or task rule | `packages/core/src/folders/` → `packages/react/src/Home/pages.tsx` → `docs/home-and-folders.md`              |
+| Add a new format converter     | Linked Squisq CLI registry in `..\squisq`; then `docs/mcp.md` and MCP target/fidelity exposure               |
+| Change theming                 | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes                     |
+| Retone the Squisq editor       | The `--squisq-*` bridge in `docblocks.css` (search "Squisq chrome palette") — not a new per-selector rule    |

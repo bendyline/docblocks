@@ -107,12 +107,56 @@ describe('NewDocumentGallery', () => {
     ]);
   });
 
+  it('offers no folder starter unless the shell can set one up', () => {
+    expect(dialog().querySelector('[aria-label="Tasks folder"]')).to.equal(null);
+    expect(dialog().textContent).to.not.contain('Or start a folder');
+  });
+
   it('settles null on Cancel', async () => {
     const cancel = [...dialog().querySelectorAll<HTMLButtonElement>('button')].find(
       (button) => button.textContent === 'Cancel',
     )!;
     await act(async () => cancel.click());
     expect(settled).to.deep.equal([null]);
+  });
+});
+
+describe('NewDocumentGallery folder starter', () => {
+  it('starts a tasks folder in place of a document, whatever the type', async () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    const settled: Array<NewDocumentGalleryChoice | null> = [];
+    let started = 0;
+    await act(async () => {
+      root.render(
+        createElement(NewDocumentGallery, {
+          onSettle: (choice) => settled.push(choice),
+          onStartTasksFolder: () => (started += 1),
+        }),
+      );
+    });
+    const dialog = document.querySelector<HTMLElement>('.db-dialog')!;
+    const list = [...dialog.querySelectorAll('ul')].find(
+      (element) => element.getAttribute('aria-labelledby') !== null,
+    )!;
+    expect(document.getElementById(list.getAttribute('aria-labelledby')!)?.textContent).to.equal(
+      'Or start a folder',
+    );
+    // The document starters are unchanged; Blank still has focus.
+    expect(document.activeElement?.getAttribute('aria-label')).to.equal('Blank');
+    const spreadsheet = [...dialog.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
+      (button) => button.textContent === 'Spreadsheet (xlsx)',
+    )!;
+    await act(async () => spreadsheet.click());
+    const card = dialog.querySelector<HTMLButtonElement>('[aria-label="Tasks folder"]')!;
+    expect(card.disabled).to.equal(false);
+    expect(card.textContent).to.contain('finished ones move to Done');
+    await act(async () => card.click());
+    expect(started).to.equal(1);
+    expect(settled).to.deep.equal([]);
+    await act(async () => root.unmount());
+    container.remove();
   });
 });
 

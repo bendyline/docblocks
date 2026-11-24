@@ -60,6 +60,7 @@ import {
 } from '../shared/host-environment.js';
 import { createAiImagesApi } from './ai-images-bridge.js';
 import { createEmbeddingsApi } from './embeddings-bridge.js';
+import { createNotificationsApi } from './notifications-bridge.js';
 import { createSpeechApi } from './speech-bridge.js';
 
 // The main process can dispatch launch argv as soon as the BrowserWindow is
@@ -666,6 +667,7 @@ const host: DocBlocksHostAPI = {
   ...(parseEmbeddingsAvailabilityArgument(process.argv)
     ? { embeddings: createEmbeddingsApi(ipcRenderer) }
     : {}),
+  notifications: createNotificationsApi(ipcRenderer),
   onMenuCommand,
   onOpenRequest,
 };

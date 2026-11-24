@@ -75,6 +75,8 @@ const packages: readonly PackageUnderTest[] = [
       '@bendyline/docblocks/workspace',
       '@bendyline/docblocks/workspace-settings',
       '@bendyline/docblocks/workspace-index',
+      '@bendyline/docblocks/properties',
+      '@bendyline/docblocks/folders',
       '@bendyline/docblocks/host',
       '@bendyline/docblocks/share',
       '@bendyline/docblocks/vscode',

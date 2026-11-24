@@ -30,6 +30,8 @@ if platform == 'ios':
     assert b'llama_model_load_from_file_impl' in (app / 'App').read_bytes(), 'Missing linked inference engine'
     # The plugin compiles speech in only when SwiftPM saw the runtime, so a stale package resolve drops it silently.
     assert 'GezelOfflineSpeechPlugin' in config['packageClassList'], 'Missing offline speech plugin'
+    # Without it the app runs, but quietly offers no reminders (src/notifications.ts).
+    assert 'LocalNotificationsPlugin' in config['packageClassList'], 'Missing local notifications plugin for reminders'
     speech = app / 'Frameworks/GezelSpeech.framework'
     assert (speech / 'GezelSpeech').is_file() and (speech / 'PrivacyInfo.xcprivacy').is_file(), 'Missing embedded speech runtime'
     assert info.get('NSMicrophoneUsageDescription'), 'Missing microphone purpose for dictation and recording'
@@ -46,6 +48,8 @@ else:
                 assert b'ContractDocumentsProvider' not in archive.read(name), 'Test provider shipped in release'
         plugins = json.loads(archive.read(prefix + 'capacitor.plugins.json'))
         assert any(p['pkg'] == '@bendyline/gezel-capacitor' for p in plugins)
+        # Without it the app runs, but quietly offers no reminders (src/notifications.ts).
+        assert any(p['pkg'] == '@capacitor/local-notifications' for p in plugins), 'Missing local notifications plugin for reminders'
         assert not any(name.endswith('mobile-ai-fixture.gguf') for name in archive.namelist())
         native_prefix = 'base/lib/arm64-v8a/' if artifact.endswith('.aab') else 'lib/arm64-v8a/'
         for library in ['libgezel-llama.so', 'libgezel_llama_jni.so', 'libllama.so']:
@@ -55,6 +59,8 @@ else:
         manifest = archive.read('base/manifest/AndroidManifest.xml' if artifact.endswith('.aab') else 'AndroidManifest.xml')
         for permission in ['RECORD_AUDIO', 'android.permission.CAMERA']:
             assert permission.encode() in manifest or permission.encode('utf-16le') in manifest, 'Missing ' + permission + ' for dictation and recording'
+        # Android 13 and later show no notification without it; the plugin's manifest supplies it.
+        assert b'POST_NOTIFICATIONS' in manifest or 'POST_NOTIFICATIONS'.encode('utf-16le') in manifest, 'Missing POST_NOTIFICATIONS for reminders'
         # AAPT binary XML and bundle protobuf retain string values in UTF-8 or UTF-16.
         for forbidden in ['MANAGE_EXTERNAL_STORAGE', 'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE', 'com.bendyline.docblocks.mobile.tests']:
             assert forbidden.encode() not in manifest and forbidden.encode('utf-16le') not in manifest, forbidden

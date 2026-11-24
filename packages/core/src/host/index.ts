@@ -148,6 +148,17 @@ export type {
   EmbeddingsStatus,
   EmbeddingsTokenizer,
 } from './embeddings.js';
+export type {
+  DocBlocksHostNotificationsAPI,
+  HostReminder,
+  NotificationPermission,
+} from './notifications.js';
+export {
+  NOTIFICATION_LIMITS,
+  parseBadgeCount,
+  parseHostReminders,
+  parseNotificationPermission,
+} from './notifications.js';
 export {
   EMBEDDINGS_WIRE_LIMITS,
   parseEmbeddingsRequest,

@@ -54,13 +54,20 @@ export interface AskTurn {
   readonly truncated: boolean;
 }
 
+/** How task facts are introduced to the model, when a question carries them. */
+export const ASK_TASK_FACTS_PROMPT =
+  "Facts from the person's task list, read from their files just now. They are exact: answer " +
+  'questions about what is due, overdue or finished from them, and do not add tasks they do not list.';
+
 /** The request for `question`, after the session's finished turns. */
 export function askRequest(
   history: readonly AskTurn[],
   question: string,
   passages: readonly AiWorkspacePassage[],
+  facts: string | null = null,
 ): AiChatRequest {
   const messages: AiChatMessage[] = [{ role: 'system', content: ASK_SYSTEM_PROMPT }];
+  if (facts) messages.push({ role: 'system', content: `${ASK_TASK_FACTS_PROMPT}\n\n${facts}` });
   const earlier = history
     .filter((turn) => turn.status === 'done' && turn.answer.trim())
     .slice(-HISTORY_TURNS);
@@ -195,6 +202,8 @@ export interface AskDependencies {
   readonly ai: Pick<DocBlocksHostAiAPI, 'chat' | 'checkFacts'>;
   /** Passages for the question, found by meaning; empty when none are. */
   readonly findPassages: (question: string) => Promise<readonly AiWorkspacePassage[]>;
+  /** Facts from the task list to answer from too; null or absent when there are none. */
+  readonly facts?: () => string | null;
 }
 
 export interface WorkspaceAskSession {
@@ -267,7 +276,9 @@ export function createWorkspaceAskSession(): WorkspaceAskSession {
       });
       const passages = await deps.findPassages(question).catch(() => []);
       if (run.signal.aborted) return;
-      if (passages.length === 0) {
+      const facts = deps.facts?.() ?? null;
+      // With no notes and no task facts behind it, an answer would come from memory.
+      if (passages.length === 0 && !facts) {
         update(id, { status: 'nothing' });
         controller = null;
         return;
@@ -286,7 +297,8 @@ export function createWorkspaceAskSession(): WorkspaceAskSession {
       const onEvent = (event: AiChatEvent) => {
         if (run.signal.aborted) return;
         const now = Date.now();
-        if (event.kind === 'knowledge' && event.knowledge.outcome === 'none') {
+        // Passages judged irrelevant; task facts still stand on their own.
+        if (event.kind === 'knowledge' && event.knowledge.outcome === 'none' && !facts) {
           judgedIrrelevant = true;
           run.abort();
           return;
@@ -310,7 +322,7 @@ export function createWorkspaceAskSession(): WorkspaceAskSession {
       };
       const outcome = await chatOnce(
         deps.ai,
-        askRequest(history, question, passages),
+        askRequest(history, question, passages, facts),
         run.signal,
         onEvent,
       );

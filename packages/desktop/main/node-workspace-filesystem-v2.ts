@@ -5,9 +5,11 @@ import path from 'node:path';
 import {
   FsError,
   SQUISQ_RUNTIME_DIRECTORY_NAME,
+  WORKSPACE_METADATA_DIRECTORY_NAME,
   WORKSPACE_ROOT,
   fsErrorFromUnknown,
   isCompanionDirectoryName,
+  isEnumeratedWorkspaceEntryName,
   isIgnoredWorkspaceEntryName,
   isMarkdownFileName,
   parseFileSystemVersion,
@@ -524,7 +526,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     if (visited.has(real)) return { entries: [], descend: [] };
     visited.add(real);
     const children = (await fs.readdir(abs, { withFileTypes: true }))
-      .filter((child) => !isIgnoredWorkspaceEntryName(child.name))
+      .filter((child) => isEnumeratedWorkspaceEntryName(child.name))
       .sort((left, right) => compareText(left.name, right.name));
     const observed = await Promise.all(
       children.map(async (child): Promise<FileSystemEntrySnapshot | null> => {
@@ -562,7 +564,9 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
         (entry) =>
           entry.kind === 'directory' &&
           !isCompanionDirectoryName(entry.name) &&
-          entry.name !== SQUISQ_RUNTIME_DIRECTORY_NAME,
+          entry.name !== SQUISQ_RUNTIME_DIRECTORY_NAME &&
+          // Listed so a folder's settings can be found; its contents are not walked.
+          entry.name !== WORKSPACE_METADATA_DIRECTORY_NAME,
       )
       .map((entry) => entry.path);
     return { entries, descend };

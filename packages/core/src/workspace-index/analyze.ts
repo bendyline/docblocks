@@ -7,6 +7,13 @@ import { FsError } from '../filesystem/fs-error.js';
 import { decodeUtf8Text } from '../filesystem/utf8.js';
 import type { WorkspacePath } from '../filesystem/workspace-path.js';
 import {
+  countChecklist,
+  countChecklistLines,
+  type ChecklistProgress,
+} from '../properties/checklist.js';
+import { readDocumentProperties } from '../properties/read.js';
+import { DOCUMENT_PROPERTY_LIMITS } from '../properties/types.js';
+import {
   catalogEntryFromDocument,
   normalizeLineEndings,
   type CatalogDocumentFormat,
@@ -21,6 +28,14 @@ function loadMarkdown(): Promise<MarkdownModule> {
   markdownModule ??= import('@bendyline/squisq/markdown');
   return markdownModule;
 }
+
+/**
+ * Bumped when analysis learns something new from the same bytes (revision 2
+ * added document properties and checklist progress). A persistent engine
+ * records the revision with each document, so records an earlier version of
+ * the app stored are brought up to date instead of being trusted as they are.
+ */
+export const DOCUMENT_ANALYZER_REVISION = 2;
 
 export interface DocumentIdentity {
   readonly path: WorkspacePath;
@@ -63,13 +78,53 @@ export function nameOnlyDocument(
 
 const ATX_HEADING = /^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/u;
 
-function linesDocument(
+type PropertyFields = Pick<
+  IndexedDocument,
+  'due' | 'category' | 'repeat' | 'completed' | 'checklist'
+>;
+
+/** The record fields that come from frontmatter properties and checklist lines. */
+function propertyFields(
+  frontmatter: Readonly<Record<string, unknown>> | undefined,
+  checklist: ChecklistProgress | undefined,
+): PropertyFields {
+  const properties = readDocumentProperties(frontmatter);
+  return {
+    ...(properties.due ? { due: properties.due } : {}),
+    ...(properties.category ? { category: properties.category } : {}),
+    ...(properties.repeat ? { repeat: properties.repeat } : {}),
+    ...(properties.completed !== undefined ? { completed: properties.completed } : {}),
+    ...(checklist ? { checklist } : {}),
+  };
+}
+
+/** Frontmatter of a document too large to parse whole, read from its opening block alone. */
+async function leadingFrontmatter(source: string): Promise<Record<string, unknown> | undefined> {
+  if (!source.startsWith('---')) return undefined;
+  const { parseFrontmatter, splitFrontmatterBlock } = await loadMarkdown();
+  const block = splitFrontmatterBlock(
+    source.slice(0, DOCUMENT_PROPERTY_LIMITS.maxFrontmatterBytes),
+  ).frontmatter;
+  if (!block) return undefined;
+  const firstBreak = block.indexOf('\n');
+  if (firstBreak < 0) return undefined;
+  try {
+    return (
+      parseFrontmatter(block.slice(firstBreak + 1).replace(/\r?\n---(?:\r?\n)?$/, '')) ?? undefined
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+async function linesDocument(
   identity: DocumentIdentity,
   source: string,
   issue: IndexedDocumentIssue,
-): AnalyzedDocument {
+): Promise<AnalyzedDocument> {
   const text = lineSearchText(source);
   const heading = text.lines.map((line) => ATX_HEADING.exec(line)?.[1]).find(Boolean);
+  const frontmatter = await leadingFrontmatter(source);
   return {
     record: {
       path: identity.path,
@@ -79,6 +134,7 @@ function linesDocument(
       title: heading ?? stemOf(identity.path),
       outline: [],
       wordCount: 0,
+      ...propertyFields(frontmatter, countChecklistLines(source)),
       content: 'lines',
       issue,
     },
@@ -138,6 +194,7 @@ export async function analyzeDocumentBytes(
       ...(entry.excerpt ? { excerpt: entry.excerpt } : {}),
       ...(entry.description ? { description: entry.description } : {}),
       ...(entry.tags ? { tags: entry.tags } : {}),
+      ...propertyFields(document.frontmatter, countChecklist(document)),
       content: 'full',
     },
     text: extractSearchText(document, source),

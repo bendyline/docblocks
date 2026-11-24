@@ -100,6 +100,13 @@ type Request =
       readonly data: ArrayBuffer;
       readonly maxParseBytes: number;
     }
+  | {
+      readonly id: number;
+      readonly op: 'reanalyze';
+      readonly identity: DocumentIdentity;
+      readonly version: FileSystemVersion;
+      readonly maxParseBytes: number;
+    }
   | { readonly id: number; readonly op: 'forget'; readonly path: WorkspacePath }
   | {
       readonly id: number;
@@ -233,6 +240,14 @@ export function createWorkerEngine(
         [copy],
       );
     },
+    reanalyze(identity, version, analyzeOptions) {
+      return call<EngineAnalysis | null>({
+        op: 'reanalyze',
+        identity,
+        version,
+        maxParseBytes: analyzeOptions.maxParseBytes,
+      });
+    },
     forget(path) {
       void call({ op: 'forget', path }).catch(() => undefined);
     },
@@ -334,6 +349,8 @@ export function withMemoryFallback(
     restore: () => run((engine) => engine.restore()),
     analyze: (identity, version, data, options) =>
       run((engine) => engine.analyze(identity, version, data, options)),
+    reanalyze: (identity, version, options) =>
+      run(async (engine) => (await engine.reanalyze?.(identity, version, options)) ?? null),
     forget(path) {
       void ready.then(() => active.forget(path));
     },
@@ -408,6 +425,12 @@ export function serveWorkspaceIndexEngine(
         return engine().analyze(message.identity, message.version, message.data, {
           maxParseBytes: message.maxParseBytes,
         });
+      case 'reanalyze':
+        return (
+          (await engine().reanalyze?.(message.identity, message.version, {
+            maxParseBytes: message.maxParseBytes,
+          })) ?? null
+        );
       case 'forget':
         engine().forget(message.path);
         return null;

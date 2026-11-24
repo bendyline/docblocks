@@ -19,6 +19,21 @@ export function isIgnoredWorkspaceEntryName(name: string): boolean {
   return name.startsWith('.') || TOOL_MANAGED_FOLDER_NAMES.has(name.toLowerCase());
 }
 
+/**
+ * The folder holding DocBlocks' own metadata: `workspace.json` at a workspace
+ * root, `folder.json` inside any folder that says what it is for.
+ */
+export const WORKSPACE_METADATA_DIRECTORY_NAME = '.docblocks';
+
+/**
+ * Names a recursive listing (`enumerate`) reports. Ignored names are left
+ * out, with one exception: the metadata folder is listed (and never entered),
+ * so a reader can tell which folders may carry settings without probing each.
+ */
+export function isEnumeratedWorkspaceEntryName(name: string): boolean {
+  return name === WORKSPACE_METADATA_DIRECTORY_NAME || !isIgnoredWorkspaceEntryName(name);
+}
+
 /** Extensions DocBlocks opens as Markdown documents, lower-case. */
 export const MARKDOWN_FILE_EXTENSIONS: readonly string[] = Object.freeze([
   '.md',

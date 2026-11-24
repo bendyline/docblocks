@@ -183,8 +183,9 @@ async function removeIfEmptyDirectory(provider: FileSystemProvider, path: string
 async function importOutsideInFile(
   file: File,
   provider: FileSystemProvider,
+  desiredPath: string = file.name,
 ): Promise<{ path: string; renamed: boolean }> {
-  const claim = await claimOutsideInTarget(provider, file.name);
+  const claim = await claimOutsideInTarget(provider, desiredPath);
   const created: string[] = [claim.path];
   const companionDirectory = resolveOutsideInLayout(claim.path)?.companionDirectory ?? null;
   try {
@@ -290,8 +291,12 @@ async function writeDbkCompanions(
 export async function importDroppedFiles(
   files: readonly File[],
   provider: FileSystemProvider,
+  /** Folder to import into (workspace path); the workspace root when left out. */
+  options: { readonly folder?: string } = {},
 ): Promise<ImportFilesResult> {
   const result: ImportFilesResult = { imported: [], failed: [], unsupported: [] };
+  const folder = (options.folder ?? '').replace(/^\/+|\/+$/g, '');
+  const inFolder = (name: string) => (folder ? `${folder}/${name}` : name);
 
   for (const file of files) {
     const ext = extensionOfFileName(file.name);
@@ -303,12 +308,14 @@ export async function importDroppedFiles(
     let claimed: string | null = null;
     try {
       if (OUTSIDE_IN_IMPORT_EXTENSIONS.has(ext) && !(await isPageTemplateFile(file, ext))) {
-        const imported = await importOutsideInFile(file, provider);
+        const imported = await importOutsideInFile(file, provider, inFolder(file.name));
         result.imported.push({ source: file.name, ...imported });
         continue;
       }
       const isBundle = BUNDLE_IMPORT_EXTENSIONS.has(ext);
-      const desiredPath = isBundle ? `${file.name.replace(/\.[^.]+$/, '')}.md` : file.name;
+      const desiredPath = inFolder(
+        isBundle ? `${file.name.replace(/\.[^.]+$/, '')}.md` : file.name,
+      );
       const claim = await claimAvailablePath(provider, desiredPath);
       claimed = claim.path;
       if (isBundle) {

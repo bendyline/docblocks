@@ -20,6 +20,7 @@ import type {
   FileSystemWatchSubscription,
 } from '../filesystem/v2.js';
 import {
+  WORKSPACE_METADATA_DIRECTORY_NAME,
   isCompanionDirectoryName,
   isDiscoverableWorkspaceEntry,
   isMarkdownFileName,
@@ -32,12 +33,14 @@ import {
   workspacePathDirname,
   type WorkspacePath,
 } from '../filesystem/workspace-path.js';
+import { folderOfSettingsPath } from '../folders/folder-settings.js';
+import { readFolderSettings } from '../folders/folder-store.js';
 import {
   chooseOutsideInMarkdownPath,
   resolveOutsideInLayout,
   type OutsideInLayout,
 } from '../workspace-settings/outside-in-layout.js';
-import { nameOnlyDocument, type DocumentIdentity } from './analyze.js';
+import { DOCUMENT_ANALYZER_REVISION, nameOnlyDocument, type DocumentIdentity } from './analyze.js';
 import {
   createMemoryEngine,
   type EngineSearchDocument,
@@ -48,6 +51,7 @@ import { createCheckpoint } from './search.js';
 import {
   WORKSPACE_INDEX_LIMITS,
   type IndexedDocument,
+  type IndexedFolderMarker,
   type WorkspaceIndex,
   type WorkspaceIndexFile,
   type WorkspaceIndexFileKind,
@@ -84,6 +88,14 @@ interface DocumentState {
   analysis: DocumentAnalysis | null;
   /** Source version the analysis was built from. */
   analysisVersion: FileSystemVersion | null;
+  /** Kept online by a cloud sync client: reading it would download it. */
+  readonly sourceOnlineOnly: boolean;
+  /**
+   * The analysis was stored by an earlier analyzer revision. It is used as it
+   * is until `upgrade` rebuilds it, so fields that revision did not know are
+   * missing meanwhile.
+   */
+  stale: boolean;
 }
 
 function nameOnly(
@@ -98,6 +110,8 @@ interface TreeState {
   readonly documents: Map<WorkspacePath, DocumentState>;
   readonly directories: Set<WorkspacePath>;
   readonly unreadable: Set<WorkspacePath>;
+  /** Listed folders holding a `.docblocks` folder, which may hold folder settings. */
+  readonly markerCandidates: Set<WorkspacePath>;
 }
 
 interface Truncation {
@@ -106,7 +120,13 @@ interface Truncation {
 }
 
 function emptyTree(): TreeState {
-  return { files: new Map(), documents: new Map(), directories: new Set(), unreadable: new Set() };
+  return {
+    files: new Map(),
+    documents: new Map(),
+    directories: new Set(),
+    unreadable: new Set(),
+    markerCandidates: new Set(),
+  };
 }
 
 /** Thrown inside the work loop once the index is disposed. */
@@ -192,6 +212,9 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
   private queue: DocumentState[] = [];
   private queueIndex = 0;
   private queueDirty = true;
+  private staleQueue: DocumentState[] = [];
+  private staleQueueIndex = 0;
+  private staleQueueDirty = true;
   private sliceStart = 0;
 
   private subscription: FileSystemWatchSubscription | null = null;
@@ -205,6 +228,10 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
   private lastPublish = 0;
   private filesCache: readonly WorkspaceIndexFile[] | null = null;
   private directoriesCache: readonly WorkspacePath[] | null = null;
+  /** What each folder's settings file said when last read, by folder. */
+  private readonly markers = new Map<WorkspacePath, IndexedFolderMarker>();
+  private markersCache: readonly IndexedFolderMarker[] | null = null;
+  private markerTruncation: Truncation | null = null;
   private documentsCache: readonly IndexedDocument[] | null = null;
   private statusCache: WorkspaceIndexStatus | null = null;
 
@@ -225,8 +252,10 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
   public getStatus(): WorkspaceIndexStatus {
     if (this.statusCache) return this.statusCache;
     let pendingCount = 0;
+    let upgrading = 0;
     for (const state of this.tree.documents.values()) {
       if (state.analysis === null) pendingCount += 1;
+      else if (state.stale) upgrading += 1;
     }
     const phase = this.disposed
       ? 'disposed'
@@ -247,12 +276,13 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       pendingCount,
       watching: this.watching,
       listed: this.listedOnce,
-      truncated: this.truncation ?? this.analysisTruncation,
+      truncated: this.truncation ?? this.analysisTruncation ?? this.markerTruncation,
       issues: this.tree.unreadable.size + this.readIssues,
       error: this.rootError,
       generation: this.generation,
       persistence: this.persistence,
       ranked: this.ranked,
+      ...(upgrading > 0 ? { upgrading } : {}),
     });
     return this.statusCache;
   }
@@ -307,6 +337,13 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       this.directoriesCache = Object.freeze([...directories].sort(compareCodeUnits));
     }
     return this.directoriesCache;
+  }
+
+  public getFolderMarkers(): readonly IndexedFolderMarker[] {
+    this.markersCache ??= Object.freeze(
+      [...this.markers.values()].sort((left, right) => compareCodeUnits(left.path, right.path)),
+    );
+    return this.markersCache;
   }
 
   public getDocument(path: string): IndexedDocument | null {
@@ -502,8 +539,15 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
           continue;
         }
         const next = this.nextPendingDocument();
-        if (!next) break;
-        await this.analyze(next);
+        if (next) {
+          await this.analyze(next);
+          this.maybePublish();
+          continue;
+        }
+        // Last, so nothing new waits behind records that are merely out of date.
+        const stale = this.nextStaleDocument();
+        if (!stale) break;
+        await this.upgrade(stale);
         this.maybePublish();
       }
     } catch (error: unknown) {
@@ -629,11 +673,75 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       this.restored = null;
     }
     this.afterStructuralChange();
+    await this.readMarkers(WORKSPACE_ROOT);
     if (!this.listedOnce) {
       this.listedOnce = true;
       for (const waiter of [...this.listedWaiters]) waiter(true);
     }
     this.publish();
+  }
+
+  // ── Folder settings ───────────────────────────────────────────────────
+
+  /**
+   * Read the settings of every listed folder under `scope` that holds a
+   * `.docblocks` folder, and drop what was known for folders that no longer
+   * do. One small read per such folder; most workspaces have a handful.
+   */
+  private async readMarkers(scope: WorkspacePath): Promise<void> {
+    for (const folder of [...this.markers.keys()]) {
+      if (workspacePathContains(scope, folder) && !this.tree.markerCandidates.has(folder)) {
+        this.markers.delete(folder);
+      }
+    }
+    if (scope === WORKSPACE_ROOT) this.markerTruncation = null;
+    const candidates = [...this.tree.markerCandidates]
+      .filter((folder) => workspacePathContains(scope, folder))
+      .sort(compareCodeUnits);
+    for (const folder of candidates) {
+      await this.checkpoint();
+      await this.readMarker(folder);
+    }
+  }
+
+  private async readMarker(folder: WorkspacePath): Promise<void> {
+    const previous = this.markers.get(folder);
+    if (!previous && this.markers.size >= this.limits.maxFolderMarkers) {
+      this.markerTruncation ??= { reason: 'folder-markers', limit: this.limits.maxFolderMarkers };
+      return;
+    }
+    const state = await readFolderSettings(this.source, folder);
+    if (this.disposed) throw new IndexStopped();
+    if (state.status === 'missing') {
+      // A `.docblocks` folder holding other things: an ordinary folder.
+      this.markers.delete(folder);
+      return;
+    }
+    if (state.status === 'error') {
+      // Not known to be gone: keep what the folder was, marked as unconfirmed.
+      this.markers.set(folder, {
+        path: folder,
+        status: 'unreadable',
+        settings: previous?.settings ?? null,
+        version: previous?.version ?? null,
+      });
+      return;
+    }
+    this.markers.set(folder, {
+      path: folder,
+      status: state.status === 'ready' ? 'ok' : state.status,
+      settings: state.settings,
+      version: state.version,
+    });
+  }
+
+  /** A change at or inside `<folder>/.docblocks`: re-read that folder's settings. */
+  private async refreshMarker(folder: WorkspacePath): Promise<void> {
+    // Only folders the index lists carry settings; one under an ignored or
+    // unlisted folder is found when a walk reaches it.
+    if (!this.tree.directories.has(folder)) return;
+    this.tree.markerCandidates.add(folder);
+    await this.readMarker(folder);
   }
 
   /**
@@ -694,6 +802,7 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       const directoryNames = new Set(
         children.filter((child) => child.kind === 'directory').map((child) => child.name),
       );
+      if (directoryNames.has(WORKSPACE_METADATA_DIRECTORY_NAME)) target.markerCandidates.add(path);
       for (const child of children) {
         if (!isDiscoverableWorkspaceEntry(child.name, child.kind)) continue;
         entries += 1;
@@ -775,6 +884,9 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
             let names = folderNames.get(parent);
             if (!names) folderNames.set(parent, (names = new Set()));
             names.add(entry.name);
+            if (entry.name === WORKSPACE_METADATA_DIRECTORY_NAME) {
+              target.markerCandidates.add(parent);
+            }
           }
           if (!isDiscoverableWorkspaceEntry(entry.name, entry.kind)) continue;
           entries += 1;
@@ -928,6 +1040,8 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       layout,
       analysis: null,
       analysisVersion: null,
+      sourceOnlineOnly,
+      stale: false,
     };
     const stored = this.restored?.get(identity.path);
     if (identity.sourcePath === null) {
@@ -945,6 +1059,7 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
         characters: previous.analysis.characters,
       };
       state.analysisVersion = previous.analysisVersion;
+      state.stale = previous.stale;
     } else if (
       stored &&
       sourceVersion !== null &&
@@ -957,6 +1072,7 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
         characters: stored.characters,
       };
       state.analysisVersion = stored.version;
+      state.stale = stored.analyzer !== undefined && stored.analyzer < DOCUMENT_ANALYZER_REVISION;
     } else if (sourceOnlineOnly) {
       // Reading would download it from the cloud. Index it by name until a
       // later listing finds it on this device, which queues a real read.
@@ -982,6 +1098,14 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       return;
     }
     const segments = path.split('/');
+    const markerFolder =
+      segments[segments.length - 1] === WORKSPACE_METADATA_DIRECTORY_NAME
+        ? workspacePathDirname(path)
+        : folderOfSettingsPath(path);
+    if (markerFolder !== null) {
+      await this.refreshMarker(markerFolder);
+      return;
+    }
     for (let index = 0; index < segments.length - 1; index += 1) {
       const segment = segments[index]!;
       if (isCompanionDirectoryName(segment)) {
@@ -1023,6 +1147,7 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       const truncation = await this.listTree(this.tree, previous, path, segments.length, false);
       this.truncation ??= truncation;
       this.forgetMissing([...previous.keys()].filter((key) => workspacePathContains(path, key)));
+      await this.readMarkers(path);
       return;
     }
     if (!isDiscoverableWorkspaceEntry(name, 'file')) return;
@@ -1069,6 +1194,15 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     for (const key of [...this.tree.directories])
       if (within(key)) this.tree.directories.delete(key);
     for (const key of [...this.tree.unreadable]) if (within(key)) this.tree.unreadable.delete(key);
+    for (const key of [...this.tree.markerCandidates]) {
+      if (within(key)) this.tree.markerCandidates.delete(key);
+    }
+    // A subtree being listed again keeps its folder settings until the new
+    // listing settles them (`readMarkers`), so nobody asking meanwhile sees a
+    // tasks folder as an ordinary one.
+    if (forget) {
+      for (const key of [...this.markers.keys()]) if (within(key)) this.markers.delete(key);
+    }
   }
 
   /** Recount totals and requeue analysis after the tree changed shape. */
@@ -1082,6 +1216,7 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     this.analyzedCount = analyzed;
     this.textCharacters = characters;
     this.queueDirty = true;
+    this.staleQueueDirty = true;
   }
 
   // ── Analysis ──────────────────────────────────────────────────────────
@@ -1111,6 +1246,70 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       }
     }
     return null;
+  }
+
+  private nextStaleDocument(): DocumentState | null {
+    if (this.staleQueueDirty) {
+      this.staleQueue = [...this.tree.documents.values()].filter(
+        (state) => state.stale && state.analysis !== null,
+      );
+      this.staleQueueIndex = 0;
+      this.staleQueueDirty = false;
+    }
+    while (this.staleQueueIndex < this.staleQueue.length) {
+      const state = this.staleQueue[this.staleQueueIndex]!;
+      this.staleQueueIndex += 1;
+      if (this.tree.documents.get(state.identity.path) === state && state.stale) return state;
+    }
+    return null;
+  }
+
+  /**
+   * Bring a record an earlier analyzer stored up to date. The engine rebuilds
+   * it from the text it kept, so nothing is read from the workspace; only a
+   * document it kept no text for is queued for an ordinary read.
+   */
+  private async upgrade(state: DocumentState): Promise<void> {
+    const { identity } = state;
+    const previous = state.analysis;
+    const version = state.analysisVersion;
+    state.stale = false;
+    if (!previous || version === null || identity.sourcePath === null) return;
+
+    let rebuilt: DocumentAnalysis | null = null;
+    if (this.engine.reanalyze) {
+      try {
+        rebuilt = await this.engine.reanalyze(identity, version, {
+          maxParseBytes: this.limits.maxParseBytes,
+          signal: this.abort.signal,
+        });
+      } catch {
+        if (this.disposed) throw new IndexStopped();
+        rebuilt = null;
+      }
+    }
+    if (this.disposed) throw new IndexStopped();
+    if (this.tree.documents.get(identity.path) !== state || state.analysis !== previous) return;
+    await this.checkpoint();
+
+    const counted = (analysis: DocumentAnalysis) =>
+      analysis.record.content !== 'name-only' ? 1 : 0;
+    if (rebuilt) {
+      this.textCharacters += rebuilt.characters - previous.characters;
+      this.analyzedCount += counted(rebuilt) - counted(previous);
+      state.analysis = {
+        record: { ...rebuilt.record, lastModified: identity.lastModified },
+        characters: rebuilt.characters,
+      };
+      return;
+    }
+    // Reading a file the cloud holds would download it; its record stays as it is.
+    if (state.sourceOnlineOnly) return;
+    this.textCharacters -= previous.characters;
+    this.analyzedCount -= counted(previous);
+    state.analysis = null;
+    state.analysisVersion = null;
+    this.queueDirty = true;
   }
 
   private async analyze(state: DocumentState): Promise<void> {
@@ -1198,6 +1397,7 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     this.lastPublish = this.now();
     this.filesCache = null;
     this.directoriesCache = null;
+    this.markersCache = null;
     this.documentsCache = null;
     this.statusCache = null;
     for (const listener of [...this.listeners]) {

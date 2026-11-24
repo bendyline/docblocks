@@ -178,6 +178,24 @@ describe('Ask your workspace', () => {
     expect(session.getSnapshot().turns).to.deep.equal([]);
   });
 
+  it('answers from the task list when no note matches, telling the model the facts are exact', async () => {
+    const { ai, requests } = fakeAi('Call Priya is due tomorrow.', { outcome: 'none' });
+    const session = createWorkspaceAskSession();
+    const facts =
+      'Today is Monday 23 November 2026 (2026-11-23).\nDue in the next 14 days:\n- Call Priya (due tomorrow)';
+    session.configure({ ai, findPassages: async () => [], facts: () => facts });
+    await session.ask('What is due this week?');
+    expect(requests).to.have.length(1);
+    const system = requests[0]!.messages.filter((message) => message.role === 'system');
+    expect(system[1]?.content)
+      .to.include('They are exact')
+      .and.include('- Call Priya (due tomorrow)');
+    expect(requests[0]).to.not.have.property('workspacePassages');
+    expect(session.getSnapshot().turns.map((entry) => [entry.status, entry.answer])).to.deep.equal([
+      ['done', 'Call Priya is due tomorrow.'],
+    ]);
+  });
+
   it('stops when Gezel finds none of the passages answers the question', async () => {
     const { ai, requests, checks } = fakeAi('From memory.', { outcome: 'none' });
     const session = createWorkspaceAskSession();

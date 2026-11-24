@@ -70,6 +70,12 @@ function electronHost(): Record<string, unknown> {
       transcribe: () => undefined,
       synthesize: () => undefined,
     },
+    notifications: {
+      status: () => undefined,
+      requestPermission: () => undefined,
+      syncReminders: () => undefined,
+      setBadge: () => undefined,
+    },
     embeddings: {
       status: () => undefined,
       embed: () => undefined,
@@ -291,6 +297,17 @@ describe('deriveHostCapabilities', () => {
     expect(none.speechInput).to.equal(false);
     expect(none.speechOutput).to.equal(false);
     expect(none.speechModelManagement).to.equal(false);
+  });
+
+  it('reports reminders from a complete bridge and the app badge on its own', () => {
+    const host = electronHost();
+    const fn = () => undefined;
+    delete host.notifications;
+    expect(deriveHostCapabilities(host)).to.include({ reminders: false, appBadge: false });
+    host.notifications = { status: fn, requestPermission: fn, syncReminders: fn, setBadge: fn };
+    expect(deriveHostCapabilities(host)).to.include({ reminders: true, appBadge: true });
+    host.notifications = { setBadge: fn };
+    expect(deriveHostCapabilities(host)).to.include({ reminders: false, appBadge: true });
   });
 
   it('reports semantic embeddings only from a complete bridge, independently of AI', () => {

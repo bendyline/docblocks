@@ -27,6 +27,7 @@
     "@capacitor/android": "8.5.2",
     "@capacitor/core": "8.5.2",
     "@capacitor/ios": "8.5.2",
+    "@capacitor/local-notifications": "8.3.1",
     "@ironcalc/wasm": "0.8.4",
     "harper.js": "2.7.0",
     "monaco-editor": "0.50.0",

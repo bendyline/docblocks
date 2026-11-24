@@ -3,6 +3,7 @@ import { native } from './native';
 import { installMobileAi } from './ai';
 import { installMobileSpeech } from './speech';
 import { installMobileEmbeddings } from './embeddings';
+import { installMobileNotifications } from './notifications';
 import { routeExternalLinks } from './external-links';
 import { installNativePrint } from './print';
 import { installNativeWakeLock } from './wake-lock';
@@ -42,14 +43,37 @@ export async function installMobileHost(): Promise<void> {
   const back = new Set<() => boolean>();
   const opens = new Set<(request: OpenRequest) => void>();
   let draining: Promise<void> | undefined;
-  const drainOpenRequests = () =>
-    (draining ??= (async () => {
-      if (!opens.size) return;
-      for (const request of parseMobileOpenRequests(await native.takeOpenRequests()))
-        for (const listener of opens) listener(request);
+  let drainAgain = false;
+  const drainOpenRequests = (): Promise<void> => {
+    // A share that arrives while a drain is under way is taken by another
+    // pass, not left queued until the next share.
+    if (draining) {
+      drainAgain = true;
+      return draining;
+    }
+    draining = (async () => {
+      do {
+        drainAgain = false;
+        if (!opens.size) return;
+        for (const request of parseMobileOpenRequests(await native.takeOpenRequests()))
+          for (const listener of opens) listener(request);
+      } while (drainAgain);
     })().finally(() => {
       draining = undefined;
-    }));
+    });
+    return draining;
+  };
+  // Reminders, when the app includes the local notifications plugin. A tapped
+  // reminder opens its document like any other open request. The tap that
+  // launched the app arrives before the shell listens, so it is held for it.
+  const heldOpens: OpenRequest[] = [];
+  const mobileNotifications = installMobileNotifications((request) => {
+    if (opens.size === 0) {
+      if (heldOpens.length < 4) heldOpens.push(request);
+      return;
+    }
+    for (const listener of opens) listener(request);
+  });
   const openExternal = async (value: string) => {
     const url = parseOpenExternalUrl(value);
     if (!url) throw new TypeError('Invalid external URL.');
@@ -63,6 +87,7 @@ export async function installMobileHost(): Promise<void> {
     ...(Capacitor.isPluginAvailable('GezelKnowledge')
       ? { embeddings: installMobileEmbeddings() }
       : {}),
+    ...(mobileNotifications ? { notifications: mobileNotifications } : {}),
     fsV2: createMobileFileSystemBridge((request) => native.request({ request }), info.capabilities),
     workspaces: {
       // Native lists the current default workspace first; it can change after
@@ -128,6 +153,7 @@ export async function installMobileHost(): Promise<void> {
     },
     onOpenRequest: (listener) => {
       opens.add(listener);
+      for (const request of heldOpens.splice(0)) listener(request);
       void drainOpenRequests().catch(reportImportError);
       return () => {
         opens.delete(listener);

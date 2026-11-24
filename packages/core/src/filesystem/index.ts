@@ -130,9 +130,11 @@ export {
 export {
   MARKDOWN_FILE_EXTENSIONS,
   SQUISQ_RUNTIME_DIRECTORY_NAME,
+  WORKSPACE_METADATA_DIRECTORY_NAME,
   isBrowsableWorkspaceEntry,
   isCompanionDirectoryName,
   isDiscoverableWorkspaceEntry,
+  isEnumeratedWorkspaceEntryName,
   isIgnoredWorkspaceEntryName,
   isMarkdownFileName,
 } from './workspace-entry-rules.js';
@@ -141,6 +143,7 @@ export {
   moveFileSystemEntry,
   type FileSystemEntryMoveOptions,
 } from './move-entry.js';
+export { imageEditCompanionPath, isEditableImagePath } from './companion-path.js';
 export { rewriteCompanionReferences } from './companion-references.js';
 export {
   publishFileSystemChangeHint,

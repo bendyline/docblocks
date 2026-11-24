@@ -15,7 +15,12 @@ const config: CapacitorConfig = {
   // bars and the keyboard. Capacitor's handling counted the navigation bar twice
   // above the keyboard on Android 14 and earlier with WebView 140+. SystemBars
   // still sets the bars' icon style.
-  plugins: { SystemBars: { insetsHandling: 'disable' } },
+  // Reminders: Android shows the small icon as a silhouette in the status bar,
+  // tinted with iconColor in the notification shade.
+  plugins: {
+    SystemBars: { insetsHandling: 'disable' },
+    LocalNotifications: { smallIcon: 'ic_stat_docblocks', iconColor: '#8B7B57' },
+  },
   server: { androidScheme: 'https' },
   ios: { contentInset: 'never' },
 };

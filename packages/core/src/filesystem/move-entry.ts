@@ -7,7 +7,11 @@ import {
 } from './move-error.js';
 import { parseWorkspacePath } from './workspace-path.js';
 import { rewriteCompanionReferences } from './companion-references.js';
-import { documentCompanionPath } from './companion-path.js';
+import {
+  documentCompanionPath,
+  imageEditCompanionPath,
+  isEditableImagePath,
+} from './companion-path.js';
 import { DocumentSession } from '../document/document-session.js';
 import { createFileSystemDocumentTarget } from '../document/filesystem-target.js';
 
@@ -31,10 +35,18 @@ function hasDocumentCompanion(path: string): boolean {
   return /\.(?:md|html?|docx|pdf|pptx|xlsx|csv)$/i.test(basename(path));
 }
 
+/** The companion a moved file takes along, named for a given path of it. */
+function companionPathFor(oldPath: string): ((path: string) => string) | null {
+  if (hasDocumentCompanion(oldPath)) return documentCompanionPath;
+  if (isEditableImagePath(oldPath)) return imageEditCompanionPath;
+  return null;
+}
+
 /**
  * Move an explorer entry without overwriting an existing entry. Markdown and
  * outside-in rendered documents carry their hidden `<basename>_files`
- * companion directory with them.
+ * companion directory with them, and edited images their
+ * `<name.ext>_files` layers.
  */
 export async function moveFileSystemEntry(
   provider: FileSystemProvider,
@@ -70,11 +82,12 @@ export async function moveFileSystemEntry(
 
   let oldCompanion: string | null = null;
   let newCompanion: string | null = null;
-  if (kind === 'file' && hasDocumentCompanion(oldPath)) {
-    const candidate = documentCompanionPath(oldPath);
+  const companionPath = kind === 'file' ? companionPathFor(oldPath) : null;
+  if (companionPath) {
+    const candidate = companionPath(oldPath);
     if (await exists(candidate)) {
       oldCompanion = candidate;
-      newCompanion = documentCompanionPath(newPath);
+      newCompanion = companionPath(newPath);
       if (
         normalisePath(oldCompanion) !== normalisePath(newCompanion) &&
         (await exists(newCompanion))

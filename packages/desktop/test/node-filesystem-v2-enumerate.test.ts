@@ -97,6 +97,32 @@ describe('native filesystem metadata enumeration', () => {
     expect(opened).to.deep.equal([]);
   });
 
+  it('lists a metadata folder so folder settings can be found, and never looks inside it', async () => {
+    await write('a.md', '# A');
+    await write('.docblocks/workspace.json', '{}');
+    await write('Tasks/.docblocks/folder.json', '{"version":1,"kind":"tasks"}');
+    await write('Tasks/.docblocks/media/a.png');
+    await write('Tasks/Active/x.md', '# X');
+    await write('.git/.docblocks/folder.json', '{}');
+    const { entries } = await collect(open());
+
+    expect(entries.map((entry) => entry.path).sort()).to.deep.equal(
+      [
+        '.docblocks',
+        'Tasks',
+        'Tasks/.docblocks',
+        'Tasks/Active',
+        'Tasks/Active/x.md',
+        'a.md',
+      ].sort(),
+    );
+    expect(entries.find((entry) => entry.path === 'Tasks/.docblocks')).to.include({
+      kind: 'directory',
+      size: null,
+    });
+    expect(opened).to.deep.equal([]);
+  });
+
   it('reports online-only files without reading them', async () => {
     await write('cloud.md', '# In the cloud');
     await write('local.md', '# Here');
