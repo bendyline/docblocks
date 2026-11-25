@@ -21,10 +21,21 @@ import {
   FolderOpen,
   FileUp,
   FolderTree,
+  House,
+  Inbox,
+  ListChecks,
+  MessageCircleQuestionMark,
+  MessageSquarePlus,
+  MessagesSquare,
+  Mic,
+  NotebookPen,
   PanelLeft,
+  Paperclip,
+  Pencil,
   Pin,
   Search,
   Settings2,
+  Trash2,
   TriangleAlert,
   X,
   type LucideIcon,
@@ -157,6 +168,53 @@ export function FilesIcon() {
 
 export function BackupIcon() {
   return <ShellIcon icon={Download} />;
+}
+
+/** The shell's places: Home, Tasks, Ask and the journal and Unfiled folders. */
+export function HomeIcon() {
+  return <ShellIcon icon={House} />;
+}
+
+export function TasksIcon() {
+  return <ShellIcon icon={ListChecks} />;
+}
+
+export function AskIcon() {
+  return <ShellIcon icon={MessageCircleQuestionMark} />;
+}
+
+/** Ask's saved chats. */
+export function ChatsIcon() {
+  return <ShellIcon icon={MessagesSquare} />;
+}
+
+export function NewChatIcon() {
+  return <ShellIcon icon={MessageSquarePlus} />;
+}
+
+export function RenameIcon() {
+  return <ShellIcon icon={Pencil} />;
+}
+
+export function DeleteIcon() {
+  return <ShellIcon icon={Trash2} />;
+}
+
+export function JournalIcon() {
+  return <ShellIcon icon={NotebookPen} />;
+}
+
+export function DictateIcon() {
+  return <ShellIcon icon={Mic} />;
+}
+
+export function AttachmentIcon() {
+  return <ShellIcon icon={Paperclip} />;
+}
+
+/** An in-tray: where shared and dropped notes wait to be filed. */
+export function UnfiledIcon() {
+  return <ShellIcon icon={Inbox} />;
 }
 
 /**

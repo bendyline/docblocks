@@ -35,3 +35,9 @@ export async function showUse(editor: Editor, mode = 'Slideshow'): Promise<void>
   await chooseView(editor, 'Use', mode);
   await expect(viewButton(editor)).toHaveAttribute('data-active-view', 'preview');
 }
+
+/** Switch the webview editor to a Write layout, chosen from View › Edit. */
+export async function showEdit(editor: Editor, layout: string): Promise<void> {
+  await chooseView(editor, 'Edit', layout);
+  await expect(viewButton(editor)).toHaveAttribute('data-active-view', 'wysiwyg');
+}

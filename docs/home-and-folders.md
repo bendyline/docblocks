@@ -1,9 +1,9 @@
 # Home, tasks, journals and the Unfiled drawer
 
-How DocBlocks turns folders of Markdown files into a task list, a journal and
-an inbox, and gathers them on a Home page. Nothing here has its own database:
-every task, entry and note is an ordinary Markdown file, and every change is a
-file write or a file move that any other editor can see.
+How DocBlocks turns folders of Markdown files into a task list, a journal, an
+inbox and a record of Ask chats, and gathers them on a Home page. Nothing here
+has its own database: every task, entry and note is an ordinary Markdown file,
+and every change is a file write or a file move that any other editor can see.
 
 ## Document properties
 
@@ -36,8 +36,8 @@ everywhere and writes only the ones being changed.
 
 ## Folders that say what they are for
 
-A folder becomes a tasks folder, a journal or the Unfiled drawer when it holds
-`<folder>/.docblocks/folder.json`:
+A folder becomes a tasks folder, a journal, the Unfiled drawer or a chats
+folder when it holds `<folder>/.docblocks/folder.json`:
 
 ```json
 {
@@ -92,8 +92,8 @@ as one made here. A name may add words after the date (`2026-11-23 Lisbon.md`).
 
 ### The Unfiled drawer
 
-The folder that notes jotted on Home and on its own page land in, until they
-are filed. Each waiting note can be filed in a folder (with its companion
+The folder that documents made in Quick Jot and notes typed on its own page
+land in, until they are filed. Each waiting note can be filed in a folder (with its companion
 folder), made a task (moved into the default tasks folder's default bucket),
 or deleted after a confirmation. Where semantic search is on, a note gets a
 suggested folder: where the passages nearest to it already live.
@@ -123,7 +123,10 @@ workspace index notes which folders hold one, reads each
 ## Properties in the index
 
 `IndexedDocument` carries `due`, `category`, `repeat`, `completed` and
-`checklist` (ticked items out of how many). Records stored by an earlier
+`checklist` (ticked items out of how many). A quiz question's choices are a
+checklist too, so side information kept in the document — study cards and
+slide summaries — is left out before anything is counted
+(`workspace-index/content-source.ts`). Records stored by an earlier
 version of the app have no such fields; rather than wiping every stored index,
 each stored record says which analyzer built it
 (`DOCUMENT_ANALYZER_REVISION`), and older ones are rebuilt in the background
@@ -133,9 +136,12 @@ service holds. `WorkspaceIndexStatus.upgrading` counts what is left.
 
 ## The shell
 
-- **Places.** A list above the file tree (`packages/react/src/Home/ShellNav.tsx`):
-  Home always, Tasks once there is a tasks folder or a dated document, then
-  each journal and Unfiled drawer, with counts of what is due and waiting.
+- **Places.** Icon buttons right after the app menu in the sidebar header
+  (`packages/react/src/Home/ShellNav.tsx`): Home always, Tasks once there is a
+  tasks folder or a dated document, Ask whenever AI is on, then each journal
+  and Unfiled drawer (a chats folder has no button: Ask is its page). Each
+  button's tooltip and accessible name give its label and any count (tasks
+  due now, notes waiting), which a corner badge also shows.
 - **Routes.** `#<workspace>/:home`, `#<workspace>/:tasks`, `#<workspace>/:ask`
   and `#<workspace>/:folder/<path>` (`shell-routes.ts`). Document routes
   percent-encode their path, so a raw `:` never appears in one. Clicking any
@@ -154,6 +160,55 @@ service holds. `WorkspaceIndexStatus.upgrading` counts what is left.
 - **Launch.** DocBlocks reopens the last document. A checkbox on Home ("Show
   Home when DocBlocks opens", `preferences/launch-view.ts`) opens Home
   instead; an explicit link or open request still wins.
+
+## Quick Jot
+
+A box at the bottom of the left pane, below the file list and above the
+footer, for getting something down without leaving the open document
+(`packages/react/src/QuickJot/`). It keeps its bottom edge and grows upward as
+lines are added, up to six, and the file list gives way. It replaced Home's own capture row; the
+Tasks, Journal and Unfiled pages keep theirs.
+
+- **In:** type, paste, drop files, the **Paste from clipboard** button, and
+  **Dictate** where the host can transcribe (the mic, `QuickJotDictation.tsx`,
+  is its own lazy chunk on `useNarrationCapture`; while it records, the
+  editor's own dictation is switched off). A paste of HTML that carries
+  structure the plain text lost (headings, lists, links) goes in as Markdown
+  (`markdownForFieldPaste`); anything else pastes exactly as copied. Pasted
+  and dropped files wait as chips under the text (up to 20, 200 MB each).
+- **Out:** **New document from jot** (also Cmd/Ctrl+Enter) saves a note in the
+  Unfiled drawer, named from the first line, and opens it. Word, PDF or slides
+  dropped with no text are imported into the drawer instead. **New task from
+  jot** takes the first line as the title (its date read by `parseCapture`)
+  and the rest as notes. **Add jot to journal** adds one timestamped bullet to
+  today's entry, with further lines and attachments as bullets nested under
+  it (`appendToJournal(text, { keepLines })`). Nested bullets are the shape
+  Squisq's editor keeps inside the entry when the day is opened and saved; a
+  plain indented line would be split out of the list. The task and journal
+  buttons show only when the workspace has a tasks folder or a journal; set
+  one up from Home's Get started cards.
+- **Attachments** are written into the new document's companion folder
+  (`Note.md` → `Note_files/`) and referenced after the text, a picture as
+  `![name](Note_files/name.png)`, anything else as a link
+  (`Home/attachments.ts`, `PageActions.saveNote` / `attach` /
+  `appendToJournal`). Storing them is all or nothing: if one file cannot be
+  written, those already written are removed and nothing is saved. For a task,
+  which is created first, a failure keeps the task and leaves the chips in the
+  box.
+- **Where it shows:** wherever the pages work (a workspace with an index, not
+  a loose file). It is a sibling of the file list, not inside it, because the
+  file list remounts on many changes and would lose what was typed. It can be
+  turned off in Settings → Appearance → Left pane ("Show Quick Jot",
+  `preferences/quick-jot.ts`, per device). VS Code has no left pane, so no
+  Quick Jot.
+- **On phones** it sits in the drawer; a drag that starts in its text no
+  longer swipes the drawer shut (`useEdgeSwipe`).
+- **Why a text area and not a Squisq editor:** a second `EditorShell` in the
+  pane would take DocBlocks' editor-toolbar styling (a 48px toolbar that is a
+  window-drag region in the desktop app), load the editor chunk on Home, and
+  needs Squisq changes (shortcut and tooltip scoping, mic placement, drop
+  overlay size). `QuickJotActions` takes a plain draft (text plus files), so a
+  richer box can replace the text area without changing what the buttons do.
 
 ## The properties row in the editor
 
@@ -189,10 +244,10 @@ task that moved. A browser folder whose permission has lapsed asks for it
 again, since a tick is a click; a workspace that cannot be opened says so and
 changes nothing.
 
-Pasting or dropping files on Home, a note typed on Home, and Ask's "Save as
-note" land in the Unfiled drawer once one exists (`importDroppedFiles(…,
-{ folder })`). A drop on a folder in the tree or on the editor keeps its usual
-place.
+Pasting or dropping files on Home, a document made in Quick Jot, and Ask's
+"Save as note" land in the Unfiled drawer once one exists
+(`importDroppedFiles(…, { folder })`). A drop on a folder in the tree or on
+the editor keeps its usual place.
 
 ## Reminders
 
@@ -233,9 +288,57 @@ channel when one is chosen. Reminders are off until turned on from Home.
 
 ## Ask
 
-- **The Ask page** (`#<workspace>/:ask`, `Home/AskPage.tsx`) is Ask your
-  workspace as a page of its own; the side panel beside a document stays.
-  Insert is hidden on the page, where there is no document to insert into.
+- **A chat, not a search.** Every message reaches the model. Passages from the
+  open workspace's notes (and knowledge catalogs) go with it as reference
+  material when search by meaning finds any; with none, or none Gezel judges
+  relevant, the model answers as any chat would. Notes are enrichment, never
+  a gate. The last eight finished turns (8,000 characters at most, newest
+  kept) go with each message. Only an answer that drew on sources has its
+  details checked against them. Search by meaning being off, the model
+  missing or the workspace switched off for AI answers is a notice above the
+  chat, not a reason to disable it.
+- **The Ask page** (`#<workspace>/:ask`, `Home/AskPage.tsx`) shows the saved
+  chats beside the conversation; the side panel beside a document keeps them
+  behind a **Chats** button, as the page does when it is narrow. Insert is
+  hidden on the page, where there is no document to insert into.
+- **Chats are Markdown files.** Each conversation is one file in the
+  workspace's chats folder (`kind: "chats"`, `Chats/` by default, set up on
+  the first answer), named for its first message. Each exchange is appended
+  as it settles (an answer stopped part way too), so what the person writes
+  in the file between exchanges stays:
+
+  ```markdown
+  ## You
+
+  What did I decide about the hotel?
+
+  ## AI
+
+  The Panama Hotel.[^source-1]
+
+  [^source-1]: [Trip notes](../Trips/Seattle.md), a note in this workspace.
+  ```
+
+  Only those two headings split turns: an answer's own `#`/`##` headings are
+  written as `###`, and a message line that would read as a heading or a
+  footnote is escaped (`core/src/folders/chats.ts`). Reopening a chat reads
+  the footnotes back into numbered citations that open their notes
+  (`Ai/ask-chats.ts`); a file with no `## You` opens as an ordinary note.
+
+- **Session management** is file management: the list (newest first, from
+  the index, `Ai/chat-folders.ts`) opens a chat to continue it, renames it
+  (the file, through the file tree's rename) or deletes it (after asking).
+  The file tree shows the same files.
+- **Across workspaces.** The conversation belongs to the shell, so it keeps
+  going when another workspace is opened, and goes on saving into the
+  workspace it started in (opened for the write, as Home's ticks are).
+  Passages come from the open workspace only; a cited note in another one
+  says which workspace to open. Suggested edits are limited to the open
+  workspace's notes (`AskActions.catalogId`).
+- **Saved chats are never sources.** They hold the model's words, so Ask and
+  every other AI action leave the chats folders out of the passages they
+  send (`chatDocumentPaths`); an older DocBlocks, which does not know the
+  kind, treats the folder as ordinary.
 - **Task facts** (`Ai/task-context.ts`): every question carries today's date
   and the open, overdue, upcoming and recently finished tasks across
   workspaces, so "what is due this week?" is answered from data rather than
@@ -313,11 +416,13 @@ channel when one is chosen. Reminders are off until turned on from Home.
   `shell-routes.test.ts`, `home-digest.test.ts`, `launch-view.test.ts`,
   `task-reminders.test.ts`, `task-context.test.ts`, `chat-actions.test.ts`,
   `ai-ask-panel.test.ts`, `incoming-share.test.ts`, `elsewhere-tasks.test.ts`,
-  `new-document-gallery.test.ts`, and the real live index in
-  `live-index-engine.test.ts`.
+  `new-document-gallery.test.ts`, `quick-jot.test.ts`,
+  `quick-jot-model.test.ts`, `quick-jot-preferences.test.ts`, and the real
+  live index in `live-index-engine.test.ts`.
 - Desktop: `reminders.test.ts`, `workspace-watchers.test.ts`,
   `node-filesystem-v2-enumerate.test.ts`; end to end `e2e/reminders.spec.ts`
   and `host-api-contract.spec.ts`.
 - Mobile: `notifications.test.ts`; Android `native/android/SharedNotesHarness.java`
   (run by `npm run mobile:test:android`).
-- Site end to end: `e2e/home-and-tasks.spec.ts`, `e2e/adaptive-home.spec.ts`.
+- Site end to end: `e2e/home-and-tasks.spec.ts`, `e2e/adaptive-home.spec.ts`,
+  `e2e/quick-jot.spec.ts`, `e2e/adaptive-quick-jot.spec.ts`.

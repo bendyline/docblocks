@@ -53,6 +53,9 @@ export async function inspectPreparedDocument(
   ) {
     throw new Error(`Inspection block limit must be between 1 and ${MAX_INSPECTION_BLOCKS}`);
   }
+  // Study cards are side information: read before the content view drops them.
+  const studyCards = await studyCardSummary(prepared, prepared.sourceFormat);
+  prepared = await contentView(prepared);
   const { flattenBlocks, validateMarkdownSource } = await import('@bendyline/squisq/doc');
   await yieldForCancellation(signal);
   const assets = prepared.assets;
@@ -102,6 +105,7 @@ export async function inspectPreparedDocument(
       prepared.sourceFormat,
       signal,
     )),
+    ...studyCards,
   ];
   let wordCount = 0;
   for (let index = 0; index < analyzed.length; index += 1) {
@@ -228,6 +232,7 @@ export async function authoringDiagnostics(
   signal?: AbortSignal,
 ): Promise<McpDiagnostic[]> {
   throwIfAborted(signal);
+  prepared = await contentView(prepared);
   const {
     TEMPLATE_AUTHORING_METADATA,
     flattenBlocks,
@@ -531,6 +536,73 @@ export async function comparePreparedDocuments(
       'compare',
     ),
   };
+}
+
+const counted = (count: number, one: string, many: string) =>
+  `${count} ${count === 1 ? one : many}`;
+
+/**
+ * One line about the study cards kept with the document's sections
+ * (`{[flashcard]}` / `{[quiz]}` accessory blocks), when it has any: how many,
+ * of which kind, and how many need a person. What is wrong with one card is
+ * its own `study-*` warning, from validation.
+ */
+async function studyCardSummary(
+  prepared: PreparedDocument,
+  format: string,
+): Promise<McpDiagnostic[]> {
+  const { readStudyCards } = await import('@bendyline/squisq/study');
+  const { cards } = readStudyCards(prepared.doc);
+  if (!cards.length) return [];
+  const sections = new Set(cards.flatMap((card) => (card.ownerId ? [card.ownerId] : []))).size;
+  const flashcards = cards.filter((card) => card.kind === 'flashcard').length;
+  const stale = cards.filter((card) => card.stale).length;
+  const unusable = cards.filter((card) => !card.usable).length;
+  const message = [
+    `${counted(cards.length, 'study card', 'study cards')} in ${counted(sections, 'section', 'sections')}: ` +
+      `${counted(flashcards, 'flashcard', 'flashcards')}, ` +
+      `${counted(cards.length - flashcards, 'quiz question', 'quiz questions')}.`,
+    stale
+      ? `${counted(stale, 'card was', 'cards were')} written by AI before its section changed.`
+      : '',
+    unusable ? `${counted(unusable, 'card cannot', 'cards cannot')} be studied as written.` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return [
+    {
+      code: 'study-cards',
+      severity: 'info',
+      stage: 'inspect',
+      format,
+      count: cards.length,
+      message,
+      remediation: stale
+        ? 'Check the changed cards; keep or regenerate them in the Study cards view.'
+        : null,
+      retryable: false,
+      location: null,
+    },
+  ];
+}
+
+/**
+ * The document as inspection reads it: without its slide summaries and
+ * study cards (`{[summary]}`, `{[flashcard]}`, `{[quiz]}` accessory blocks),
+ * which are side information about a section — never its blocks, items,
+ * words or outline. Only for reading; the
+ * prepared document keeps them for anything written back.
+ */
+async function contentView(prepared: PreparedDocument): Promise<PreparedDocument> {
+  const [{ withoutAccessoryBlocks }, { withoutAccessorySections }] = await Promise.all([
+    import('@bendyline/squisq/doc'),
+    import('@bendyline/squisq/markdown'),
+  ]);
+  const doc = withoutAccessoryBlocks(prepared.doc);
+  const markdownDoc = withoutAccessorySections(prepared.markdownDoc);
+  return doc === prepared.doc && markdownDoc === prepared.markdownDoc
+    ? prepared
+    : { ...prepared, doc, markdownDoc };
 }
 
 async function collectAnalyzedOutline(
@@ -1280,6 +1352,7 @@ function metadataFieldCount(inspection: InspectionResult): number {
 }
 
 async function layoutTokens(prepared: PreparedDocument, signal?: AbortSignal): Promise<string[]> {
+  prepared = await contentView(prepared);
   const tokens: string[] = [];
   const pending = [...prepared.doc.blocks].reverse();
   let index = 0;

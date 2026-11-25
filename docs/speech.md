@@ -154,9 +154,18 @@ file, retry without redownload, and malformed manifests.
   silence — `[Music]` and other bracketed cues, music notes, a take that is
   only a parenthetical such as `(wind blowing)`, and a standalone "Thanks for
   watching!". Dictation and Text from narration share this cleanup.
+- **Quick Jot** (the box at the bottom of the left pane) has its own mic,
+  `QuickJot/QuickJotDictation.tsx`, built on `useNarrationCapture` like Text
+  from narration: phrases are appended to the box rather than inserted at the
+  editor's caret. While recording, the mic shows the editor button's rolling
+  level meter (`Speech/dictation-meter.ts`), and animated dots sit after the
+  box's text while a phrase is still being transcribed. It is offered when the shell has a `speechInput` provider and
+  readiness is not `unavailable`; until a model is downloaded it opens
+  Settings → Dictation. While it records, the editor is given no `speechInput`,
+  so two dictations never hold the microphone at once.
 - **Read aloud** (`Speech/SpeechToolbarControl.tsx`, `useReadAloud.ts`) plans
   segments from Squisq's narration script — headings and lines each become a
-  sentence; fenced code is skipped — and streams them into a progressive Web
+  sentence; fenced code, study cards and slide summaries are skipped — and streams them into a progressive Web
   Audio player using Gezel's auto-play rule.
 - **Settings → Speech** downloads, updates, removes and chooses models, picks the voice
   and speed, and previews the voice. Model downloads continue while Settings is

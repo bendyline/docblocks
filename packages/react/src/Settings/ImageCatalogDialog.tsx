@@ -75,7 +75,11 @@ export function ImageCatalogDialog<
             ? `No matches for “${query.trim()}”.`
             : 'No compatible downloads are available right now.'}
       </p>
-      <ul className="db-settings-speech-models">{matches.map(renderRow)}</ul>
+      {/* The body clips its overflow so the search stays in reach; the list
+          is the part that scrolls. */}
+      <ul className="db-settings-speech-models db-knowledge-catalog-list">
+        {matches.map(renderRow)}
+      </ul>
     </Dialog>
   );
 }

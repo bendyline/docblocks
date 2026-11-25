@@ -212,6 +212,102 @@ describe('page actions', () => {
     ws.index.dispose();
   });
 
+  it('keeps lines and attachments under one journal bullet when asked', async () => {
+    const ws = await setUp({});
+    expect(await ws.actions.appendToJournal('Coffee with Sam')).to.equal(true);
+    await ws.caughtUp();
+    expect(
+      await ws.actions.appendToJournal('Site visit\n\n  - roof is fine\nmore later  ', {
+        keepLines: true,
+        attachments: [new File(['png'], 'roof photo.png', { type: 'image/png' })],
+      }),
+    ).to.equal(true);
+    // A plain line after a kept-lines entry still joins the same tight list.
+    expect(await ws.actions.appendToJournal('Home')).to.equal(true);
+    const entry = await ws.read('Journal/2026/2026-11-23.md');
+    // Further lines are nested bullets (a typed list item keeps its marker),
+    // the shape Squisq's editor keeps inside the entry's item.
+    expect(entry).to.match(
+      /\n\n- 09:05 Coffee with Sam\n- 09:05 Site visit\n {4}- roof is fine\n {2}- more later\n {2}- !\[roof photo\]\(<2026-11-23_files\/roof photo\.png>\)\n- 09:05 Home\n$/,
+    );
+    expect(await ws.read('Journal/2026/2026-11-23_files/roof photo.png')).to.equal('png');
+    ws.index.dispose();
+  });
+
+  it('writes no journal line when an attachment cannot be kept', async () => {
+    const ws = await setUp({});
+    const broken = {
+      name: 'broken.png',
+      type: 'image/png',
+      arrayBuffer: () => Promise.reject(new Error('The file could not be read.')),
+    };
+    const fine = new File(['png'], 'fine.png', { type: 'image/png' });
+    expect(
+      await ws.actions.appendToJournal('Lost', { keepLines: true, attachments: [fine, broken] }),
+    ).to.equal(false);
+    expect(await ws.read('Journal/2026/2026-11-23.md')).to.equal(null);
+    expect(await ws.v2.stat(p('Journal/2026/2026-11-23_files/fine.png'))).to.equal(null);
+    expect(ws.reports.at(-1)).to.equal(
+      "error: Couldn't add that to your journal. The file could not be read.",
+    );
+    ws.index.dispose();
+  });
+
+  it('saves a note with its files beside it, or with files alone', async () => {
+    const ws = await setUp({});
+    const shot = () => new File(['png'], 'image.png', { type: 'image/png' });
+    const note = await ws.actions.saveNote('Venue ideas\n\nThe barn.', 'Venue ideas', [
+      shot(),
+      shot(),
+      new File(['%PDF'], 'quote.pdf', { type: 'application/pdf' }),
+    ]);
+    expect(note).to.equal('Unfiled/Venue ideas.md');
+    expect(await ws.read(note!)).to.equal(
+      'Venue ideas\n\nThe barn.\n\n![image](<Venue ideas_files/image.png>)\n\n' +
+        '![image (2)](<Venue ideas_files/image (2).png>)\n\n[quote.pdf](<Venue ideas_files/quote.pdf>)\n',
+    );
+    expect(await ws.read('Unfiled/Venue ideas_files/image (2).png')).to.equal('png');
+
+    const alone = await ws.actions.saveNote('', undefined, [
+      new File(['png'], 'Receipt.PNG', { type: '' }),
+    ]);
+    expect(alone).to.equal('Unfiled/Receipt.md');
+    expect(await ws.read(alone!)).to.equal('![Receipt](Receipt_files/Receipt.png)\n');
+    expect(await ws.actions.saveNote('  ', undefined, [])).to.equal(null);
+    ws.index.dispose();
+  });
+
+  it('attaches files to an existing document, all or nothing', async () => {
+    const ws = await setUp({ 'Tasks/Active/Call Priya.md': '---\ndue: 2026-11-24\n---\n' });
+    expect(
+      await ws.actions.attach('Tasks/Active/Call Priya.md', [
+        new File(['png'], 'venue.png', { type: 'image/png' }),
+      ]),
+    ).to.equal(true);
+    expect(await ws.read('Tasks/Active/Call Priya.md')).to.equal(
+      '---\ndue: 2026-11-24\n---\n\n![venue](<Call Priya_files/venue.png>)\n',
+    );
+
+    const broken = {
+      name: 'b.png',
+      type: 'image/png',
+      arrayBuffer: () => Promise.reject(new TypeError('NotReadableError')),
+    };
+    expect(
+      await ws.actions.attach('Tasks/Active/Call Priya.md', [
+        new File(['png'], 'second.png', { type: 'image/png' }),
+        broken,
+      ]),
+    ).to.equal(false);
+    expect(await ws.v2.stat(p('Tasks/Active/Call Priya_files/second.png'))).to.equal(null);
+    expect(await ws.read('Tasks/Active/Call Priya.md')).to.not.include('second');
+    expect(ws.reports.at(-1)).to.equal(
+      "error: Couldn't attach those 2 files. Something went wrong. Try again.",
+    );
+    expect(await ws.actions.attach('Tasks/Active/Call Priya.md', [])).to.equal(true);
+    ws.index.dispose();
+  });
+
   it('saves notes to the Unfiled drawer and files them away', async () => {
     const ws = await setUp({ 'Clients/Acme/brief.md': '# Brief\n' });
     const note = await ws.actions.saveNote('# Acme pricing thoughts\n\nThree tiers.');

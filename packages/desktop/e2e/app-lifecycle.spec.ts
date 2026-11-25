@@ -132,8 +132,8 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   // differ slightly.
   expect(Math.abs(viewMetrics ?? Infinity)).toBeLessThanOrEqual(1.5);
 
-  // The sidebar titlebar ends with a desktop-only dotted grip so the
-  // draggable space beside the workspace gear is visually discoverable.
+  // The sidebar titlebar ends with a desktop-only dotted grip so its
+  // draggable space is visually discoverable.
   // A drag region never receives hover, so the grip yields to the page while
   // the pointer is elsewhere and re-arms when the pointer reaches it. CDP input
   // skips the OS caption hit test, so this pins the renderer's half of that
@@ -215,9 +215,14 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   expect(actionsGap.appRegion).toBe('drag');
   expect(actionsGap.buttonAppRegion).toBe('no-drag');
 
-  // Interactive controls inside the drag region must remain clickable.
-  await sidebarHeader.getByRole('button', { name: 'Workspace settings' }).click();
-  await expect(window.getByRole('menuitem', { name: /Workspace settings/ })).toBeVisible();
+  // Interactive controls inside the drag region must remain clickable. The
+  // app menu is the header's control; the workspace picker and its settings
+  // lead the files toolbar below the titlebar.
+  const appMenuButton = sidebarHeader.locator('.db-app-menu-btn');
+  await appMenuButton.click();
+  await expect(appMenuButton).toHaveAttribute('aria-expanded', 'true');
+  await window.keyboard.press('Escape');
+  await expect(appMenuButton).toHaveAttribute('aria-expanded', 'false');
   // Source is chosen with a click from the View menu, whose button then
   // carries its name.
   await selectWriteMode(window, 'Source');

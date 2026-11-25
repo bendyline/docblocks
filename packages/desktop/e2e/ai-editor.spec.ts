@@ -626,7 +626,7 @@ test('AI drafts draw on workspace notes found by meaning and cite them', async (
   );
 });
 
-test('Ask your workspace answers from notes and opens the note an answer cites', async ({
+test('Ask answers from notes, opens the note an answer cites, and saves the chat', async ({
   launchApp,
   workspaceDir,
   gezelHome,
@@ -654,9 +654,9 @@ test('Ask your workspace answers from notes and opens the note an answer cites',
       await window.keyboard.press('Escape');
       await expect(settings).toBeHidden();
 
-      await openAiMenuItem(window, 'Ask your workspace…');
-      const panel = window.getByRole('complementary', { name: 'Ask your workspace' });
-      await panel.getByRole('textbox', { name: 'Question' }).fill('What helped the insects?');
+      await openAiMenuItem(window, 'Ask AI…');
+      const panel = window.getByRole('complementary', { name: 'Ask', exact: true });
+      await panel.getByRole('textbox', { name: 'Message' }).fill('What helped the insects?');
       await panel.getByRole('button', { name: 'Ask', exact: true }).click();
       await expect(panel.locator('.db-ai-ask-answer')).toContainText('Neem oil helped', {
         timeout: ANSWER_TIMEOUT_MS,
@@ -665,10 +665,21 @@ test('Ask your workspace answers from notes and opens the note an answer cites',
       expect(evidence).toContain('Aphids and beetles damaged the roses');
       expect(fake.chats[0]?.messages.at(-1)?.content).toBe('What helped the insects?');
 
-      await test.info().attach('Ask your workspace', {
+      await test.info().attach('Ask', {
         body: await window.screenshot({ path: test.info().outputPath('ask-panel.png') }),
         contentType: 'image/png',
       });
+
+      // The chat is saved as a note in the workspace's Chats folder, its source linked.
+      const saved = path.join(workspaceDir, 'Chats', 'What helped the insects.md');
+      await expect
+        .poll(() => (fs.existsSync(saved) ? fs.readFileSync(saved, 'utf8') : ''), {
+          timeout: 30_000,
+        })
+        .toContain('Neem oil helped');
+      const chat = fs.readFileSync(saved, 'utf8');
+      expect(chat).toContain('## You\n\nWhat helped the insects?\n\n## AI\n\n');
+      expect(chat).toContain('](../garden/roses.md), a note in this workspace.');
 
       // The citation opens the note; the conversation stays beside it.
       await panel.getByRole('button', { name: /^Source 1: Rose bed/u }).click();
@@ -676,6 +687,32 @@ test('Ask your workspace answers from notes and opens the note an answer cites',
         window.locator('.squisq-editor-content [contenteditable="true"]').first(),
       ).toContainText('neem oil helped', { timeout: 30_000 });
       await expect(panel.locator('.db-ai-ask-question')).toHaveText('What helped the insects?');
+
+      // A new chat clears the conversation; the saved one opens again from Chats.
+      await panel.getByRole('button', { name: 'New chat', exact: true }).click();
+      await expect(panel.locator('.db-ai-ask-question')).toHaveCount(0);
+      await panel.getByRole('button', { name: 'Chats', exact: true }).click();
+      const chats = panel.getByRole('navigation', { name: 'Chats' });
+      await chats.getByRole('button', { name: /^What helped the insects/u }).click({
+        timeout: 30_000,
+      });
+      await expect(panel.locator('.db-ai-ask-question')).toHaveText('What helped the insects?');
+      await expect(panel.getByRole('button', { name: /^Source 1: Rose bed/u })).toBeVisible();
+
+      // The Ask page lists the saved chats beside the same conversation.
+      await window.locator('.db-shell-sidebar-header').getByRole('button', { name: 'Ask' }).click();
+      const page = window.getByRole('region', { name: 'Ask', exact: true });
+      const pageChats = page.locator('.db-ask-page-body > nav[aria-label="Chats"]');
+      await expect(pageChats.locator('.db-ai-ask-chat--active')).toContainText(
+        'What helped the insects',
+      );
+      await expect(page.locator('.db-ai-ask-question')).toHaveText('What helped the insects?');
+      // With the list beside the conversation, the panel's own Chats button is hidden.
+      await expect(page.getByRole('button', { name: 'Chats', exact: true })).toBeHidden();
+      await test.info().attach('Ask page', {
+        body: await window.screenshot({ path: test.info().outputPath('ask-page.png') }),
+        contentType: 'image/png',
+      });
     },
   );
 });
@@ -1026,7 +1063,7 @@ test('Diagram this… draws the selected text and inserts it after it, one undo 
   );
 });
 
-test('Study aids are saved beside the document, shown in a viewer, and offered again', async ({
+test('A summary is saved beside the document; study cards are written into it, beside their section', async ({
   launchApp,
   workspaceDir,
   gezelHome,
@@ -1063,54 +1100,43 @@ test('Study aids are saved beside the document, shown in a viewer, and offered a
       await footerButton(summary, 'Close').click();
       await expect(summary).toBeHidden();
 
-      // A quiz: a study deck whose answers can be chosen.
-      await openAiMenuItem(window, 'Create quiz…');
-      const quiz = window.getByRole('dialog', { name: 'Create a quiz with AI' });
-      await footerButton(quiz, 'Generate quiz').click();
-      const deck = quiz.getByRole('region', { name: 'Flashcards' });
-      await expect(deck).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
-      await deck.getByRole('group', { name: 'Answer choices' }).getByRole('button').first().click();
-      await expect(deck.getByRole('region', { name: 'Explanation' })).toBeVisible();
-      await expect.poll(() => fs.existsSync(path.join(sidecar, 'quiz.md'))).toBe(true);
-      await test.info().attach('Quiz viewer', {
-        body: await quiz.screenshot({ path: test.info().outputPath('quiz-viewer.png') }),
-        contentType: 'image/png',
-      });
-      await footerButton(quiz, 'Close').click();
-      await expect(quiz).toBeHidden();
-
-      // Opening it again offers the saved quiz without asking the model.
-      const calls = fake.chats.length;
-      await openAiMenuItem(window, 'Create quiz…');
-      await expect(quiz.getByText('Saved quiz', { exact: true })).toBeVisible();
-      await test.info().attach('Saved quiz offered', {
-        body: await quiz.screenshot({ path: test.info().outputPath('saved-quiz.png') }),
-        contentType: 'image/png',
-      });
-      await quiz.getByRole('button', { name: 'View quiz' }).click();
-      await expect(quiz.getByRole('region', { name: 'Flashcards' })).toBeVisible();
-      expect(fake.chats.length).toBe(calls);
-      await footerButton(quiz, 'Close').click();
-      await expect(quiz).toBeHidden();
-
-      // Flashcards: basic cards whose answers are revealed.
-      await openAiMenuItem(window, 'Create flashcards…');
-      const cards = window.getByRole('dialog', { name: 'Create flashcards with AI' });
-      await footerButton(cards, 'Generate flashcards').click();
-      const cardDeck = cards.getByRole('region', { name: 'Flashcards' });
-      await expect(cardDeck).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
-      await cardDeck.getByRole('button', { name: 'Reveal', exact: true }).click();
-      await expect(cardDeck.getByRole('region', { name: 'Answer' })).toBeVisible();
-      await expect.poll(() => fs.existsSync(path.join(sidecar, 'flashcards.md'))).toBe(true);
-      await test.info().attach('Flashcards viewer', {
-        body: await cards.screenshot({ path: test.info().outputPath('flashcards-viewer.png') }),
-        contentType: 'image/png',
-      });
-      await footerButton(cards, 'Close').click();
-
-      // Study aids never touch the document itself.
-      expect(readDocument(file)).toContain('DocBlocks stood out');
+      // A summary never touches the document itself.
       if (!upstream) expect(readDocument(file)).not.toContain(FAKE_SUMMARY_OVERVIEW);
+
+      // Quiz questions and flashcards are study cards kept with each section:
+      // the menu opens the Study cards view, and asks the model nothing yet.
+      const before = fake.chats.length;
+      await openAiMenuItem(window, 'Create flashcards…');
+      const view = window.getByRole('region', { name: 'Study cards', exact: true });
+      await expect(view).toBeVisible();
+      expect(fake.chats.length).toBe(before);
+      const generate = view.getByRole('button', { name: 'Generate for this section' });
+      await expect(generate).toBeEnabled({ timeout: 30_000 });
+      await generate.click();
+      if (!upstream) {
+        // The cards land under their section, in the document, marked as AI's.
+        await expect
+          .poll(() => readDocument(file), { timeout: ANSWER_TIMEOUT_MS })
+          .toMatch(/\{\[flashcard passage=\S+ origin=ai\]\}/u);
+        const saved = readDocument(file);
+        expect(saved.indexOf('{[flashcard')).toBeGreaterThan(saved.indexOf('DocBlocks stood out'));
+        expect(fake.chats.at(-1)?.responseFormat).toBe('study_flashcards');
+        await expect(view.getByText(/cards? (?:was|were) added/u)).toBeVisible();
+      }
+      // Nothing is saved beside the document any more.
+      expect(fs.existsSync(path.join(sidecar, 'flashcards.md'))).toBe(false);
+      await test.info().attach('Study cards view', {
+        body: await view.screenshot({ path: test.info().outputPath('study-cards.png') }),
+        contentType: 'image/png',
+      });
+
+      if (!upstream) {
+        // Studied in Use › Flashcards.
+        await view.getByRole('button', { name: 'Study these cards' }).click();
+        // The deck's controls may sit in the status bar.
+        await window.getByRole('button', { name: 'Reveal', exact: true }).click();
+        await expect(window.getByRole('region', { name: 'Answer' })).toBeVisible();
+      }
     },
   );
 });

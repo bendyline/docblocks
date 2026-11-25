@@ -44,6 +44,13 @@ export interface WorkspacePickerProps {
    * than "No workspace", which read as an error on every first visit.
    */
   loading?: boolean;
+  /**
+   * The active workspace's name as the host knows it, shown until the
+   * picker's own list has loaded. The file explorer that hosts the picker is
+   * remounted on some workspace transitions, and a fresh mount would
+   * otherwise read "No workspace" for a frame.
+   */
+  activeWorkspaceLabel?: string | null;
   /** Optional className. */
   className?: string;
 }
@@ -84,6 +91,7 @@ export function WorkspacePicker({
   onRemoveWorkspace,
   refreshKey,
   loading = false,
+  activeWorkspaceLabel,
   className,
 }: WorkspacePickerProps) {
   const [workspaces, setWorkspaces] = useState<WorkspaceDescriptor[]>([]);
@@ -274,7 +282,8 @@ export function WorkspacePicker({
   }, [newWorkspaceName, newWorkspacePending, onSelect, refresh, workspaces]);
 
   const activeWs = workspaces.find((w) => w.id === activeWorkspaceId);
-  const activeWorkspaceName = activeWs?.name ?? (loading ? 'Loading…' : 'No workspace');
+  const activeWorkspaceName =
+    activeWs?.name || activeWorkspaceLabel || (loading ? 'Loading…' : 'No workspace');
 
   return (
     <div ref={pickerRef} className={`db-workspace-picker ${className ?? ''}`}>

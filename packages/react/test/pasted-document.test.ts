@@ -8,8 +8,10 @@ import { expect } from 'chai';
 import {
   contentFromDataTransfer,
   fileNameForPastedTitle,
+  markdownForFieldPaste,
   pastedContentToMarkdown,
   readClipboardContent,
+  readClipboardWithImages,
   titleForPastedMarkdown,
 } from '../src/DocBlocksShell/pasted-document.js';
 
@@ -57,58 +59,60 @@ describe('pastedContentToMarkdown', () => {
 });
 
 describe('titleForPastedMarkdown', () => {
-  it('uses the shallowest heading', () => {
-    expect(titleForPastedMarkdown('Intro line\n\n## Details\n\n# Q3 Marketing Plan\n')).to.equal(
-      'Q3 Marketing Plan',
-    );
+  it('uses the shallowest heading', async () => {
+    expect(
+      await titleForPastedMarkdown('Intro line\n\n## Details\n\n# Q3 Marketing Plan\n'),
+    ).to.equal('Q3 Marketing Plan');
   });
 
-  it('uses a front matter title first', () => {
-    expect(titleForPastedMarkdown('---\ntitle: Board update\n---\n\n# Other\n')).to.equal(
+  it('uses a front matter title first', async () => {
+    expect(await titleForPastedMarkdown('---\ntitle: Board update\n---\n\n# Other\n')).to.equal(
       'Board update',
     );
   });
 
-  it('drops a chat assistant’s opener', () => {
+  it('drops a chat assistant’s opener', async () => {
     expect(
-      titleForPastedMarkdown("Sure! Here's a draft email to your landlord:\n\nDear Sam,\n"),
+      await titleForPastedMarkdown("Sure! Here's a draft email to your landlord:\n\nDear Sam,\n"),
     ).to.equal('Draft email to your landlord');
-    expect(titleForPastedMarkdown('Certainly.\n\nHere is the summary you asked for.\n')).to.equal(
-      'Summary you asked for',
-    );
+    expect(
+      await titleForPastedMarkdown('Certainly.\n\nHere is the summary you asked for.\n'),
+    ).to.equal('Summary you asked for');
   });
 
-  it('reads the words of a line, not its Markdown', () => {
+  it('reads the words of a line, not its Markdown', async () => {
     expect(
-      titleForPastedMarkdown('**[OpenAI](https://openai.com)** shipped `v2` today. More soon.'),
+      await titleForPastedMarkdown(
+        '**[OpenAI](https://openai.com)** shipped `v2` today. More soon.',
+      ),
     ).to.equal('OpenAI shipped v2 today');
   });
 
-  it('keeps a long first sentence to eight words', () => {
+  it('keeps a long first sentence to eight words', async () => {
     expect(
-      titleForPastedMarkdown(
+      await titleForPastedMarkdown(
         'the committee met on Tuesday to review every single budget line in detail',
       ),
     ).to.equal('The committee met on Tuesday to review every');
   });
 
-  it('keeps an article that does not follow an opener', () => {
-    expect(titleForPastedMarkdown('A quick note about Friday.')).to.equal(
+  it('keeps an article that does not follow an opener', async () => {
+    expect(await titleForPastedMarkdown('A quick note about Friday.')).to.equal(
       'A quick note about Friday',
     );
   });
 
-  it('skips code, tables and rules', () => {
+  it('skips code, tables and rules', async () => {
     expect(
-      titleForPastedMarkdown(
+      await titleForPastedMarkdown(
         '```js\nconst x = 1;\n```\n\n| a | b |\n|---|---|\n\n---\n\nAfter the code',
       ),
     ).to.equal('After the code');
   });
 
-  it('is null when nothing readable is left', () => {
-    expect(titleForPastedMarkdown('```\nonly code\n```\n')).to.equal(null);
-    expect(titleForPastedMarkdown('Sure!\n')).to.equal(null);
+  it('is null when nothing readable is left', async () => {
+    expect(await titleForPastedMarkdown('```\nonly code\n```\n')).to.equal(null);
+    expect(await titleForPastedMarkdown('Sure!\n')).to.equal(null);
   });
 });
 
@@ -183,6 +187,74 @@ describe('readClipboardContent', () => {
       await readClipboardContent({ read: async () => [clipboardItem({ 'image/png': 'x' })] }),
     ).to.deep.equal({ kind: 'empty' });
     expect(await readClipboardContent(null)).to.deep.equal({ kind: 'unavailable' });
+  });
+});
+
+describe('readClipboardWithImages', () => {
+  it('reads pictures as files beside the text', async () => {
+    const result = await readClipboardWithImages({
+      read: async () => [
+        clipboardItem({ 'image/png': 'png' }),
+        clipboardItem({ 'text/plain': 'Hi' }),
+      ],
+    });
+    expect(result.kind).to.equal('content');
+    if (result.kind !== 'content') return;
+    expect(result.content).to.deep.equal({ text: 'Hi', html: null });
+    expect(result.images.map((image) => [image.name, image.type])).to.deep.equal([
+      ['pasted-image.png', 'image/png'],
+    ]);
+  });
+
+  it('counts a picture alone as content, and nothing as empty', async () => {
+    const pictureOnly = await readClipboardWithImages({
+      read: async () => [clipboardItem({ 'image/jpeg': 'jpg' })],
+    });
+    expect(pictureOnly.kind === 'content' && pictureOnly.content).to.equal(null);
+    expect(await readClipboardWithImages({ read: async () => [] })).to.deep.equal({
+      kind: 'empty',
+    });
+  });
+
+  it('respects a refusal and falls back to plain text otherwise', async () => {
+    expect(
+      await readClipboardWithImages({
+        read: async () => {
+          throw new DOMException('Denied', 'NotAllowedError');
+        },
+        readText: async () => 'never asked',
+      }),
+    ).to.deep.equal({ kind: 'unavailable' });
+    expect(
+      await readClipboardWithImages({
+        read: async () => {
+          throw new TypeError('not implemented');
+        },
+        readText: async () => 'Plain words',
+      }),
+    ).to.deep.equal({ kind: 'content', content: { text: 'Plain words' }, images: [] });
+    expect(await readClipboardWithImages(null)).to.deep.equal({ kind: 'unavailable' });
+  });
+});
+
+describe('markdownForFieldPaste', () => {
+  it('leaves plain text and Markdown to the field’s own paste', () => {
+    expect(markdownForFieldPaste({ text: 'Price is $5 (each)' })).to.equal(null);
+    expect(
+      markdownForFieldPaste({ text: 'Plain', html: '<span style="color:red">Plain</span>' }),
+    ).to.equal(null);
+    expect(
+      markdownForFieldPaste({ text: '## Notes\n\n**bold**', html: '<h2>Notes</h2>' }),
+    ).to.equal(null);
+  });
+
+  it('converts HTML whose structure the plain text lost', async () => {
+    const conversion = markdownForFieldPaste({
+      text: 'Docs',
+      html: '<p>See <a href="https://example.com">Docs</a></p>',
+    });
+    expect(conversion).to.not.equal(null);
+    expect(await conversion).to.equal('See [Docs](https://example.com)');
   });
 });
 

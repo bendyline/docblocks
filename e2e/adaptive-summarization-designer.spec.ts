@@ -37,13 +37,16 @@ async function openWelcome(page: Page): Promise<void> {
 }
 
 /**
- * View › Edit › Summaries, then Custom. A resize can re-render the toolbar and
- * close a menu opened in the same frame, so retry the whole open until it shows.
+ * View › Edit › Summaries, then Custom from the Summary style list. A resize can
+ * re-render the toolbar and close a menu opened in the same frame, so retry the
+ * whole open until it shows.
  */
 async function openDesigner(page: Page) {
   const summarize = page.getByRole('region', { name: 'Summaries', exact: true });
   const designer = summarize.getByRole('region', { name: 'Summarization designer', exact: true });
   const viewMenu = page.getByRole('menu', { name: 'View', exact: true });
+  // Squisq portals the style list to the body, outside the Summaries region.
+  const styles = page.getByRole('listbox', { name: 'Summary style', exact: true });
   await expect(async () => {
     if (await designer.isVisible()) return;
     if (!(await summarize.isVisible())) {
@@ -53,7 +56,11 @@ async function openDesigner(page: Page) {
         .getByRole('menuitemradio', { name: 'Summaries', exact: true })
         .click({ timeout: 2_000 });
     }
-    await summarize.getByRole('radio', { name: 'Custom', exact: true }).check({ timeout: 2_000 });
+    // The trigger toggles the list, so a retry must not close one left open.
+    if (!(await styles.isVisible())) {
+      await summarize.getByRole('button', { name: /^Summary style / }).click({ timeout: 2_000 });
+    }
+    await styles.getByRole('option', { name: 'Custom', exact: true }).click({ timeout: 2_000 });
     await expect(designer).toBeVisible({ timeout: 5_000 });
   }).toPass({ timeout: 30_000 });
   // The inline designer stays mounted across a resize and keeps the slide the

@@ -104,13 +104,19 @@ export type { DiagramKind, DiagramSpec } from './diagram-spec.js';
 
 // Study aids
 export {
-  FLASHCARD_CARDS,
   MIN_STUDY_CHARACTERS,
-  QUIZ_QUESTIONS,
   generateStudyAid,
   type StudyOptions,
   type StudyOutcome,
 } from './study-pipeline.js';
+
+// Study cards kept with each section (Squisq's protocol; this is the transport)
+export {
+  generateStudyCards,
+  studyModel,
+  studyModelLimits,
+  type StudyModelInfo,
+} from '../Study/study-ai.js';
 
 // Presentations
 export {

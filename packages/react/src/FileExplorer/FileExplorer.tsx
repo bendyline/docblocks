@@ -13,6 +13,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from 'react';
 import {
   isFileSystemMoveStateError,
@@ -39,7 +40,6 @@ import {
   ImportFilesIcon,
   NewFileIcon,
   NewFolderIcon,
-  NewFromClipboardIcon,
   OpenFolderIcon,
   SearchIcon,
   SortByLastModifiedIcon,
@@ -184,6 +184,12 @@ export interface FileExplorerProps {
   activeWorkspaceId?: string | null;
   /** Active workspace's name, shown as the tree's heading; "Files" without one. */
   workspaceName?: string | null;
+  /**
+   * Controls that lead the toolbar in place of the workspace-name heading:
+   * the shell puts its workspace picker and workspace settings button here, so
+   * pinned documents stay above them and the file actions share their row.
+   */
+  toolbarStart?: ReactNode;
   /** Documents pinned across every workspace, shown above the active file tree. */
   pinnedDocuments?: readonly PinnedDocumentListItem[];
   /** Canonical paths pinned inside the active workspace. */
@@ -245,11 +251,6 @@ export interface FileExplorerProps {
    * the selected folder, or `''` for the workspace's top level.
    */
   onRequestNewDocument?: (folder: string) => void;
-  /**
-   * Shows a "New document from clipboard" button. The host reads the
-   * clipboard, names the document from what it says, and opens it.
-   */
-  onCreateFromClipboard?: () => void;
   /** Shows a Search button that switches the sidebar to workspace search. */
   onShowSearch?: () => void;
   /** Tooltip shortcut for the Search button, e.g. `Ctrl+Shift+F`. */
@@ -270,6 +271,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
     onSortModeChange,
     activeWorkspaceId,
     workspaceName,
+    toolbarStart,
     pinnedDocuments = [],
     pinnedPaths = [],
     onPinnedDocumentSelect,
@@ -291,7 +293,6 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
     onNewFileFormatUsed,
     onCreateDocument,
     onRequestNewDocument,
-    onCreateFromClipboard,
     onShowSearch,
     searchShortcutLabel,
     className,
@@ -934,16 +935,22 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
       )}
 
       {/* Toolbar */}
-      <div className="db-explorer-toolbar">
-        {/* A long name is cut short; the tooltip carries all of it. In a narrow
-            sidebar it is hidden outright -- the workspace picker above already
-            names the workspace. */}
-        <span
-          className="db-explorer-title db-explorer-workspace-name"
-          title={workspaceName || undefined}
-        >
-          {workspaceName || 'Files'}
-        </span>
+      <div
+        className={`db-explorer-toolbar${toolbarStart ? ' db-explorer-toolbar--workspace' : ''}`}
+      >
+        {toolbarStart ? (
+          // The host's workspace picker names the workspace itself.
+          <div className="db-explorer-workspace-controls">{toolbarStart}</div>
+        ) : (
+          // A long name is cut short; the tooltip carries all of it. In a
+          // narrow sidebar it is hidden outright, leaving the actions the room.
+          <span
+            className="db-explorer-title db-explorer-workspace-name"
+            title={workspaceName || undefined}
+          >
+            {workspaceName || 'Files'}
+          </span>
+        )}
         <div className="db-explorer-actions">
           <div className="db-explorer-sort-actions" role="group" aria-label="File sorting">
             <button
@@ -1023,18 +1030,6 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
           >
             <NewFileIcon />
           </button>
-          {onCreateFromClipboard && (
-            <button
-              type="button"
-              className="db-explorer-btn"
-              disabled={newItemCreationPending}
-              onClick={onCreateFromClipboard}
-              title="New document from clipboard"
-              aria-label="New document from clipboard"
-            >
-              <NewFromClipboardIcon />
-            </button>
-          )}
           {onImportFiles && (
             <>
               <button

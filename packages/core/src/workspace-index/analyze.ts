@@ -19,6 +19,7 @@ import {
   type CatalogDocumentFormat,
 } from '../workspace-settings/catalog.js';
 import { extractSearchText, lineSearchText, type SearchText } from './search-text.js';
+import { blankDroppedLines } from './content-source.js';
 import type { IndexedDocument, IndexedDocumentIssue } from './types.js';
 
 type MarkdownModule = typeof import('@bendyline/squisq/markdown');
@@ -35,7 +36,7 @@ function loadMarkdown(): Promise<MarkdownModule> {
  * records the revision with each document, so records an earlier version of
  * the app stored are brought up to date instead of being trusted as they are.
  */
-export const DOCUMENT_ANALYZER_REVISION = 2;
+export const DOCUMENT_ANALYZER_REVISION = 3;
 
 export interface DocumentIdentity {
   readonly path: WorkspacePath;
@@ -47,6 +48,11 @@ export interface DocumentIdentity {
 export interface AnalyzedDocument {
   readonly record: IndexedDocument;
   readonly text: SearchText | null;
+  /**
+   * The text to keep for passages, when it is not the file as read: side
+   * information kept in the document blanked out (see `content-source.ts`).
+   */
+  readonly body?: string;
 }
 
 function stemOf(path: string): string {
@@ -160,7 +166,7 @@ export async function analyzeDocumentBytes(
     return linesDocument(identity, source, 'parse-limit');
   }
 
-  const { MarkdownLimitError, parseMarkdown } = await loadMarkdown();
+  const { MarkdownLimitError, parseMarkdown, withoutAccessorySectionNodes } = await loadMarkdown();
   let document: ReturnType<MarkdownModule['parseMarkdown']>;
   try {
     document = parseMarkdown(source, {
@@ -172,6 +178,15 @@ export async function analyzeDocumentBytes(
     throw error;
   }
 
+  // Side information kept in the document (slide summaries, study cards) is
+  // not the person's writing: not counted as steps, not searched, not cited.
+  const kept = withoutAccessorySectionNodes(document.children);
+  const keptSet = new Set(kept);
+  const content = kept === document.children ? document : { ...document, children: kept };
+  const indexedSource = blankDroppedLines(
+    source,
+    document.children.filter((node) => !keptSet.has(node)),
+  );
   const entry = await catalogEntryFromDocument(
     {
       path: identity.path,
@@ -194,9 +209,10 @@ export async function analyzeDocumentBytes(
       ...(entry.excerpt ? { excerpt: entry.excerpt } : {}),
       ...(entry.description ? { description: entry.description } : {}),
       ...(entry.tags ? { tags: entry.tags } : {}),
-      ...propertyFields(document.frontmatter, countChecklist(document)),
+      ...propertyFields(document.frontmatter, countChecklist(content)),
       content: 'full',
     },
-    text: extractSearchText(document, source),
+    text: extractSearchText(content, indexedSource),
+    ...(indexedSource !== source ? { body: indexedSource } : {}),
   };
 }

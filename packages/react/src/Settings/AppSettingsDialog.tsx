@@ -22,6 +22,7 @@ import type { ProofingPreferences } from '../preferences/proofing.js';
 import {
   AccentColorSettings,
   InterfaceFontSettings,
+  LeftPaneSettingsControls,
   ProofingSettingsControls,
   SettingsDialog,
   ThemeSettings,
@@ -64,6 +65,8 @@ export interface AppSettingsDialogProps {
   onWriteCanvasSettingsChange?: (settings: WriteCanvasPreferences) => void;
   proofingPreferences: ProofingPreferences;
   onProofingPreferencesChange?: (settings: ProofingPreferences) => void;
+  /** Whether Quick Jot shows in the left pane; omitted where there is no left pane. */
+  quickJot?: { readonly visible: boolean; readonly onChange: (visible: boolean) => void };
   ai?: DocBlocksHostAiAPI;
   speech?: DocBlocksHostSpeechAPI;
   tray?: DocBlocksHostMenuAPI;
@@ -109,6 +112,7 @@ export function AppSettingsDialog({
   onWriteCanvasSettingsChange,
   proofingPreferences,
   onProofingPreferencesChange,
+  quickJot,
   ai,
   speech,
   tray,
@@ -171,6 +175,12 @@ export function AppSettingsDialog({
             value={proofingPreferences}
             onChange={(settings) => onProofingPreferencesChange?.(settings)}
           />
+          {quickJot && (
+            <LeftPaneSettingsControls
+              quickJot={quickJot.visible}
+              onQuickJotChange={quickJot.onChange}
+            />
+          )}
         </>
       ),
     },

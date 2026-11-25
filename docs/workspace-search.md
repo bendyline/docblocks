@@ -39,6 +39,11 @@ createWorkspaceIndex (core)        ──▶   serveWorkspaceIndexEngine (core) 
 startEmbeddingScheduler (react) ◀────▶   pendingEmbeddings / storeEmbeddings  native embed
 ```
 
+- **Your writing only.** The index reads a document without the side
+  information kept in it — study cards and slide summaries (Squisq accessory
+  blocks): their lines are blanked before the text is searched, chunked or
+  cited, so Ask never cites an AI-written card as your notes, and every other
+  line keeps its number (`workspace-index/content-source.ts`).
 - **Engine seam.** `WorkspaceIndexEngine` (`packages/core/src/workspace-index/engine.ts`):
   `restore`, `analyze`, `forget`, `search`, and optionally `find` (ranked
   passages). `createMemoryEngine` is the default; `createWorkerEngine` talks to
@@ -134,19 +139,20 @@ startEmbeddingScheduler (react) ◀────▶   pendingEmbeddings / storeEm
 - **Footnotes.** An inserted draft names a cited note in a footnote that links
   it relative to the document: `[^source-1]: [Rose bed](garden/roses.md), a
 note in this workspace.`
-- **Ask your workspace** (AI menu, where the host can search by meaning): a
-  side-panel conversation. Each question finds passages across the whole
-  workspace (4 s budget), sends them with the last three finished turns, and
-  checks the answer's details against them where the host has a fact check. A
-  question that matches no note never reaches the model, and a turn stops
-  before answering when Gezel's relevance model finds none of its passages
-  relevant (the model would otherwise answer from memory). Citations are chips
-  that open the note with Find on the passage; the indicator lists each note
-  with its lines. Answers can be inserted into the document or saved as a new
-  note, both with footnotes. The conversation belongs to the shell, so it
-  survives opening a cited note, and starts afresh with another workspace. The
-  panel explains what stops a question: search by meaning off, the model
-  missing, or the workspace switched off for AI answers.
+- **Ask** (AI menu → Ask AI…, and the Ask page): a chat with the person's
+  AI. Each message finds passages across the whole workspace (4 s budget,
+  saved chats left out), sends them with the last eight finished turns, and
+  checks the details of an answer that drew on sources where the host has a
+  fact check. Every message reaches the model: with no passages, or none
+  Gezel's relevance model finds relevant, it answers as any chat would.
+  Citations are chips that open the note with Find on the passage; the
+  indicator lists each note with its lines. Answers can be inserted into the
+  document or saved as a new note, both with footnotes, and every exchange is
+  saved to the chat's own Markdown file (see `docs/home-and-folders.md`, Ask).
+  The conversation belongs to the shell, so it survives opening a cited note
+  and switching workspaces. The panel says why answers do not draw on notes
+  (search by meaning off, the model missing, or the workspace switched off
+  for AI answers) without stopping the chat.
 - **Switch.** Settings → Search → "Use this workspace in AI answers", per
   workspace: on by default for an on-device provider, off for a remote one.
 

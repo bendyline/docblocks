@@ -16,9 +16,10 @@ The explorer hides `.docblocks/`, like every dot-folder.
 
 ## Editing
 
-- **Site, desktop, mobile:** the workspace gear menu › **Workspace
-  settings…**, or **Settings › Version history › This workspace's
-  settings…**. Changes are drafted and written once on **Save**.
+- **Site, desktop, mobile:** the workspace gear menu (beside the workspace
+  picker, at the start of the files toolbar) › **Workspace settings…**, or
+  **Settings › Version history › This workspace's settings…**. Changes are
+  drafted and written once on **Save**.
 - **VS Code:** the editor's gear › **This folder**, saved with **Save folder
   settings**. VS Code also validates and completes hand edits to
   `.docblocks/workspace.json` against the bundled JSON Schema.

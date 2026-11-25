@@ -4,7 +4,6 @@ import { daysBetween, dueDate } from '@bendyline/docblocks/properties';
 import { sectionTasks, type TaskItem } from '../Tasks/task-model.js';
 import { loadLaunchView, saveLaunchView } from '../preferences/launch-view.js';
 import { loadRecentDocuments } from '../WorkspaceIndex/recent-documents.js';
-import { CaptureBox } from './CaptureBox.js';
 import { PageFrame, PageSection } from './PageFrame.js';
 import type { ShellPageContext } from './page-context.js';
 import { PhoneInboxOffer } from './PhoneInboxOffer.js';
@@ -90,7 +89,11 @@ const SOON_DAYS = 7;
 const SOON_LIMIT = 8;
 const RECENT_LIMIT = 6;
 
-const START_CARDS: Record<FolderKind, { title: string; text: string; action: string }> = {
+/** Ask sets up its chats folder itself, on the first answer. */
+const START_CARDS: Record<
+  Exclude<FolderKind, 'chats'>,
+  { title: string; text: string; action: string }
+> = {
   tasks: {
     title: 'Keep a task list',
     text: 'Each task is a note in a folder, with a due date. Finished tasks move to Done.',
@@ -103,7 +106,7 @@ const START_CARDS: Record<FolderKind, { title: string; text: string; action: str
   },
   unfiled: {
     title: 'Catch everything',
-    text: 'Notes you jot here and things you drop in wait in one place until you file them.',
+    text: 'Notes from Quick Jot and things you drop here wait in one place until you file them.',
     action: 'Add your Unfiled drawer',
   },
 };
@@ -219,21 +222,6 @@ export function HomePage({ context }: { context: ShellPageContext }) {
       onShowFiles={context.onShowFiles}
     >
       {context.phoneInbox && <PhoneInboxOffer offer={context.phoneInbox} />}
-      {actions && (
-        <CaptureBox
-          label="Add a task or jot something down"
-          placeholder="Call Priya tomorrow"
-          today={today}
-          primary={{
-            label: 'Add task',
-            run: async (text) => (await actions.addTask(text)) !== null,
-          }}
-          secondary={[
-            { label: 'Add to journal', run: (text) => actions.appendToJournal(text) },
-            { label: 'Save as note', run: async (text) => (await actions.saveNote(text)) !== null },
-          ]}
-        />
-      )}
 
       <PageSection
         title="Today"

@@ -21,10 +21,16 @@ import {
 import { MemoryContentContainer } from '@bendyline/squisq/storage';
 import {
   createPresentationPlan,
-  parsePresentationHints,
+  readPresentationHints,
   PRESENTATION_HINTS_KEY,
+  SUMMARY_SUPPORTING_SLIDES_KEY,
 } from '@bendyline/squisq/transform';
+import { buildNarrationScript } from '@bendyline/squisq/narration';
 import { openDocumentAction, selectWriteMode } from '../../../e2e/helpers/toolbar.js';
+
+/** What the narration speaks, which a recorded take must match. */
+const spoken = (markdown: string) =>
+  buildNarrationScript(markdownToDoc(parseMarkdown(markdown))).sourceText;
 
 const SCRIPT = `# Give your ideas a voice
 
@@ -50,7 +56,14 @@ function summarizeView(window: Page) {
 /** Opens View › Edit › Summaries and chooses Custom, whose designer (Squisq's) it returns. */
 async function openDesigner(window: Page, screenshotPath?: string) {
   await selectWriteMode(window, 'Summaries');
-  await summarizeView(window).getByRole('radio', { name: 'Custom', exact: true }).check();
+  await summarizeView(window)
+    .getByRole('button', { name: /^Summary style / })
+    .click();
+  // Squisq portals the style list to the body, outside the Summaries region.
+  await window
+    .getByRole('listbox', { name: 'Summary style', exact: true })
+    .getByRole('option', { name: 'Custom', exact: true })
+    .click();
   if (screenshotPath) await summarizeView(window).screenshot({ path: screenshotPath });
   return summarizeView(window).getByRole('region', {
     name: 'Summarization designer',
@@ -195,7 +208,10 @@ test('designs Custom summaries in View › Summaries and exports a timed MP4', a
     await expect(maker.getByRole('region', { name: 'Original document text' })).toContainText(
       'Start with a few bullet points.',
     );
-    await expect(maker.getByRole('textbox')).toHaveCount(0);
+    // The only text fields are the opening slide's wording, which starts open;
+    // the document text itself is read-only here.
+    await expect(maker.getByRole('textbox')).toHaveCount(2);
+    await expect(maker.getByRole('textbox', { name: 'Slide headline', exact: true })).toBeVisible();
     await expect(maker).toContainText('Follows narration');
     await expect(maker.getByRole('alert')).toHaveCount(0);
     await expect(
@@ -225,7 +241,7 @@ test('designs Custom summaries in View › Summaries and exports a timed MP4', a
       .getByRole('button')
       .first()
       .click();
-    await maker.getByText('Customize slide wording (slides only)', { exact: true }).click();
+    // Slide wording opens by default.
     const headline = maker.getByRole('textbox', { name: 'Slide headline', exact: true });
     await headline.fill('An idea becomes a story');
     // Wording is saved as the field is left; there is no button to commit.
@@ -233,9 +249,12 @@ test('designs Custom summaries in View › Summaries and exports a timed MP4', a
     await maker.screenshot({ path: testInfo.outputPath('reviewed-presentation.png') });
     await expect.poll(() => fs.readFileSync(file, 'utf8')).toContain('An idea becomes a story');
     const saved = fs.readFileSync(file, 'utf8');
-    expect(saved).toContain(PRESENTATION_HINTS_KEY);
-    // Slide-only edits must leave the authored body (including narration) byte-identical.
-    expect(splitFrontmatterBlock(saved).body).toBe(splitFrontmatterBlock(narrated).body);
+    // The wording is a summary block under its section, never the old JSON key.
+    expect(saved).toMatch(/^#{2,6} An idea becomes a story \{\[summary\]\}$/m);
+    expect(saved).not.toContain(PRESENTATION_HINTS_KEY);
+    // Slide-only edits must leave what is narrated identical, so the recorded
+    // take still fits.
+    expect(spoken(saved)).toBe(spoken(narrated));
     // Each saved change is a step the Write editor, mounted behind the
     // designer, can undo and redo.
     await window.waitForTimeout(600);
@@ -243,7 +262,8 @@ test('designs Custom summaries in View › Summaries and exports a timed MP4', a
     await editor.focus();
     await window.keyboard.press('ControlOrMeta+Z');
     await expect.poll(() => fs.readFileSync(file, 'utf8')).not.toContain('An idea becomes a story');
-    expect(fs.readFileSync(file, 'utf8')).toContain(PRESENTATION_HINTS_KEY);
+    // One undo takes back the wording; the AI's summaries stay.
+    expect(fs.readFileSync(file, 'utf8')).toContain('origin=ai');
     expect(fs.readFileSync(file, 'utf8')).toContain('anchor=document');
     await window.keyboard.press('ControlOrMeta+Shift+Z');
     await expect.poll(() => fs.readFileSync(file, 'utf8')).toBe(saved);
@@ -254,10 +274,10 @@ test('designs Custom summaries in View › Summaries and exports a timed MP4', a
     await expect(maker.getByRole('region', { name: 'Original document text' })).toContainText(
       'Give your ideas a voice',
     );
-    await maker.getByText('Customize slide wording (slides only)', { exact: true }).click();
     await expect(maker.getByRole('textbox', { name: 'Slide headline', exact: true })).toHaveValue(
       'An idea becomes a story',
     );
+    // Close the wording before moving on; it stays closed from slide to slide.
     await maker.getByText('Customize slide wording (slides only)', { exact: true }).click();
     await maker
       .getByRole('navigation', { name: 'Presentation slides' })
@@ -266,9 +286,13 @@ test('designs Custom summaries in View › Summaries and exports a timed MP4', a
       .click();
     await maker.screenshot({ path: testInfo.outputPath('steps-presentation.png') });
     const parsed = markdownToDoc(parseMarkdown(saved));
-    const hints = parsePresentationHints(parsed.frontmatter?.[PRESENTATION_HINTS_KEY])!;
+    const hints = readPresentationHints(parsed).hints;
     expect(hints.inbetweens).toBe(true);
-    expect(hints.blocks.flatMap((block) => block.ai ?? [])).toHaveLength(5);
+    expect(
+      hints.blocks.flatMap((block) =>
+        (block.slides ?? []).filter((slide) => slide.origin === 'ai'),
+      ),
+    ).toHaveLength(5);
     expect(parsed.frontmatter?.['squisq-presentation']).toBeUndefined();
     expect(parsed.frontmatter?.['squisq-transform']).toBe('dynamic-slides');
     const plan = createPresentationPlan(parsed, hints);
@@ -416,10 +440,16 @@ test('keeps the full source section selected when layouts split and merge slides
   await expect(slides.getByRole('button')).toHaveCount(3);
   await expect(original).toHaveText(`Features\n${features}`);
   await expect(layout).toHaveValue('statement');
-  await expect(slides.locator('[aria-current="step"]')).toContainText('Features');
-  // Each choice is saved as it is made, into the frontmatter alone.
-  await expect.poll(() => fs.readFileSync(file, 'utf8')).toContain('"layout":"statement"');
-  expect(splitFrontmatterBlock(fs.readFileSync(file, 'utf8')).body).toBe(source);
+  // The slide's group names its section; the slide itself shows its passage.
+  await expect(slides.locator('.squisq-summary-designer-section--current')).toContainText(
+    'Features',
+  );
+  // Each choice is saved as it is made, on the section's heading alone.
+  await expect.poll(() => fs.readFileSync(file, 'utf8')).toContain('{[slideLayout=statement]}');
+  // (Choosing Custom sets `squisq-transform` in the frontmatter.)
+  expect(splitFrontmatterBlock(fs.readFileSync(file, 'utf8')).body).toBe(
+    source.replace('## Features\n', '## Features {[slideLayout=statement]}\n'),
+  );
 });
 
 test('refreshes dynamic summaries after editing prose without saving generated text', async ({
@@ -442,14 +472,17 @@ test('refreshes dynamic summaries after editing prose without saving generated t
   await expect(designer.getByRole('img', { name: /^Slide 1:/ })).toContainText('The sky is blue.');
   await expect(designer.getByRole('alert')).toHaveCount(0);
   // Opening the designer saves nothing; a design change saves only intent.
-  expect(fs.readFileSync(file, 'utf8')).not.toContain(PRESENTATION_HINTS_KEY);
+  const opened = fs.readFileSync(file, 'utf8');
+  expect(opened).not.toContain(SUMMARY_SUPPORTING_SLIDES_KEY);
   await designer
     .getByRole('checkbox', { name: 'Add supporting visual slides where useful' })
     .uncheck();
-  await expect.poll(() => fs.readFileSync(file, 'utf8')).toContain(PRESENTATION_HINTS_KEY);
+  await expect
+    .poll(() => fs.readFileSync(file, 'utf8'))
+    .toContain(`${SUMMARY_SUPPORTING_SLIDES_KEY}: false`);
   const saved = fs.readFileSync(file, 'utf8');
-  const hints = parsePresentationHints(parseMarkdown(saved).frontmatter?.[PRESENTATION_HINTS_KEY])!;
-  expect(hints.blocks).toEqual([]);
-  expect(JSON.stringify(hints)).not.toContain('sky');
+  expect(readPresentationHints(markdownToDoc(parseMarkdown(saved))).hints.blocks).toEqual([]);
+  expect(saved).not.toContain('{[summary');
+  expect(saved).not.toContain(PRESENTATION_HINTS_KEY);
   expect(saved).not.toContain('pink');
 });

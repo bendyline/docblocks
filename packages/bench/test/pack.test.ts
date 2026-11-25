@@ -252,6 +252,45 @@ describe('docbench pack', () => {
     });
   });
 
+  describe('study cards', () => {
+    /** A flashcard made from the first sentence of the passage a request carries. */
+    const fromPassage = (body: SentBody) => {
+      const passage =
+        /<passage>\n([\s\S]*?)\n<\/passage>/u.exec(body.messages.at(-1)!.content)?.[1] ?? '';
+      const sentence = passage.split(/(?<=[.!?])\s+/u)[0] ?? passage;
+      const words = sentence.replace(/[.!?]$/u, '').split(/\s+/u);
+      return JSON.stringify({
+        cards: [
+          {
+            question: `${words.slice(0, Math.max(3, words.length - 2)).join(' ')} what?`,
+            answer: sentence,
+          },
+        ],
+      });
+    };
+
+    it('is unusable when no reply can be read', async () => {
+      const { outcome, sent } = await run('study-flashcards', 'water-treatment', () => 'nope');
+      expect(sent.length).to.be.greaterThan(0);
+      expect(outcome.usable).to.equal(false);
+      expect(outcome.checks.find((item) => item.id === 'made')?.score).to.equal(0);
+    });
+
+    it('asks each section for structured output, never reasoning, and writes the cards it keeps', async () => {
+      const { outcome, sent } = await run('study-flashcards', 'water-treatment', (body) =>
+        fromPassage(body),
+      );
+      expect(sent.length).to.be.greaterThan(1);
+      for (const body of sent) {
+        expect(body.response_format?.json_schema?.name).to.equal('study_flashcards');
+        expect(body.reasoning_effort).to.equal('none');
+      }
+      expect(outcome.usable).to.equal(true);
+      for (const id of ['made', 'owned', 'prose', 'distinct'])
+        expect(outcome.checks.find((item) => item.id === id)?.score, id).to.equal(1);
+    });
+  });
+
   describe('the endpoint transport', () => {
     it('streams, as the desktop does, and reads the streamed reply and its usage', async () => {
       const findings = JSON.stringify([

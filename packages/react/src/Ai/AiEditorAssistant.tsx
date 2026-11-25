@@ -81,7 +81,7 @@ export interface AiToolbarControlProps {
   onOpenPanel: (panel: AiPanel) => void;
   /** Opens Settings on AI, where a person with no model adds one. */
   onOpenSettings?: () => void;
-  /** Offer "Ask your workspace", where the host can search notes by meaning. */
+  /** Offer Ask, the chat panel. */
   canAskWorkspace?: boolean;
   /**
    * While AI is off, show the control anyway and offer to turn AI on: the
@@ -120,6 +120,8 @@ export function AiToolbarControl({
     markdownSource,
     replaceSelection,
     selectionVersion,
+    setActiveView,
+    setLayoutMode,
     workspaceContainer,
   } = useEditorContext();
   const { status, recheck } = useLiveAiStatus(ai);
@@ -345,7 +347,7 @@ export function AiToolbarControl({
             onOpenPanel('ask');
           }}
         >
-          {openPanel === 'ask' ? 'Show workspace questions' : 'Ask your workspace…'}
+          {openPanel === 'ask' ? 'Show Ask' : 'Ask AI…'}
         </button>
       )}
       <button
@@ -411,6 +413,26 @@ export function AiToolbarControl({
           }}
         >
           {STUDY_AID_LABELS[kind].menu}
+        </button>
+      ))}
+      {/* Quiz questions and flashcards are kept with each section, in Squisq's
+          Study cards view, where Generate runs beside the cards it makes. These
+          open it; they do not start a run. */}
+      {(['Create quiz…', 'Create flashcards…'] as const).map((label) => (
+        <button
+          key={label}
+          type="button"
+          role="menuitem"
+          tabIndex={-1}
+          className="db-toolbar-menu-item"
+          disabled={!ready || markdownSource.trim().length === 0}
+          onClick={() => {
+            closeMenu(false);
+            setActiveView('wysiwyg');
+            setLayoutMode('study');
+          }}
+        >
+          {label}
         </button>
       ))}
       {ready && !selection && (

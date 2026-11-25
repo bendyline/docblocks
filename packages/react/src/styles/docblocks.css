@@ -397,6 +397,9 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  /* Stated, not left to `overflow`: the rule below unclips the explorer while
+     a toolbar menu is open, and must not change how tall it is. */
+  min-height: 0;
   overflow: hidden;
   font-size: 13px;
   position: relative;
@@ -422,6 +425,9 @@
 
 .db-explorer-toolbar {
   container: db-explorer-toolbar / inline-size;
+  /* The containing block for the workspace picker's dropdown (below); being a
+     size container does not make it one. */
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -449,14 +455,122 @@
   white-space: nowrap;
 }
 
-/* The workspace picker in the sidebar header already names the workspace, so
-   in anything short of a wide sidebar the toolbar drops its copy and leaves the
-   actions the room. Phone drawers top out at 400px, so this always applies
-   there; on desktop the name returns once the sidebar is dragged wide. */
+/* Without a host picker the toolbar is headed by the workspace's name. In
+   anything short of a wide sidebar it drops the name and leaves the actions
+   the room. Phone drawers top out at 400px, so this always applies there. */
 @container db-explorer-toolbar (max-width: 479px) {
   .db-explorer-workspace-name {
     display: none;
   }
+}
+
+/* The shell's workspace picker and workspace settings button lead the
+   toolbar, sized to its controls. Short of a wide sidebar the picker folds to
+   its folder glyph (below). Where even that leaves the file actions too little
+   room -- a narrow desktop sidebar, a touch drawer -- the actions drop to a
+   second row rather than overlapping the picker. */
+.db-explorer-toolbar--workspace {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.db-explorer-workspace-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin-right: 8px;
+}
+
+/* Static, so its dropdown hangs from the toolbar rather than from the folded
+   glyph button: it opens just under the toolbar, as wide as the sidebar
+   allows. The name's cap keeps a long one beside the actions in a wide
+   sidebar (a row is broken before anything shrinks), cut short instead. */
+.db-explorer-workspace-controls .db-workspace-picker {
+  position: static;
+  flex: 0 1 auto;
+  max-width: 200px;
+}
+
+.db-explorer-workspace-controls .db-workspace-picker-btn {
+  box-sizing: border-box;
+  height: var(--db-control-size);
+  padding-block: 0;
+}
+
+.db-explorer-workspace-controls .db-ws-settings-btn {
+  width: var(--db-control-size);
+  height: var(--db-control-size);
+}
+
+/* The file actions' reach: 44px on a coarse pointer without moving a glyph
+   (see .db-explorer-btn::after). The dropdowns are the buttons' siblings, so
+   positioning the buttons leaves where those hang alone. */
+.db-explorer-workspace-controls :is(.db-workspace-picker-btn, .db-ws-settings-btn) {
+  position: relative;
+}
+
+.db-explorer-workspace-controls :is(.db-workspace-picker-btn, .db-ws-settings-btn)::after {
+  content: '';
+  position: absolute;
+  inset: calc((var(--db-control-size) - var(--db-target-min)) / 2);
+}
+
+/* The button sits at the sidebar's start, so its menu opens rightward. */
+.db-explorer-workspace-controls .db-ws-settings-dropdown {
+  right: auto;
+  left: 0;
+}
+
+/* On desktop the name returns once the sidebar is dragged wide. */
+@container db-explorer-toolbar (max-width: 479px) {
+  .db-explorer-workspace-controls .db-workspace-picker {
+    flex: 0 0 auto;
+  }
+
+  .db-explorer-workspace-controls .db-workspace-picker-btn {
+    width: auto;
+    gap: 6px;
+  }
+
+  .db-explorer-workspace-controls .db-workspace-picker-label {
+    display: none;
+  }
+
+  .db-explorer-workspace-controls .db-workspace-picker-compact-icon {
+    display: inline-flex;
+  }
+}
+
+/* A phone's drawer cannot fit the picker beside seven touch-sized actions, so
+   there the toolbar is always two rows -- and the picker's own row has room
+   for the workspace's name. A tablet's 420px drawer keeps the single row. */
+@container db-explorer-toolbar (max-width: 399px) {
+  [data-db-pointer='coarse'] .db-explorer-workspace-controls {
+    flex: 1 0 100%;
+    margin-right: 0;
+  }
+
+  [data-db-pointer='coarse'] .db-explorer-workspace-controls .db-workspace-picker {
+    flex: 0 1 auto;
+  }
+
+  [data-db-pointer='coarse'] .db-explorer-workspace-controls .db-workspace-picker-label {
+    display: block;
+  }
+
+  [data-db-pointer='coarse'] .db-explorer-workspace-controls .db-workspace-picker-compact-icon {
+    display: none;
+  }
+}
+
+/* The toolbar's workspace menus hang over the tree below it. While one is
+   open the explorer stops clipping, so the menu reaches as far as the sidebar
+   allows -- and past it on desktop, where the sidebar itself does not clip. */
+.db-file-explorer:has(
+  > .db-explorer-toolbar :is(.db-workspace-dropdown, .db-ws-settings-dropdown)
+) {
+  overflow: visible;
 }
 
 .db-explorer-actions {
@@ -1766,6 +1880,11 @@
   overflow: hidden;
   flex-shrink: 0;
   position: relative;
+  /* iOS's keyboard covers the bottom of the layout without resizing it (see
+     useKeyboardInset), which is where Quick Jot and the footer sit. The
+     footer already pads for the home indicator the keyboard also covers, so
+     only the rest of the keyboard's height is added. 0 on desktop. */
+  padding-bottom: max(0px, calc(var(--db-keyboard-inset) - var(--db-safe-bottom)));
 }
 
 /* ── Sidebar as an overlay drawer ─────────────────────────────
@@ -1953,23 +2072,15 @@ body.db-resizing-sidebar * {
   min-height: 40px;
 }
 
-@container db-sidebar-header (max-width: 300px) {
-  .db-workspace-picker {
-    flex: 0 0 auto;
-  }
+/* The app menu leads the header, followed by the places (Home, Tasks, ...);
+   the controls after them (restore split view, the desktop window grip) keep
+   to its far end. */
+.db-shell-sidebar-header > :is(.db-app-menu, .db-shell-nav) {
+  margin-right: auto;
+}
 
-  .db-workspace-picker-btn {
-    width: auto;
-    gap: 6px;
-  }
-
-  .db-workspace-picker-label {
-    display: none;
-  }
-
-  .db-workspace-picker-compact-icon {
-    display: inline-flex;
-  }
+.db-shell-sidebar-header > .db-app-menu:has(~ .db-shell-nav) {
+  margin-right: 0;
 }
 
 /* Squisq sizes its status bar as one fixed row in every view
@@ -8351,7 +8462,7 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   border-left: 0;
 }
 
-/* Ask your workspace: the conversation scrolls; the question field stays at the bottom. */
+/* Ask: the conversation scrolls; the message field stays at the bottom. */
 .db-ai-review-panel.db-ai-ask-panel {
   display: flex;
   flex-direction: column;
@@ -8362,15 +8473,215 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   align-items: center;
 }
 
-/* Ask as a page: the side panel's conversation, at reading width. */
-.db-ask-page > .db-ai-ask-panel {
+/* Ask as a page: the saved chats beside the side panel's conversation, at
+   reading width. Too narrow for both, the chats go behind the Chats button. */
+.db-ask-page {
+  container: db-ask-page / inline-size;
+}
+
+.db-page > .db-ask-page-body {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 16px;
+  min-height: 0;
+  max-width: 820px;
+}
+
+.db-page > .db-ask-page-body--chats {
+  max-width: 1100px;
+}
+
+.db-ask-page-body > .db-ai-ask-panel {
   width: 100%;
   min-width: 0;
-  max-width: 820px;
   flex: 1 1 auto;
   border: 1px solid var(--db-border);
   border-radius: 8px;
   font-size: 14px;
+}
+
+.db-ask-page-body > .db-ai-ask-chats {
+  flex: 0 0 272px;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  background: var(--db-bg-raised);
+}
+
+.db-ai-ask-panel .db-ai-ask-chats-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* On the page the list is beside the conversation: no button, until it is not. */
+.db-ai-ask-panel .db-ai-ask-chats-toggle--narrow {
+  display: none;
+}
+
+@container db-ask-page (max-width: 720px) {
+  .db-ask-page-body > .db-ai-ask-chats {
+    display: none;
+  }
+
+  .db-ai-ask-panel .db-ai-ask-chats-toggle--narrow {
+    display: inline-flex;
+  }
+}
+
+.db-ai-ask-panel .db-ai-ask-chats-toggle[aria-expanded='true'] {
+  border-color: var(--db-accent);
+  color: var(--db-text);
+}
+
+/* Toggled in the side panel (or a narrow page): the list takes the conversation's place. */
+.db-ai-ask-chats-overlay {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.db-ai-ask-chats {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+}
+
+.db-ai-ask-chats-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 12px 8px;
+}
+
+.db-ai-ask-chats-header h3 {
+  margin: 0;
+  color: var(--db-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.db-ai-ask-chats button {
+  min-height: var(--db-target-min);
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--db-text-secondary);
+  font: 400 13px/1.3 var(--db-ui-font);
+  cursor: pointer;
+}
+
+.db-ai-ask-chats .db-ai-ask-chats-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-color: var(--db-input-border);
+  background: var(--db-bg);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.db-ai-ask-chats button:hover:not(:disabled) {
+  background: var(--db-bg-hover);
+  color: var(--db-text);
+}
+
+.db-ai-ask-chats button:focus-visible,
+.db-ai-ask-chat-rename input:focus-visible {
+  outline: 2px solid var(--db-accent);
+  outline-offset: 1px;
+}
+
+.db-ai-ask-chats-empty {
+  margin: 4px 12px 12px;
+  color: var(--db-text-muted);
+}
+
+.db-ai-ask-chats ul {
+  margin: 0;
+  padding: 0 6px 8px;
+  list-style: none;
+}
+
+.db-ai-ask-chat {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 6px;
+}
+
+.db-ai-ask-chat--active {
+  background: var(--db-bg-selected, var(--db-bg-hover));
+}
+
+.db-ai-ask-chats .db-ai-ask-chat-open {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.db-ai-ask-chat--active .db-ai-ask-chat-open {
+  color: var(--db-text);
+  font-weight: 600;
+}
+
+.db-ai-ask-chat-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-ai-ask-chat-when {
+  flex: none;
+  color: var(--db-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* Rename and Delete show on hover or focus, and always where there is no hover. */
+.db-ai-ask-chats .db-ai-ask-chat-tool {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--db-target-min);
+  padding: 0;
+  opacity: 0;
+}
+
+.db-ai-ask-chat:hover .db-ai-ask-chat-tool,
+.db-ai-ask-chat:focus-within .db-ai-ask-chat-tool {
+  opacity: 1;
+}
+
+[data-db-hover='none'] .db-ai-ask-chats .db-ai-ask-chat-tool {
+  opacity: 1;
+}
+
+.db-ai-ask-chat-rename {
+  flex: 1 1 auto;
+  padding: 2px;
+}
+
+.db-ai-ask-chat-rename input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--db-target-min);
+  padding: 4px 8px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  background: var(--db-bg-subtle);
+  color: var(--db-text);
+  font: 400 var(--db-input-font-size) / 1.3 var(--db-ui-font);
 }
 
 .db-ai-ask-panel .db-ai-review-header > div {
@@ -8399,6 +8710,10 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 .db-ai-ask-empty {
   margin: 12px 0;
   color: var(--db-text-muted);
+}
+
+.db-ai-ask-empty p {
+  margin: 0 0 8px;
 }
 
 .db-ai-ask-turn {
@@ -10504,8 +10819,7 @@ button.db-git-file-row:hover {
   /* Keep the shell controls inside the compact native caption band. These
      overrides apply only to an installed app using Window Controls Overlay;
      the regular browser toolbar keeps its roomier metrics. */
-  .db-shell .db-app-menu-btn,
-  .db-shell .db-workspace-picker-btn {
+  .db-shell .db-app-menu-btn {
     padding-block: 3px;
   }
 
@@ -10550,9 +10864,9 @@ button.db-git-file-row:hover {
     padding-block: 0;
   }
 
-  /* Make the draggable header space beside the workspace gear discoverable,
-     matching the Electron titlebar without introducing another control. The
-     12px dotted content and its 8px right padding form one drag region. */
+  /* Make the draggable header space discoverable, matching the Electron
+     titlebar without introducing another control. The 12px dotted content
+     and its 8px right padding form one drag region. */
   .db-shell .db-window-drag-grip {
     box-sizing: border-box;
     width: 20px;
@@ -10578,7 +10892,8 @@ button.db-git-file-row:hover {
   }
 
   /* Let the workspace menu size itself to its contents and cross the sidebar
-     boundary above the editor. The explorer still clips its own contents. */
+     boundary into the editor. The explorer clips its own contents except
+     while one of its toolbar's workspace menus is open. */
   .db-shell .db-shell-sidebar {
     overflow: visible;
   }
@@ -11033,72 +11348,99 @@ button.db-git-file-row:hover {
    The shell's own pages. Each renders inside a .db-folder-view, so the
    desktop titlebar drag strip and the phone back bar apply unchanged. */
 
+/* Places: icon buttons right after the app menu in the sidebar header. The
+   label is each button's tooltip and accessible name. */
 .db-shell-nav {
-  flex-shrink: 0;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--db-border);
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .db-shell-nav-list {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  align-items: center;
+  gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* More places than the header holds (several journals in a narrow sidebar)
+   narrow every button rather than push the grip out of the row; the glyph
+   still fits at the floor. */
+.db-shell-nav-list > li {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 20px;
+}
+
+/* The shell's 24px control on a fine pointer, so five places fit beside the
+   logo in a 320px sidebar even behind the macOS window buttons; 40px on touch. */
 .db-shell-nav-item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: var(--db-row-min-height);
-  padding: 3px 8px;
-  border: none;
+  justify-content: center;
+  flex: 0 1 auto;
+  width: var(--db-control-size);
+  min-width: 0;
+  height: var(--db-control-size);
+  padding: 0;
+  border: 1px solid transparent;
   border-radius: 4px;
   background: none;
-  color: var(--db-text);
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
+  color: var(--db-text-muted);
+  font-size: 15px;
+  line-height: 1;
   cursor: pointer;
+}
+
+/* A phone drawer is narrower than the desktop sidebar's minimum; trim the
+   touch buttons as the explorer toolbar does. `min()` leaves 24px alone. */
+@container db-sidebar-header (max-width: 320px) {
+  .db-shell-nav-item {
+    width: min(var(--db-control-size), 34px);
+  }
 }
 
 .db-shell-nav-item:hover {
   background: var(--db-bg-hover);
+  border-color: var(--db-border);
+  color: var(--db-text-secondary);
 }
 
 .db-shell-nav-item[aria-current='page'] {
   background: var(--db-bg-selected);
+  border-color: var(--db-bg-selected);
   color: var(--db-text-on-selected);
-  box-shadow: inset 2px 0 0 var(--db-selected-rule);
 }
 
 .db-shell-nav-item:focus-visible {
   outline: 2px solid var(--db-focus);
-  outline-offset: -2px;
+  outline-offset: 1px;
 }
 
-.db-shell-nav-label {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+/* A count rides the glyph's upper-right corner, measured from the button's
+   centre so it hugs the glyph in a 24px button and a 40px touch one alike;
+   in the 24px one it reaches just past the edge, covering less of the glyph. */
 .db-shell-nav-count {
-  flex-shrink: 0;
-  min-width: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: var(--db-accent-soft-15);
-  color: var(--db-text);
+  position: absolute;
+  top: calc(50% - 14px);
+  left: calc(50% + 4px);
+  box-sizing: border-box;
+  min-width: 12px;
+  height: 12px;
+  padding: 0 3px;
+  border-radius: 6px;
+  /* A ring in the sidebar's colour parts the badge from the glyph under it. */
+  box-shadow: 0 0 0 1.5px var(--db-bg-subtle);
+  background: var(--db-accent);
+  color: var(--db-text-on-accent);
   font-family: var(--db-meta-font);
-  font-size: 11px;
-  line-height: 18px;
+  font-size: 8.5px;
+  font-weight: 600;
+  line-height: 12px;
   text-align: center;
+  pointer-events: none;
 }
 
 .db-page {
@@ -11367,6 +11709,308 @@ button.db-git-file-row:hover {
   margin: 0;
   color: var(--db-text-muted);
   font-size: 12px;
+}
+
+/* ── Quick Jot (bottom of the left pane, above the footer) ───── */
+
+.db-quick-jot {
+  container: db-quick-jot / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* Like the header and footer: the file list gives way, not this. Sitting on
+     the footer, the box keeps its bottom edge and grows upward. */
+  flex-shrink: 0;
+  padding: 8px 8px 4px;
+  border-top: 1px solid var(--db-border);
+}
+
+.db-quick-jot-field {
+  position: relative;
+}
+
+.db-quick-jot-input,
+.db-quick-jot-pending {
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: 1px solid var(--db-input-border);
+  font-family: inherit;
+  font-size: var(--db-input-font-size);
+  line-height: 1.4;
+}
+
+.db-quick-jot-input {
+  display: block;
+  width: 100%;
+  /* Two rows to start (`rows`), growing with the text to six, then scrolling. */
+  max-height: calc(6 * 1.4em + 12px);
+  border-radius: 5px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  resize: none;
+  overflow-y: auto;
+}
+
+.db-quick-jot-input:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
+.db-quick-jot-input::placeholder {
+  /* It carries the instructions, and rests on the pane's colour: muted, not placeholder grey. */
+  color: var(--db-text-muted);
+}
+
+/* Empty and idle, the box is part of the pane: its colour, a dashed edge.
+   Text, focus, a drag or dictation make it a proper field. */
+.db-quick-jot:not(.db-quick-jot--dragging, .db-quick-jot--dictating)
+  .db-quick-jot-input:placeholder-shown:not(:focus) {
+  border-style: dashed;
+  background: transparent;
+}
+
+.db-quick-jot--dragging .db-quick-jot-input {
+  border-color: var(--db-focus);
+  outline: 2px dashed var(--db-focus);
+  outline-offset: 1px;
+}
+
+.db-quick-jot-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.db-quick-jot-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 2px 2px 3px;
+  border: 1px solid var(--db-border);
+  border-radius: 4px;
+  background: var(--db-bg);
+  color: var(--db-text-secondary);
+  font-size: 12px;
+}
+
+.db-quick-jot-thumb {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 2px;
+  object-fit: cover;
+  color: var(--db-text-muted);
+}
+
+.db-quick-jot-attachment-name {
+  min-width: 0;
+  max-width: 14em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-quick-jot-remove {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: var(--db-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.db-quick-jot-remove:hover:not(:disabled) {
+  background: var(--db-bg-hover);
+  color: var(--db-text-secondary);
+}
+
+.db-quick-jot-remove:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
+.db-quick-jot-status {
+  margin: 0;
+  color: var(--db-text-muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+/* "Still converting" dots, laid over the box: the jot's text again, unseen,
+   wrapping exactly as the box does, with the dots after its last word. */
+.db-quick-jot-pending {
+  position: absolute;
+  inset: 0;
+  padding-right: calc(8px + var(--db-quick-jot-gutter, 0px));
+  border-color: transparent;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  pointer-events: none;
+}
+
+.db-quick-jot-pending-text {
+  visibility: hidden;
+}
+
+.db-quick-jot-dots {
+  color: var(--db-text-muted);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.db-quick-jot-dots > span {
+  animation: db-quick-jot-dot 1.2s ease-in-out infinite;
+}
+
+.db-quick-jot-dots > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.db-quick-jot-dots > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes db-quick-jot-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+/* Kept in the page (a live region must exist before it speaks), taking no room. */
+.db-quick-jot-status:empty {
+  margin-top: -4px;
+}
+
+.db-quick-jot-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.db-quick-jot-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.db-quick-jot-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--db-control-size);
+  height: var(--db-control-size);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: none;
+  color: var(--db-text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* The explorer buttons' trick: a touch-sized hit area around a small glyph. */
+.db-quick-jot-btn::after,
+.db-quick-jot-remove::after {
+  content: '';
+  position: absolute;
+  inset: calc((var(--db-control-size) - var(--db-target-min)) / 2);
+}
+
+.db-quick-jot-remove::after {
+  inset: calc((20px - var(--db-target-min)) / 2);
+}
+
+.db-quick-jot-btn:hover:not(:disabled) {
+  background: var(--db-bg-hover);
+  border-color: var(--db-border);
+  color: var(--db-text-secondary);
+}
+
+.db-quick-jot-btn:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
+.db-quick-jot-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.db-quick-jot-btn--recording,
+.db-quick-jot-btn--recording:hover:not(:disabled) {
+  border-color: currentColor;
+  background: var(--db-danger-bg);
+  color: var(--db-danger);
+}
+
+/* Recording widens the button to carry the editor's rolling level meter
+   (doubled class: it must beat the narrow-pane width cap below). */
+.db-quick-jot-btn.db-quick-jot-btn--recording {
+  width: auto;
+  gap: 6px;
+  padding: 0 8px;
+}
+
+.db-quick-jot-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  height: 16px;
+}
+
+.db-quick-jot-meter-bar {
+  width: 2px;
+  min-height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  transition: height 0.05s linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-quick-jot-dots > span {
+    animation: none;
+    opacity: 0.6;
+  }
+
+  .db-quick-jot-meter-bar {
+    transition: none;
+  }
+}
+
+@container db-quick-jot (max-width: 220px) {
+  .db-quick-jot-btn {
+    width: min(var(--db-control-size), 32px);
+  }
+}
+
+/* A phone on its side: one line to type in, so the file list keeps some room. */
+.db-shell[data-db-form-factor='phone'][data-db-orientation='landscape'] .db-quick-jot-input {
+  max-height: calc(1.4em + 12px);
 }
 
 .db-task-list,

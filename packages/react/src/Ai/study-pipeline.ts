@@ -9,9 +9,8 @@
  *
  * A summary of a document that fits one call is written in one pass. A
  * longer one is read part by part into notes, and the summary is written
- * from the notes. Quiz questions and flashcards are asked for part by part,
- * in proportion to each part's length, then checked against the part they
- * came from and compiled (`study-compile.ts`).
+ * from the notes. (Quiz questions and flashcards are study cards kept with
+ * each section, made in Squisq's Study cards view — see `Study/`.)
  */
 
 import type {
@@ -24,30 +23,9 @@ import { buildDraftContinuation, sanitizeGeneratedMarkdown } from './ai-assistan
 import { stripReasoning } from './ai-json.js';
 import { clipPassage, documentTitle } from './illustrate-passages.js';
 import { chatOnce, type ChatOutcome } from './chat-once.js';
-import { buildRepairRequest } from './illustrate-prompts.js';
 import { studySourceDigest, type StudyAidKind, type StudyAidProvenance } from './study-aids.js';
-import {
-  assembleDeck,
-  assembleSummary,
-  cardIsValid,
-  compileSummaryBody,
-  flashcardGrounded,
-  quizItemGrounded,
-  renderFlashcard,
-  renderQuizCard,
-} from './study-compile.js';
-import {
-  buildFlashcardRequest,
-  buildNotesRequest,
-  buildQuizRequest,
-  buildSummaryRequest,
-  itemKey,
-  readFlashcardItem,
-  readItems,
-  readQuizItem,
-  type FlashcardItem,
-  type QuizItem,
-} from './study-prompts.js';
+import { assembleSummary, compileSummaryBody } from './study-compile.js';
+import { buildNotesRequest, buildSummaryRequest } from './study-prompts.js';
 import {
   chunkStudySections,
   segmentStudySections,
@@ -62,17 +40,13 @@ type ChatApi = Pick<DocBlocksHostAiAPI, 'chat'>;
 export type StudyStage =
   | { readonly kind: 'notes'; readonly part: number; readonly parts: number }
   | { readonly kind: 'condensing' }
-  | { readonly kind: 'writing' }
-  /** Questions or cards: `written` so far of the `planned` asked for. */
-  | { readonly kind: 'items'; readonly written: number; readonly planned: number };
+  | { readonly kind: 'writing' };
 
 export type StudyOutcome =
   | {
       readonly status: 'ready';
       /** The complete document to save, frontmatter included. */
       readonly markdown: string;
-      /** Questions or cards in a deck; null for a summary. */
-      readonly count: number | null;
       /** Things the person should know about how it was made. */
       readonly notes: readonly string[];
     }
@@ -98,11 +72,6 @@ export interface StudyOptions {
 
 /** Fewest characters of prose worth making a study aid from. */
 export const MIN_STUDY_CHARACTERS = 120;
-/** Most questions in a quiz, and cards in a deck. */
-export const QUIZ_QUESTIONS = 10;
-export const FLASHCARD_CARDS = 20;
-/** About one question or card for this many characters of prose, up to the caps. */
-const CHARACTERS_PER_ITEM = 400;
 
 const CANCELLED: StudyOutcome = { status: 'cancelled' };
 
@@ -160,30 +129,11 @@ export async function generateStudyAid(options: StudyOptions): Promise<StudyOutc
     model: model?.label ?? null,
   });
 
-  if (options.kind === 'summary') {
-    const body = await summarize(run, chunking.chunks);
-    if (typeof body !== 'string') return body;
-    return {
-      status: 'ready',
-      markdown: assembleSummary(body, run.title, provenance()),
-      count: null,
-      notes: run.notes,
-    };
-  }
-
-  const target = Math.min(
-    options.kind === 'quiz' ? QUIZ_QUESTIONS : FLASHCARD_CARDS,
-    Math.max(3, Math.round(studyCharacters(sections) / CHARACTERS_PER_ITEM)),
-  );
-  const cards =
-    options.kind === 'quiz'
-      ? await writeItems(run, chunking.chunks, target, QUIZ)
-      : await writeItems(run, chunking.chunks, target, FLASHCARDS);
-  if (!Array.isArray(cards)) return cards;
+  const body = await summarize(run, chunking.chunks);
+  if (typeof body !== 'string') return body;
   return {
     status: 'ready',
-    markdown: assembleDeck(options.kind, cards, run.title, provenance()),
-    count: cards.length,
+    markdown: assembleSummary(body, run.title, provenance()),
     notes: run.notes,
   };
 }
@@ -294,225 +244,4 @@ async function summarize(run: Run, chunks: readonly StudyChunk[]): Promise<strin
   }
   const body = compileSummaryBody(text);
   return body || failed('The model returned an empty summary. Try again.');
-}
-
-// ─── Quiz and flashcards ───────────────────────────────────
-
-interface ItemKind<T> {
-  /** Plural noun for messages: "questions", "flashcards". */
-  readonly noun: string;
-  /** Singular: "question", "flashcard". */
-  readonly one: string;
-  build(options: {
-    title: string;
-    material: string;
-    count: number;
-    avoid: readonly string[];
-    maxTokens: number;
-  }): AiChatRequest;
-  read(raw: unknown): T | null;
-  /** The text that identifies the item, for spotting repeats. */
-  label(item: T): string;
-  grounded(item: T, material: string): boolean;
-  render(item: T, number: number): string | null;
-  valid(card: string): boolean;
-}
-
-const QUIZ: ItemKind<QuizItem> = {
-  noun: 'questions',
-  one: 'question',
-  build: buildQuizRequest,
-  read: readQuizItem,
-  label: (item) => item.question,
-  grounded: quizItemGrounded,
-  render: renderQuizCard,
-  // The question is a `###` heading too; every other one is a choice.
-  valid: (card) => cardIsValid(card, 'multiple-choice', (card.match(/^### /gmu)?.length ?? 1) - 1),
-};
-
-const FLASHCARDS: ItemKind<FlashcardItem> = {
-  noun: 'flashcards',
-  one: 'flashcard',
-  build: buildFlashcardRequest,
-  read: readFlashcardItem,
-  label: (item) => item.front,
-  grounded: flashcardGrounded,
-  render: (item) => renderFlashcard(item),
-  valid: (card) => cardIsValid(card, 'basic'),
-};
-
-type ItemsResult<T> =
-  | { readonly kind: 'items'; readonly items: readonly T[] }
-  /** `cutOff` when the last reply stopped at its length limit before one item. */
-  | { readonly kind: 'unusable'; readonly cutOff: boolean }
-  | { readonly kind: 'stopped'; readonly outcome: StudyOutcome };
-
-/** Tokens a request's messages take, at the budget's deliberately low 3 characters a token. */
-function promptTokens(request: AiChatRequest): number {
-  return Math.ceil(request.messages.reduce((sum, message) => sum + message.content.length, 0) / 3);
-}
-
-const RETRY_SAFETY_TOKENS = 150;
-
-/** One call for `count` items from `chunk`, repaired or retried at most once. */
-async function requestItems<T>(
-  run: Run,
-  spec: ItemKind<T>,
-  chunk: StudyChunk,
-  count: number,
-  avoid: readonly string[],
-): Promise<ItemsResult<T>> {
-  const { budget } = run.options;
-  const build = (items: number) =>
-    spec.build({
-      title: run.title,
-      material: chunk.text,
-      count: items,
-      avoid,
-      maxTokens: budget.itemTokens,
-    });
-  const request = build(count);
-  const outcome = await run.call(request);
-  if (outcome.kind !== 'ok') return { kind: 'stopped', outcome: interrupted(outcome) };
-  const reading = readItems(outcome.text, spec.read);
-  if (reading.ok) return { kind: 'items', items: reading.items };
-  // Cut off before finishing one item, as a model that reasons despite the
-  // `study` purpose can be: retry with twice the room where the context
-  // window has it, else ask for fewer. Otherwise name the problem.
-  const wider = budget.itemTokens * 2;
-  const roomy = budget.contextTokens - promptTokens(request) - RETRY_SAFETY_TOKENS >= wider;
-  const retry = !outcome.truncated
-    ? buildRepairRequest(request, outcome.text, reading.problem, 'array')
-    : roomy
-      ? { ...request, maxTokens: wider }
-      : build(Math.max(1, Math.floor(count / 2)));
-  const second = await run.call(retry);
-  if (second.kind !== 'ok') return { kind: 'stopped', outcome: interrupted(second) };
-  const again = readItems(second.text, spec.read);
-  return again.ok
-    ? { kind: 'items', items: again.items }
-    : { kind: 'unusable', cutOff: second.truncated };
-}
-
-interface Rejections {
-  /** Replies that stopped at their length limit before finishing one item. */
-  cutOff: number;
-  /** Replies with no usable JSON, and items that did not compile to a card. */
-  unreadable: number;
-  /** Items whose answer the passage does not support. */
-  unsupported: number;
-  repeated: number;
-}
-
-/** "1 reply", "3 replies". */
-function count(value: number, one: string, many: string): string {
-  return `${String(value)} ${value === 1 ? one : many}`;
-}
-
-/** Why nothing could be used, specific enough to act on: " (2 replies …; 3 …)". */
-function rejectionDetail(
-  spec: Pick<ItemKind<unknown>, 'noun' | 'one'>,
-  rejected: Rejections,
-): string {
-  const reasons: string[] = [];
-  if (rejected.cutOff > 0) {
-    reasons.push(
-      `${count(rejected.cutOff, 'reply', 'replies')} ran out of room before finishing a ${spec.one}`,
-    );
-  }
-  if (rejected.unreadable > 0) {
-    reasons.push(
-      `${count(rejected.unreadable, 'reply or item was', 'replies or items were')} not in the expected form`,
-    );
-  }
-  if (rejected.unsupported > 0) {
-    reasons.push(
-      `${count(rejected.unsupported, spec.one, spec.noun)} used facts the document does not state`,
-    );
-  }
-  if (rejected.repeated > 0) {
-    reasons.push(`${count(rejected.repeated, spec.one, spec.noun)} repeated another`);
-  }
-  return reasons.length > 0 ? ` (${reasons.join('; ')})` : '';
-}
-
-/**
- * Compiled cards from every part, `target` in all, shared out by each part's
- * length. A host error ends the run, keeping the cards already written; a
- * reply that cannot be used skips that part.
- */
-async function writeItems<T>(
-  run: Run,
-  chunks: readonly StudyChunk[],
-  target: number,
-  spec: ItemKind<T>,
-): Promise<string[] | StudyOutcome> {
-  const { budget, onStage } = run.options;
-  const total = chunks.reduce((sum, chunk) => sum + chunk.text.length, 0) || 1;
-  const calls: { chunk: StudyChunk; count: number }[] = [];
-  for (const chunk of chunks) {
-    let left = Math.max(1, Math.round((target * chunk.text.length) / total));
-    while (left > 0) {
-      const count = Math.min(left, budget.itemsPerCall);
-      calls.push({ chunk, count });
-      left -= count;
-    }
-  }
-
-  const planned = calls.reduce((sum, call) => sum + call.count, 0);
-  const cards: string[] = [];
-  const seen = new Set<string>();
-  const asked = new Map<number, string[]>();
-  const rejected: Rejections = { cutOff: 0, unreadable: 0, unsupported: 0, repeated: 0 };
-  let unusable = 0;
-  for (const { chunk, count: wanted } of calls) {
-    onStage?.({ kind: 'items', written: cards.length, planned });
-    const avoid = asked.get(chunk.index) ?? [];
-    const result = await requestItems(run, spec, chunk, wanted, avoid);
-    if (result.kind === 'stopped') {
-      if (result.outcome.status === 'cancelled' || cards.length === 0) return result.outcome;
-      run.notes.push(
-        `The model stopped before finishing, so there are fewer ${spec.noun} than planned.`,
-      );
-      break;
-    }
-    if (result.kind === 'unusable') {
-      unusable++;
-      if (result.cutOff) rejected.cutOff++;
-      else rejected.unreadable++;
-      continue;
-    }
-    let kept = 0;
-    for (const item of result.items) {
-      if (kept >= wanted) break;
-      const key = itemKey(spec.label(item));
-      if (!key || seen.has(key)) {
-        rejected.repeated++;
-        continue;
-      }
-      if (!spec.grounded(item, chunk.text)) {
-        rejected.unsupported++;
-        continue;
-      }
-      const card = spec.render(item, cards.length + 1);
-      if (!card || !spec.valid(card)) {
-        rejected.unreadable++;
-        continue;
-      }
-      seen.add(key);
-      avoid.push(spec.label(item));
-      cards.push(card);
-      kept++;
-    }
-    asked.set(chunk.index, avoid);
-  }
-  if (cards.length === 0) {
-    return failed(
-      `The model's ${spec.noun} could not be used${rejectionDetail(spec, rejected)}. Try again.`,
-    );
-  }
-  if (unusable > 0) {
-    run.notes.push(`Some parts of the document could not be turned into ${spec.noun}.`);
-  }
-  return cards;
 }

@@ -7,11 +7,13 @@ import {
   useExternalDocumentObserver,
 } from './useExternalDocumentObserver.js';
 import { createPresentationAssistant } from '../Presentation/presentation-assistant.js';
+import { createStudyAssistant } from '../Study/study-assistant.js';
 /**
  * DocBlocksShell -- top-level layout component.
  *
- * Composes the left sidebar (WorkspacePicker + FileExplorer) with
- * the center editor area (squisq EditorShell).
+ * Composes the left sidebar (app menu header, then the FileExplorer, whose
+ * toolbar leads with the WorkspacePicker) with the center editor area
+ * (squisq EditorShell).
  */
 
 import {
@@ -68,6 +70,8 @@ import {
   rewriteCompanionReferences,
   parseWorkspacePath,
   workspacePathContains,
+  workspacePathDirname,
+  workspacePathJoin,
   findWikiArticle,
   suggestWikiArticles,
 } from '@bendyline/docblocks/filesystem';
@@ -302,6 +306,9 @@ import {
   saveProofingPreferences,
   type ProofingPreferences,
 } from '../preferences/proofing.js';
+import { loadQuickJotVisible, saveQuickJotVisible } from '../preferences/quick-jot.js';
+import { QuickJot } from '../QuickJot/QuickJot.js';
+import { createQuickJotActions } from '../QuickJot/quick-jot-actions.js';
 import { retainFileSystemProvider } from '../provider-lease.js';
 import { useDocumentTitle } from './document-title.js';
 import { decodeDbkWorkspace } from './dbk-import.js';
@@ -407,7 +414,9 @@ import {
   kindFolderFor,
   kindFoldersOf,
   locateTask,
+  markdownFileNameForTitle,
   orderBuckets,
+  titleOfFileName,
   type FolderKind,
 } from '@bendyline/docblocks/folders';
 import { DOCUMENT_PROPERTY_KEYS, localDateOf } from '@bendyline/docblocks/properties';
@@ -440,7 +449,6 @@ import { PasteDocumentDialog } from './PasteDocumentDialog.js';
 import {
   fileNameForPastedTitle,
   pastedContentToMarkdown,
-  readClipboardContent,
   titleForPastedMarkdown,
   type PastedContent,
 } from './pasted-document.js';
@@ -462,7 +470,11 @@ import {
 import type { AskNotice } from '../Ai/AiAskPanel.js';
 import type { AskActions } from '../Ai/ask-proposals.js';
 import { useAiInvitation } from '../Ai/ai-invitation.js';
-import type { WorkspaceAskSession } from '../Ai/workspace-ask.js';
+import { useAiOffered } from '../Ai/ai-status.js';
+import type { AskChat, AskTurn, WorkspaceAskSession } from '../Ai/workspace-ask.js';
+import type { ChatStore } from '../Ai/ask-chats.js';
+import type { AskChats } from '../Ai/AskChatList.js';
+import { chatDocumentPaths, listChats } from '../Ai/chat-folders.js';
 import {
   loadWorkspaceGroundingChoices,
   saveWorkspaceGroundingChoices,
@@ -793,9 +805,6 @@ interface DocumentOpenView {
  * does. Write is one tab away.
  */
 const OPEN_AS_SLIDESHOW: DocumentOpenView = { view: 'preview', sharedMode: 'slideshow' };
-
-/** Where a paste-or-drop dialog was opened from, which decides how its result opens. */
-type PasteDialogOrigin = 'welcome' | 'clipboard';
 
 /** Encode workspace + optional file path into a URL hash. */
 function buildHash(workspaceId: string, filePath?: string | null): string {
@@ -1209,11 +1218,6 @@ export function DocBlocksShell({
   );
   const aiProviderRemote = useAiProviderRemote(hostAi);
   const [groundingChoices, setGroundingChoices] = useState(loadWorkspaceGroundingChoices);
-  // "Suggest with AI" in Squisq's Custom summary designer (Write › Summarize).
-  const presentationAssistant = useMemo(
-    () => (ai ? createPresentationAssistant(ai) : undefined),
-    [ai],
-  );
   const speech = hostSupports('speechModelManagement')
     ? maybeGetDocBlocksHost()?.speech
     : undefined;
@@ -1242,6 +1246,18 @@ export function DocBlocksShell({
   // While AI is off, a device that runs a capable model is invited to turn it on.
   const aiInvitation = useAiInvitation(hostAi);
   const dismissAiInvitation = aiInvitation.dismiss;
+  // AI Squisq's views offer — "Suggest with AI" in the Custom summary designer
+  // (Write › Summarize) and Generate in Write › Study cards — only while AI is
+  // on, or this device is invited to turn it on: hidden AI is not shown disabled.
+  const aiOffered = useAiOffered(ai, aiInvitation.invite);
+  const presentationAssistant = useMemo(
+    () => (ai && aiOffered ? createPresentationAssistant(ai) : undefined),
+    [ai, aiOffered],
+  );
+  const studyAssistant = useMemo(
+    () => (ai && aiOffered ? createStudyAssistant(ai) : undefined),
+    [ai, aiOffered],
+  );
   const acceptAiInvitation = useCallback(async () => {
     dismissAiInvitation();
     // On before Settings opens, so it opens on the model download.
@@ -1292,6 +1308,20 @@ export function DocBlocksShell({
     setProofingPreferences(settings);
     saveProofingPreferences(settings);
   }, []);
+
+  const [quickJotVisible, setQuickJotVisible] = useState(loadQuickJotVisible);
+  const quickJotSetting = useMemo(
+    () => ({
+      visible: quickJotVisible,
+      onChange: (visible: boolean) => {
+        setQuickJotVisible(visible);
+        saveQuickJotVisible(visible);
+      },
+    }),
+    [quickJotVisible],
+  );
+  /** True while Quick Jot holds the microphone; the editor's own dictation waits. */
+  const [quickJotDictating, setQuickJotDictating] = useState(false);
 
   // Semantic search needs the host's embedding model and the worker index.
   const semanticSearchAvailable =
@@ -1618,6 +1648,12 @@ export function DocBlocksShell({
   );
   const [activeWorkspaceDescriptor, setActiveWorkspaceDescriptor] =
     useState<WorkspaceDescriptor | null>(null);
+  // The descriptor follows renames; the provider's label covers the moment
+  // after a switch, before the new descriptor has loaded.
+  const activeWorkspaceLabel =
+    activeWorkspaceDescriptor?.id === activeWorkspaceId
+      ? activeWorkspaceDescriptor.name
+      : provider?.label;
   // Dismissed findings are keyed by workspace as well as path, so the store is
   // rebuilt when the active workspace changes. Squisq re-reads it per render,
   // so a fresh object costs nothing. `undefined` means "use the default";
@@ -1938,13 +1974,17 @@ export function DocBlocksShell({
     void workspaceOutputsSchedulerRef.current?.regenerate({ force: true });
   }, []);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  // Read at request time: the open workspace's index, minus the open note.
-  workspaceGroundingRef.current = async (request) =>
-    workspaceGrounding && activeWorkspaceId && request.knowledgeQuery
-      ? findWorkspacePassages(workspaceIndex.index, activeWorkspaceId, request.knowledgeQuery, {
-          ...(selectedFile ? { exclude: new Set([selectedFile]) } : {}),
-        })
-      : [];
+  /** Saved Ask chats in the open workspace: the model's words, never passages. */
+  const chatPathsRef = useRef<() => Set<string>>(() => new Set());
+  // Read at request time: the open workspace's index, minus the open note and saved chats.
+  workspaceGroundingRef.current = async (request) => {
+    if (!workspaceGrounding || !activeWorkspaceId || !request.knowledgeQuery) return [];
+    const exclude = chatPathsRef.current();
+    if (selectedFile) exclude.add(selectedFile).add(selectedFile.replace(/^\/+/u, ''));
+    return findWorkspacePassages(workspaceIndex.index, activeWorkspaceId, request.knowledgeQuery, {
+      ...(exclude.size > 0 ? { exclude } : {}),
+    });
+  };
   const selectedFileRef = useRef(selectedFile);
   selectedFileRef.current = selectedFile;
   const [selectedSourceFile, setSelectedSourceFile] = useState<string | null>(null);
@@ -5179,7 +5219,9 @@ export function DocBlocksShell({
 
   const shellNavItems = useMemo<readonly ShellNavItem[]>(() => {
     if (!shellPagesAvailable) return [];
-    const items: ShellNavItem[] = [{ key: 'home', label: 'Home', route: { kind: 'home' } }];
+    const items: ShellNavItem[] = [
+      { key: 'home', label: 'Home', icon: 'home', route: { kind: 'home' } },
+    ];
     const { kindFolders, items: tasks, documents } = workspaceTasks;
     if (kindFoldersOf(kindFolders, 'tasks').length > 0 || tasks.length > 0) {
       const sections = sectionTasks(tasks, today);
@@ -5187,16 +5229,18 @@ export function DocBlocksShell({
       items.push({
         key: 'tasks',
         label: 'Tasks',
+        icon: 'tasks',
         route: { kind: 'tasks' },
         count: due,
         countLabel: due === 1 ? '1 due now' : `${due} due now`,
       });
     }
-    if (ai && semanticSearchAvailable) {
-      items.push({ key: 'ask', label: 'Ask', route: { kind: 'ask' } });
+    if (ai) {
+      items.push({ key: 'ask', label: 'Ask', icon: 'ask', route: { kind: 'ask' } });
     }
     for (const folder of kindFolders) {
-      if (folder.settings.kind === 'tasks') continue;
+      // Tasks folders are behind Tasks, and chats behind Ask.
+      if (folder.settings.kind === 'tasks' || folder.settings.kind === 'chats') continue;
       const label = folder.path.slice(folder.path.lastIndexOf('/') + 1) || 'Workspace';
       const waiting =
         folder.settings.kind === 'unfiled'
@@ -5205,6 +5249,7 @@ export function DocBlocksShell({
       items.push({
         key: `folder:${folder.path}`,
         label,
+        icon: folder.settings.kind,
         route: { kind: 'folder', path: `/${folder.path}` },
         ...(waiting !== undefined
           ? { count: waiting, countLabel: waiting === 1 ? '1 waiting' : `${waiting} waiting` }
@@ -5212,7 +5257,7 @@ export function DocBlocksShell({
       });
     }
     return items;
-  }, [shellPagesAvailable, workspaceTasks, today, ai, semanticSearchAvailable]);
+  }, [shellPagesAvailable, workspaceTasks, today, ai]);
 
   /** The folder showing in the main pane, when it is a folder that says what it is. */
   const selectedKindFolder = useMemo(() => {
@@ -5224,7 +5269,10 @@ export function DocBlocksShell({
       return null;
     }
     const nearest = kindFolderFor(workspaceTasks.kindFolders, canonical, true);
-    return nearest && nearest.path === canonical ? nearest : null;
+    // A chats folder lists its chats as an ordinary folder; Ask is their page.
+    return nearest && nearest.path === canonical && nearest.settings.kind !== 'chats'
+      ? nearest
+      : null;
   }, [selectedFolder, selectedFile, workspaceTasks.kindFolders]);
 
   const currentNavKey = shellPage
@@ -5493,12 +5541,13 @@ export function DocBlocksShell({
     () =>
       pageActions
         ? {
+            ...(activeWorkspaceId ? { catalogId: workspaceCatalogId(activeWorkspaceId) } : {}),
             run: async (action) =>
               (await import('../Ai/chat-actions.js')).applyProposedAction(action, pageActions),
             open: (path) => void handleSelect(`/${path.replace(/^\/+/, '')}`, 'file'),
           }
         : undefined,
-    [pageActions, handleSelect],
+    [pageActions, handleSelect, activeWorkspaceId],
   );
   useReminderSync({
     notifications: notificationsHost,
@@ -5533,6 +5582,51 @@ export function DocBlocksShell({
       return null;
     },
     [reminderPreferences.enabled, notificationsHost],
+  );
+
+  /**
+   * Import files into the Unfiled drawer, setting it up quietly if there is
+   * none: what a drop or paste on Home does, and what Quick Jot does with
+   * Word, PDF or slides dropped on their own. Resolves the imported paths.
+   */
+  const importFilesToUnfiled = useCallback(
+    async (files: readonly File[]): Promise<readonly string[]> => {
+      if (!pageActions || !provider || !activeWorkspaceId) return [];
+      const folder = await pageActions.ensureUnfiled();
+      if (folder === null) return [];
+      const result = await importDroppedFiles(files, provider, { folder });
+      notifyWorkspaceChanged(activeWorkspaceId, folder);
+      void explorerRef.current?.refresh();
+      const summary = summariseImport(result);
+      if (summary) showToast(summary.kind, summary.message);
+      return result.imported.map((imported) => imported.path);
+    },
+    [pageActions, provider, activeWorkspaceId, notifyWorkspaceChanged, showToast],
+  );
+
+  const offersQuickJotTask = kindFoldersOf(workspaceTasks.kindFolders, 'tasks').length > 0;
+  const offersQuickJotJournal = kindFoldersOf(workspaceTasks.kindFolders, 'journal').length > 0;
+  const quickJotActions = useMemo(
+    () =>
+      pageActions
+        ? createQuickJotActions({
+            actions: pageActions,
+            importToUnfiled: importFilesToUnfiled,
+            openDocument: (path) => void handleSelect(`/${path.replace(/^\/+/, '')}`, 'file'),
+            report: showToast,
+            today: () => localDateOf(new Date()),
+            offersTask: offersQuickJotTask,
+            offersJournal: offersQuickJotJournal,
+          })
+        : null,
+    [
+      pageActions,
+      importFilesToUnfiled,
+      handleSelect,
+      showToast,
+      offersQuickJotTask,
+      offersQuickJotJournal,
+    ],
   );
 
   const shellPageContext = useMemo<ShellPageContext | null>(() => {
@@ -5570,13 +5664,7 @@ export function DocBlocksShell({
       ...(actions && provider
         ? {
             importToUnfiled: async (files: readonly File[]) => {
-              const folder = await actions.ensureUnfiled();
-              if (folder === null) return;
-              const result = await importDroppedFiles(files, provider, { folder });
-              notifyWorkspaceChanged(activeWorkspaceId, folder);
-              void explorerRef.current?.refresh();
-              const summary = summariseImport(result);
-              if (summary) showToast(summary.kind, summary.message);
+              await importFilesToUnfiled(files);
             },
           }
         : {}),
@@ -5596,8 +5684,7 @@ export function DocBlocksShell({
     reminderPreferences,
     changeReminderPreferences,
     provider,
-    notifyWorkspaceChanged,
-    showToast,
+    importFilesToUnfiled,
     workspaceIndex.index,
     workspaceIndex.status.generation,
     workspaceIndex.status.listed,
@@ -5959,16 +6046,11 @@ export function DocBlocksShell({
     [handleSelect, singlePane],
   );
 
-  // "Ask your workspace": the conversation is the shell's, so it outlives the
-  // panel when the editor remounts for a cited note; a new workspace starts afresh.
+  // Ask: the conversation is the shell's, so it outlives the panel when the
+  // editor remounts for a cited note, and a workspace switch too: the chat
+  // keeps going and stays saved in the workspace it started in.
   const askSessionRef = useRef<WorkspaceAskSession | null>(null);
-  useEffect(
-    () => () => {
-      askSessionRef.current?.clear();
-      askSessionRef.current = null;
-    },
-    [activeWorkspaceId],
-  );
+  useEffect(() => () => askSessionRef.current?.clear(), []);
   // Phones index on demand; asking is a demand.
   useEffect(() => {
     if (aiPanel === 'ask') ensureWorkspaceIndex();
@@ -5977,6 +6059,7 @@ export function DocBlocksShell({
     (question: string) =>
       activeWorkspaceId
         ? findWorkspacePassages(workspaceIndexRef.current, activeWorkspaceId, question, {
+            exclude: chatPathsRef.current(),
             // A person waiting on an answer can wait for a cold model too.
             deadlineMs: 4_000,
           })
@@ -5986,7 +6069,15 @@ export function DocBlocksShell({
   const handleOpenCitedNote = useCallback(
     (reference: WorkspacePassageReference, passage: string) => {
       if (!activeWorkspaceId || reference.catalogId !== workspaceCatalogId(activeWorkspaceId)) {
-        showToast('error', 'That note is in another workspace.');
+        const elsewhere = otherWorkspaces.find(
+          (summary) => workspaceCatalogId(summary.workspaceId) === reference.catalogId,
+        );
+        showToast(
+          'error',
+          elsewhere
+            ? `That note is in “${elsewhere.name}”. Open that workspace to see it.`
+            : 'That note is in another workspace.',
+        );
         return;
       }
       // A compact window shows the panel over the editor; the note needs the room.
@@ -6000,7 +6091,7 @@ export function DocBlocksShell({
         wholeWord: false,
       });
     },
-    [activeWorkspaceId, formFactor.widthClass, handleSearchOpen, showToast],
+    [activeWorkspaceId, formFactor.widthClass, handleSearchOpen, showToast, otherWorkspaces],
   );
   const handleSaveAnswerNote = useCallback(
     async (title: string, markdownFor: (path: string) => string) => {
@@ -6019,31 +6110,180 @@ export function DocBlocksShell({
     },
     [provider, activeWorkspaceId, notifyWorkspaceChanged, handleSelect],
   );
-  const askModel = hostSemanticSearch.status;
-  const askNotice: AskNotice | null = !semanticSearchEnabled
-    ? { kind: 'semantic-off', onAllow: () => handleSemanticSearchChange(true) }
-    : askModel && askModel.state !== 'ready'
-      ? {
-          kind: 'not-ready',
-          message:
-            askModel.state === 'downloading'
-              ? 'The search model is downloading. Questions can be asked once it is ready.'
-              : askModel.state === 'download-required'
-                ? 'Answers come from notes found by meaning, which needs the search model on this device.'
-                : (askModel.reason ?? 'Search by meaning is not available on this device.'),
-          onOpenSettings: openSearchSettings,
+  // Saved chats: one Markdown file per conversation in the workspace's chats
+  // folder, each answer appended as it settles (`Ai/ask-chats.ts`).
+  const askChatItems = useMemo(
+    () =>
+      shellPagesAvailable && workspaceIndex.index
+        ? listChats(workspaceIndex.index.getDocuments(), workspaceTasks.kindFolders)
+        : [],
+    // `generation` is the index's change signal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      shellPagesAvailable,
+      workspaceIndex.index,
+      workspaceIndex.status.generation,
+      workspaceTasks.kindFolders,
+    ],
+  );
+  /** Where the open workspace's chats are written: through the editor when one is open. */
+  const askChatStoreRef = useRef<{ workspaceId: string; store: ChatStore } | null>(null);
+  askChatStoreRef.current = (() => {
+    const storage = provider ? getFileSystemProviderV2(provider) : null;
+    if (!activeWorkspaceId || !taskGateway || !storage) return null;
+    if (getTransientWorkspace(activeWorkspaceId) !== null) return null;
+    return {
+      workspaceId: activeWorkspaceId,
+      store: { gateway: taskGateway, storage, kindFolders: workspaceTasks.kindFolders },
+    };
+  })();
+  const saveAskTurn = useCallback(
+    async (turn: AskTurn, chat: AskChat | null): Promise<AskChat | null> => {
+      const open = askChatStoreRef.current;
+      const workspaceId = chat?.workspaceId ?? open?.workspaceId;
+      if (!workspaceId) return null;
+      try {
+        const { saveChatTurn } = await import('../Ai/ask-chats.js');
+        if (open && open.workspaceId === workspaceId) {
+          const path = await saveChatTurn(open.store, chat?.path ?? null, turn);
+          notifyWorkspaceChanged(workspaceId, path);
+          if (!open.store.storage.capabilities.watch) void explorerRef.current?.refresh();
+          return { workspaceId, path };
         }
-      : !workspaceGrounding
+        // Started in a workspace that is no longer open: saved there all the same.
+        const outcome = await withWorkspaceStorage(workspaceId, async (other) => {
+          const storage = getFileSystemProviderV2(other);
+          if (!storage) return null;
+          const store = { gateway: createProviderTaskGateway(other), storage, kindFolders: [] };
+          return saveChatTurn(store, chat?.path ?? null, turn);
+        });
+        if ('result' in outcome) {
+          return outcome.result ? { workspaceId, path: outcome.result } : null;
+        }
+        showToast(
+          'error',
+          outcome.unavailable
+            ? `Couldn't save this chat in “${outcome.unavailable}”. Open that workspace to keep it.`
+            : "Couldn't save this chat: the workspace it started in is not on this device.",
+        );
+        return null;
+      } catch (error: unknown) {
+        showToast('error', `Couldn't save this chat. ${describeActionError(error)}`);
+        return null;
+      }
+    },
+    [notifyWorkspaceChanged, withWorkspaceStorage, showToast],
+  );
+  const openAskChat = useCallback(
+    async (path: string) => {
+      const open = askChatStoreRef.current;
+      const session = askSessionRef.current;
+      if (!open || !session) return;
+      const source = await open.store.gateway.read(path).catch(() => null);
+      if (source === null) {
+        showToast('error', 'That chat is no longer there.');
+        return;
+      }
+      const [{ chatTurnsFromMarkdown }, { resetAskProposals }] = await Promise.all([
+        import('../Ai/ask-chats.js'),
+        import('../Ai/ask-proposals.js'),
+      ]);
+      const turns = chatTurnsFromMarkdown(source, path, open.workspaceId);
+      if (!turns || turns.length === 0) {
+        // Not a conversation Ask can continue: open it as the note it is.
+        void handleSelect(`/${path.replace(/^\/+/u, '')}`, 'file');
+        return;
+      }
+      resetAskProposals(session);
+      session.restore(turns, { workspaceId: open.workspaceId, path });
+    },
+    [showToast, handleSelect],
+  );
+  const renameAskChat = useCallback(
+    async (path: string, title: string): Promise<boolean> => {
+      const gateway = askChatStoreRef.current?.store.gateway;
+      if (!gateway) return false;
+      const from = parseWorkspacePath(path);
+      const to = workspacePathJoin(
+        workspacePathDirname(from),
+        markdownFileNameForTitle(title, 'Chat'),
+      );
+      if (to === from) return true;
+      try {
+        // A change of case alone is the same file on most disks.
+        if (to.toLowerCase() !== from.toLowerCase() && (await gateway.exists(to))) {
+          showToast('error', `There is already a chat called “${titleOfFileName(to)}”.`);
+          return false;
+        }
+        await gateway.move(from, to);
+      } catch (error: unknown) {
+        showToast('error', `Couldn't rename that chat. ${describeActionError(error)}`);
+        return false;
+      }
+      askSessionRef.current?.moveChat(from, to);
+      return true;
+    },
+    [showToast],
+  );
+  const deleteAskChat = useCallback(
+    (path: string) => {
+      const open = askChatStoreRef.current;
+      if (!pageActions || !open) return;
+      void (async () => {
+        await pageActions.remove(path);
+        if (await open.store.gateway.exists(path).catch(() => true)) return;
+        // Deleting the chat showing starts a new one.
+        const session = askSessionRef.current;
+        if (session?.getSnapshot().chat?.path === path) session.clear();
+      })();
+    },
+    [pageActions],
+  );
+  const askChats = useMemo<AskChats | undefined>(
+    () =>
+      pageActions && activeWorkspaceId && askChatStoreRef.current
         ? {
-            kind: 'grounding-off',
-            remote: aiProviderRemote,
-            onAllow: () => handleWorkspaceGroundingChange(true),
+            items: askChatItems,
+            workspaceId: activeWorkspaceId,
+            onOpen: (path) => void openAskChat(path),
+            onRename: renameAskChat,
+            onDelete: deleteAskChat,
           }
-        : null;
+        : undefined,
+    [pageActions, activeWorkspaceId, askChatItems, openAskChat, renameAskChat, deleteAskChat],
+  );
+  chatPathsRef.current = () =>
+    workspaceIndexRef.current
+      ? chatDocumentPaths(workspaceIndexRef.current.getDocuments(), kindFoldersRef.current)
+      : new Set();
+
+  const askModel = hostSemanticSearch.status;
+  const askNotice: AskNotice | null = !semanticSearchAvailable
+    ? null
+    : !semanticSearchEnabled
+      ? { kind: 'semantic-off', onAllow: () => handleSemanticSearchChange(true) }
+      : askModel && askModel.state !== 'ready'
+        ? {
+            kind: 'not-ready',
+            message:
+              askModel.state === 'downloading'
+                ? 'The search model is downloading. Questions can be asked once it is ready.'
+                : askModel.state === 'download-required'
+                  ? 'Answers come from notes found by meaning, which needs the search model on this device.'
+                  : (askModel.reason ?? 'Search by meaning is not available on this device.'),
+            onOpenSettings: openSearchSettings,
+          }
+        : !workspaceGrounding
+          ? {
+              kind: 'grounding-off',
+              remote: aiProviderRemote,
+              onAllow: () => handleWorkspaceGroundingChange(true),
+            }
+          : null;
   const askProgress = workspaceIndex.semantic;
   const askCoverage =
     askProgress && askProgress.total > 0 && askProgress.embedded < askProgress.total
-      ? `only ${Math.floor((askProgress.embedded / askProgress.total) * 100)}% of this workspace is prepared for search by meaning so far.`
+      ? `Answers can draw on ${Math.floor((askProgress.embedded / askProgress.total) * 100)}% of this workspace so far; the rest is still being prepared.`
       : null;
 
   const handleEditorLinkClick = useCallback(
@@ -6685,7 +6925,7 @@ export function DocBlocksShell({
         showToast('error', 'There was no text to make a document from.');
         return;
       }
-      const name = fileNameForPastedTitle(titleForPastedMarkdown(markdown));
+      const name = fileNameForPastedTitle(await titleForPastedMarkdown(markdown));
       const file = new File([markdown], name, { type: 'text/markdown' });
       const result = await importDroppedFiles([file], provider);
       const created = result.imported[0];
@@ -6705,36 +6945,11 @@ export function DocBlocksShell({
     [activeWorkspaceId, handleSelect, notifyWorkspaceChanged, provider, showToast],
   );
 
-  const [pasteDialog, setPasteDialog] = useState<{
-    origin: PasteDialogOrigin;
-    notice: string | null;
-  } | null>(null);
-
-  /**
-   * The file pane's "New document from clipboard": read the clipboard and
-   * make a document of it in one step. Where the platform will not share the
-   * clipboard (a refused browser prompt, Android's WebView), the paste dialog
-   * takes over: a paste into a field needs no permission.
-   */
-  const handleNewFromClipboard = useCallback(async () => {
-    if (!provider) return;
-    const read = await readClipboardContent();
-    if (read.kind === 'content') {
-      await createDocumentFromPaste(read.content);
-      return;
-    }
-    if (read.kind === 'empty') {
-      showToast('error', 'The clipboard has no text to make a document from.');
-      return;
-    }
-    setPasteDialog({
-      origin: 'clipboard',
-      notice: 'DocBlocks can’t read the clipboard here. Paste into the box below instead.',
-    });
-  }, [createDocumentFromPaste, provider, showToast]);
+  /** The welcome screen's paste-or-drop dialog; what it brings opens as a slideshow. */
+  const [pasteDialogOpen, setPasteDialogOpen] = useState(false);
 
   const openWelcomePasteDialog = useCallback(() => {
-    setPasteDialog({ origin: 'welcome', notice: null });
+    setPasteDialogOpen(true);
   }, []);
 
   const handleEditorChange = useCallback(
@@ -7409,24 +7624,20 @@ export function DocBlocksShell({
               : {})}
           />
         )}
-        {pasteDialog && (
+        {pasteDialogOpen && (
           <PasteDocumentDialog
-            title={
-              pasteDialog.origin === 'welcome'
-                ? 'Start from something you have'
-                : 'New document from clipboard'
-            }
-            notice={pasteDialog.notice}
-            onClose={() => setPasteDialog(null)}
+            title="Start from something you have"
+            onClose={() => setPasteDialogOpen(false)}
             onContent={(content) => {
-              const openAs = pasteDialog.origin === 'welcome' ? OPEN_AS_SLIDESHOW : undefined;
-              setPasteDialog(null);
-              void createDocumentFromPaste(content, openAs);
+              setPasteDialogOpen(false);
+              void createDocumentFromPaste(content, OPEN_AS_SLIDESHOW);
             }}
             onFiles={(files) => {
-              const openAs = pasteDialog.origin === 'welcome' ? OPEN_AS_SLIDESHOW : undefined;
-              setPasteDialog(null);
-              void handleImportFilesToEditor(files, { openAs, openFirst: true });
+              setPasteDialogOpen(false);
+              void handleImportFilesToEditor(files, {
+                openAs: OPEN_AS_SLIDESHOW,
+                openFirst: true,
+              });
             }}
           />
         )}
@@ -7580,6 +7791,7 @@ export function DocBlocksShell({
                 onWriteCanvasSettingsChange={handleWriteCanvasSettingsChange}
                 proofingPreferences={proofingPreferences}
                 onProofingPreferencesChange={handleProofingPreferencesChange}
+                quickJot={quickJotSetting}
                 versioningPreference={versioningPreference}
                 onVersioningPreferenceChange={handleVersioningPreferenceChange}
                 searchIndex={
@@ -7652,6 +7864,14 @@ export function DocBlocksShell({
                 settingsRequest={settingsRequest.count}
                 settingsRequestSection={settingsRequest.section}
               />
+              {/* Home, Tasks, Ask and the kind folders, as icons right after the logo. */}
+              {shellNavItems.length > 0 && (
+                <ShellNav
+                  items={shellNavItems}
+                  current={currentNavKey}
+                  onNavigate={(route) => void showShellRoute(route)}
+                />
+              )}
               <input
                 ref={restoreInputRef}
                 type="file"
@@ -7662,25 +7882,6 @@ export function DocBlocksShell({
                   const file = event.currentTarget.files?.[0];
                   event.currentTarget.value = '';
                   if (file) void handleRestoreBackup(file);
-                }}
-              />
-              <WorkspacePicker
-                activeWorkspaceId={activeWorkspaceId}
-                loading={workspaceStarting}
-                refreshKey={descriptorRefreshKey}
-                onSelect={handleWorkspaceSelect}
-                onOpenFolder={handleOpenFolder}
-                onCloneRepository={
-                  git.available ? () => git.openDialog({ kind: 'clone' }) : undefined
-                }
-                onRemoveWorkspace={(workspace) => void handleRemoveWorkspace(workspace.id)}
-              />
-              <WorkspaceSettingsButton
-                onSettings={handleOpenWorkspaceSettings}
-                onRename={handleRenameWorkspace}
-                onDownload={handleDownloadWorkspace}
-                onRemove={() => {
-                  if (activeWorkspaceId) void handleRemoveWorkspace(activeWorkspaceId);
                 }}
               />
               {canRestoreSplitView && (
@@ -7703,13 +7904,6 @@ export function DocBlocksShell({
                 />
               </Suspense>
             )}
-            {shellNavItems.length > 0 && (
-              <ShellNav
-                items={shellNavItems}
-                current={currentNavKey}
-                onNavigate={(route) => void showShellRoute(route)}
-              />
-            )}
             <FileExplorer
               ref={explorerRef}
               key={explorerKey}
@@ -7723,16 +7917,35 @@ export function DocBlocksShell({
               defaultNewFileFormat={defaultNewFileFormat}
               onNewFileFormatUsed={rememberNewFileFormat}
               onRequestNewDocument={handleNewFileIn}
-              onCreateFromClipboard={() => void handleNewFromClipboard()}
               activeFileVersionCount={selectedFile ? openDocumentVersionCount : null}
               metadataRefreshKey={`${documentSnapshot.targetKey ?? ''}:${documentSnapshot.persistedRevision}`}
               activeWorkspaceId={activeWorkspaceId}
-              // The descriptor follows renames; the provider's label covers the
-              // moment after a switch, before the new descriptor has loaded.
-              workspaceName={
-                activeWorkspaceDescriptor?.id === activeWorkspaceId
-                  ? activeWorkspaceDescriptor.name
-                  : provider?.label
+              workspaceName={activeWorkspaceLabel}
+              // The workspace picker and its settings lead the files toolbar,
+              // below the pinned documents.
+              toolbarStart={
+                <>
+                  <WorkspacePicker
+                    activeWorkspaceId={activeWorkspaceId}
+                    activeWorkspaceLabel={activeWorkspaceLabel}
+                    loading={workspaceStarting}
+                    refreshKey={descriptorRefreshKey}
+                    onSelect={handleWorkspaceSelect}
+                    onOpenFolder={handleOpenFolder}
+                    onCloneRepository={
+                      git.available ? () => git.openDialog({ kind: 'clone' }) : undefined
+                    }
+                    onRemoveWorkspace={(workspace) => void handleRemoveWorkspace(workspace.id)}
+                  />
+                  <WorkspaceSettingsButton
+                    onSettings={handleOpenWorkspaceSettings}
+                    onRename={handleRenameWorkspace}
+                    onDownload={handleDownloadWorkspace}
+                    onRemove={() => {
+                      if (activeWorkspaceId) void handleRemoveWorkspace(activeWorkspaceId);
+                    }}
+                  />
+                </>
               }
               activeFilePath={selectedFile}
               sortMode={fileExplorerSortMode}
@@ -7793,6 +8006,25 @@ export function DocBlocksShell({
                   moving={movingToFolder}
                 />
               )}
+            {/* Under the files, above the footer: it grows upward as lines are added.
+                Outside the file list, which remounts often and would lose what was typed. */}
+            {quickJotVisible && quickJotActions && (
+              <QuickJot
+                key={activeWorkspaceId ?? ''}
+                actions={quickJotActions}
+                today={today}
+                dictation={
+                  allowDictation && speech && speechInput
+                    ? {
+                        provider: speechInput,
+                        speech,
+                        onOpenSettings: openDictationSettings,
+                      }
+                    : null
+                }
+                onDictatingChange={setQuickJotDictating}
+              />
+            )}
             <div className="db-shell-sidebar-footer">
               {/* Site links belong to the browser build; the apps reach Docs
                   from the app menu. Every surface keeps Report issue: Google
@@ -7968,7 +8200,9 @@ export function DocBlocksShell({
                               showCodeCopyButton={showCodeCopyButton}
                               onCopyCode={onCopyCode}
                               allowRecording={allowRecording}
-                              speechInput={allowDictation ? speechInput : null}
+                              speechInput={
+                                allowDictation && !quickJotDictating ? speechInput : null
+                              }
                               allowPresentationWindow={allowPresentationWindow}
                               allowPresentationFullscreen={allowPresentationFullscreen}
                               allowNarratePopOut={allowNarratePopOut}
@@ -8010,6 +8244,8 @@ export function DocBlocksShell({
                                         findPassages={askFindPassages}
                                         notice={askNotice}
                                         coverage={askCoverage}
+                                        save={saveAskTurn}
+                                        {...(askChats ? { chats: askChats } : {})}
                                         onOpenNote={handleOpenCitedNote}
                                         onSaveNote={handleSaveAnswerNote}
                                         onClose={() => setAiPanel(null)}
@@ -8054,6 +8290,7 @@ export function DocBlocksShell({
                                 </>
                               }
                               summarizationAssistant={presentationAssistant}
+                              studyAssistant={studyAssistant}
                               toolbarSlotQuickTools={
                                 <>
                                   {canFind && (
@@ -8092,7 +8329,7 @@ export function DocBlocksShell({
                                         openPanel={aiPanel}
                                         onOpenPanel={setAiPanel}
                                         onOpenSettings={openAiSettings}
-                                        canAskWorkspace={semanticSearchAvailable}
+                                        canAskWorkspace
                                         invite={aiInvitation.invite}
                                         onAcceptInvite={() => void acceptAiInvitation()}
                                         onDeclineInvite={declineAiInvitation}
@@ -8216,6 +8453,8 @@ export function DocBlocksShell({
                     findPassages={askFindPassages}
                     notice={askNotice}
                     coverage={askCoverage}
+                    save={saveAskTurn}
+                    {...(askChats ? { chats: askChats } : {})}
                     onOpenNote={handleOpenCitedNote}
                     onSaveNote={handleSaveAnswerNote}
                     onClose={() => void showShellRoute({ kind: 'home' })}

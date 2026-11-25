@@ -40,6 +40,8 @@ export interface RecordedChat {
   readonly maxTokens: unknown;
   readonly streamOptions: unknown;
   readonly messages: readonly ChatMessage[];
+  /** The reply format asked for (its JSON schema's name), when one was. */
+  readonly responseFormat?: string;
 }
 
 export interface FakeGezel {
@@ -203,32 +205,30 @@ function passageSentences(messages: readonly ChatMessage[]): string[] {
     .filter((sentence) => sentence.trim().length > 20);
 }
 
-/** Questions answered by the passage's own words, so every answer is grounded. */
-function scriptedQuiz(messages: readonly ChatMessage[]): string {
-  return JSON.stringify(
-    passageSentences(messages)
-      .slice(0, 3)
-      .map((sentence, index) => ({
-        question: `Which statement does the document make, number ${String(index + 1)}?`,
-        correct: words(sentence, 6),
-        wrong: ['A printed manual', 'A video tutorial', 'A spreadsheet export'],
-        why: sentence,
-      })),
-  );
+/**
+ * Study cards for one section (Squisq's protocol, named by its reply
+ * format), worded from the section's own sentences so they pass its checks:
+ * an answer the section states, never a question about "the document".
+ */
+function scriptedStudyCards(messages: readonly ChatMessage[], kind: 'flashcard' | 'quiz'): string {
+  const sentences = passageSentences(messages).slice(0, 2);
+  return JSON.stringify({
+    cards: sentences.map((sentence) =>
+      kind === 'quiz'
+        ? {
+            question: `${words(sentence, 4)}: which is right?`,
+            correct: words(sentence, 6),
+            wrong: ['A printed manual', 'A video tutorial', 'A spreadsheet export'],
+            why: sentence,
+          }
+        : { question: `${words(sentence, 4)}, how so?`, answer: sentence },
+    ),
+  });
 }
 
-function scriptedFlashcards(messages: readonly ChatMessage[]): string {
-  return JSON.stringify(
-    passageSentences(messages)
-      .slice(0, 4)
-      .map((sentence) => ({
-        front: `What does the document say about ${words(sentence, 2)}?`,
-        back: sentence,
-      })),
-  );
-}
-
-function scriptedAnswer(messages: readonly ChatMessage[]): string {
+function scriptedAnswer(messages: readonly ChatMessage[], format?: string): string {
+  if (format === 'study_flashcards') return scriptedStudyCards(messages, 'flashcard');
+  if (format === 'study_quiz') return scriptedStudyCards(messages, 'quiz');
   const system = messages.find((message) => message.role === 'system')?.content ?? '';
   if (system.includes('You summarize documents')) {
     return `${FAKE_SUMMARY_OVERVIEW}\n\n- It compares wiki tools.\n- It favours plain Markdown files.`;
@@ -236,8 +236,6 @@ function scriptedAnswer(messages: readonly ChatMessage[]): string {
   if (system.includes('You take notes') || system.includes('You condense notes')) {
     return '- A note from the fake Gezel.';
   }
-  if (system.includes('multiple-choice quiz questions')) return scriptedQuiz(messages);
-  if (system.includes('study flashcards')) return scriptedFlashcards(messages);
   if (system.includes('You edit a narrated presentation')) {
     const input = JSON.parse(messages.at(-1)?.content ?? '{}') as {
       position: string;
@@ -530,12 +528,14 @@ export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGez
           maxTokens: body.max_tokens,
           streamOptions: body.stream_options,
           messages,
+          responseFormat: responseFormatName(body.response_format),
         });
         if (options.upstream) await streamUpstream(response, body, options.upstream);
         else if (
           !(await streamScripted(
             response,
-            options.replies?.[chats.length - 1]?.text ?? scriptedAnswer(messages),
+            options.replies?.[chats.length - 1]?.text ??
+              scriptedAnswer(messages, responseFormatName(body.response_format)),
             options.chunkDelayMs ?? 0,
             options.chatProgress,
             options.replies?.[chats.length - 1]?.finishReason,
@@ -581,4 +581,11 @@ export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGez
         server.close(() => resolve());
       }),
   };
+}
+
+/** The name of the reply format a request asks for, when it asks for one. */
+function responseFormatName(format: unknown): string | undefined {
+  if (!format || typeof format !== 'object') return undefined;
+  const schema = (format as { json_schema?: { name?: unknown } }).json_schema;
+  return typeof schema?.name === 'string' ? schema.name : undefined;
 }

@@ -84,8 +84,11 @@ describe('folders: settings file', () => {
     expect(parseFolderSettingsText('{"version":2,"kind":"tasks","extra":true}').status).to.equal(
       'unsupported-version',
     );
-    expect(parseFolderSettingsText('{"version":1,"kind":"chats"}').status).to.equal(
+    expect(parseFolderSettingsText('{"version":1,"kind":"recipes"}').status).to.equal(
       'unsupported-kind',
+    );
+    expect(parseFolderSettingsText('{"version":1,"kind":"chats"}').settings?.kind).to.equal(
+      'chats',
     );
   });
 

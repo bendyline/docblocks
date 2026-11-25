@@ -107,7 +107,10 @@ export async function capturePreparedDocumentFrames(
     height: options.height ?? 900,
   });
   const { flattenBlocks } = await import('@bendyline/squisq/doc');
-  const totalItems = flattenBlocks(prepared.doc.blocks).length;
+  // Slide summaries (`{[summary]}` accessory blocks) are never drawn.
+  const totalItems = flattenBlocks(prepared.doc.blocks).filter(
+    (block) => !block.accessoryBlock,
+  ).length;
   if (totalItems > MAX_RENDERED_ITEMS) {
     throw new Error(
       `Rendered-fidelity conversion supports at most ${MAX_RENDERED_ITEMS} visual items`,
@@ -380,7 +383,8 @@ export async function captureWithPlaywright(
 }> {
   throwIfAborted(signal);
   const { flattenBlocks } = await import('@bendyline/squisq/doc');
-  const blocks = flattenBlocks(doc.blocks);
+  // Slide summaries (`{[summary]}` accessory blocks) are never drawn.
+  const blocks = flattenBlocks(doc.blocks).filter((block) => !block.accessoryBlock);
   const selected = blocks.slice(options.startIndex, options.startIndex + options.maxItems);
   if (selected.length === 0 && blocks.length > 0) {
     throw new Error('Preview startIndex is beyond the available items');

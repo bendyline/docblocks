@@ -5,7 +5,7 @@ import { expect } from './test.js';
 export type EditorView = 'wysiwyg' | 'raw' | 'preview';
 
 /** The View menu's Edit views: the Write layouts, and Source. */
-export type EditMode = 'Write' | 'Source' | 'Blocks' | 'Timeline' | 'Summaries';
+export type EditMode = 'Write' | 'Source' | 'Blocks' | 'Timeline' | 'Summaries' | 'Study cards';
 
 /** The View menu's Use views. Narrate is listed only where the host allows it. */
 export type UseMode =

@@ -6,6 +6,7 @@ import { ironCalcWasmPlugin } from '../../scripts/vite-ironcalc-wasm.js';
 import { squisqAwareViteCacheDir } from '../../scripts/vite-squisq-dep-cache.js';
 import { thirdPartyComponentManifestPlugin } from '../../scripts/vite-third-party-manifest.js';
 import { workerSafeBuilds } from '../../scripts/vite-worker-builds.js';
+import { DESKTOP_DEV_SERVER_PORT, desktopRendererMarker } from './scripts/dev-renderer-marker.js';
 
 // Mirror of the same helper in packages/site/vite.config.ts — see there for
 // the rationale.
@@ -62,6 +63,8 @@ export default defineConfig({
     harperWasmPlugin(),
     ironCalcWasmPlugin(),
     thirdPartyComponentManifestPlugin(),
+    // Lets `dev:electron` wait for this server rather than whatever holds the port.
+    desktopRendererMarker(),
     react(),
   ],
   resolve: {
@@ -174,7 +177,7 @@ export default defineConfig({
     plugins: () => [workerSafeBuilds()],
   },
   server: {
-    port: 5221,
+    port: DESKTOP_DEV_SERVER_PORT,
     strictPort: true,
     open: false,
     fs: {

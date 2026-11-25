@@ -1,10 +1,11 @@
 /**
  * @bendyline/docblocks/folders — folders that say what they are for (a tasks
- * folder, a journal, the unfiled drawer) through `.docblocks/folder.json`,
+ * folder, a journal, the unfiled drawer, saved chats) through `.docblocks/folder.json`,
  * and the path rules each kind follows.
  */
 
 export {
+  DEFAULT_CHATS_FOLDER_NAME,
   DEFAULT_JOURNAL_FOLDER_NAME,
   DEFAULT_TASKS_DONE_FOLDER,
   DEFAULT_TASKS_FOLDER_NAME,
@@ -58,6 +59,15 @@ export {
   journalEntryMarkdown,
   journalEntryPath,
 } from './journal.js';
+export {
+  CHAT_ANSWER_HEADING,
+  CHAT_QUESTION_HEADING,
+  appendChatSection,
+  chatSection,
+  parseChatTranscript,
+  type ChatTranscript,
+  type ChatTranscriptTurn,
+} from './chats.js';
 export {
   fileStemForTitle,
   markdownFileNameForTitle,

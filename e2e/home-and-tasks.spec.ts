@@ -16,25 +16,55 @@ function treeRow(page: Page, path: string) {
   return page.locator(`.db-tree-row[data-path="${path}"], .db-tree-row[data-path="/${path}"]`);
 }
 
-/** Type into a capture box and wait for it to clear, which means the file was written. */
-async function capture(page: Page, label: string, text: string, button = 'Add task') {
-  const field = page.getByLabel(label);
+function quickJot(page: Page) {
+  return page.getByRole('region', { name: 'Quick Jot' });
+}
+
+const JOT_BUTTONS = {
+  task: 'New task from jot',
+  journal: 'Add jot to journal',
+  document: 'New document from jot',
+} as const;
+
+/** Jot into the left pane and wait for the box to clear, which means the file was written. */
+async function jot(page: Page, text: string, as: keyof typeof JOT_BUTTONS = 'task') {
+  const field = quickJot(page).getByLabel('Jot something down');
   await field.fill(text);
-  await page.getByRole('button', { name: button, exact: true }).click();
+  await quickJot(page).getByRole('button', { name: JOT_BUTTONS[as], exact: true }).click();
   await expect(field).toHaveValue('');
 }
 
-test('Home sets up a tasks folder on the first task and lists what is due', async ({ page }) => {
+/** Set up a kind of folder from Home's Get started cards; Quick Jot then offers it. */
+async function setUpFromHome(page: Page, kind: 'tasks' | 'journal') {
+  await places(page).getByRole('button', { name: 'Home' }).click();
+  const home = page.getByRole('region', { name: 'Home' });
+  await home
+    .getByRole('button', { name: kind === 'tasks' ? 'Add a tasks folder' : 'Start a journal' })
+    .click();
+  await expect(
+    quickJot(page).getByRole('button', {
+      name: JOT_BUTTONS[kind === 'tasks' ? 'task' : 'journal'],
+    }),
+  ).toBeVisible({ timeout: 15_000 });
+}
+
+test('Quick Jot adds tasks once Home sets up a tasks folder, and Home lists what is due', async ({
+  page,
+}) => {
   await openInitializedSite(page);
   await places(page).getByRole('button', { name: 'Home' }).click();
 
   const home = page.getByRole('region', { name: 'Home' });
   await expect(home.getByRole('heading', { name: 'Home', level: 1 })).toBeVisible();
   await expect(page).toHaveURL(/\/:home$/);
-  await expect(home.getByRole('button', { name: 'Add a tasks folder' })).toBeVisible();
+  // Home no longer has a capture row of its own: Quick Jot in the left pane is it.
+  await expect(page.getByLabel('Add a task or jot something down')).toHaveCount(0);
+  await expect(quickJot(page).getByRole('button', { name: JOT_BUTTONS.task })).toHaveCount(0);
 
-  await capture(page, 'Add a task or jot something down', 'Pay water bill today');
-  await capture(page, 'Add a task or jot something down', 'Call Priya tomorrow');
+  await setUpFromHome(page, 'tasks');
+  await jot(page, 'Pay water bill today');
+  await jot(page, 'Call Priya tomorrow');
+  await places(page).getByRole('button', { name: 'Home' }).click();
 
   const today = home.getByRole('region', { name: 'Today' });
   await expect(today.getByRole('button', { name: 'Pay water bill' })).toBeVisible();
@@ -57,9 +87,9 @@ test('Home sets up a tasks folder on the first task and lists what is due', asyn
 
 test('a tasks folder shows a board whose columns are its folders', async ({ page }) => {
   await openInitializedSite(page);
-  await places(page).getByRole('button', { name: 'Home' }).click();
-  await capture(page, 'Add a task or jot something down', 'Book dentist friday');
-  await capture(page, 'Add a task or jot something down', 'Renew passport');
+  await setUpFromHome(page, 'tasks');
+  await jot(page, 'Book dentist friday');
+  await jot(page, 'Renew passport');
 
   await treeRow(page, 'Tasks').click();
   const board = page.getByRole('region', { name: 'Tasks, tasks' });
@@ -90,8 +120,8 @@ test('a tasks folder shows a board whose columns are its folders', async ({ page
 
 test('the Tasks page gathers tasks, and Back returns to it from a task', async ({ page }) => {
   await openInitializedSite(page);
-  await places(page).getByRole('button', { name: 'Home' }).click();
-  await capture(page, 'Add a task or jot something down', 'Call Priya tomorrow');
+  await setUpFromHome(page, 'tasks');
+  await jot(page, 'Call Priya tomorrow');
   await places(page)
     .getByRole('button', { name: /^Tasks/ })
     .click();
@@ -108,11 +138,13 @@ test('the Tasks page gathers tasks, and Back returns to it from a task', async (
   await expect(page.getByRole('region', { name: 'Tasks', exact: true })).toBeVisible();
 });
 
-test('the journal and the Unfiled drawer take what Home captures', async ({ page }) => {
+test('the journal and the Unfiled drawer take what Quick Jot captures', async ({ page }) => {
   await openInitializedSite(page);
-  await places(page).getByRole('button', { name: 'Home' }).click();
-  await capture(page, 'Add a task or jot something down', 'Coffee with Sam', 'Add to journal');
-  await capture(page, 'Add a task or jot something down', 'Acme pricing ideas', 'Save as note');
+  await setUpFromHome(page, 'journal');
+  await jot(page, 'Coffee with Sam', 'journal');
+  // A new document from a jot is kept in the Unfiled drawer and opened.
+  await jot(page, 'Acme pricing ideas', 'document');
+  await expect(page).toHaveURL(/Unfiled(%2F|\/)Acme%20pricing%20ideas\.md$/);
 
   await places(page).getByRole('button', { name: 'Journal' }).click();
   const journal = page.getByRole('region', { name: 'Journal, journal' });
@@ -137,8 +169,9 @@ test('the journal and the Unfiled drawer take what Home captures', async ({ page
 
 test('the details row edits a task in place and finishes it', async ({ page }) => {
   await openInitializedSite(page);
+  await setUpFromHome(page, 'tasks');
+  await jot(page, 'Water the plants today');
   await places(page).getByRole('button', { name: 'Home' }).click();
-  await capture(page, 'Add a task or jot something down', 'Water the plants today');
   await page.getByRole('button', { name: 'Water the plants' }).first().click();
   await expect(page.locator('.squisq-status-item').first()).toBeVisible();
 
@@ -241,8 +274,8 @@ function savedDigestsMention(page: Page, text: string): Promise<boolean> {
 
 test('a task in another workspace is ticked off from Home', async ({ page }) => {
   await openInitializedSite(page);
-  await places(page).getByRole('button', { name: 'Home' }).click();
-  await capture(page, 'Add a task or jot something down', 'Renew library card today');
+  await setUpFromHome(page, 'tasks');
+  await jot(page, 'Renew library card today');
   // Home lists another workspace from its saved digest; wait until it is saved.
   await expect.poll(() => savedDigestsMention(page, 'Renew library card')).toBe(true);
 

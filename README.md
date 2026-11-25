@@ -29,21 +29,23 @@ DocBlocks ships as **four surfaces** from this one repository:
 - **Themes and transforms** — visual themes (documentary, cinematic, bold, …) and content transform styles (magazine, data-driven, narrative, …) applied at export or in Play mode.
 - **Workspaces** — browser-local, native-folder, or desktop workspaces; documents are always plain markdown files you can open with anything else.
 - **Wiki articles** — `[[foo]]` links to a neighboring article; `[[reference/blah]]` supports subfolders. Follow a missing link in Write to create it, using HTML outside-in editing when the workspace defaults to Web pages. Missing targets remain plain text in presentations. See [Wiki articles](docs/wiki-links.md).
+- **Study cards** — flashcards and multiple-choice questions kept with each section of the document, made by hand or with AI in Write › Study cards and studied in Use › Flashcards. See [Study cards](docs/study-cards.md).
 - **Version history** — optional per-document revisions kept in a plain `<name>_files/.versions/` sibling folder. On by default for browser workspaces, off for local folders (your files, your call).
 - **AI-agent ready** — `docblocks mcp` starts a local [Model Context Protocol](https://modelcontextprotocol.io) server where agents can convert plain text or Markdown directly, optionally inspect or preview documents, retain media in DBK bundles, and materialize finished artifacts only when requested.
 
 ## Documentation
 
-| Guide                                                  | Scope                                                                                          |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| [CLI reference](docs/cli.md)                           | Authoritative commands, options, I/O behavior, format directions, and linked Squisq ownership. |
-| [MCP architecture and protocol guide](docs/mcp.md)     | Authoritative tools, sources, schemas, artifacts, fidelity, authority, budgets, and lifecycle. |
-| [Agent/contributor guidance](AGENTS.md)                | Repository architecture, hard rules, test gates, and development conventions.                  |
-| [Contributing](CONTRIBUTING.md)                        | Proposal-only contribution policy and submission terms.                                        |
-| [Support](SUPPORT.md)                                  | Where and how to request help or report a problem.                                             |
-| [Security policy](SECURITY.md)                         | How to report vulnerabilities and sensitive security concerns.                                 |
-| [Dependency governance](docs/dependency-governance.md) | Seven-day package cooldown, Squisq exception, and exact install-script approvals.              |
-| [Code of Conduct](CODE_OF_CONDUCT.md)                  | Expected behavior for project interactions.                                                    |
+| Guide                                                  | Scope                                                                                               |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| [CLI reference](docs/cli.md)                           | Authoritative commands, options, I/O behavior, format directions, and linked Squisq ownership.      |
+| [MCP architecture and protocol guide](docs/mcp.md)     | Authoritative tools, sources, schemas, artifacts, fidelity, authority, budgets, and lifecycle.      |
+| [Study cards](docs/study-cards.md)                     | Flashcards and quiz questions kept with each section; making them with AI; where they are left out. |
+| [Agent/contributor guidance](AGENTS.md)                | Repository architecture, hard rules, test gates, and development conventions.                       |
+| [Contributing](CONTRIBUTING.md)                        | Proposal-only contribution policy and submission terms.                                             |
+| [Support](SUPPORT.md)                                  | Where and how to request help or report a problem.                                                  |
+| [Security policy](SECURITY.md)                         | How to report vulnerabilities and sensitive security concerns.                                      |
+| [Dependency governance](docs/dependency-governance.md) | Seven-day package cooldown, Squisq exception, and exact install-script approvals.                   |
+| [Code of Conduct](CODE_OF_CONDUCT.md)                  | Expected behavior for project interactions.                                                         |
 
 ## Agent workflows
 

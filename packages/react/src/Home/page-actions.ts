@@ -10,6 +10,7 @@
 
 import {
   FsError,
+  documentCompanionPath,
   parseWorkspacePath,
   workspacePathBasename,
   workspacePathJoin,
@@ -17,6 +18,7 @@ import {
   type WorkspacePath,
 } from '@bendyline/docblocks/filesystem';
 import {
+  DEFAULT_CHATS_FOLDER_NAME,
   DEFAULT_JOURNAL_FOLDER_NAME,
   DEFAULT_TASKS_FOLDER_NAME,
   DEFAULT_UNFILED_FOLDER_NAME,
@@ -53,6 +55,7 @@ import {
   type TaskGateway,
 } from '../Tasks/task-operations.js';
 import type { TaskItem } from '../Tasks/task-model.js';
+import { attachmentFileName, attachmentReference, type AttachmentFile } from './attachments.js';
 
 export type PageStorage = Pick<
   FileSystemProviderV2,
@@ -90,6 +93,21 @@ export interface DescribedTask {
   readonly notes?: string;
 }
 
+/** A Markdown list item: `- `, `* `, `+ ` or `1. ` after any indent. */
+const LIST_ITEM = /^\s*(?:[-*+]|\d{1,9}[.)])\s/;
+
+/** How a journal line is written beyond the default single line. */
+export interface JournalAppendOptions {
+  /**
+   * Keep the text's lines, as bullets nested under the timestamped one,
+   * instead of joining them into one line. Blank lines are dropped so the
+   * day's list stays a plain list.
+   */
+  readonly keepLines?: boolean;
+  /** Files kept beside today's entry and referenced under the line. */
+  readonly attachments?: readonly AttachmentFile[];
+}
+
 const KIND_NAMES: Record<
   FolderKind,
   { readonly folder: string; readonly label: string; readonly withArticle: string }
@@ -104,6 +122,11 @@ const KIND_NAMES: Record<
     folder: DEFAULT_UNFILED_FOLDER_NAME,
     label: 'Unfiled drawer',
     withArticle: 'an Unfiled drawer',
+  },
+  chats: {
+    folder: DEFAULT_CHATS_FOLDER_NAME,
+    label: 'chats folder',
+    withArticle: 'a chats folder',
   },
 };
 
@@ -188,12 +211,30 @@ export interface PageActions {
   addBucket(folder: string, name: string): Promise<boolean>;
   /** Open the journal entry for `date`, creating it when there is none. */
   openJournalDay(folder: string, date: LocalDate): Promise<void>;
-  /** Add a timestamped line to today's journal entry. */
-  appendToJournal(text: string): Promise<boolean>;
+  /**
+   * Add a timestamped line to today's journal entry. With attachments, every
+   * file is stored before the line is written; if one cannot be, nothing is.
+   */
+  appendToJournal(text: string, options?: JournalAppendOptions): Promise<boolean>;
+  /**
+   * Keep `files` beside the document at `path` (in its companion folder) and
+   * add a reference to each at the end of it. All or nothing: when one file
+   * cannot be stored, those already stored are removed and the document is
+   * left as it was. Resolves true when every file was kept.
+   */
+  attach(path: string, files: readonly AttachmentFile[]): Promise<boolean>;
   /** Add a task given field by field, to the default tasks folder. Returns its path. */
   addDescribedTask(task: DescribedTask): Promise<string | null>;
-  /** Save typed text as a note in the Unfiled drawer, named `title` when given. */
-  saveNote(text: string, title?: string): Promise<string | null>;
+  /**
+   * Save typed text as a note in the Unfiled drawer, named `title` when given.
+   * Attachments are kept beside the note and referenced after the text; with
+   * them, the text may be empty. If one cannot be stored, nothing is saved.
+   */
+  saveNote(
+    text: string,
+    title?: string,
+    attachments?: readonly AttachmentFile[],
+  ): Promise<string | null>;
   /**
    * Change an existing document, keeping a version of it first where the host
    * keeps versions. `doing` completes "Couldn't …" when it fails. Null when
@@ -316,6 +357,67 @@ export function createPageActions(host: PageActionHost): PageActions {
     }
     throw new Error('Too many documents already have that name.');
   };
+
+  /** Write `data` as `fileName` in `folder`, numbered past a name already taken; the name used. */
+  const writeFreeFile = async (
+    folder: WorkspacePath,
+    fileName: string,
+    data: Uint8Array,
+  ): Promise<string> => {
+    for (let attempt = 1; attempt <= 200; attempt += 1) {
+      const candidate = numberedFileName(fileName, attempt);
+      try {
+        await host.storage.writeFile(workspacePathJoin(folder, candidate), data, {
+          mode: 'create',
+          createParents: true,
+          expectedVersion: null,
+        });
+        return candidate;
+      } catch (error: unknown) {
+        const taken =
+          error instanceof FsError &&
+          (error.code === 'already-exists' || error.code === 'conflict');
+        if (!taken) throw error;
+      }
+    }
+    throw new Error('Too many files already have that name.');
+  };
+
+  const discard = async (paths: readonly WorkspacePath[]) => {
+    for (const path of paths) await host.storage.remove(path).catch(() => undefined);
+  };
+
+  /**
+   * Write `files` into the companion folder of `document` and return a
+   * reference to each, relative to the document. All or nothing: on a
+   * failure the files already written are removed before it rethrows.
+   */
+  const storeAttachments = async (
+    document: WorkspacePath,
+    files: readonly AttachmentFile[],
+  ): Promise<{ readonly references: string[]; readonly written: WorkspacePath[] }> => {
+    const companion = parseWorkspacePath(documentCompanionPath(document));
+    const folderName = workspacePathBasename(companion);
+    const written: WorkspacePath[] = [];
+    const references: string[] = [];
+    try {
+      for (const file of files) {
+        const data = new Uint8Array(await file.arrayBuffer());
+        const fileName = await writeFreeFile(companion, attachmentFileName(file), data);
+        written.push(workspacePathJoin(companion, fileName));
+        references.push(attachmentReference(file, `${folderName}/${fileName}`));
+      }
+      return { references, written };
+    } catch (error: unknown) {
+      await discard(written);
+      throw error;
+    }
+  };
+
+  const attachingWhat = (files: readonly AttachmentFile[]) =>
+    files.length === 1
+      ? `attach ${quoted(files[0]!.name || 'that file')}`
+      : `attach those ${files.length} files`;
 
   return {
     defaultTasksFolder,
@@ -472,18 +574,35 @@ export function createPageActions(host: PageActionHost): PageActions {
       }
     },
 
-    async appendToJournal(text) {
-      const line = text.trim().replace(/\s*\n\s*/g, ' ');
-      if (!line) return false;
+    async appendToJournal(text, options = {}) {
+      const [first = '', ...rest] = options.keepLines
+        ? text
+            .trim()
+            .split('\n')
+            .map((line) => line.trimEnd())
+            .filter((line) => line.trim() !== '')
+        : [text.trim().replace(/\s*\n\s*/g, ' ')];
+      if (!first) return false;
+      let stored: Awaited<ReturnType<typeof storeAttachments>> | null = null;
       try {
         const root = await setUpFolder('journal', true);
         const today = host.today();
         const entry =
           findJournalEntry(root, host.documentPaths(), today) ?? journalEntryPath(root, today);
-        const stamped = `- ${localTimeOf(host.now())} ${line}\n`;
+        if (options.attachments?.length) {
+          stored = await storeAttachments(entry, options.attachments);
+        }
+        // Further lines and attachments become bullets nested under this one:
+        // the one shape that stays inside the entry's item when Squisq's
+        // editor reads and saves the day (a plain indented line is split out
+        // of the list). A line that is already a list item keeps its marker.
+        const under = [...rest, ...(stored?.references ?? [])]
+          .map((line) => (LIST_ITEM.test(line) ? `  ${line}\n` : `  - ${line.trim()}\n`))
+          .join('');
+        const stamped = `- ${localTimeOf(host.now())} ${first}\n${under}`;
         if (await host.gateway.exists(entry)) {
           await host.gateway.rewrite(entry, async (source) =>
-            source === '' || source.endsWith('\n\n') || /\n- [^\n]*\n$/.test(source)
+            source === '' || source.endsWith('\n\n') || /\n(?:- | +\S)[^\n]*\n$/.test(source)
               ? `${source}${stamped}`
               : `${source.replace(/\n*$/, '\n\n')}${stamped}`,
           );
@@ -494,7 +613,27 @@ export function createPageActions(host: PageActionHost): PageActions {
         host.report('success', "Added to today's journal entry.");
         return true;
       } catch (error: unknown) {
+        if (stored) await discard(stored.written);
         failed('add that to your journal', error);
+        return false;
+      }
+    },
+
+    async attach(path, files) {
+      if (files.length === 0) return true;
+      let stored: Awaited<ReturnType<typeof storeAttachments>> | null = null;
+      try {
+        const target = parseWorkspacePath(path);
+        stored = await storeAttachments(target, files);
+        const block = stored.references.join('\n\n');
+        await host.gateway.rewrite(target, async (source) =>
+          source.trim() === '' ? `${block}\n` : `${source.replace(/\n*$/, '\n\n')}${block}\n`,
+        );
+        host.changed(target);
+        return true;
+      } catch (error: unknown) {
+        if (stored) await discard(stored.written);
+        failed(attachingWhat(files), error);
         return false;
       }
     },
@@ -539,18 +678,25 @@ export function createPageActions(host: PageActionHost): PageActions {
       }
     },
 
-    async saveNote(text, title) {
+    async saveNote(text, title, attachments = []) {
       const body = text.trim();
-      if (!body) return null;
+      if (!body && attachments.length === 0) return null;
+      let stored: Awaited<ReturnType<typeof storeAttachments>> | null = null;
       try {
         const root = await setUpFolder('unfiled', true);
-        const name = title?.trim() || noteTitleFor(body);
+        const name =
+          title?.trim() ||
+          noteTitleFor(body) ||
+          (attachments[0] ? attachmentFileName(attachments[0]).replace(/\.[^.]+$/, '') : '');
         const path = await freeFilePath(root, markdownFileNameForTitle(name, 'Note'));
-        await host.gateway.create(path, `${body}\n`);
+        if (attachments.length > 0) stored = await storeAttachments(path, attachments);
+        const blocks = [body, ...(stored?.references ?? [])].filter(Boolean);
+        await host.gateway.create(path, `${blocks.join('\n\n')}\n`);
         host.changed(path);
         host.report('success', `Saved to ${displayFolder(root)}.`);
         return path;
       } catch (error: unknown) {
+        if (stored) await discard(stored.written);
         failed('save that note', error);
         return null;
       }

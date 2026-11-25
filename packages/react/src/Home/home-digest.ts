@@ -72,6 +72,8 @@ export function projectHomeDigest(input: {
   keep.sort((left, right) => Number(left.done) - Number(right.done));
   const kept = keep.slice(0, HOME_DIGEST_LIMITS.maxItems);
   const folders: DigestFolder[] = kindFolders
+    // Home has nothing to show for Ask's chats, and older readers reject a kind they do not know.
+    .filter((folder) => folder.settings.kind !== 'chats')
     .slice(0, HOME_DIGEST_LIMITS.maxFolders)
     .map((folder) => {
       const kind = folder.settings.kind;

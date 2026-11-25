@@ -438,7 +438,7 @@ describe('MCP protocol surface', function () {
         check?: string;
       };
     };
-    expect(authoringPayload.version).to.equal(12);
+    expect(authoringPayload.version).to.equal(13);
     // What makes a list a picture, and a worked slide for each drawing.
     expect(authoringPayload.drawnLists?.guide?.[0]).to.include('one list of 2–6 short items');
     expect(authoringPayload.drawnLists?.templates?.map((entry) => entry.id)).to.include.members([

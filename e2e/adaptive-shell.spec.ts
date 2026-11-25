@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './helpers/test.js';
 import { showUseView, viewButton } from './helpers/toolbar.js';
 import { documentTitleField, newDocumentGallery } from './helpers/new-document.js';
+import { touchDrag } from './helpers/touch.js';
 
 /**
  * Layout behaviour of the adaptive shell. Runs on the touch-emulating device
@@ -28,36 +29,6 @@ async function openWelcomeDocument(page: Page): Promise<void> {
   if ((await shell.getAttribute('data-db-layout')) === 'single-pane') {
     await expect(shell).toHaveAttribute('data-db-drawer', 'closed');
   }
-}
-
-/**
- * A touch drag through Chromium's own input pipeline. Synthetic DOM events
- * would skip the part that matters: the browser deciding, from touch-action,
- * whether a sideways move is its scroll or the page's pointer drag.
- */
-async function touchDrag(
-  page: Page,
-  from: { x: number; y: number },
-  to: { x: number; y: number },
-  /** Runs with the finger halfway there and still down. */
-  midway?: () => Promise<void>,
-): Promise<void> {
-  const cdp = await page.context().newCDPSession(page);
-  const STEPS = 12;
-  await cdp.send('Input.dispatchTouchEvent', {
-    type: 'touchStart',
-    touchPoints: [{ x: from.x, y: from.y, id: 1 }],
-  });
-  for (let step = 1; step <= STEPS; step++) {
-    if (step === STEPS / 2 + 1) await midway?.();
-    const t = step / STEPS;
-    await cdp.send('Input.dispatchTouchEvent', {
-      type: 'touchMove',
-      touchPoints: [{ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t, id: 1 }],
-    });
-  }
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await cdp.detach();
 }
 
 /** The stamped contract that `docblocks.css` keys off. */
@@ -283,7 +254,13 @@ test.describe('adaptive shell on a phone', () => {
     await expect(shell).toHaveAttribute('data-db-pointer', 'coarse');
 
     const undersized = await page.evaluate(() => {
-      const selectors = ['.db-tree-row', '.db-tree-more', '.db-explorer-btn'];
+      const selectors = [
+        '.db-tree-row',
+        '.db-tree-more',
+        '.db-explorer-btn',
+        '.db-explorer-workspace-controls button',
+        '.db-quick-jot-btn',
+      ];
       const offenders: string[] = [];
       for (const selector of selectors) {
         for (const element of document.querySelectorAll<HTMLElement>(selector)) {

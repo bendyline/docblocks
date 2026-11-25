@@ -10,6 +10,7 @@ import {
   answerBlocks,
   askRequest,
   createWorkspaceAskSession,
+  type AskChat,
   type AskTurn,
 } from '../src/Ai/workspace-ask.js';
 
@@ -85,7 +86,7 @@ function fakeAi(reply = 'Aphids arrive in **May** [1].', knowledge: AiChatKnowle
   };
 }
 
-describe('Ask your workspace', () => {
+describe('Ask', () => {
   it('asks with the passages and the last finished turns, citations stripped', () => {
     const history = [
       turn({ id: 1, question: 'Old', answer: 'Older answer [2].' }),
@@ -167,15 +168,37 @@ describe('Ask your workspace', () => {
     expect(notified).to.be.greaterThan(2);
   });
 
-  it('never asks the model when no note matches', async () => {
-    const { ai, requests } = fakeAi();
+  it('chats with the model when no note matches, and checks nothing it did not source', async () => {
+    const { ai, requests, checks } = fakeAi('Hello! How can I help?', { outcome: 'none' });
     const session = createWorkspaceAskSession();
     session.configure({ ai, findPassages: async () => [] });
-    await session.ask('Anything about tides?');
-    expect(session.getSnapshot().turns.map((entry) => entry.status)).to.deep.equal(['nothing']);
-    expect(requests).to.have.length(0);
+    await session.ask('hi');
+    expect(requests).to.have.length(1);
+    expect(requests[0]).to.not.have.property('workspacePassages');
+    expect(session.getSnapshot().turns.map((entry) => [entry.status, entry.answer])).to.deep.equal([
+      ['done', 'Hello! How can I help?'],
+    ]);
+    expect(checks).to.have.length(0);
     session.clear();
     expect(session.getSnapshot().turns).to.deep.equal([]);
+  });
+
+  it('keeps the newest turns within the history budget', () => {
+    const long = 'x'.repeat(1_400);
+    const history = Array.from({ length: 10 }, (_, index) =>
+      turn({ id: index + 1, question: `Q${index + 1}`, answer: long }),
+    );
+    const request = askRequest(history, 'Next?', []);
+    const asked = request.messages.filter((message) => message.role === 'user');
+    // Eight turns at most, and only as many as fit 8,000 characters: the newest five.
+    expect(asked.map((message) => message.content)).to.deep.equal([
+      'Q6',
+      'Q7',
+      'Q8',
+      'Q9',
+      'Q10',
+      'Next?',
+    ]);
   });
 
   it('answers from the task list when no note matches, telling the model the facts are exact', async () => {
@@ -196,20 +219,77 @@ describe('Ask your workspace', () => {
     ]);
   });
 
-  it('stops when Gezel finds none of the passages answers the question', async () => {
-    const { ai, requests, checks } = fakeAi('From memory.', { outcome: 'none' });
+  it('answers anyway when Gezel finds none of the passages answers the question', async () => {
+    const { ai, requests, checks } = fakeAi('Ladybirds do.', { outcome: 'none' });
     const session = createWorkspaceAskSession();
     session.configure({ ai, findPassages: async () => [passage] });
     await session.ask('What eats them?');
     expect(requests).to.have.length(1);
     expect(session.getSnapshot().turns.map((entry) => [entry.status, entry.answer])).to.deep.equal([
-      ['nothing', ''],
+      ['done', 'Ladybirds do.'],
     ]);
     expect(session.getSnapshot().generation).to.equal(null);
     expect(checks).to.have.length(0);
-    // The next question still runs.
-    await session.ask('Anything else?');
-    expect(requests).to.have.length(2);
+  });
+
+  it('saves each settled turn in order, into the chat the first one made', async () => {
+    const { ai } = fakeAi();
+    const session = createWorkspaceAskSession();
+    const saves: Array<[string, AskChat | null]> = [];
+    let release: () => void = () => undefined;
+    const firstSave = new Promise<void>((resolve) => (release = resolve));
+    session.configure({
+      ai,
+      findPassages: async () => [passage],
+      save: async (settled, chat) => {
+        saves.push([settled.question, chat]);
+        if (saves.length === 1) await firstSave;
+        return { workspaceId: 'w', path: 'Chats/First.md' };
+      },
+    });
+    await session.ask('First?');
+    // The second answer settles while the first is still being written.
+    await session.ask('Second?');
+    expect(saves).to.have.length(1);
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(saves).to.deep.equal([
+      ['First?', null],
+      ['Second?', { workspaceId: 'w', path: 'Chats/First.md' }],
+    ]);
+    expect(session.getSnapshot().chat).to.deep.equal({ workspaceId: 'w', path: 'Chats/First.md' });
+    session.moveChat('Chats/First.md', 'Chats/Renamed.md');
+    expect(session.getSnapshot().chat?.path).to.equal('Chats/Renamed.md');
+    session.moveChat('Chats/Renamed.md', null);
+    expect(session.getSnapshot().chat).to.equal(null);
+  });
+
+  it('shows a saved chat, continues it, and saves nothing for one cleared meanwhile', async () => {
+    const { ai, requests } = fakeAi();
+    const session = createWorkspaceAskSession();
+    const saved: Array<AskChat | null> = [];
+    session.configure({
+      ai,
+      findPassages: async () => [passage],
+      save: async (_turn, chat) => {
+        saved.push(chat);
+        return chat;
+      },
+    });
+    const chat = { workspaceId: 'w', path: 'Chats/Aphids.md' };
+    session.restore([turn({ question: 'When?', answer: 'In May [1].', knowledge: used })], chat);
+    expect(session.getSnapshot().chat).to.deep.equal(chat);
+    await session.ask('What eats them?');
+    // The restored turn is history for the model.
+    expect(requests[0]?.messages.map((message) => message.content)).to.include('When?');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(saved).to.deep.equal([chat]);
+    expect(session.getSnapshot().turns.map((entry) => entry.question)).to.deep.equal([
+      'When?',
+      'What eats them?',
+    ]);
+    session.clear();
+    expect(session.getSnapshot().chat).to.equal(null);
   });
 
   it('stops a running answer and takes one question at a time', async () => {

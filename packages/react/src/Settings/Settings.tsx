@@ -409,6 +409,35 @@ export function ProofingSettingsControls({ value, onChange }: ProofingSettingsCo
   );
 }
 
+export interface LeftPaneSettingsControlsProps {
+  quickJot: boolean;
+  onQuickJotChange: (visible: boolean) => void;
+}
+
+/** What the left pane shows besides the file list. */
+export function LeftPaneSettingsControls({
+  quickJot,
+  onQuickJotChange,
+}: LeftPaneSettingsControlsProps) {
+  return (
+    <fieldset className="db-settings-fieldset">
+      <legend className="db-settings-legend">Left pane</legend>
+      <label className="db-settings-checkbox">
+        <input
+          type="checkbox"
+          checked={quickJot}
+          onChange={(event) => onQuickJotChange(event.currentTarget.checked)}
+        />
+        Show Quick Jot
+      </label>
+      <p className="db-settings-hint">
+        A box below your files for jotting a note, a task or a journal line without leaving the
+        document you are in.
+      </p>
+    </fieldset>
+  );
+}
+
 export interface WriteCanvasSettingsControlsProps {
   value: WriteCanvasPreferences;
   onChange: (settings: WriteCanvasPreferences) => void;

@@ -24,12 +24,13 @@ export { WORKSPACE_METADATA_DIRECTORY_NAME };
 export const FOLDER_SETTINGS_FILE_NAME = 'folder.json';
 export const FOLDER_SETTINGS_VERSION = 1;
 
-export const FOLDER_KINDS = ['tasks', 'journal', 'unfiled'] as const;
+export const FOLDER_KINDS = ['tasks', 'journal', 'unfiled', 'chats'] as const;
 export type FolderKind = (typeof FOLDER_KINDS)[number];
 
 export const DEFAULT_TASKS_FOLDER_NAME = 'Tasks';
 export const DEFAULT_JOURNAL_FOLDER_NAME = 'Journal';
 export const DEFAULT_UNFILED_FOLDER_NAME = 'Unfiled';
+export const DEFAULT_CHATS_FOLDER_NAME = 'Chats';
 /** The bucket new tasks go to, and reopened ones return to. */
 export const DEFAULT_TASKS_OPEN_FOLDER = 'Active';
 /** The bucket whose tasks are done. */

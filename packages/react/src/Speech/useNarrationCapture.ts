@@ -9,6 +9,7 @@ import {
   MAX_NARRATION_SECONDS,
   transcribeNarrationAudio,
 } from './narration-transcription.js';
+import { pushMeterLevel, SILENT_METER } from './dictation-meter.js';
 
 export function useNarrationCapture(provider: SpeechInputProvider, onText: (text: string) => void) {
   const [phase, setPhase] = useState<'idle' | 'starting' | 'recording' | 'finishing' | 'uploading'>(
@@ -17,6 +18,10 @@ export function useNarrationCapture(provider: SpeechInputProvider, onText: (text
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [level, setLevel] = useState(0);
+  /** Recent levels for a rolling meter, oldest first. */
+  const [levels, setLevels] = useState<readonly number[]>(SILENT_METER);
+  /** Phrases heard but not yet back as text. */
+  const [pending, setPending] = useState(0);
   const controller = useRef<AbortController | null>(null);
   const session = useRef<DictationSessionHandle | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -33,16 +38,22 @@ export function useNarrationCapture(provider: SpeechInputProvider, onText: (text
   }, []);
   useEffect(() => release, [release]);
 
+  const quiet = () => {
+    setLevel(0);
+    setLevels(SILENT_METER);
+  };
   const cancel = () => {
     release();
     setPhase('idle');
-    setLevel(0);
+    quiet();
+    setPending(0);
   };
   const fail = (error: unknown, run: AbortController) => {
     if (run.signal.aborted || controller.current !== run) return;
     release();
     setPhase('idle');
-    setLevel(0);
+    quiet();
+    setPending(0);
     setError(error instanceof Error ? error.message : 'Transcription failed.');
   };
   const finish = async () => {
@@ -50,13 +61,14 @@ export function useNarrationCapture(provider: SpeechInputProvider, onText: (text
     const capture = session.current;
     if (!run || !capture) return;
     setPhase('finishing');
-    setLevel(0);
+    quiet();
     if (timer.current) clearTimeout(timer.current);
     try {
       await capture.stop();
       if (run.signal.aborted) return;
       release();
       setPhase('idle');
+      setPending(0);
     } catch (error) {
       fail(error, run);
     }
@@ -75,10 +87,14 @@ export function useNarrationCapture(provider: SpeechInputProvider, onText: (text
           if (!run.signal.aborted) latestText.current(text);
         },
         onAudioLevel: (value) => {
-          if (!run.signal.aborted) setLevel(value);
+          if (run.signal.aborted) return;
+          setLevel(value);
+          setLevels((previous) => pushMeterLevel(previous, value));
         },
-        onPendingChange: (pending) => {
-          if (pending > 12)
+        onPendingChange: (count) => {
+          if (run.signal.aborted) return;
+          setPending(count);
+          if (count > 12)
             fail(new Error('Transcription cannot keep up. Try a shorter recording.'), run);
         },
         onLongPause: () => {
@@ -122,5 +138,5 @@ export function useNarrationCapture(provider: SpeechInputProvider, onText: (text
       fail(error, run);
     }
   };
-  return { phase, error, progress, level, record, finish, cancel, upload };
+  return { phase, error, progress, level, levels, pending, record, finish, cancel, upload };
 }

@@ -162,7 +162,7 @@ export function TurnProposalsBlock({
   const suggest = async () => {
     const controller = new AbortController();
     store.set(turn.id, { status: 'thinking', controller });
-    const targets = allowEdits ? citedTargets(turn) : [];
+    const targets = allowEdits ? citedTargets(turn, actions.catalogId) : [];
     const outcome = await chatOnce(
       ai,
       actionsRequest({

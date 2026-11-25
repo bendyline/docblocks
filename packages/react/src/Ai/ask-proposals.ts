@@ -17,6 +17,12 @@ import type { AskTurn, WorkspaceAskSession } from './workspace-ask.js';
 
 /** What the shell does with a confirmed action. */
 export interface AskActions {
+  /**
+   * The open workspace's catalog id (`workspaceCatalogId`): only its notes can
+   * be edited. A conversation outlives switching workspaces, and a note cited
+   * from the one before is not here to change.
+   */
+  readonly catalogId?: string;
   /** Carry it out; null when it did not happen (the shell has already said why). */
   run(action: ProposedAction): Promise<AppliedAction | null>;
   /** Open a document an action created or changed. */
@@ -133,9 +139,10 @@ const MARKDOWN = /\.(?:md|markdown|mdown)$/i;
  * The documents a turn cited that an edit could target: the person's own
  * Markdown notes behind the passages the answer marks with `[n]`. An answer
  * with no markers at all (some models do not cite) offers the passages it
- * was given, which are the sources shown under it.
+ * was given, which are the sources shown under it. With `catalogId`, only
+ * notes from that workspace.
  */
-export function citedTargets(turn: AskTurn): ActionTarget[] {
+export function citedTargets(turn: AskTurn, catalogId?: string): ActionTarget[] {
   if (turn.knowledge?.outcome !== 'used') return [];
   const cited = new Set<number>();
   for (const part of citationParts(turn.answer)) {
@@ -148,6 +155,7 @@ export function citedTargets(turn: AskTurn): ActionTarget[] {
     // says a passage is one of the person's notes (ai-workspace-knowledge.ts).
     const reference = passage.uri ? parseWorkspacePassageUri(passage.uri) : null;
     if (!reference || !MARKDOWN.test(reference.path) || targets.has(reference.path)) continue;
+    if (catalogId !== undefined && reference.catalogId !== catalogId) continue;
     targets.set(reference.path, { path: reference.path, title: passage.title || reference.path });
   }
   return [...targets.values()];

@@ -1,11 +1,11 @@
 # Dynamic slides and the Summarization designer
 
-Choose **Slideshow** or **Video**, then click **Design…** beside the **Summarize**
-dropdown. On a narrower toolbar, open **… (More preview settings)** to find both
-controls. The designer is available in DocBlocksShell and the VS Code editor. It is no longer a writing-toolbar action.
-You can also select **Dynamic slides** directly from **Summarize**.
+Open **View → Summaries** and choose **Custom** from the **Summary style** dropdown;
+the designer appears below it. It is available in DocBlocksShell and the VS Code
+editor.
 
-Your document text, inline block tags, and narration stay unchanged. Squisq
+Your document's prose, inline block tags, and narration stay unchanged; the design
+is saved in the document beside them (see [Storage](#storage-and-shared-implementation)). Squisq
 regenerates slides from the current prose and saved preferences at preview and
 export time. Automatic summaries are never saved as generated prose. The designer
 shows the full original section read-only alongside the current slide preview.
@@ -80,6 +80,26 @@ editor's block picker, so charts, tables, maps, and other data blocks keep their
 content. It is not summarized, split into supporting slides, reworded, or sent to
 AI. Change its block type in the editor.
 
+A block that draws a picture — a chart, a data table, a diagram, a drawing, a
+layout, a map, a tree or a timeline — can instead be shown **On the last slide of**
+the section before it, labeled with that section and the block type, such as
+**On the last slide of “Results” (Bar Chart)**. The block makes no slide of its own:
+it is drawn, as its real chart or diagram, beneath the headline and up to two short
+points of that section's last slide, while its own text is still narrated with that
+slide on screen. "The section before it" is the nearest section before it in the
+document that makes slides, so a `##` chart after a `##` section of prose joins
+that section. Several in a row join the same slide, up to four things on one
+slide; if that slide was a full-screen picture, it becomes a text slide with the
+picture beside the block. The block is drawn still, without its entrance or its own
+builds. In the slide list it stays as an entry without a number, tagged with its
+type and the slide carrying it; selecting it previews that slide, and the carrying
+slide is tagged **+ Bar Chart**. The status line counts it apart
+(_4 slides · 1 on another slide_). When nothing can carry it — nothing comes before
+it, the section before it is shown as authored or has every slide hidden, or that
+slide already carries four things — it gets a slide of its own as if shown as
+authored, and the designer says why beside the layout choice. Nothing narrated
+changes, so recorded narration still fits and switching back restores the deck.
+
 Automatic slides are titled with their section heading and show the section's
 own sentences beneath it, so a slide never repeats its title as its body. Each
 document image appears once, on a slide from the section that contains it.
@@ -105,12 +125,12 @@ never start a slide of their own at any density. A table is drawn whole beneath
 the headline and points at the slide's full width, its cells wrapping and keeping
 their own line breaks, with the type set as large as every row allows. A chart
 section summarized this way shows its data as a table; show it **As authored** to
-draw the chart.
+draw the chart on its own slide, or **On the last slide of** the section before it
+to draw it there.
 
-**Use dynamic slides** saves the preferences and selects the Dynamic slides
-summarization mode in one undoable edit. It also disables the redundant automatic
-cover. **Reset design** resets the unsaved preferences and clears saved wording
-from the draft; applying makes that reset durable.
+Each change is saved as it is made, as one step Ctrl+Z in Write undoes. **Reset
+design** returns every slide to its automatic summary: it removes the section
+settings, the summary keys, and every `{[summary]}` block, including ones not in use.
 
 **Hide this slide in the presentation** leaves the selected slide out of the deck
 and video in any density. The narration still speaks its passage, so the shown
@@ -120,10 +140,12 @@ bed still plays. Hidden slides stay in the designer's list, struck through, and
 still preview, so they can be shown again; AI never suggests wording for them. At
 least one slide must stay shown. A hidden slide is remembered by a short key for
 its exact passage, so editing that passage, or a density or layout change that
-splits the section differently, shows it again.
+splits the section differently, shows it again — the summary that hid it is listed
+as **not in use**, and hides the slide again if the passage returns.
 
 **Customize slide wording (slides only)** overrides a section's opening headline
-or highlights. With an AI model connected, **Suggest with AI** proposes headlines,
+or highlights. Your wording stays when you edit the section's text; **Use automatic
+wording** removes it. With an AI model connected, **Suggest with AI** proposes headlines,
 condensed points, and layouts one slide at a time. A deck of 3 to 16 slides to
 suggest is first planned as a whole: one request chooses every slide's layout
 together, so the deck varies by design (no layout on more than a third of the
@@ -196,35 +218,49 @@ Squisq owns the `dynamic-slides` transform style, `PresentationHints` schema,
 Qualla. DocBlocks owns the optional host AI calls and designer UI. The shared
 editor exposes the designer beside Summarize in its preview toolbar.
 
-The saved mode is `squisq-transform: dynamic-slides`. Version-1 JSON in
-`squisq-presentation-hints` contains density, the supporting-slide preference,
-and optional per-block preferences keyed by the parsed source block ID (a layout,
-or `authored` to show the block itself). It
-contains no automatic slide array, source offsets, or generated automatic prose.
-Only explicit manual wording and actual accepted AI summaries carry source-text
-snapshots. Renaming a heading can change its generated block ID; an unmatched
-preference is ignored. Explicit source block IDs provide stable identity.
+The saved mode is `squisq-transform: dynamic-slides`. The design lives in the
+document, where it can be read and edited by hand (Squisq's `readPresentationHints`
+and `writePresentationHints`):
 
-Existing version-1 `squisq-presentation` full plans remain readable. Applying the
-designer replaces that legacy plan with dynamic preferences; choosing another
-Summarize mode clears the legacy plan. These are undoable user actions.
+- **Document settings** are frontmatter keys: `squisq-summary-density` (`concise`,
+  `detailed` or `section`; omitted at `balanced`) and
+  `squisq-summary-supporting-slides: false`.
+- **Section settings** are on the section's heading tag: `slideLayout=` (a layout,
+  `authored` to show the block itself, or `feature` to draw a picture block on the
+  last slide of the section before it) and `supportingSlides=`.
+- **Slide designs** are `{[summary]}` accessory blocks under the section. The
+  heading is the slide's headline and the first list its points. A summary
+  without `passage=` words the section's opening slide; `passage=<key>` names one
+  slide by a short key of its exact passage; `origin=ai` marks an AI suggestion;
+  `hidden=true` hides the slide; `points=none` shows no points.
+
+Accessory blocks are never slides, narration, captions, or exported content. Write
+folds a section's summaries into one **Slide summaries** row; Source folds each.
+Nothing automatic is saved: no slide array, source offsets, or generated prose.
+
+Designs saved by earlier versions as version-1 JSON in `squisq-presentation-hints`
+remain readable and play as before; the designer replaces the key with summary
+blocks on the first change, keeping what still applies. Version-1
+`squisq-presentation` full plans remain readable too; choosing another summary
+style clears that legacy plan. Apps released before summary blocks show them as
+ordinary sub-sections.
 
 Compilation derives seconds from the current narration bookmarks, including
 edits and offsets. The timeline is locked against general slideshow pacing.
 Without bookmarks, narration uses proportional estimates. Exact cue placement
-does not establish acoustic word-boundary accuracy. Limits remain 40,000 script
-characters, 80 slides, four points per slide, and 160,000 serialized hint
-characters. This creates simple steps/comparison explainers and uses existing
+does not establish acoustic word-boundary accuracy. Limits are 40,000 script
+characters, 300 slides, four points per slide, a headline of 110 characters, and
+points of 180. This creates simple steps/comparison explainers and uses existing
 images, videos, and diagrams; it does not generate images or record application
 interactions.
 
 ## Verification
 
 `packages/desktop/e2e/presentation.spec.ts` covers blank document → scripted AI
-insert → narration → Slideshow → Summarize / Design… → supporting slides → AI summaries
+insert → narration → Summaries (Custom) → supporting slides → AI summaries
 and manual review → undo/redo → reopen from the Video toolbar → encoded MP4.
-It checks that the document body remains byte-identical, hints persist without a
-full saved plan, slide cues match the timing sidecar, and the MP4 has audio and
+It checks that what is narrated stays identical, the design persists as summary
+blocks without a full saved plan, slide cues match the timing sidecar, and the MP4 has audio and
 video with the expected duration. Only the native Save dialog is replaced with a
 pre-authorized test destination; encoding and file saving are real.
 

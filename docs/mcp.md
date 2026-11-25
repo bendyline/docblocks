@@ -399,7 +399,10 @@ multi-format conversion.
 
 `inspect_document` returns metadata, statistics, outline, paginated block summaries,
 tables, links, page/slide/sheet/frame items, assets and attribution, theme/layout
-information, truncation flags, and diagnostics. Its opaque cursor paginates blocks;
+information, truncation flags, and diagnostics. It reads a document without its side
+information (slide summaries and study cards, Squisq accessory blocks); a document with
+study cards gets one `study-cards` info diagnostic (how many, of which kind, how many need
+a person), and each malformed card its own `study-*` warning. Its opaque cursor paginates blocks;
 clients must not synthesize cursors.
 
 `compare_documents` compares text, structure, tables, media, themes, layouts,
@@ -549,6 +552,16 @@ later Squisq adds to its own profile cannot fail output validation.
 
 `inspect_document` reports `template-shape-unmet` when an annotated block asks for
 a drawing its items cannot make.
+
+### Study cards
+
+An agent can write study material straight into a document: flashcards (`{[flashcard]}`)
+and multiple-choice questions (`{[quiz]}`) under the section they test. The
+`studyCards` section of `docblocks://authoring-guide` (from guide version 13) carries
+the linked Squisq's rules, a worked example, and the formats that keep cards (`md`,
+`dbk`; every other export leaves them out). `get_authoring_context` adds one paragraph
+when the target keeps cards or no target is given. The server instructions say nothing
+about cards.
 
 ### Pictures
 

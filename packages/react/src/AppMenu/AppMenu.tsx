@@ -58,6 +58,8 @@ export interface AppMenuProps {
   proofingPreferences?: ProofingPreferences;
   /** Called when the user toggles inline spelling or grammar checking. */
   onProofingPreferencesChange?: (settings: ProofingPreferences) => void;
+  /** Whether Quick Jot shows in the left pane, and how to change it. Omitted hides the switch. */
+  quickJot?: { readonly visible: boolean; readonly onChange: (visible: boolean) => void };
   /** Current global versioning preference. */
   versioningPreference?: VersioningPreference;
   /** Called when the user changes the global versioning preference. */
@@ -149,6 +151,7 @@ export function AppMenu({
   onWriteCanvasSettingsChange,
   proofingPreferences = DEFAULT_PROOFING_PREFERENCES,
   onProofingPreferencesChange,
+  quickJot,
   versioningPreference = 'browser-only',
   onVersioningPreferenceChange,
   onOpenWorkspaceSettings,
@@ -389,6 +392,7 @@ export function AppMenu({
           onWriteCanvasSettingsChange={onWriteCanvasSettingsChange}
           proofingPreferences={proofingPreferences}
           onProofingPreferencesChange={onProofingPreferencesChange}
+          quickJot={quickJot}
           ai={ai}
           speech={speech}
           tray={tray}

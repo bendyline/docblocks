@@ -18,9 +18,17 @@
  *
  * So clear Markdown in the text wins, then structured HTML, then lists or
  * quotes in the text, and finally the text taken literally.
+ *
+ * The shell imports this module at startup (the welcome screen and the file
+ * pane take drops), so Squisq's Markdown is loaded on first use, never
+ * statically: it carries the parser and the icon catalogue, about 700 kB the
+ * shell entry must not pay for (`scripts/check-bundle-size.ts`).
  */
 
-import { inferDocumentTitle, parseMarkdown, plainTextToMarkdown } from '@bendyline/squisq/markdown';
+/** Squisq's Markdown, loaded the first time a paste needs it. */
+function loadMarkdown() {
+  return import('@bendyline/squisq/markdown');
+}
 
 export interface PastedContent {
   /** The `text/plain` flavour, possibly empty. */
@@ -82,6 +90,7 @@ export async function pastedContentToMarkdown(content: PastedContent): Promise<s
   }
   if (!text) return '';
   if (matchesAny(text, WEAK_MARKDOWN_SIGNALS)) return `${text}\n`;
+  const { plainTextToMarkdown } = await loadMarkdown();
   return `${plainTextToMarkdown(text).trim()}\n`;
 }
 
@@ -151,7 +160,8 @@ function withoutFrontMatter(markdown: string): string {
  * heading when it has one, otherwise the first sentence that says something,
  * without a chat assistant's opener. Null when nothing readable is left.
  */
-export function titleForPastedMarkdown(markdown: string): string | null {
+export async function titleForPastedMarkdown(markdown: string): Promise<string | null> {
+  const { inferDocumentTitle, parseMarkdown } = await loadMarkdown();
   const inferred = inferDocumentTitle(parseMarkdown(markdown))?.trim();
   if (inferred) {
     const title = tidyTitle(lineText(inferred));
@@ -251,6 +261,82 @@ export async function readClipboardContent(
   } catch {
     return { kind: 'unavailable' };
   }
+}
+
+export type ClipboardJotResult =
+  | {
+      kind: 'content';
+      /** Null when the clipboard held only pictures. */
+      content: PastedContent | null;
+      images: File[];
+    }
+  | { kind: 'empty' }
+  | { kind: 'unavailable' };
+
+const IMAGE_EXTENSIONS: Readonly<Record<string, string>> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+};
+
+/**
+ * Read the clipboard for Quick Jot: text and HTML as `readClipboardContent`
+ * reads them, and pictures (a screenshot, a copied image) as files beside
+ * them.
+ */
+export async function readClipboardWithImages(
+  clipboard: ReadableClipboard | null | undefined = globalThis.navigator?.clipboard,
+): Promise<ClipboardJotResult> {
+  if (!clipboard) return { kind: 'unavailable' };
+  if (typeof clipboard.read === 'function') {
+    try {
+      const items = await clipboard.read();
+      let text = '';
+      let html = '';
+      const images: File[] = [];
+      for (const item of items) {
+        text ||= await itemText(item, 'text/plain');
+        html ||= await itemText(item, 'text/html');
+        const imageType = item.types.find((type) => IMAGE_EXTENSIONS[type] !== undefined);
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          images.push(
+            new File([blob], `pasted-image.${IMAGE_EXTENSIONS[imageType]}`, { type: imageType }),
+          );
+        }
+      }
+      const content = text.trim() || html.trim() ? { text, html: html || null } : null;
+      return content || images.length > 0
+        ? { kind: 'content', content, images }
+        : { kind: 'empty' };
+    } catch (error: unknown) {
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        return { kind: 'unavailable' };
+      }
+    }
+  }
+  const plain = await readClipboardContent(
+    typeof clipboard.readText === 'function'
+      ? { readText: clipboard.readText.bind(clipboard) }
+      : {},
+  );
+  return plain.kind === 'content' ? { ...plain, images: [] } : plain;
+}
+
+/**
+ * For a paste into a plain text field: null, decided at once, when the plain
+ * text is what should go in; otherwise the HTML's Markdown, which resolves
+ * null if the conversion leaves nothing. Only HTML carrying structure the
+ * plain text has lost (headings, lists, links, emphasis) is converted;
+ * everything else pastes exactly as copied, never escaped.
+ */
+export function markdownForFieldPaste(content: PastedContent): Promise<string | null> | null {
+  const text = normaliseNewlines(content.text).trim();
+  const html = content.html?.trim() ?? '';
+  if (!html || !STRUCTURED_HTML.test(html)) return null;
+  if (text && matchesAny(text, STRONG_MARKDOWN_SIGNALS)) return null;
+  return htmlAsMarkdown(html).then((converted) => converted.trim() || null);
 }
 
 /** The text and HTML a paste or drop event carries. */

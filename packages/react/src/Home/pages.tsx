@@ -44,5 +44,8 @@ export function KindFolderPage({
       return <JournalPage context={context} folder={folder} />;
     case 'unfiled':
       return <UnfiledPage context={context} folder={folder} />;
+    case 'chats':
+      // Shown as an ordinary folder; Ask is where chats are read.
+      return null;
   }
 }

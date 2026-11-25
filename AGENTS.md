@@ -531,24 +531,38 @@ block (which the sanitizer drops) is fenced as `svg`, and an `xml`/`html` fence
 holding one SVG document is retagged — never text copied verbatim from the
 document, so an author's `xml` fence stays code.
 
-**Study aids are saved beside the document, never into it.** Summarize
-document, Create quiz and Create flashcards (`AiStudyDialog.tsx`) write
-`<stem>_files/ai/{summary,quiz,flashcards}.md` through the editor's
-`workspaceContainer`, which the shell roots at the sidecar. They sit under
-`ai/`, not the sidecar root, because an outside-in companion finds its own
-Markdown as the first `*.md` there. Each file carries flat `docblocks-*`
-frontmatter — source name, SHA-256 of the source body, time, model — so the
-dialog can say when the document has changed since, and is written only after
-a run succeeds. A summary is model-written Markdown; quizzes and flashcards
-follow the diagram rule: the model returns a JSON array (`study-prompts.ts`)
-and `study-compile.ts` compiles Squisq `{study=…}` heading cards, sanitizing
-every label and keeping only cards `materializeFlashcards` reads back as
-exactly the card meant. Long documents are read in parts sized by
-`studyBudget` (`study-sections.ts`), one call at a time, and a multi-part
+**A document summary is saved beside the document, never into it.**
+Summarize document (`AiStudyDialog.tsx`) writes `<stem>_files/ai/summary.md`
+through the editor's `workspaceContainer`, which the shell roots at the
+sidecar. It sits under `ai/`, not the sidecar root, because an outside-in
+companion finds its own Markdown as the first `*.md` there. The file carries
+flat `docblocks-*` frontmatter — source name, SHA-256 of the source body,
+time, model — so the dialog can say when the document has changed since, and
+is written only after a run succeeds. Long documents are read in parts sized
+by `studyBudget` (`study-sections.ts`), one call at a time, and a multi-part
 summary is written from notes on each part. Every call carries `purpose:
 'study'`, never `write`: desktop lets only `write` reason, and a thinking model
-such as Gemma 4 spent each quiz call's whole explicit cap reasoning and
-returned no JSON at all.
+such as Gemma 4 spent a whole explicit cap reasoning and returned nothing.
+Decks earlier versions saved there (`ai/quiz.md`, `ai/flashcards.md`) are left
+alone and never read.
+
+**Study cards are Squisq's and live in the document; DocBlocks only makes the
+calls.** Flashcards and quiz questions are `{[flashcard]}` / `{[quiz]}`
+accessory blocks under the section they test, made and edited in Squisq's
+Write › Study cards view and studied in Use › Flashcards
+(`docs/study-cards.md`). Squisq owns the format, the reader and writer, the
+view, and the protocol — prompts, reply formats, the checks every card must
+pass, and the loop (`generateStudyCards` in `@bendyline/squisq/study`).
+DocBlocks lends its AI as `createStudyAssistant` (`Study/study-assistant.tsx`,
+passed to `EditorShell` as `studyAssistant` only while AI is offered) over
+the transport in `Study/study-ai.ts`: `purpose: 'study'`, the reply format,
+`searchKnowledge: false`, one request at a time, sized by the model's window
+and reply cap. "Create quiz…" and "Create flashcards…" in the AI menu open
+the view; they never start a run. Do not restate a card rule here — change it
+in Squisq. Every reader that treats a document as the person's writing —
+the workspace index and Ask, Review, Compose, Illustrate, the catalog —
+leaves accessory blocks out (`workspace-index/content-source.ts`,
+`Ai/ai-accessories.ts`).
 
 ### Speech runs natively behind `host.speech`
 
@@ -744,6 +758,12 @@ CLI (`docblocks workspace refresh`) supply only IO and a renderer.
   tool calls, and nothing is written until the person confirms each card.
   Edits are offered only after "Allow edits to cited notes", only for cited
   documents, and keep a version first (`Home/keep-version.ts`).
+- Ask is a chat: every message reaches the model, and notes found by meaning
+  are enrichment, never a gate. Each conversation is a Markdown file in a
+  `chats` kind folder, appended per exchange (`core/src/folders/chats.ts`,
+  `react/src/Ai/ask-chats.ts`). Saved chats must stay out of every AI
+  request's passages (`chatDocumentPaths`), or the model cites its own words
+  as the person's notes.
 
 See [`docs/home-and-folders.md`](docs/home-and-folders.md).
 
@@ -877,15 +897,16 @@ Tracked repository skills:
 
 ## Where to look first
 
-| Task                           | Start with                                                                                                   |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| Add a storage backend          | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture                  |
-| Add an Electron capability     | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`                   |
-| Add a CLI command              | `docs/cli.md` → `packages/cli/src/commands/` → register in `packages/cli/src/program.ts`                     |
-| Add a VS Code message          | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides        |
-| Add a shared UI component      | `packages/react/src/` — exported via `src/index.ts`                                                          |
-| Add a workspace setting        | `core/src/workspace-settings/settings.ts` + `schema.ts` → `react/src/Settings/WorkspaceSettingsControls.tsx` |
-| Add a folder kind or task rule | `packages/core/src/folders/` → `packages/react/src/Home/pages.tsx` → `docs/home-and-folders.md`              |
-| Add a new format converter     | Linked Squisq CLI registry in `..\squisq`; then `docs/mcp.md` and MCP target/fidelity exposure               |
-| Change theming                 | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes                     |
-| Retone the Squisq editor       | The `--squisq-*` bridge in `docblocks.css` (search "Squisq chrome palette") — not a new per-selector rule    |
+| Task                           | Start with                                                                                                            |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| Add a storage backend          | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture                           |
+| Add an Electron capability     | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`                            |
+| Add a CLI command              | `docs/cli.md` → `packages/cli/src/commands/` → register in `packages/cli/src/program.ts`                              |
+| Add a VS Code message          | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides                 |
+| Add a shared UI component      | `packages/react/src/` — exported via `src/index.ts`                                                                   |
+| Add a workspace setting        | `core/src/workspace-settings/settings.ts` + `schema.ts` → `react/src/Settings/WorkspaceSettingsControls.tsx`          |
+| Add a folder kind or task rule | `packages/core/src/folders/` → `packages/react/src/Home/pages.tsx` → `docs/home-and-folders.md`                       |
+| Add a new format converter     | Linked Squisq CLI registry in `..\squisq`; then `docs/mcp.md` and MCP target/fidelity exposure                        |
+| Change theming                 | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes                              |
+| Retone the Squisq editor       | The `--squisq-*` bridge in `docblocks.css` (search "Squisq chrome palette") — not a new per-selector rule             |
+| Change study cards             | Squisq (`@bendyline/squisq/study`, `editor-react/src/study/`); here only `react/src/Study/` and `docs/study-cards.md` |

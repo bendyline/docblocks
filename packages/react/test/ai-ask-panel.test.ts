@@ -11,6 +11,7 @@ import type {
 } from '@bendyline/docblocks/host';
 
 import { AiAskPanel, type AskNotice } from '../src/Ai/AiAskPanel.js';
+import type { AskChats } from '../src/Ai/AskChatList.js';
 import type { AskActions } from '../src/Ai/ask-proposals.js';
 import type { ProposedAction } from '../src/Ai/chat-actions.js';
 import { noteTitleFor, type WorkspaceAskSession } from '../src/Ai/workspace-ask.js';
@@ -85,7 +86,12 @@ describe('AiAskPanel', () => {
     host.remove();
   });
 
-  async function mount(ai = fakeAi().ai, notice: AskNotice | null = null, actions?: AskActions) {
+  async function mount(
+    ai = fakeAi().ai,
+    notice: AskNotice | null = null,
+    actions?: AskActions,
+    chats?: AskChats,
+  ) {
     await act(async () => {
       root.render(
         createElement(EditorProvider, {
@@ -102,6 +108,7 @@ describe('AiAskPanel', () => {
             },
             onClose: () => undefined,
             ...(actions ? { actions } : {}),
+            ...(chats ? { chats } : {}),
           }),
         }),
       );
@@ -168,20 +175,65 @@ describe('AiAskPanel', () => {
     expect(host.querySelector('.db-ai-ask-question')?.textContent).to.equal('When do aphids come?');
   });
 
-  it('explains what stops a question and offers the step that allows it', async () => {
+  it('explains why answers do not draw on notes, and chats all the same', async () => {
     let allowed = 0;
-    await mount(fakeAi().ai, {
+    const { ai, requests } = fakeAi();
+    await mount(ai, {
       kind: 'grounding-off',
       remote: true,
       onAllow: () => (allowed += 1),
     });
     expect(host.querySelector('.db-ai-ask-notice')?.textContent).to.contain('sent to it');
-    expect(host.querySelector('textarea')?.disabled).to.equal(true);
+    expect(host.querySelector('textarea')?.disabled).to.equal(false);
     const allow = [...host.querySelectorAll('button')].find(
       (button) => button.textContent === 'Use this workspace in AI answers',
     );
     await act(async () => allow?.click());
     expect(allowed).to.equal(1);
+    await ask('hi');
+    expect(requests).to.have.length(1);
+    expect(host.querySelector('.db-ai-ask-answer')).to.not.equal(null);
+  });
+
+  it('lists saved chats behind the Chats button, and opens, renames and deletes them', async () => {
+    const calls: string[] = [];
+    const chats: AskChats = {
+      items: [
+        { path: 'Chats/Aphids.md' as never, title: 'Aphids', lastModified: '2026-11-24T10:00:00Z' },
+      ],
+      workspaceId: 'w',
+      onOpen: (path) => calls.push(`open ${path}`),
+      onRename: async (path, title) => {
+        calls.push(`rename ${path} ${title}`);
+        return true;
+      },
+      onDelete: (path) => calls.push(`delete ${path}`),
+    };
+    await mount(fakeAi().ai, null, undefined, chats);
+    expect(host.querySelector('.db-ai-ask-chats')).to.equal(null);
+    await act(async () => button('Chats')?.click());
+    expect(host.querySelector('.db-ai-ask-chat-title')?.textContent).to.equal('Aphids');
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="Delete Aphids"]')!.click(),
+    );
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="Rename Aphids"]')!.click(),
+    );
+    const field = host.querySelector<HTMLInputElement>('.db-ai-ask-chat-rename input')!;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(field, 'Garden pests');
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => field.form!.requestSubmit());
+    await act(async () => host.querySelector<HTMLButtonElement>('.db-ai-ask-chat-open')!.click());
+    expect(calls).to.deep.equal([
+      'delete Chats/Aphids.md',
+      'rename Chats/Aphids.md Garden pests',
+      'open Chats/Aphids.md',
+    ]);
+    // Opening one returns to the conversation.
+    expect(host.querySelector('.db-ai-ask-chats')).to.equal(null);
   });
 
   it('suggests tasks after an answer and does each only once confirmed', async () => {
@@ -242,7 +294,7 @@ describe('AiAskPanel', () => {
     expect(card?.classList.contains('db-ai-proposal--edit')).to.equal(true);
     expect(button('Make this change')).not.to.equal(undefined);
     // A new conversation starts with edits not allowed.
-    await act(async () => button('New conversation')?.click());
+    await act(async () => button('New chat')?.click());
     expect(host.querySelector<HTMLInputElement>('.db-ai-ask-allow input')?.checked).to.equal(false);
   });
 

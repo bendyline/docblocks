@@ -271,7 +271,7 @@ for (const [label, probeOf] of [
       const provider = await seed({
         ...files,
         'Newer/.docblocks/folder.json': '{"version":9,"kind":"tasks"}',
-        'Odd/.docblocks/folder.json': '{"version":1,"kind":"chats"}',
+        'Odd/.docblocks/folder.json': '{"version":1,"kind":"recipes"}',
         'Broken/.docblocks/folder.json': '{not json',
         'Newer/a.md': '# A\n',
         'Odd/a.md': '# A\n',

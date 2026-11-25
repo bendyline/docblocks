@@ -19,6 +19,11 @@ import {
 } from './review-parts.js';
 import { reviewKnowledgeQuery } from './review-knowledge.js';
 import { quoteOccurrences, type ExcerptRange } from './review-locate.js';
+import {
+  inSideInformation,
+  sideInformationRanges,
+  withoutSideInformation,
+} from './ai-accessories.js';
 import { AI_REVIEW_STYLE_DEFINITIONS, type AiReviewStyle } from './review-styles.js';
 
 export type AiDraftMode = 'compose' | 'rewrite';
@@ -126,8 +131,10 @@ export function buildDraftRequest(options: {
   }
   // SVG picture source is markup, not prose; one picture can fill a small
   // model's context.
-  const elided = elideSvgPictures(options.documentSource);
-  const pictures = pictureStandInNote(options.documentSource, elided);
+  // Slide summaries and study cards kept in the document are not its writing.
+  const own = withoutSideInformation(options.documentSource);
+  const elided = elideSvgPictures(own);
+  const pictures = pictureStandInNote(own, elided);
   const context = boundedDocumentContext(elided);
 
   // Shown the document last, Apple's on-device model returned its title, and
@@ -239,7 +246,7 @@ export function buildReviewRequest(
   style: AiReviewStyle = 'general',
   { part, findings = SMALL_MODEL_FINDINGS, now = new Date() }: AiReviewRequestOptions = {},
 ): AiChatRequest {
-  const document = elideSvgPictures(source);
+  const document = elideSvgPictures(withoutSideInformation(source));
   const { brief, temperature } = AI_REVIEW_STYLE_DEFINITIONS[style];
   const count =
     findings === null
@@ -345,7 +352,7 @@ export function buildReviewRequests(
   contextWindow: number | null,
   now: Date = new Date(),
 ): AiChatRequest[] {
-  const document = elideSvgPictures(source);
+  const document = elideSvgPictures(withoutSideInformation(source));
   const findings = reviewFindingLimit(contextWindow);
   // What a part's follow-up sends besides its text; a first request sends less.
   const overhead =
@@ -445,7 +452,7 @@ export function sanitizeGeneratedMarkdown(value: string, existing = ''): string 
 
 /** The length a review prompt carries for `source`, with SVG picture source elided. */
 export function reviewDocumentCharacters(source: string): number {
-  return elideSvgPictures(source).length;
+  return elideSvgPictures(withoutSideInformation(source)).length;
 }
 
 /**
@@ -603,7 +610,11 @@ export function parseTruncatedAiReviewResponse(response: string): AiReviewParse 
  * counts: see {@link quoteOccurrences}.
  */
 export function findUniqueExcerpt(source: string, excerpt: string): ExcerptRange | null {
-  const found = quoteOccurrences(source, excerpt, 2);
+  // A copy inside a slide summary or study card is not the author's text.
+  const hidden = sideInformationRanges(source);
+  const found = quoteOccurrences(source, excerpt, hidden.length ? Infinity : 2).filter(
+    (range) => !inSideInformation(hidden, range),
+  );
   return found.length === 1 ? (found[0] ?? null) : null;
 }
 

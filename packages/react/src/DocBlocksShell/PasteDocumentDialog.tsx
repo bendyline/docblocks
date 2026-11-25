@@ -1,10 +1,7 @@
 /**
  * PasteDocumentDialog — one place to hand DocBlocks something you already
- * have: paste text, drag text or files in, or choose a file.
- *
- * Pasting into a field always works, on every surface, without asking for
- * clipboard permission, so this is also where "New document from clipboard"
- * falls back when the platform will not let the app read the clipboard.
+ * have: paste text, drag text or files in, or choose a file. Pasting into a
+ * field works on every surface without asking for clipboard permission.
  *
  * A paste or a drop acts at once: the point is to see the result. Typing is
  * still possible, and Create turns what was typed into the document.

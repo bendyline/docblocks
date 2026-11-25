@@ -388,12 +388,46 @@ test.describe('DocBlocks App', () => {
     expect(bytes.toString('utf8')).toBe(WELCOME_DOCUMENT_CONTENT);
   });
 
-  test('heads the file explorer with the workspace name only in a wide sidebar', async ({
+  test('leads the files toolbar with the workspace picker, folded short of a wide sidebar', async ({
     page,
   }) => {
-    const title = page.locator('.db-explorer-toolbar > .db-explorer-workspace-name');
-    // The default 320px sidebar leaves the name to the workspace picker.
-    await expect(title).toBeHidden();
+    const header = page.locator('.db-shell-sidebar-header');
+    const toolbar = page.locator('.db-file-explorer > .db-explorer-toolbar');
+    const picker = toolbar.getByRole('button', { name: /^Switch workspace, current:/ });
+    const settings = toolbar.getByRole('button', { name: 'Workspace settings', exact: true });
+    const label = toolbar.locator('.db-workspace-picker-label');
+
+    // Both left the header for the toolbar, ahead of the file actions; the
+    // places (Home, Tasks, ...) sit in the header above the toolbar.
+    await expect(header.locator('.db-workspace-picker, .db-ws-settings')).toHaveCount(0);
+    const order = await toolbar.evaluate((element) => {
+      const left = (selector: string) =>
+        element.querySelector(selector)!.getBoundingClientRect().left;
+      const nav = document.querySelector('.db-shell-nav');
+      return {
+        picker: left('.db-workspace-picker-btn'),
+        settings: left('.db-ws-settings-btn'),
+        actions: left('.db-explorer-actions'),
+        rows: new Set(
+          [...element.querySelectorAll('button')]
+            .filter((button) => button.getBoundingClientRect().width > 0)
+            .map((button) => Math.round(button.getBoundingClientRect().top)),
+        ).size,
+        navAbove: nav
+          ? nav.getBoundingClientRect().bottom <= element.getBoundingClientRect().top
+          : true,
+      };
+    });
+    expect(order.picker).toBeLessThan(order.settings);
+    expect(order.settings).toBeLessThan(order.actions);
+    expect(order.rows).toBe(1);
+    expect(order.navAbove).toBe(true);
+
+    // The default 320px sidebar shows the picker as its folder glyph.
+    await expect(picker).toHaveAccessibleName('Switch workspace, current: My Documents');
+    await expect(label).toBeHidden();
+    await expect(toolbar.locator('.db-workspace-picker-compact-icon')).toBeVisible();
+    await expect(settings).toBeVisible();
 
     const resizer = page.getByRole('separator', { name: 'Resize sidebar' });
     const box = await resizer.boundingBox();
@@ -403,8 +437,9 @@ test.describe('DocBlocks App', () => {
     await page.mouse.move(box.x + 240, box.y + box.height / 2);
     await page.mouse.up();
 
-    await expect(title).toBeVisible();
-    await expect(title).toHaveText('My Documents');
+    await expect(label).toBeVisible();
+    await expect(label).toHaveText('My Documents');
+    await expect(toolbar.locator('.db-explorer-workspace-name')).toHaveCount(0);
   });
 
   test('has toolbar with new file and new folder buttons', async ({ page }) => {
@@ -412,8 +447,8 @@ test.describe('DocBlocks App', () => {
     await expect(toolbar).toBeVisible();
 
     const buttons = toolbar.locator('.db-explorer-btn');
-    // Two sort controls, Search, +D, +F, New from clipboard and Import.
-    await expect(buttons).toHaveCount(7);
+    // Two sort controls, Search, +D, +F and Import. Clipboard capture is Quick Jot's.
+    await expect(buttons).toHaveCount(6);
     await expect(
       toolbar.getByRole('button', { name: 'Search workspace' }).locator('svg.lucide-search'),
     ).toBeVisible();
@@ -428,11 +463,9 @@ test.describe('DocBlocks App', () => {
     await expect(newFileIcon).toBeVisible();
     await expect(newFileIcon).toHaveAttribute('stroke-width', '1.75');
     await expect(newFolderButton.locator('svg.lucide-folder-sparkle')).toBeVisible();
-    await expect(
-      toolbar
-        .getByRole('button', { name: 'New document from clipboard' })
-        .locator('svg.lucide-clipboard-paste'),
-    ).toBeVisible();
+    await expect(toolbar.getByRole('button', { name: 'New document from clipboard' })).toHaveCount(
+      0,
+    );
 
     await expect(page.locator('.db-ws-settings-btn svg.lucide-settings-2')).toBeVisible();
   });

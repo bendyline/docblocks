@@ -1,6 +1,6 @@
 import type { FrameLocator, Page } from '@playwright/test';
 import { expect, test } from './test.js';
-import { showSource, showUse, viewButton } from './view-tabs.js';
+import { showEdit, showSource, showUse, viewButton } from './view-tabs.js';
 
 const fixturePath = 'test-fixtures/test-doc.md';
 const exportFixturePath = 'test-fixtures/test-doc-export.md';
@@ -257,6 +257,16 @@ test.describe('VS Code web and UX integration', () => {
 
     expect(style.stylesLoaded).toBe('1');
     expect(style.maxHeight).not.toBe('none');
+  });
+
+  test('offers Squisq’s Study cards view without AI, as VS Code lends none', async ({ page }) => {
+    await bootVSCode(page);
+    await openDocBlocksEditor(page);
+    const editor = await getLatestWebviewContent(page);
+    await showEdit(editor, 'Study cards');
+    const view = editor.getByRole('region', { name: 'Study cards', exact: true });
+    await expect(view.getByRole('status').first()).toContainText('cards in', { timeout: 15_000 });
+    await expect(view.getByRole('button', { name: 'Generate for this section' })).toHaveCount(0);
   });
 
   test('exports Markdown after a validated filename edit within the approved folder', async ({

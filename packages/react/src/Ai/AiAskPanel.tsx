@@ -20,8 +20,9 @@ import {
   type WorkspacePassageReference,
 } from '@bendyline/docblocks/host';
 
-import { CloseIcon } from '../icons.js';
+import { ChatsIcon, CloseIcon } from '../icons.js';
 import { AiGenerationStatus } from './AiGenerationStatus.js';
+import { AskChatList, type AskChats } from './AskChatList.js';
 import { AiFactsIndicator, AiKnowledgeIndicator } from './AiKnowledgeIndicator.js';
 import { AllowEditsToggle, TurnProposalsBlock } from './AskProposals.js';
 import { resetAskProposals, type AskActions } from './ask-proposals.js';
@@ -32,11 +33,12 @@ import {
   createWorkspaceAskSession,
   noteTitleFor,
   type AnswerInline,
+  type AskDependencies,
   type AskTurn,
   type WorkspaceAskSession,
 } from './workspace-ask.js';
 
-/** Why the workspace cannot be asked yet, and the one step that allows it. */
+/** Why answers do not draw on the workspace yet, and the one step that lets them. */
 export type AskNotice =
   | { readonly kind: 'grounding-off'; readonly remote: boolean; readonly onAllow: () => void }
   | { readonly kind: 'semantic-off'; readonly onAllow: () => void }
@@ -51,10 +53,18 @@ export interface AiAskPanelProps {
   ai: Pick<DocBlocksHostAiAPI, 'chat' | 'checkFacts'>;
   /** Passages for a question, found by meaning across the workspace. */
   findPassages: (question: string) => Promise<readonly AiWorkspacePassage[]>;
-  /** Null when questions can be answered from the workspace. */
+  /** Null when answers can draw on the workspace. The chat works either way. */
   notice: AskNotice | null;
   /** How much of the workspace meaning search covers, while that is incomplete. */
   coverage: string | null;
+  /** Saved chats in the open workspace; absent where chats are not saved. */
+  chats?: AskChats;
+  /**
+   * Where the chat list shows: behind a Chats button (`toggle`, the side
+   * panel), or beside the conversation, with the button only when the page
+   * is too narrow for both (`beside`, the Ask page).
+   */
+  chatList?: 'toggle' | 'beside';
   /** Opens a cited note at its lines; `passage` is the text the model was shown. */
   onOpenNote: (reference: WorkspacePassageReference, passage: string) => void;
   /** Writes a new note named for `title`, built for the path it lands at, and opens it. */
@@ -67,6 +77,8 @@ export interface AiAskPanelProps {
   inEditor?: boolean;
   /** Facts from the task list to answer from, alongside the notes. */
   facts?: () => string | null;
+  /** Saves each settled turn to the conversation's chat file; absent: chats are not saved. */
+  save?: AskDependencies['save'];
   /**
    * Carries out the tasks, notes and edits Ask suggests after an answer, once
    * the person confirms each. Absent: no suggestions are offered.
@@ -237,7 +249,7 @@ function NoticeBlock({ notice }: { notice: AskNotice }) {
     return (
       <div className="db-ai-ask-notice">
         <p>
-          AI answers do not use this workspace yet.{' '}
+          Answers do not draw on this workspace yet.{' '}
           {notice.remote
             ? 'Your AI provider runs remotely, so passages from your notes would be sent to it.'
             : 'Your AI runs on this device, so your notes stay here.'}
@@ -251,7 +263,10 @@ function NoticeBlock({ notice }: { notice: AskNotice }) {
   if (notice.kind === 'semantic-off') {
     return (
       <div className="db-ai-ask-notice">
-        <p>Answers come from notes found by meaning, and search by meaning is off.</p>
+        <p>
+          Answers draw on notes found by meaning, and search by meaning is off, so they come from
+          the AI alone.
+        </p>
         <button type="button" onClick={notice.onAllow}>
           Turn on search by meaning
         </button>
@@ -271,9 +286,10 @@ function NoticeBlock({ notice }: { notice: AskNotice }) {
 }
 
 /**
- * "Ask your workspace": a conversation answered from the person's notes, each
- * answer citing the notes it used. Lives beside the editor; the session it
- * shows belongs to the shell, so opening a cited note keeps the conversation.
+ * Ask: a chat with the person's AI, drawing on their notes where they bear on
+ * it and citing the notes it used. Lives beside the editor and as a page; the
+ * session it shows belongs to the shell, so opening a cited note keeps the
+ * conversation, and each answer is saved to the chat's file as it settles.
  */
 export function AiAskPanel({
   sessionHolder,
@@ -281,11 +297,14 @@ export function AiAskPanel({
   findPassages,
   notice,
   coverage,
+  chats,
+  chatList = 'toggle',
   onOpenNote,
   onSaveNote,
   onClose,
   inEditor = true,
   facts,
+  save,
   actions,
 }: AiAskPanelProps) {
   const session = useMemo(
@@ -293,8 +312,9 @@ export function AiAskPanel({
     [sessionHolder],
   );
   // Before any question can be asked, and again whenever the shell's AI changes.
-  session.configure({ ai, findPassages, ...(facts ? { facts } : {}) });
-  const { turns, generation } = useSyncExternalStore(session.subscribe, session.getSnapshot);
+  session.configure({ ai, findPassages, ...(facts ? { facts } : {}), ...(save ? { save } : {}) });
+  const { turns, generation, chat } = useSyncExternalStore(session.subscribe, session.getSnapshot);
+  const [showChats, setShowChats] = useState(false);
   const [draft, setDraftState] = useState(session.draft);
   const setDraft = (value: string) => {
     session.draft = value;
@@ -316,51 +336,76 @@ export function AiAskPanel({
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
-    if (running || notice || !draft.trim()) return;
+    if (running || !draft.trim()) return;
     const question = draft;
     setDraft('');
+    setShowChats(false);
     void session.ask(question);
+  };
+  const newChat = () => {
+    session.clear();
+    resetAskProposals(session);
+    setShowChats(false);
+    inputRef.current?.focus();
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) submit(event);
   };
 
   const panel = (
-    <aside className="db-ai-review-panel db-ai-ask-panel" aria-label="Ask your workspace">
+    <aside className="db-ai-review-panel db-ai-ask-panel" aria-label="Ask">
       <div className="db-ai-review-header">
         <div>
-          <h2>Ask your workspace</h2>
+          <h2>Ask</h2>
         </div>
-        {turns.length > 0 && (
+        {chats && (
           <button
             type="button"
-            className="db-ai-ask-new"
-            onClick={() => {
-              session.clear();
-              resetAskProposals(session);
-            }}
+            className={`db-ai-ask-chats-toggle${chatList === 'beside' ? ' db-ai-ask-chats-toggle--narrow' : ''}`}
+            aria-expanded={showChats}
+            onClick={() => setShowChats((shown) => !shown)}
           >
-            New conversation
+            <ChatsIcon />
+            Chats
+          </button>
+        )}
+        {turns.length > 0 && (
+          <button type="button" className="db-ai-ask-new" onClick={newChat}>
+            New chat
           </button>
         )}
         <button
           type="button"
           className="db-close-button db-ai-review-close"
           onClick={onClose}
-          aria-label="Close Ask your workspace"
+          aria-label="Close Ask"
         >
           <CloseIcon />
         </button>
       </div>
 
+      {chats && showChats && (
+        <div className="db-ai-ask-chats-overlay">
+          <AskChatList
+            chats={chats}
+            activePath={chat?.workspaceId === chats.workspaceId ? chat.path : null}
+            onNew={newChat}
+            onPicked={() => setShowChats(false)}
+          />
+        </div>
+      )}
+
       {notice && <NoticeBlock notice={notice} />}
 
-      <div className="db-ai-ask-turns" aria-label="Conversation">
-        {turns.length === 0 && !notice && (
-          <p className="db-ai-ask-empty">
-            Ask a question about your notes. Answers cite the notes they come from; select a number
-            to open that note.
-          </p>
+      <div className="db-ai-ask-turns" aria-label="Conversation" hidden={chats && showChats}>
+        {turns.length === 0 && (
+          <div className="db-ai-ask-empty">
+            <p>
+              Chat with your AI. When your notes help, answers cite them; select a number to open
+              that note.
+            </p>
+            {coverage && !notice && <p>{coverage}</p>}
+          </div>
         )}
         {turns.map((turn) => (
           <section key={turn.id} className="db-ai-ask-turn" aria-label={turn.question}>
@@ -375,12 +420,6 @@ export function AiAskPanel({
               <AiGenerationStatus state={generation} characters={0} />
             )}
             {turn.answer && <Answer turn={turn} onOpenNote={onOpenNote} />}
-            {turn.status === 'nothing' && (
-              <p className="db-ai-note" role="status">
-                Nothing in this workspace matched that question. Try other words
-                {coverage ? `; ${coverage}` : '.'}
-              </p>
-            )}
             {turn.status === 'stopped' && (
               <p className="db-ai-note" role="status">
                 Stopped.
@@ -394,7 +433,8 @@ export function AiAskPanel({
             {turn.truncated && (
               <p className="db-ai-note">The answer reached the model's length limit.</p>
             )}
-            {turn.knowledge && (
+            {/* Only sources that were used: a chat turn with none needs no pill. */}
+            {turn.knowledge?.outcome === 'used' && (
               <AiKnowledgeIndicator
                 knowledge={turn.knowledge}
                 onOpenNote={(reference) => {
@@ -430,7 +470,7 @@ export function AiAskPanel({
       {actions && !notice && <AllowEditsToggle session={session} />}
       <form className="db-ai-ask-form" onSubmit={submit}>
         <label htmlFor={inputId} className="db-visually-hidden">
-          Question
+          Message
         </label>
         <textarea
           id={inputId}
@@ -438,8 +478,7 @@ export function AiAskPanel({
           rows={2}
           value={draft}
           maxLength={ASK_QUESTION_CHARACTERS}
-          placeholder="Ask about your notes…"
-          disabled={notice !== null}
+          placeholder="Ask anything, or about your notes…"
           onChange={(event) => setDraft(event.currentTarget.value)}
           onKeyDown={onKeyDown}
         />
@@ -454,7 +493,7 @@ export function AiAskPanel({
             </button>
           </div>
         ) : (
-          <button type="submit" disabled={notice !== null || !draft.trim()}>
+          <button type="submit" disabled={!draft.trim()}>
             Ask
           </button>
         )}

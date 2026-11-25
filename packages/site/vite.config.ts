@@ -7,6 +7,7 @@ import { SITE_PRECACHE_GLOB, SITE_PRECACHE_MAX_BYTES } from '../../scripts/site-
 import { harperWasmPlugin } from '../../scripts/vite-harper-wasm.js';
 import { ironCalcWasmPlugin } from '../../scripts/vite-ironcalc-wasm.js';
 import { squisqAwareViteCacheDir } from '../../scripts/vite-squisq-dep-cache.js';
+import { squisqMonacoDeepImports } from '../../scripts/vite-squisq-monaco-deps.js';
 import { thirdPartyComponentManifestPlugin } from '../../scripts/vite-third-party-manifest.js';
 
 // Linked Squisq packages resolve to their already-compiled workspace `dist`
@@ -346,6 +347,10 @@ export default defineConfig({
   optimizeDeps: {
     include: [
       'monaco-editor',
+      // Squisq's source view imports Monaco's API entry and each feature and
+      // language contribution by deep path, from inside the excluded editor.
+      // Unlisted, opening the first source view reloads every open page.
+      ...squisqMonacoDeepImports(),
       // Linked Squisq is served from its dist symlinks and the editor itself
       // is a dynamic import, so Vite's startup scan cannot discover these
       // Tiptap entry points. List every entry the editor imports directly to
@@ -377,12 +382,19 @@ export default defineConfig({
       '@tiptap/pm/transform',
       '@tiptap/pm/commands',
       '@tiptap/pm/schema-list',
+      '@tiptap/pm/history',
+      '@tiptap/pm/tables',
       // Video export is also loaded from excluded linked-Squisq packages.
       // Pre-bundle its browser dependencies so opening the first video dialog
       // does not make Vite discover them and reload away the open dialog.
       // ffmpeg.wasm is deliberately absent: no surface distributes the
       // GPL-licensed core, and MP4 export runs on WebCodecs + mp4-muxer.
       'html2canvas',
+      // Squisq's video code still imports ffmpeg.wasm's MIT JavaScript
+      // wrappers, which Vite otherwise finds moments after startup and reloads
+      // for. The wrappers fetch the core by URL only, so this bundles no core.
+      '@ffmpeg/ffmpeg',
+      '@ffmpeg/util',
       // Proofing reaches harper through a dynamic import inside the excluded
       // linked-Squisq editor, so Vite cannot discover it while scanning. Left
       // undeclared it is found the moment a document opens, and the resulting
@@ -400,6 +412,10 @@ export default defineConfig({
       // Formula sessions dynamically import the optional IronCalc backend.
       // Pre-optimize its glue so first use does not invalidate the dev graph.
       '@ironcalc/wasm',
+      // Data blocks render Squisq's grid, reached only through the excluded
+      // editor. Its row virtualizer would otherwise be found on the first CSV
+      // or data block, and the reload loads React twice under the open page.
+      '@tanstack/react-virtual',
       // CJS transitive deps of squisq packages that need pre-bundling.
       // The squisq packages themselves are excluded (served from source
       // via symlinks for live dev), but their CJS deps must be bundled.

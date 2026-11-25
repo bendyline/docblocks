@@ -345,6 +345,28 @@ describe('App Settings sections', () => {
     ]);
   });
 
+  it('offers the Quick Jot switch where the shell has a left pane', async () => {
+    const changes: boolean[] = [];
+    await renderDialog({
+      quickJot: { visible: true, onChange: (visible) => changes.push(visible) },
+      onVersioningPreferenceChange: () => undefined,
+    });
+    expect(legends(visiblePanels()[0])).to.deep.equal([
+      'Theme',
+      'Accent color',
+      'Interface font',
+      'Write canvas',
+      'Spelling and grammar',
+      'Left pane',
+    ]);
+    const box = Array.from(document.querySelectorAll<HTMLLabelElement>('label'))
+      .find((label) => label.textContent === 'Show Quick Jot')
+      ?.querySelector('input');
+    expect(box?.checked).to.equal(true);
+    await act(async () => box?.click());
+    expect(changes).to.deep.equal([false]);
+  });
+
   it('offers Appearance and Device integration in a browser', async () => {
     await renderDialog({
       getStorageEstimate: async () => ({ usage: 1024, quota: 1024 ** 3 }),

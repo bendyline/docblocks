@@ -232,8 +232,9 @@ export function createLiveIndexEngine(
         path: identity.path,
         version,
         title: analyzed.record.title,
-        // Only text that analyzed as UTF-8 is chunked; name-only documents keep their title.
-        body: analyzed.text ? decoder.decode(data) : '',
+        // Only text that analyzed as UTF-8 is chunked; name-only documents keep
+        // their title. Side information kept in the document is left out.
+        body: analyzed.text ? (analyzed.body ?? decoder.decode(data)) : '',
         payload: encodePayload(analyzed.record, characters, analyzed.text),
       });
       return { record: analyzed.record, characters };
@@ -255,7 +256,7 @@ export function createLiveIndexEngine(
         path: identity.path,
         version,
         title: analyzed.record.title,
-        body: analyzed.text ? body : '',
+        body: analyzed.text ? (analyzed.body ?? body) : '',
         payload: encodePayload(analyzed.record, characters, analyzed.text),
       });
       return { record: analyzed.record, characters };

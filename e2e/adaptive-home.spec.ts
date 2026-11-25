@@ -28,12 +28,26 @@ test.describe('Home and tasks on touch devices', () => {
 
     const home = page.getByRole('region', { name: 'Home' });
     await expect(home.getByRole('heading', { name: 'Home', level: 1 })).toBeVisible();
-    const field = page.getByLabel('Add a task or jot something down');
+
+    // A tasks folder from Home, then tasks jotted in the drawer's Quick Jot.
+    await home.getByRole('button', { name: 'Add a tasks folder' }).click();
+    const board = page.getByRole('region', { name: 'Tasks, tasks' });
+    await expect(board).toBeVisible();
+    await board.getByRole('button', { name: 'Back to files' }).click();
+    await expect(shell).toHaveAttribute('data-db-drawer', 'open');
+    const quickJot = page.getByRole('region', { name: 'Quick Jot' });
+    const field = quickJot.getByLabel('Jot something down');
+    const addTask = quickJot.getByRole('button', { name: 'New task from jot', exact: true });
+    await expect(addTask).toBeVisible({ timeout: 15_000 });
     for (const text of ['Call Priya tomorrow', 'Book dentist friday']) {
       await field.fill(text);
-      await page.getByRole('button', { name: 'Add task', exact: true }).click();
+      await addTask.click();
       await expect(field).toHaveValue('');
     }
+    // Making a task leaves the drawer where it was.
+    await expect(shell).toHaveAttribute('data-db-drawer', 'open');
+    await places.getByRole('button', { name: 'Home' }).click();
+    await expect(shell).toHaveAttribute('data-db-drawer', 'closed');
     await expect(home.getByRole('region', { name: 'This week' })).toContainText('Book dentist');
 
     // The tasks folder's board, from the list of places' Tasks entry and then its folder.

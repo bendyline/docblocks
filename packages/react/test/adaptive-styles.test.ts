@@ -59,6 +59,7 @@ describe('adaptive styles', () => {
       'db-export-path-input',
       'db-git-commit-message',
       'db-git-form-input',
+      'db-quick-jot-input',
     ];
     for (const control of controls) {
       const rule = new RegExp(`\\.${control} \\{[^}]*\\}`, 's').exec(styles)?.[0] ?? '';

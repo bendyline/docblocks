@@ -236,9 +236,27 @@ test('keeps the collapsed titlebar draggable over a scrolled document', async ({
   const grip = drawerHeader.locator('.db-window-drag-grip');
   await grip.hover();
   await expect(grip).not.toHaveClass(/db-window-drag-grip--detect-hover/);
-  const settings = drawerHeader.getByRole('button', { name: 'Workspace settings' });
-  expect(await windowDragsAt(window, [await centerOf(grip), await centerOf(settings)])).toEqual([
-    true,
+  const appMenuButton = drawerHeader.locator('.db-app-menu-btn');
+  expect(
+    await windowDragsAt(window, [await centerOf(grip), await centerOf(appMenuButton)]),
+  ).toEqual([true, false]);
+});
+
+test('keeps Quick Jot below the titlebar and out of its drag region', async ({ launchApp }) => {
+  const { window } = await launchApp();
+  const jot = window.getByRole('region', { name: 'Quick Jot' });
+  await expect(jot).toBeVisible({ timeout: 30_000 });
+  const field = jot.getByLabel('Jot something down');
+  const paste = jot.getByRole('button', { name: 'Paste from clipboard' });
+
+  const headerBottom = await window
+    .locator('.db-shell-sidebar-header')
+    .evaluate((element) => element.getBoundingClientRect().bottom);
+  const jotTop = await jot.evaluate((element) => element.getBoundingClientRect().top);
+  expect(jotTop).toBeGreaterThanOrEqual(headerBottom - 0.5);
+  // Typing and clicking in it must never move the window.
+  expect(await windowDragsAt(window, [await centerOf(field), await centerOf(paste)])).toEqual([
+    false,
     false,
   ]);
 });
