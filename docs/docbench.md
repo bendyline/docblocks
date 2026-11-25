@@ -143,6 +143,14 @@ breakdown under the selected download. A score is served only while the
 catalog still ships the build that was measured, so a re-quantized model
 shows no score until it is measured again.
 
+Apple Intelligence is the one exception. Gezel publishes only into catalog
+manifests, and Apple's model is supplied by the operating system, so its
+`/v1/models` entry carries no `docbench` block. `providerModelDocbench` in
+[ai-provider-models.ts](../packages/core/src/host/ai-provider-models.ts) fills
+in DocBlocks' own measurement for it on desktop and mobile (54 on 0.2.2,
+measured on macOS 27.2). A result that Gezel sends takes precedence. Update
+the constant when docbench changes its scores or Apple ships a new model.
+
 ## Adding a task
 
 1. Add fixtures under `packages/bench/fixtures/<family>/`. Seeded defects must

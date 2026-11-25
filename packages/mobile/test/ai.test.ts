@@ -211,6 +211,8 @@ describe('mobile AI through the Gezel App SDK', () => {
         // Settings tells the OS model apart from downloaded weights by this flag.
         assert.equal(models.value.find((m) => m.id === modelId)?.system, true);
         assert.equal(models.value.find((m) => m.id !== modelId)?.system, undefined);
+        // Gezel does not rate Apple's model; Settings shows DocBlocks' measurement.
+        assert.equal(models.value.find((m) => m.id === modelId)?.docbench?.version, '0.2.2');
       }
       const result = await f.ai.chat({ ...request, maxTokens: 2048 }, () => {}).done;
       assert.ok(result.ok, JSON.stringify(result));

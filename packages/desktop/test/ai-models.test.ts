@@ -104,6 +104,12 @@ describe('desktop AI model listing', () => {
     ]);
     expect(models.map((model) => model.system)).to.deep.equal([true, undefined, undefined]);
     expect(parseAiModelInfoList(models)).to.deep.equal(models);
+    // Gezel does not rate Apple's model; Settings shows DocBlocks' measurement.
+    expect(models.map((model) => model.docbench?.version)).to.deep.equal([
+      '0.2.2',
+      undefined,
+      undefined,
+    ]);
   });
 
   it('defaults to the first entry when the provider names no fallback', () => {

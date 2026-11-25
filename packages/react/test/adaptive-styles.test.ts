@@ -8,6 +8,22 @@ const styles = readFileSync(
   'utf8',
 );
 
+/**
+ * The bodies of every rule whose selector list names `.className` by itself —
+ * alone or grouped (`.a,\n.b {`) — but not as part of a compound or descendant
+ * selector. Grouped rules matter: a control can take its type metrics from a
+ * rule it shares with an overlay that must wrap exactly as it does.
+ */
+function rulesNaming(className: string): string[] {
+  const uncommented = styles.replace(/\/\*[\s\S]*?\*\//g, '');
+  const bodies: string[] = [];
+  for (const [, selectorList, body] of uncommented.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selectors = selectorList.split(',').map((selector) => selector.trim());
+    if (selectors.includes(`.${className}`)) bodies.push(body);
+  }
+  return bodies;
+}
+
 describe('adaptive styles', () => {
   it('branches on stamped attributes, never on a width media query', () => {
     // The whole point of the token layer: TypeScript owns the breakpoints and
@@ -62,11 +78,16 @@ describe('adaptive styles', () => {
       'db-quick-jot-input',
     ];
     for (const control of controls) {
-      const rule = new RegExp(`\\.${control} \\{[^}]*\\}`, 's').exec(styles)?.[0] ?? '';
-      expect(rule, `${control} rule missing`).to.not.equal('');
-      expect(rule, `${control} must use --db-input-font-size`).to.include(
+      const rules = rulesNaming(control);
+      expect(rules.length, `${control} rule missing`).to.be.greaterThan(0);
+      const fontSizes = rules.flatMap((rule) => rule.match(/font-size:[^;]*/g) ?? []);
+      expect(fontSizes, `${control} must use --db-input-font-size`).to.include(
         'font-size: var(--db-input-font-size)',
       );
+      expect(
+        fontSizes.every((declaration) => declaration === 'font-size: var(--db-input-font-size)'),
+        `${control} also sets another font-size: ${fontSizes.join('; ')}`,
+      ).to.equal(true);
     }
   });
 
