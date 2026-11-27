@@ -713,6 +713,21 @@ test('Ask answers from notes, opens the note an answer cites, and saves the chat
         body: await window.screenshot({ path: test.info().outputPath('ask-page.png') }),
         contentType: 'image/png',
       });
+
+      // Opening the Chats folder from the file tree shows that page, not a file listing.
+      const places = window.locator('.db-shell-sidebar-header');
+      await places.getByRole('button', { name: 'Home', exact: true }).click();
+      await expect(page).toBeHidden();
+      await window.locator('.db-tree-row[data-path$="Chats"]').click();
+      await expect(page.locator('.db-ai-ask-question')).toHaveText('What helped the insects?');
+      await expect(pageChats.locator('.db-ai-ask-chat--active')).toContainText(
+        'What helped the insects',
+      );
+      await expect(window.locator('.db-folder-view-list')).toHaveCount(0);
+      await expect(places.getByRole('button', { name: 'Ask' })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
     },
   );
 });

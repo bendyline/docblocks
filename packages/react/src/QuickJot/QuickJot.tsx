@@ -77,6 +77,24 @@ async function pastedText(content: PastedContent): Promise<string> {
   return (await conversion.catch(() => null)) ?? content.text;
 }
 
+/**
+ * The make buttons say what they make ("Doc", "Task", "Journal") when the
+ * toolbar's one row has room for that, and fall back to icons when it does
+ * not. Tried and measured on the element itself (React never renders the
+ * attribute), so a re-fit costs one layout and no render. The groups are
+ * summed rather than the toolbar's scrollWidth read, because the buttons'
+ * touch-sized hit areas always reach past its edges.
+ */
+function fitToolbarLabels(toolbar: HTMLElement): void {
+  toolbar.removeAttribute('data-labels');
+  const groups = Array.from(toolbar.children);
+  const gap = Number.parseFloat(getComputedStyle(toolbar).columnGap) || 0;
+  const needed =
+    groups.reduce((sum, group) => sum + group.getBoundingClientRect().width, 0) +
+    gap * Math.max(0, groups.length - 1);
+  if (needed > toolbar.clientWidth + 0.5) toolbar.setAttribute('data-labels', 'off');
+}
+
 function AttachmentPreview({ attachment }: { attachment: JotAttachment }) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
@@ -97,6 +115,8 @@ function AttachmentPreview({ attachment }: { attachment: JotAttachment }) {
 export function QuickJot({ actions, today, dictation, onDictatingChange }: QuickJotProps) {
   const id = useId();
   const field = useRef<HTMLTextAreaElement>(null);
+  const makeGroup = useRef<HTMLDivElement>(null);
+  const toolbar = useRef<HTMLDivElement>(null);
   const pendingOverlay = useRef<HTMLDivElement>(null);
   const [text, setTextState] = useState('');
   const textRef = useRef('');
@@ -217,16 +237,35 @@ export function QuickJot({ actions, today, dictation, onDictatingChange }: Quick
       .then((markdown) => insertText(markdown ?? content.text, range));
   };
 
+  /** Whether a make button holds keyboard focus (not a click or tap's). */
+  const makeButtonHasKeyboardFocus = () => {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || !makeGroup.current?.contains(active)) return false;
+    try {
+      return active.matches(':focus-visible');
+    } catch {
+      return true;
+    }
+  };
+
   const run = async (action: ((draft: JotDraft) => Promise<JotOutcome>) | undefined) => {
     if (!action || busy || dictating) return;
     const draft: JotDraft = { text: textRef.current, attachments: attachmentsRef.current };
+    const returnFocus = makeButtonHasKeyboardFocus();
     setBusy(true);
     setNotice(null);
     try {
       const outcome = await action(draft);
       if (outcome !== 'kept') setText('');
-      if (outcome === 'used') setAttachments([]);
-      else if (outcome === 'text-used') {
+      if (outcome === 'used') {
+        setAttachments([]);
+        // The make buttons leave with the jot. Unless what it became took focus
+        // (an opened document), a keyboard user goes back to the box, not the page top.
+        const active = document.activeElement;
+        const unclaimed =
+          !active || active === document.body || makeGroup.current?.contains(active) === true;
+        if (returnFocus && unclaimed) field.current?.focus();
+      } else if (outcome === 'text-used') {
         setNotice('The text was saved. The files are still here: try again or remove them.');
       }
     } catch {
@@ -249,12 +288,41 @@ export function QuickJot({ actions, today, dictation, onDictatingChange }: Quick
 
   const locked = busy || dictating;
   const hasText = text.trim() !== '';
+  // Nothing to make anything from yet: the box offers only ways to fill it.
+  const hasContent = hasText || attachments.length > 0;
   const documentShortcut = isApplePlatform() ? '⌘↵' : 'Ctrl+Enter';
   const status = notice ?? hint;
+  // Nothing in it and nothing going on: the jot recedes until pointed at or focused.
+  const resting =
+    text === '' &&
+    attachments.length === 0 &&
+    !status &&
+    !busy &&
+    !dragging &&
+    !dictating &&
+    !converting;
+  const makeCount = hasContent ? 1 + (actions.toTask ? 1 : 0) + (actions.toJournal ? 1 : 0) : 0;
+
+  // Re-fit the labels when what is on the row changes: make buttons come, go, or multiply...
+  useLayoutEffect(() => {
+    if (toolbar.current) fitToolbarLabels(toolbar.current);
+  }, [makeCount, dictating]);
+
+  // ...or when the room does: the pane resizes, or the mic loads or widens to record.
+  useEffect(() => {
+    const element = toolbar.current;
+    if (!element || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(() => fitToolbarLabels(element));
+    observer.observe(element);
+    // Not the make group: its own labels resize it, so watching it would loop.
+    const addGroup = element.firstElementChild;
+    if (addGroup) observer.observe(addGroup);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <section
-      className={`db-quick-jot${dragging ? ' db-quick-jot--dragging' : ''}${dictating ? ' db-quick-jot--dictating' : ''}`}
+      className={`db-quick-jot${resting ? ' db-quick-jot--resting' : ''}${dragging ? ' db-quick-jot--dragging' : ''}${dictating ? ' db-quick-jot--dictating' : ''}`}
       aria-label="Quick Jot"
       onDragEnter={(event) => {
         if (!dragCarriesFiles(event.dataTransfer)) return;
@@ -354,7 +422,7 @@ export function QuickJot({ actions, today, dictation, onDictatingChange }: Quick
       <p className="db-quick-jot-status" id={`${id}-status`} role="status" aria-live="polite">
         {status ?? ''}
       </p>
-      <div className="db-quick-jot-toolbar">
+      <div ref={toolbar} className="db-quick-jot-toolbar">
         <div className="db-quick-jot-group" role="group" aria-label="Add to the jot">
           <button
             type="button"
@@ -384,42 +452,52 @@ export function QuickJot({ actions, today, dictation, onDictatingChange }: Quick
             </Suspense>
           )}
         </div>
-        <div className="db-quick-jot-group" role="group" aria-label="Make the jot into">
-          <button
-            type="button"
-            className="db-quick-jot-btn"
-            aria-label="New document from jot"
-            title={`New document from jot (${documentShortcut})`}
-            disabled={locked || (!hasText && attachments.length === 0)}
-            onClick={() => void run(actions.toDocument)}
+        {hasContent && (
+          <div
+            ref={makeGroup}
+            className="db-quick-jot-group db-quick-jot-make"
+            role="group"
+            aria-label="Make the jot into"
           >
-            <NewFileIcon />
-          </button>
-          {actions.toTask && (
             <button
               type="button"
-              className="db-quick-jot-btn"
-              aria-label="New task from jot"
-              title="New task from jot"
-              disabled={locked || !hasText}
-              onClick={() => void run(actions.toTask)}
+              className="db-quick-jot-btn db-quick-jot-btn--labeled"
+              aria-label="New document from jot"
+              title={`New document from jot (${documentShortcut})`}
+              disabled={locked}
+              onClick={() => void run(actions.toDocument)}
             >
-              <TasksIcon />
+              <NewFileIcon />
+              <span className="db-quick-jot-btn-label">Doc</span>
             </button>
-          )}
-          {actions.toJournal && (
-            <button
-              type="button"
-              className="db-quick-jot-btn"
-              aria-label="Add jot to journal"
-              title="Add jot to journal"
-              disabled={locked || !hasText}
-              onClick={() => void run(actions.toJournal)}
-            >
-              <JournalIcon />
-            </button>
-          )}
-        </div>
+            {actions.toTask && (
+              <button
+                type="button"
+                className="db-quick-jot-btn db-quick-jot-btn--labeled"
+                aria-label="New task from jot"
+                title="New task from jot"
+                disabled={locked || !hasText}
+                onClick={() => void run(actions.toTask)}
+              >
+                <TasksIcon />
+                <span className="db-quick-jot-btn-label">Task</span>
+              </button>
+            )}
+            {actions.toJournal && (
+              <button
+                type="button"
+                className="db-quick-jot-btn db-quick-jot-btn--labeled"
+                aria-label="Add jot to journal"
+                title="Add jot to journal"
+                disabled={locked || !hasText}
+                onClick={() => void run(actions.toJournal)}
+              >
+                <JournalIcon />
+                <span className="db-quick-jot-btn-label">Journal</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );

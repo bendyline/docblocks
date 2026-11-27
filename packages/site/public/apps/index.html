@@ -58,23 +58,20 @@
     </header>
 
     <!--
-      Store listings on this page.
-
-      Live:    App Store (iPhone and iPad), Google Play, Microsoft Store.
-      Pending: Mac App Store. Its pending plate below sits next to a comment
-               that holds its live badge. When Apple approves the Mac app,
-               follow "When a store approves DocBlocks" in
-               packages/site/README.md; searching this folder for `store:`
-               finds every place to change.
+      Store listings on this page, all live: the App Store (one listing and
+      one purchase for iPhone, iPad, and Mac), Google Play, and the Microsoft
+      Store. "Apps page and store listings" in packages/site/README.md has the
+      links and what to change if a listing moves.
     -->
     <main class="page-main" id="content" tabindex="-1">
       <section class="hero">
         <div>
           <h1>Get DocBlocks</h1>
           <p class="lede">
-            DocBlocks is on the App Store, Google Play, and the Microsoft Store. It is also a free
-            download for Mac, Windows, and Linux, and it runs in any browser. Every version opens
-            the same plain Markdown files, and none of them needs an account.
+            DocBlocks is on the App Store for iPhone, iPad, and Mac, on Google Play, and on the
+            Microsoft Store. It is also a free download for Mac, Windows, and Linux, and it runs in
+            any browser. Every version opens the same plain Markdown files, and none of them needs
+            an account.
           </p>
           <div class="hero-actions store-row">
             <a
@@ -113,8 +110,8 @@
             <li>
               Free in a browser, on Mac, Windows, and Linux, in VS Code, and on the command line
             </li>
-            <li>$9.99 once on iPhone, iPad, and Android</li>
-            <li>$9.99 once for the Microsoft Store edition, which supports DocBlocks</li>
+            <li>$9.99 once on the App Store, for iPhone, iPad, and Mac together</li>
+            <li>$9.99 once on Google Play and on the Microsoft Store</li>
             <li>No subscription or in-app purchases</li>
             <li>No account, ads, or tracking</li>
           </ul>
@@ -188,9 +185,9 @@
               are not signed in to iCloud. Either way they appear in the Files app as plain
               Markdown.
             </p>
-            <!-- store:mac-app-store — when the Mac platform is approved, add this
-                 sentence to the paragraph below: "One purchase covers iPhone, iPad, and Mac." -->
-            <p class="app-card__requires">Requires iOS or iPadOS 16.4 or later.</p>
+            <p class="app-card__requires">
+              Requires iOS or iPadOS 16.4 or later. One purchase covers iPhone, iPad, and Mac.
+            </p>
             <div class="app-card__actions">
               <a
                 class="store-badge"
@@ -276,36 +273,15 @@
             <p>For Apple silicon Macs running macOS 12 or later.</p>
             <div class="app-card__actions">
               <a class="button" href="/desktop/">Download for Mac</a>
-              <!-- store:mac-app-store pending — remove this plate when the listing is live. -->
-              <span class="store-pending">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <circle cx="12" cy="12" r="9" />
-                  <path d="M12 7v5l3 2" />
-                </svg>
-                <span class="store-pending__text">
-                  <span class="store-pending__status">Coming soon</span>
-                  <span class="store-pending__name">Mac App Store</span>
-                </span>
-              </span>
-              <!-- store:mac-app-store live — uncomment when the listing is live.
               <a
                 class="store-badge"
-                href="https://apps.apple.com/us/app/docblocks-markdown-editor/id6792768923"
+                href="https://apps.apple.com/us/app/docblocks-markdown-editor/id6792768923?platform=mac"
                 ><img
                   src="/marketing/stores/mac-app-store-badge.svg"
                   alt="Download on the Mac App Store"
                   width="156"
                   height="40"
               /></a>
-              -->
             </div>
           </article>
           <article class="app-card">
@@ -364,14 +340,12 @@
             </div>
           </article>
         </div>
-        <!-- store:mac-app-store — when the Mac listing is live, name it beside the Microsoft
-             Store in the first sentence and drop the second. -->
         <p class="section-note">
-          The Supporter Edition for Windows is $9.99 on the Microsoft Store. One for the Mac is
-          coming to the Mac App Store. Each is the same app as the free download, built from the
-          same source. Your store keeps it up to date, and buying it supports DocBlocks. On a Mac,
-          dictation, read aloud, and Git are only in the free download, because App Store apps run
-          in Apple&rsquo;s sandbox.
+          Supporter Editions are $9.99 on the Mac App Store and the Microsoft Store. Each is the
+          same app as the free download, built from the same source. Your store keeps it up to date,
+          and buying it supports DocBlocks. On the Mac, the same purchase also covers iPhone and
+          iPad. Dictation, read aloud, and Git are only in the free Mac download, because App Store
+          apps run in Apple&rsquo;s sandbox.
         </p>
       </section>
 
@@ -471,12 +445,11 @@
         </div>
       </section>
 
-      <!-- store:mac-app-store — when the Mac listing is live, name its store here too:
-           "Mac App Store is a service mark of Apple Inc." -->
       <p class="legal-note">
-        Apple, the Apple logo, iPhone, and iPad are trademarks of Apple Inc. App Store is a service
-        mark of Apple Inc. Google Play and the Google Play logo are trademarks of Google LLC.
-        Microsoft Store is a trademark of the Microsoft group of companies.
+        Apple, the Apple logo, iPhone, iPad, and Mac are trademarks of Apple Inc. App Store and Mac
+        App Store are service marks of Apple Inc. Google Play and the Google Play logo are
+        trademarks of Google LLC. Microsoft Store is a trademark of the Microsoft group of
+        companies.
       </p>
     </main>
 

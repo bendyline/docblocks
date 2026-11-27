@@ -133,6 +133,7 @@ export {
   WORKSPACE_METADATA_DIRECTORY_NAME,
   isBrowsableWorkspaceEntry,
   isCompanionDirectoryName,
+  isDestinationFolderName,
   isDiscoverableWorkspaceEntry,
   isEnumeratedWorkspaceEntryName,
   isIgnoredWorkspaceEntryName,
@@ -144,6 +145,7 @@ export {
   type FileSystemEntryMoveOptions,
 } from './move-entry.js';
 export { imageEditCompanionPath, isEditableImagePath } from './companion-path.js';
+export { moveFileBetweenWorkspaces } from './move-between.js';
 export { rewriteCompanionReferences } from './companion-references.js';
 export {
   publishFileSystemChangeHint,

@@ -32,7 +32,8 @@ async function emulateNotch(page: Page) {
   );
 }
 
-async function openSettings(page: Page) {
+/** Open a dialog from an app menu item, which lives in the drawer in single-pane. */
+async function openFromAppMenu(page: Page, item: string, dialogName: string) {
   await page.goto('/');
   const shell = page.locator('.db-shell');
   await expect(shell).toBeVisible();
@@ -48,16 +49,28 @@ async function openSettings(page: Page) {
     await expect(shell).toHaveAttribute('data-db-drawer', 'open');
   }
   await page.locator('.db-app-menu-btn').click();
-  await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Settings', exact: true });
+  await page.getByRole('menuitem', { name: item, exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: dialogName, exact: true });
   await expect(dialog).toBeVisible();
   return dialog;
 }
+
+const openSettings = (page: Page) => openFromAppMenu(page, 'Settings', 'Settings');
 
 async function boxOf(locator: Locator) {
   const box = await locator.boundingBox();
   expect(box).not.toBeNull();
   return box!;
+}
+
+async function expectFillsWindow(page: Page, dialog: Locator) {
+  const viewport = page.viewportSize()!;
+  expect(await boxOf(dialog)).toEqual({
+    x: 0,
+    y: 0,
+    width: viewport.width,
+    height: viewport.height,
+  });
 }
 
 async function expectCardInsideSafeAreas(page: Page, dialog: Locator) {
@@ -83,12 +96,7 @@ test.describe('Dialogs and the safe areas on touch devices', () => {
     const dialog = await openSettings(page);
     const viewport = page.viewportSize()!;
 
-    expect(await boxOf(dialog)).toEqual({
-      x: 0,
-      y: 0,
-      width: viewport.width,
-      height: viewport.height,
-    });
+    await expectFillsWindow(page, dialog);
     // The header's top edge meets the top of the screen…
     const header = await boxOf(dialog.locator('.db-dialog-header'));
     expect(header.y).toBe(0);
@@ -126,10 +134,18 @@ test.describe('Dialogs and the safe areas on touch devices', () => {
   });
 
   test('a default-size dialog stays a card inside the safe areas', async ({ page }) => {
-    // The installed-app "New document" shortcut opens the dialog on launch.
+    await expectCardInsideSafeAreas(page, await openFromAppMenu(page, 'About', 'About DocBlocks'));
+  });
+
+  test('the New document shortcut opens the gallery as a wide dialog', async ({
+    page,
+  }, testInfo) => {
+    // The installed app's "New document" jump-list entry opens it on launch.
     await page.goto('/?action=new');
     const dialog = page.getByRole('dialog', { name: 'New document' });
     await expect(dialog).toBeVisible({ timeout: 30_000 });
-    await expectCardInsideSafeAreas(page, dialog);
+    await (testInfo.project.name.startsWith('ipad')
+      ? expectCardInsideSafeAreas(page, dialog)
+      : expectFillsWindow(page, dialog));
   });
 });

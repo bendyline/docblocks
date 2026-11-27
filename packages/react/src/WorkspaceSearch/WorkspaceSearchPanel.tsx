@@ -13,7 +13,7 @@ import type {
   WorkspaceSearchResult,
 } from '@bendyline/docblocks/workspace-index';
 import { HighlightedText } from '../components/HighlightedText.js';
-import { FilesIcon } from '../icons.js';
+import { DisclosureIcon, FilesIcon } from '../icons.js';
 import { matchedWord } from './ranked-results.js';
 import { useWorkspaceSearch, type WorkspaceSearchMode } from './useWorkspaceSearch.js';
 
@@ -336,7 +336,7 @@ export function WorkspaceSearchPanel({
                     if (expandable) toggle(document.path);
                   }}
                 >
-                  {expandable ? (expanded ? '▾' : '▸') : ''}
+                  {expandable ? <DisclosureIcon /> : null}
                 </span>
                 <span className="db-search-document-title">
                   <HighlightedText text={document.title} ranges={document.titleRanges} />

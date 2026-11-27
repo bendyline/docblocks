@@ -33,3 +33,18 @@ export function imageEditCompanionPath(imagePath: string): string {
   if (!clean) throw new Error('The workspace root has no image companion path.');
   return rooted ? `/${clean}_files` : `${clean}_files`;
 }
+
+function hasDocumentCompanion(path: string): boolean {
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  return /\.(?:md|html?|docx|pdf|pptx|xlsx|csv)$/i.test(name);
+}
+
+/**
+ * The companion a moved file takes along, as a function naming it for any
+ * path of the file; null for a file that has none.
+ */
+export function companionPathFor(filePath: string): ((path: string) => string) | null {
+  if (hasDocumentCompanion(filePath)) return documentCompanionPath;
+  if (isEditableImagePath(filePath)) return imageEditCompanionPath;
+  return null;
+}

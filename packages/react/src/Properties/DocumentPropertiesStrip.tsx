@@ -1,6 +1,7 @@
 /**
  * A row between the toolbar and the document that edits its properties:
- * due date, category, tags, repeat, and whether it is done.
+ * due date, category, tags, repeat, whether it is done, and (in a tasks
+ * folder with more than one open or done list) which list it is in.
  *
  * Every change is a frontmatter edit made through the editor itself
  * (`applySourceEdits`), so it is one undoable step, the caret stays where it
@@ -24,15 +25,9 @@ import {
   type LocalDate,
   type RepeatRule,
 } from '@bendyline/docblocks/properties';
+import { offersListChoice, type StripTask } from './list-choice.js';
 
-export interface StripTask {
-  /** The bucket the document is in; null at the tasks folder's top level. */
-  readonly bucket: string | null;
-  /** Buckets it can move to, in display order. */
-  readonly buckets: readonly { readonly name: string; readonly done: boolean }[];
-  /** Done because of where it is. */
-  readonly done: boolean;
-}
+export type { StripTask } from './list-choice.js';
 
 export interface DocumentPropertiesStripProps {
   /** Where the document sits as a task, or null outside a tasks folder. */
@@ -239,7 +234,7 @@ export function DocumentPropertiesStrip({
         </select>
       </label>
 
-      {task && (
+      {task && offersListChoice(task) && (
         <label className="db-properties-field">
           <span className="db-properties-label">List</span>
           <select

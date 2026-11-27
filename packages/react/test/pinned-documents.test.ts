@@ -8,6 +8,7 @@ import {
   missingPinnedDocumentMessage,
   parsePinnedDocuments,
   pinnedDocumentKey,
+  relocatePinnedDocumentToWorkspace,
   relocatePinnedDocuments,
   removePinnedDocument,
   savePinnedDocuments,
@@ -68,6 +69,20 @@ describe('pinned document persistence', () => {
     expect(relocatePinnedDocuments([DRAFT], 'work', 'notes', 'archive')).to.deep.equal([
       { ...DRAFT, path: 'archive/draft.md' },
     ]);
+    expect(
+      relocatePinnedDocumentToWorkspace(
+        [DRAFT],
+        { workspaceId: 'work', path: '/notes/draft.md' },
+        { workspaceId: 'home', workspaceName: 'Home', path: 'Ideas/draft (2).md' },
+      ),
+    ).to.deep.equal([{ workspaceId: 'home', workspaceName: 'Home', path: 'Ideas/draft (2).md' }]);
+    expect(
+      relocatePinnedDocumentToWorkspace(
+        [DRAFT],
+        { workspaceId: 'home', path: 'notes/draft.md' },
+        { workspaceId: 'home', workspaceName: 'Home', path: 'draft.md' },
+      ),
+    ).to.deep.equal([DRAFT]);
     expect(removePinnedDocument([DRAFT], DRAFT)).to.deep.equal([]);
     expect(missingPinnedDocumentMessage(DRAFT)).to.equal(
       'draft.md is no longer at Work/notes/draft.md. Unpin this file?',

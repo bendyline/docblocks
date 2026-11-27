@@ -2,6 +2,7 @@ import { expect } from 'chai';
 import {
   isBrowsableWorkspaceEntry,
   isCompanionDirectoryName,
+  isDestinationFolderName,
   isDiscoverableWorkspaceEntry,
   isIgnoredWorkspaceEntryName,
   isMarkdownFileName,
@@ -50,5 +51,38 @@ describe('workspace entry rules', () => {
     expect(isDiscoverableWorkspaceEntry('_squisq', 'file')).to.equal(true);
     expect(isDiscoverableWorkspaceEntry('guides', 'directory')).to.equal(true);
     expect(isDiscoverableWorkspaceEntry('.versions', 'directory')).to.equal(false);
+  });
+
+  it('offers only folders a person would put a document in', () => {
+    for (const name of [
+      '.git',
+      'node_modules',
+      'notes_files',
+      'notes_files - Copy',
+      'notes_files - Copy (2)',
+      'notes_files copy',
+      'notes_files copy 2',
+      'notes_files 2',
+      'notes_files (1)',
+      "notes_files (Sam's conflicted copy 2026-11-25)",
+      '_templates',
+      '_Templates',
+      '_squisq',
+    ]) {
+      expect(isDestinationFolderName(name), name).to.equal(false);
+    }
+    for (const name of [
+      '_posts',
+      '_drafts',
+      'Notes',
+      'Field Notes',
+      'prompts_recurring',
+      'case_files_2026',
+      'my_files_archive',
+      'Tasks',
+      '2026',
+    ]) {
+      expect(isDestinationFolderName(name), name).to.equal(true);
+    }
   });
 });

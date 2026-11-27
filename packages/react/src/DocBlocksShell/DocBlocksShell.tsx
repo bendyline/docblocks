@@ -66,6 +66,7 @@ import {
   imageEditCompanionPath,
   isEditableImagePath,
   isQuotaExceededError,
+  moveFileBetweenWorkspaces,
   moveFileSystemEntry,
   rewriteCompanionReferences,
   parseWorkspacePath,
@@ -141,6 +142,7 @@ import {
 } from '../FileExplorer/FileExplorer.js';
 import { DocumentTitleField } from './DocumentTitleField.js';
 import { filterVisibleFileEntries } from '../FileExplorer/entry-visibility.js';
+import { indexFolderContents } from '../FileExplorer/folder-contents.js';
 import { renameDraft, renamedFileName } from '../FileExplorer/file-names.js';
 import { WorkspacePicker } from '../WorkspacePicker/WorkspacePicker.js';
 import { WorkspaceSettingsButton } from '../WorkspacePicker/WorkspaceSettingsButton.js';
@@ -424,6 +426,12 @@ import { createPageActions, describeActionError } from '../Home/page-actions.js'
 import { amendDigestAfterToggle, toggleTaskElsewhere } from '../Home/elsewhere-tasks.js';
 import { keepDocumentVersion } from '../Home/keep-version.js';
 import type { ShellPageContext } from '../Home/page-context.js';
+import {
+  describeChoice,
+  type FolderChoice,
+  type WorkspaceFolderSource,
+} from '../FolderPicker/folder-tree.js';
+import { listProviderFolders } from '../FolderPicker/list-folders.js';
 import { ShellNav, type ShellNavItem } from '../Home/ShellNav.js';
 import {
   buildShellPageHash,
@@ -521,6 +529,7 @@ import {
   missingPinnedDocumentMessage,
   movePinnedDocumentsToWorkspace,
   pinnedDocumentKey,
+  relocatePinnedDocumentToWorkspace,
   relocatePinnedDocuments,
   removePinnedDocument,
   renamePinnedDocumentWorkspace,
@@ -5118,6 +5127,16 @@ export function DocBlocksShell({
   );
   const kindFoldersRef = useRef(workspaceTasks.kindFolders);
   kindFoldersRef.current = workspaceTasks.kindFolders;
+  /** Which folders the index knows to be empty, so the file tree can leave off their chevrons. */
+  const indexedFolderContents = useMemo(
+    () =>
+      workspaceIndex.index
+        ? indexFolderContents(workspaceIndex.index, hiddenOutputPaths)
+        : undefined,
+    // `generation` is the index's own change signal; its getters are stable within one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [workspaceIndex.index, workspaceIndex.status.generation, hiddenOutputPaths],
+  );
   /** The open workspace when an OS request arrives (see fileIncomingShare). */
   const openWorkspaceRef = useRef({ workspaceId: activeWorkspaceId });
   openWorkspaceRef.current = { workspaceId: activeWorkspaceId };
@@ -5259,8 +5278,8 @@ export function DocBlocksShell({
     return items;
   }, [shellPagesAvailable, workspaceTasks, today, ai]);
 
-  /** The folder showing in the main pane, when it is a folder that says what it is. */
-  const selectedKindFolder = useMemo(() => {
+  /** The selected folder, when it is a folder that says what it is. */
+  const selectedFolderKind = useMemo(() => {
     if (selectedFolder === null || selectedFile !== null) return null;
     let canonical;
     try {
@@ -5269,19 +5288,24 @@ export function DocBlocksShell({
       return null;
     }
     const nearest = kindFolderFor(workspaceTasks.kindFolders, canonical, true);
-    // A chats folder lists its chats as an ordinary folder; Ask is their page.
-    return nearest && nearest.path === canonical && nearest.settings.kind !== 'chats'
-      ? nearest
-      : null;
+    return nearest && nearest.path === canonical ? nearest : null;
   }, [selectedFolder, selectedFile, workspaceTasks.kindFolders]);
+  /** The folder page showing in the main pane. Chats have Ask as their page instead. */
+  const selectedKindFolder =
+    selectedFolderKind && selectedFolderKind.settings.kind !== 'chats' ? selectedFolderKind : null;
+  // Opening a chats folder opens Ask, where its chats are listed beside the
+  // conversation. Without AI there is no Ask, so it lists as any folder does.
+  const chatsFolderShowsAsk = ai !== undefined && selectedFolderKind?.settings.kind === 'chats';
 
   const currentNavKey = shellPage
     ? shellPage.kind
-    : selectedKindFolder && selectedKindFolder.settings.kind !== 'tasks'
-      ? `folder:${selectedKindFolder.path}`
-      : selectedKindFolder
-        ? 'tasks'
-        : null;
+    : chatsFolderShowsAsk
+      ? 'ask'
+      : selectedKindFolder && selectedKindFolder.settings.kind !== 'tasks'
+        ? `folder:${selectedKindFolder.path}`
+        : selectedKindFolder
+          ? 'tasks'
+          : null;
 
   // What the open workspace looks like from Home, kept on this device so the
   // other workspaces' pages can show it while it is closed. Only a settled
@@ -5342,6 +5366,7 @@ export function DocBlocksShell({
   });
   const otherWorkspaces = homeDigests.summaries;
   const amendHomeDigest = homeDigests.amend;
+  const refreshHomeDigest = homeDigests.refresh;
 
   /**
    * Storage for any workspace on this device: the open one's own, or one
@@ -5417,6 +5442,119 @@ export function DocBlocksShell({
       }
     },
     [otherWorkspaces, withWorkspaceStorage, amendHomeDigest, showToast],
+  );
+
+  /**
+   * Every workspace on this device and its folders, for choosing where
+   * something goes. The open workspace answers from its index; another is
+   * read when the picker opens it, its kind folders taken from its digest.
+   */
+  const workspaceFolderSource = useMemo<WorkspaceFolderSource | null>(() => {
+    if (!activeWorkspaceId) return null;
+    const unreadable = "DocBlocks couldn't read its folders.";
+    return {
+      workspaces: [
+        { id: activeWorkspaceId, name: activeWorkspaceDescriptor?.name ?? 'Workspace' },
+        ...otherWorkspaces.map((summary) => ({ id: summary.workspaceId, name: summary.name })),
+      ],
+      listFolders(workspaceId) {
+        const index = workspaceIndexRef.current;
+        if (workspaceId === activeWorkspaceId && index && index.workspaceId === workspaceId) {
+          const kinds = new Map(
+            kindFoldersRef.current.map((folder) => [folder.path as string, folder.settings.kind]),
+          );
+          return {
+            status: 'ready',
+            folders: index
+              .getDirectories()
+              .filter((path) => path !== '')
+              .map((path) => ({ path, kind: kinds.get(path) ?? null })),
+            partial: !index.getStatus().listed,
+          };
+        }
+        const digest = otherWorkspaces.find(
+          (summary) => summary.workspaceId === workspaceId,
+        )?.digest;
+        const kinds = new Map((digest?.folders ?? []).map((folder) => [folder.path, folder.kind]));
+        return withWorkspaceStorage(workspaceId, (storage) => listProviderFolders(storage)).then(
+          (outcome) =>
+            'result' in outcome
+              ? {
+                  status: 'ready' as const,
+                  folders: outcome.result.paths.map((path) => ({
+                    path,
+                    kind: kinds.get(path) ?? null,
+                  })),
+                  partial: outcome.result.partial,
+                }
+              : {
+                  status: 'unavailable' as const,
+                  message:
+                    outcome.unavailable === null
+                      ? 'It is no longer on this device.'
+                      : 'Open it once, then its folders show here.',
+                },
+          () => ({ status: 'unavailable' as const, message: unreadable }),
+        );
+      },
+    };
+  }, [activeWorkspaceId, activeWorkspaceDescriptor?.name, otherWorkspaces, withWorkspaceStorage]);
+
+  /**
+   * Move a document of the open workspace, with its companion folder, into a
+   * folder of another workspace. Its pin follows it, and the other
+   * workspace's digest is read again so Home and Tasks show it there.
+   */
+  const fileInWorkspace = useCallback(
+    async (path: string, choice: FolderChoice) => {
+      const source = provider;
+      const workspaceId = activeWorkspaceId;
+      if (!source || !workspaceId) return;
+      const from = parseWorkspacePath(path);
+      const name = titleOfFileName(from);
+      const title = `“${name.length > 60 ? `${name.slice(0, 59)}…` : name}”`;
+      try {
+        const outcome = await withWorkspaceStorage(choice.workspaceId, (destination) =>
+          moveFileBetweenWorkspaces(source, destination, from, choice.path),
+        );
+        if (!('result' in outcome)) {
+          showToast(
+            'error',
+            outcome.unavailable === null
+              ? `Couldn't move ${title}. “${choice.workspaceName}” is no longer on this device.`
+              : `Couldn't move ${title}. DocBlocks couldn't open “${outcome.unavailable}”: open it, then try again.`,
+          );
+          return;
+        }
+        notifyWorkspaceChanged(workspaceId, from);
+        if (!getFileSystemProviderV2(source)?.capabilities.watch) {
+          void explorerRef.current?.refresh();
+        }
+        setPinnedDocuments((current) =>
+          relocatePinnedDocumentToWorkspace(
+            current,
+            { workspaceId, path: from },
+            {
+              workspaceId: choice.workspaceId,
+              workspaceName: choice.workspaceName,
+              path: outcome.result,
+            },
+          ),
+        );
+        refreshHomeDigest(choice.workspaceId);
+        showToast('success', `Moved ${title} to ${describeChoice(choice)}.`);
+      } catch (error: unknown) {
+        showToast('error', `Couldn't move ${title}. ${describeActionError(error)}`);
+      }
+    },
+    [
+      provider,
+      activeWorkspaceId,
+      withWorkspaceStorage,
+      notifyWorkspaceChanged,
+      refreshHomeDigest,
+      showToast,
+    ],
   );
 
   // Documents shared to a phone before there was a drawer to file them in
@@ -5648,6 +5786,8 @@ export function DocBlocksShell({
       otherWorkspaces,
       openInWorkspace: (workspaceId, path) => void openFromIds(workspaceId, `/${path}`, true),
       toggleInWorkspace: toggleTaskInWorkspace,
+      ...(workspaceFolderSource ? { folderSource: workspaceFolderSource } : {}),
+      ...(provider ? { fileInWorkspace } : {}),
       ...(phoneInbox.length > 0 && unfiledHere !== undefined
         ? {
             phoneInbox: {
@@ -5676,6 +5816,8 @@ export function DocBlocksShell({
     otherWorkspaces,
     openFromIds,
     toggleTaskInWorkspace,
+    workspaceFolderSource,
+    fileInWorkspace,
     phoneInbox,
     unfiledHere,
     filePhoneInbox,
@@ -7950,6 +8092,8 @@ export function DocBlocksShell({
               activeFilePath={selectedFile}
               sortMode={fileExplorerSortMode}
               hiddenPaths={hiddenOutputPaths}
+              kindFolders={workspaceTasks.kindFolders}
+              folderContents={indexedFolderContents}
               onSortModeChange={handleFileExplorerSortModeChange}
               pinnedDocuments={pinnedDocumentItems}
               pinnedPaths={activeWorkspacePinnedPaths}
@@ -8410,7 +8554,7 @@ export function DocBlocksShell({
                 <Suspense fallback={<div className="db-shell-empty">Loading…</div>}>
                   <KindFolderPage context={shellPageContext} folder={selectedKindFolder} />
                 </Suspense>
-              ) : selectedFolder ? (
+              ) : selectedFolder && !chatsFolderShowsAsk ? (
                 <div className="db-folder-view">
                   {singlePane && (
                     <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
@@ -8445,7 +8589,9 @@ export function DocBlocksShell({
                     </ul>
                   )}
                 </div>
-              ) : shellPage?.kind === 'ask' && ai ? (
+              ) : ai && (chatsFolderShowsAsk || shellPage?.kind === 'ask') ? (
+                // One branch for both ways in, so moving between the Ask
+                // place and the chats folder keeps the same page mounted.
                 <Suspense fallback={<div className="db-shell-empty">Loading…</div>}>
                   <AskPage
                     sessionHolder={askSessionRef}

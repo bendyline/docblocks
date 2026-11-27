@@ -1127,14 +1127,50 @@
 }
 
 .db-tree-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 16px;
   flex-shrink: 0;
-  text-align: center;
   font-size: 14px;
   line-height: 1;
-  font-family:
-    ui-monospace, 'SF Mono', 'Menlo', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
   color: var(--db-text-secondary);
+}
+
+/* One chevron for both states, turned down while its row is open. */
+.db-tree-icon svg,
+.db-search-chevron svg {
+  transition: transform 120ms ease;
+}
+
+.db-tree-row[aria-expanded='true'] > .db-tree-icon svg,
+[aria-expanded='true'] > .db-search-chevron svg {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-tree-icon svg,
+  .db-search-chevron svg {
+    transition: none;
+  }
+}
+
+/* The type glyph beside each name: a folder, a kind folder's own glyph, or the
+   file's type. Muted like the disclosure triangle so the names lead; sized
+   from the row's own text, so touch layouts' larger rows get larger glyphs. */
+.db-tree-glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin-right: 6px;
+  line-height: 1;
+  color: var(--db-text-secondary);
+}
+
+.db-tree-row--selected .db-tree-glyph,
+.db-tree-row--drop-target .db-tree-glyph {
+  color: inherit;
 }
 
 .db-tree-label {
@@ -1214,6 +1250,14 @@
    while still getting coarse-pointer hit targets. */
 [data-db-hover='none'] .db-tree-more {
   visibility: visible;
+}
+
+/* On a touch screen the button takes the explorer buttons' control size, so
+   the ring below pads it to the full target. At 22px the ring reached only
+   26px. The 44px row content box holds it without growing the row. */
+[data-db-pointer='coarse'] .db-tree-more {
+  width: var(--db-control-size);
+  height: var(--db-control-size);
 }
 
 /* Grow the touchable area without growing the glyph. Both operands are tokens,
@@ -11293,10 +11337,13 @@ button.db-git-file-row:hover {
 }
 
 .db-search-chevron {
+  display: inline-flex;
   flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
   width: 12px;
+  font-size: 12px;
   color: var(--db-text-muted);
-  text-align: center;
 }
 
 .db-search-document-title,
@@ -11775,6 +11822,20 @@ button.db-git-file-row:hover {
   outline-offset: 1px;
 }
 
+/* Empty and idle with the pointer elsewhere, the whole jot recedes a little;
+   pointing at it, focusing it, or putting anything in it brings it back. The
+   contents fade, not the section, so its top rule still matches the pane's.
+   0.75 keeps the hint at 3:1 or better in both themes. Only where there is a
+   pointer to hover with: on touch it would stay faded until tapped. Driven by
+   the stamped `any-hover` attribute, so an iPad with a trackpad fades too. */
+[data-db-hover='hover'] .db-quick-jot > * {
+  transition: opacity 0.15s ease-out;
+}
+
+[data-db-hover='hover'] .db-quick-jot--resting:not(:hover, :focus-within) > * {
+  opacity: 0.75;
+}
+
 .db-quick-jot-attachments {
   display: flex;
   flex-wrap: wrap;
@@ -11916,6 +11977,17 @@ button.db-git-file-row:hover {
   gap: 2px;
 }
 
+/* The make buttons arrive with the jot's first content. */
+.db-quick-jot-make {
+  animation: db-quick-jot-reveal 0.12s ease-out;
+}
+
+@keyframes db-quick-jot-reveal {
+  from {
+    opacity: 0;
+  }
+}
+
 .db-quick-jot-btn {
   position: relative;
   display: flex;
@@ -11931,6 +12003,25 @@ button.db-git-file-row:hover {
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
+}
+
+/* With room on the row (QuickJot's fitToolbarLabels decides), the make
+   buttons carry a word beside the icon; without it, icons alone. The doubled
+   classes beat the narrow-pane width cap below. */
+.db-quick-jot-toolbar:not([data-labels='off']) .db-quick-jot-btn.db-quick-jot-btn--labeled {
+  width: auto;
+  gap: 4px;
+  padding: 0 7px 0 5px;
+}
+
+.db-quick-jot-btn-label {
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.db-quick-jot-toolbar[data-labels='off'] .db-quick-jot-btn-label {
+  display: none;
 }
 
 /* The explorer buttons' trick: a touch-sized hit area around a small glyph. */
@@ -11998,6 +12089,14 @@ button.db-git-file-row:hover {
   }
 
   .db-quick-jot-meter-bar {
+    transition: none;
+  }
+
+  .db-quick-jot-make {
+    animation: none;
+  }
+
+  .db-quick-jot > * {
     transition: none;
   }
 }
@@ -12429,6 +12528,121 @@ button.db-git-file-row:hover {
   gap: 6px;
 }
 
+/* The workspace folder picker: a button that drops down a find field over a
+   tree whose roots are the workspaces. One click on a row chooses it. Rows
+   borrow the file tree's look (.db-tree-row) so a folder reads the same here
+   as in the sidebar. Portaled onto <body> and placed in script (top or
+   bottom, left and max-height), so no scrolling pane clips it. */
+.db-folder-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.db-folder-picker-caret {
+  display: inline-flex;
+  color: var(--db-text-secondary);
+  transform: rotate(90deg);
+}
+
+.db-folder-picker {
+  position: fixed;
+  z-index: 1000;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(340px, calc(100vw - 16px));
+  padding: 6px;
+  overflow: hidden;
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: var(--db-bg-raised);
+  box-shadow: 0 6px 18px var(--db-shadow);
+  color: var(--db-text);
+  /* Outside .db-shell, where no font is set. */
+  font-family: var(--db-ui-font);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Focused only so its keys work on a touch screen; nothing to show. */
+.db-folder-picker:focus {
+  outline: none;
+}
+
+.db-folder-picker-find {
+  box-sizing: border-box;
+  width: 100%;
+  flex-shrink: 0;
+  padding: 6px 9px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font: inherit;
+  font-size: var(--db-input-font-size);
+}
+
+.db-folder-picker-find:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -1px;
+}
+
+.db-folder-picker-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.db-folder-picker-tree:empty {
+  display: none;
+}
+
+.db-folder-picker-row {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-radius: 4px;
+}
+
+/* A wider disclosure than the sidebar's, so a finger can open a folder
+   without choosing it. */
+.db-folder-picker-disclosure {
+  align-self: stretch;
+  width: 24px;
+  margin: -4px 0;
+  cursor: pointer;
+}
+
+.db-folder-picker-row--workspace .db-tree-label {
+  font-weight: 600;
+}
+
+.db-folder-picker-row--unavailable {
+  cursor: default;
+}
+
+.db-folder-picker-row--unavailable .db-tree-label {
+  color: var(--db-text-muted);
+}
+
+.db-folder-picker-note {
+  flex-shrink: 1;
+  min-width: 0;
+  margin-left: 8px;
+  overflow: hidden;
+  color: var(--db-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+}
+
+.db-folder-picker-empty {
+  margin: 0;
+  padding: 4px 6px 6px;
+  color: var(--db-text-secondary);
+}
+
 /* The details row between the editor's toolbar and the document. */
 .db-properties {
   display: flex;
@@ -12436,7 +12650,9 @@ button.db-git-file-row:hover {
   align-items: center;
   gap: 6px 16px;
   padding: 6px 16px;
-  border-bottom: 1px solid var(--db-border);
+  /* The same seam as the toolbar's edge above (`.db-shell .squisq-editor-header`),
+     so the row's two edges read alike and the controls look centred. */
+  border-bottom: 1px solid var(--db-border-strong);
   background: var(--db-bg-subtle);
   color: var(--db-text-secondary);
   font-size: 13px;

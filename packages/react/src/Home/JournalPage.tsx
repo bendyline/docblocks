@@ -111,25 +111,14 @@ export function JournalPage({
       singlePane={context.singlePane}
       onShowFiles={context.onShowFiles}
       actions={
-        <>
-          <button
-            type="button"
-            className="db-page-primary"
-            disabled={!todaysEntry && !actions}
-            onClick={openToday}
-          >
-            {todaysEntry ? "Open today's entry" : "Write today's entry"}
-          </button>
-          {actions && (
-            <button
-              type="button"
-              className="db-page-link"
-              onClick={() => void actions.clearKind(`/${folder.path}`)}
-            >
-              Make an ordinary folder
-            </button>
-          )}
-        </>
+        <button
+          type="button"
+          className="db-page-primary"
+          disabled={!todaysEntry && !actions}
+          onClick={openToday}
+        >
+          {todaysEntry ? "Open today's entry" : "Write today's entry"}
+        </button>
       }
     >
       {actions && (

@@ -34,18 +34,25 @@ async function jot(page: Page, text: string, as: keyof typeof JOT_BUTTONS = 'tas
   await expect(field).toHaveValue('');
 }
 
-/** Set up a kind of folder from Home's Get started cards; Quick Jot then offers it. */
+/**
+ * Set up a kind of folder from Home's Get started cards; Quick Jot then offers it.
+ * Its make buttons show only once the box has something in it, so this jots a
+ * probe to see the offer, then clears it.
+ */
 async function setUpFromHome(page: Page, kind: 'tasks' | 'journal') {
   await places(page).getByRole('button', { name: 'Home' }).click();
   const home = page.getByRole('region', { name: 'Home' });
   await home
     .getByRole('button', { name: kind === 'tasks' ? 'Add a tasks folder' : 'Start a journal' })
     .click();
+  const field = quickJot(page).getByLabel('Jot something down');
+  await field.fill('Probe');
   await expect(
     quickJot(page).getByRole('button', {
       name: JOT_BUTTONS[kind === 'tasks' ? 'task' : 'journal'],
     }),
   ).toBeVisible({ timeout: 15_000 });
+  await field.fill('');
 }
 
 test('Quick Jot adds tasks once Home sets up a tasks folder, and Home lists what is due', async ({
@@ -59,7 +66,11 @@ test('Quick Jot adds tasks once Home sets up a tasks folder, and Home lists what
   await expect(page).toHaveURL(/\/:home$/);
   // Home no longer has a capture row of its own: Quick Jot in the left pane is it.
   await expect(page.getByLabel('Add a task or jot something down')).toHaveCount(0);
+  // Until a tasks folder exists, a jot can become a document but not a task.
+  await quickJot(page).getByLabel('Jot something down').fill('Probe');
+  await expect(quickJot(page).getByRole('button', { name: JOT_BUTTONS.document })).toBeVisible();
   await expect(quickJot(page).getByRole('button', { name: JOT_BUTTONS.task })).toHaveCount(0);
+  await quickJot(page).getByLabel('Jot something down').fill('');
 
   await setUpFromHome(page, 'tasks');
   await jot(page, 'Pay water bill today');
@@ -155,7 +166,9 @@ test('the journal and the Unfiled drawer take what Quick Jot captures', async ({
     .getByRole('button', { name: /^Unfiled/ })
     .click();
   const unfiled = page.getByRole('region', { name: 'Unfiled, waiting to be filed' });
-  await expect(unfiled.getByRole('button', { name: 'Acme pricing ideas' })).toBeVisible();
+  await expect(
+    unfiled.getByRole('button', { name: 'Acme pricing ideas', exact: true }),
+  ).toBeVisible();
   await unfiled.getByRole('button', { name: 'Make it a task' }).click();
   await expect(unfiled).toContainText('Nothing is waiting.');
   await places(page)
@@ -180,7 +193,8 @@ test('the details row edits a task in place and finishes it', async ({ page }) =
   await details.getByLabel('Category').fill('Home');
   await details.getByLabel('Category').press('Enter');
   await details.getByLabel('Repeat').selectOption('weekly');
-  await expect(details.getByLabel('List')).toHaveValue('Active');
+  // With only Active and Done, the Done box is the whole choice: no List field.
+  await expect(details.getByLabel('List')).toHaveCount(0);
   // The keys the row edits are not offered again in Squisq's own Properties list.
   await expect(page.getByRole('button', { name: /^Properties \(/ })).toHaveCount(0);
 
@@ -300,4 +314,61 @@ test('a task in another workspace is ticked off from Home', async ({ page }) => 
   await treeRow(page, 'Tasks').click();
   await treeRow(page, 'Tasks/Done').click();
   await expect(treeRow(page, 'Tasks/Done/Renew library card.md')).toBeVisible();
+});
+
+test('the Unfiled drawer files a note in a folder of another workspace', async ({ page }) => {
+  await openInitializedSite(page);
+  // Another workspace, with a folder to file into.
+  await page.getByRole('button', { name: /Switch workspace/ }).click();
+  await page.getByRole('button', { name: 'New Workspace' }).click();
+  await page.getByLabel('Workspace name').fill('Side project');
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Switch workspace, current: Side project' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'New Folder', exact: true }).click();
+  await page.locator('.db-new-item-input').fill('Ideas');
+  await page.locator('.db-new-item-add').click();
+  await expect(treeRow(page, 'Ideas')).toBeVisible();
+
+  await page.getByRole('button', { name: /Switch workspace/ }).click();
+  await page.getByRole('button', { name: 'My Documents', exact: true }).click();
+  // Switching workspaces clears Quick Jot: let it finish before jotting.
+  await expect(
+    page.getByRole('button', { name: 'Switch workspace, current: My Documents' }),
+  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'My Documents', level: 1 })).toBeVisible();
+  await jot(page, 'Acme pricing ideas', 'document');
+  await expect(page).toHaveURL(/Unfiled(%2F|\/)Acme%20pricing%20ideas\.md$/);
+  await places(page)
+    .getByRole('button', { name: /^Unfiled/ })
+    .click();
+  const unfiled = page.getByRole('region', { name: 'Unfiled, waiting to be filed' });
+  await unfiled.getByRole('button', { name: 'File “Acme pricing ideas” in…' }).click();
+
+  // Every workspace is a root, open from the start; the drawer cannot be chosen.
+  const picker = page.getByRole('dialog', { name: 'File “Acme pricing ideas” in…' });
+  const tree = picker.getByRole('tree', { name: 'Workspaces and folders' });
+  await expect(tree.getByRole('treeitem', { name: 'My Documents' })).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  );
+  await expect(tree.getByRole('treeitem', { name: 'Unfiled' })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  await expect(tree.getByRole('treeitem', { name: 'Side project' })).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  );
+
+  // One click on a folder in another workspace files the note there.
+  await tree.getByRole('treeitem', { name: 'Ideas' }).click();
+  await expect(picker).toHaveCount(0);
+  await expect(unfiled).toContainText('Nothing is waiting.');
+
+  await page.getByRole('button', { name: /Switch workspace/ }).click();
+  await page.getByRole('button', { name: 'Side project', exact: true }).click();
+  await treeRow(page, 'Ideas').click();
+  await expect(treeRow(page, 'Ideas/Acme pricing ideas.md')).toBeVisible();
 });

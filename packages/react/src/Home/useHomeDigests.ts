@@ -127,6 +127,12 @@ export interface HomeDigests {
    * workspace again. Nothing happens for a workspace with no digest.
    */
   readonly amend: (workspaceId: string, change: (digest: HomeDigest) => HomeDigest) => void;
+  /**
+   * Read a workspace again soon, after a change made to it from here that its
+   * digest cannot be amended for (a document filed into it). Its digest shows
+   * until the new one is read.
+   */
+  readonly refresh: (workspaceId: string) => void;
 }
 
 export function useHomeDigests(input: {
@@ -158,6 +164,19 @@ export function useHomeDigests(input: {
     setStored((current) => {
       const digest = current.get(workspaceId);
       return digest ? new Map(current).set(workspaceId, change(digest)) : current;
+    });
+  }, []);
+
+  const refresh = useCallback<HomeDigests['refresh']>((workspaceId) => {
+    attempted.current.delete(workspaceId);
+    // A read already under way may not have seen the change: it is not kept.
+    amendments.current.set(workspaceId, (amendments.current.get(workspaceId) ?? 0) + 1);
+    setStored((current) => {
+      const next = new Map(current);
+      const digest = current.get(workspaceId);
+      // Stale at once, so the next background read picks it first.
+      if (digest) next.set(workspaceId, { ...digest, madeAt: new Date(0).toISOString() });
+      return next;
     });
   }, []);
 
@@ -262,5 +281,5 @@ export function useHomeDigests(input: {
         })),
     [workspaces, stored, refreshing, activeWorkspaceId],
   );
-  return useMemo(() => ({ summaries, amend }), [summaries, amend]);
+  return useMemo(() => ({ summaries, amend, refresh }), [summaries, amend, refresh]);
 }

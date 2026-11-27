@@ -7,11 +7,7 @@ import {
 } from './move-error.js';
 import { parseWorkspacePath } from './workspace-path.js';
 import { rewriteCompanionReferences } from './companion-references.js';
-import {
-  documentCompanionPath,
-  imageEditCompanionPath,
-  isEditableImagePath,
-} from './companion-path.js';
+import { companionPathFor, documentCompanionPath } from './companion-path.js';
 import { DocumentSession } from '../document/document-session.js';
 import { createFileSystemDocumentTarget } from '../document/filesystem-target.js';
 
@@ -30,17 +26,6 @@ function basename(path: string): string {
 }
 
 export { documentCompanionPath };
-
-function hasDocumentCompanion(path: string): boolean {
-  return /\.(?:md|html?|docx|pdf|pptx|xlsx|csv)$/i.test(basename(path));
-}
-
-/** The companion a moved file takes along, named for a given path of it. */
-function companionPathFor(oldPath: string): ((path: string) => string) | null {
-  if (hasDocumentCompanion(oldPath)) return documentCompanionPath;
-  if (isEditableImagePath(oldPath)) return imageEditCompanionPath;
-  return null;
-}
 
 /**
  * Move an explorer entry without overwriting an existing entry. Markdown and

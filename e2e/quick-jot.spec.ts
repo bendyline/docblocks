@@ -53,12 +53,17 @@ test('a jot becomes a document in the Unfiled drawer, with a dropped picture bes
   await openInitializedSite(page);
   const jot = quickJot(page);
   await expect(jot).toBeVisible();
-  // With no tasks folder or journal yet, a jot can only become a document.
-  await expect(jot.getByRole('button', { name: 'New task from jot' })).toHaveCount(0);
-  await expect(jot.getByRole('button', { name: 'Add jot to journal' })).toHaveCount(0);
+  // An empty box offers only ways to fill it; the make buttons come with content.
+  const makeInto = jot.getByRole('group', { name: 'Make the jot into' });
+  await expect(jot.getByRole('button', { name: 'Paste from clipboard' })).toBeVisible();
+  await expect(makeInto).toHaveCount(0);
 
   const field = jot.getByLabel('Jot something down');
   await field.fill('Venue ideas\nThe barn by the river');
+  await expect(makeInto).toBeVisible();
+  // With no tasks folder or journal yet, a jot can only become a document.
+  await expect(jot.getByRole('button', { name: 'New task from jot' })).toHaveCount(0);
+  await expect(jot.getByRole('button', { name: 'Add jot to journal' })).toHaveCount(0);
   await dropFiles(page, jot, [{ name: 'venue.png', type: 'image/png', base64: PNG_BASE64 }]);
   const attached = jot.getByRole('list', { name: 'Attached files' });
   await expect(attached.getByRole('listitem')).toHaveText(['venue.png']);
@@ -85,10 +90,9 @@ test('a journal jot keeps its lines in one entry, and Ctrl+Enter makes a documen
     .click();
   const jot = quickJot(page);
   const toJournal = jot.getByRole('button', { name: 'Add jot to journal' });
-  await expect(toJournal).toBeVisible({ timeout: 15_000 });
-
   const field = jot.getByLabel('Jot something down');
   await field.fill('Site visit\nroof is fine');
+  await expect(toJournal).toBeVisible({ timeout: 15_000 });
   await toJournal.click();
   await expect(field).toHaveValue('');
 
@@ -116,6 +120,8 @@ test('fits the narrowest left pane, its buttons on one row', async ({ page }) =>
   await places(page).getByRole('button', { name: 'Home' }).click();
   await home.getByRole('button', { name: 'Start a journal' }).click();
   const jot = quickJot(page);
+  // The make buttons show once there is something to make.
+  await jot.getByLabel('Jot something down').fill('Groceries');
   await expect(jot.getByRole('button', { name: 'Add jot to journal' })).toBeVisible({
     timeout: 15_000,
   });
@@ -137,6 +143,34 @@ test('fits the narrowest left pane, its buttons on one row', async ({ page }) =>
   expect(layout.sidebarWidth).toBe(320);
   expect(layout).toMatchObject({ rows: 1, count: 4, inside: true });
   expect(layout.overflow).toBeLessThanOrEqual(0);
+
+  // There is room to say what each button makes...
+  const labels = jot.locator('.db-quick-jot-btn-label');
+  await expect(labels).toHaveText(['Doc', 'Task', 'Journal']);
+  for (const label of await labels.all()) await expect(label).toBeVisible();
+
+  // ...until the pane is squeezed, when the buttons go back to icons on one row.
+  await jot.evaluate((section) => {
+    section.closest('aside')!.style.width = '200px';
+  });
+  await expect(labels.first()).toBeHidden();
+  const squeezed = await jot.evaluate((section) => {
+    const box = section.getBoundingClientRect();
+    const buttons = [...section.querySelectorAll('.db-quick-jot-btn')].map((button) =>
+      button.getBoundingClientRect(),
+    );
+    return {
+      rows: new Set(buttons.map((b) => Math.round(b.top))).size,
+      inside: buttons.every((b) => b.right <= box.right && b.left >= box.left),
+    };
+  });
+  expect(squeezed).toEqual({ rows: 1, inside: true });
+
+  // Given the room back, the words return.
+  await jot.evaluate((section) => {
+    section.closest('aside')!.style.removeProperty('width');
+  });
+  await expect(labels.last()).toBeVisible();
 });
 
 test('sits under the file list on the footer, and grows upward as lines are added', async ({
@@ -164,6 +198,38 @@ test('sits under the file list on the footer, and grows upward as lines are adde
   // The bottom edge stays on the footer; the file list gives way above.
   expect(Math.abs(after.bottom - before.bottom)).toBeLessThanOrEqual(0.5);
   expect(after.top).toBeGreaterThanOrEqual(after.filesBottom - 0.5);
+});
+
+test('an empty jot is faded until pointed at, focused, or given something', async ({ page }) => {
+  await openInitializedSite(page);
+  const jot = quickJot(page);
+  await expect(jot).toBeVisible();
+  const field = jot.getByLabel('Jot something down');
+  // The contents fade, not the section, so its top rule stays the pane's.
+  const opacity = () =>
+    jot.evaluate((section) => ({
+      section: Number(getComputedStyle(section).opacity),
+      field: Number(getComputedStyle(section.querySelector('.db-quick-jot-field')!).opacity),
+      toolbar: Number(getComputedStyle(section.querySelector('.db-quick-jot-toolbar')!).opacity),
+    }));
+
+  await page.mouse.move(0, 0);
+  await expect.poll(opacity).toEqual({ section: 1, field: 0.75, toolbar: 0.75 });
+
+  await jot.hover();
+  await expect.poll(opacity).toEqual({ section: 1, field: 1, toolbar: 1 });
+
+  // Focus keeps it awake after the pointer leaves, and so does what was typed.
+  await field.focus();
+  await page.mouse.move(0, 0);
+  await expect.poll(opacity).toEqual({ section: 1, field: 1, toolbar: 1 });
+  await field.fill('Groceries');
+  await field.blur();
+  await expect.poll(opacity).toEqual({ section: 1, field: 1, toolbar: 1 });
+
+  await field.fill('');
+  await field.blur();
+  await expect.poll(opacity).toEqual({ section: 1, field: 0.75, toolbar: 0.75 });
 });
 
 test('Settings hides Quick Jot and brings it back', async ({ page }) => {

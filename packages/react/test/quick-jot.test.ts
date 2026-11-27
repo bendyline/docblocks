@@ -97,6 +97,7 @@ describe('QuickJot', () => {
 
   it('offers task and journal buttons only when the workspace has them', async () => {
     await render(actions());
+    await act(async () => typeInto(field(), 'Groceries'));
     expect(button('New document from jot')).to.not.equal(null);
     expect(button('New task from jot')).to.equal(null);
     expect(button('Add jot to journal')).to.equal(null);
@@ -104,11 +105,102 @@ describe('QuickJot', () => {
     await render(actions({ task: true, journal: true }));
     expect(button('New task from jot')).to.not.equal(null);
     expect(button('Add jot to journal')).to.not.equal(null);
+    // Each carries a word for when there is room; its name stays the full one.
+    expect(
+      ['New document from jot', 'New task from jot', 'Add jot to journal'].map(
+        (name) => button(name)!.textContent,
+      ),
+    ).to.deep.equal(['Doc', 'Task', 'Journal']);
+  });
+
+  it('shows the make buttons only once the jot has text or files', async () => {
+    await render(actions({ task: true, journal: true }));
+    const makeGroup = () =>
+      container.querySelector('[role="group"][aria-label="Make the jot into"]');
+    expect(makeGroup()).to.equal(null);
+    expect(button('Paste from clipboard')).to.not.equal(null);
+    // Blank space is not something to make anything from.
+    await act(async () => typeInto(field(), '  \n '));
+    expect(makeGroup()).to.equal(null);
+    await act(async () => typeInto(field(), 'Call Priya'));
+    expect(makeGroup()).to.not.equal(null);
+    expect(button('New task from jot')!.disabled).to.equal(false);
+    await act(async () => typeInto(field(), ''));
+    expect(makeGroup()).to.equal(null);
+
+    // A file alone can become a document, but not a task or a journal line.
+    const paste = pasteEvent({}, [png()]);
+    await act(async () => field().dispatchEvent(paste));
+    expect(button('New document from jot')!.disabled).to.equal(false);
+    expect(button('New task from jot')!.disabled).to.equal(true);
+    expect(button('Add jot to journal')!.disabled).to.equal(true);
+    await act(async () => button('Remove venue.png')!.click());
+    expect(makeGroup()).to.equal(null);
+  });
+
+  it('rests, faded by CSS, only while empty and idle', async () => {
+    await render(actions());
+    const resting = () =>
+      container.querySelector('.db-quick-jot')!.classList.contains('db-quick-jot--resting');
+    expect(resting()).to.equal(true);
+    // Even blank space is something the person put there.
+    await act(async () => typeInto(field(), ' '));
+    expect(resting()).to.equal(false);
+    await act(async () => typeInto(field(), ''));
+    expect(resting()).to.equal(true);
+
+    await act(async () => field().dispatchEvent(pasteEvent({}, [png()])));
+    expect(resting()).to.equal(false);
+    await act(async () => button('Remove venue.png')!.click());
+    expect(resting()).to.equal(true);
+
+    // Files dragged over it wake it.
+    const section = container.querySelector('.db-quick-jot')!;
+    await act(async () => {
+      section.dispatchEvent(dragEvent('dragenter', []));
+    });
+    expect(resting()).to.equal(false);
+    await act(async () => {
+      section.dispatchEvent(dragEvent('dragleave', []));
+    });
+    expect(resting()).to.equal(true);
+
+    // So does a message to read.
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    try {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          read: async () => {
+            throw new DOMException('Denied', 'NotAllowedError');
+          },
+        },
+      });
+      await act(async () => button('Paste from clipboard')!.click());
+      expect(status()).to.not.equal('');
+      expect(resting()).to.equal(false);
+    } finally {
+      if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard);
+      else Reflect.deleteProperty(navigator, 'clipboard');
+    }
+  });
+
+  it('puts keyboard focus back in the box when a used jot takes its buttons away', async () => {
+    await render(actions({ task: true }));
+    await act(async () => typeInto(field(), 'Call Priya'));
+    const task = button('New task from jot')!;
+    task.focus();
+    const matches = task.matches.bind(task);
+    // happy-dom cannot tell keyboard focus from a click's; this one came from Tab.
+    task.matches = (selector: string) => selector === ':focus-visible' || matches(selector);
+    await act(async () => task.click());
+    expect(container.querySelector('[aria-label="Make the jot into"]')).to.equal(null);
+    expect(document.activeElement).to.equal(field());
   });
 
   it('clears a used jot and keeps one that failed', async () => {
     await render(actions({ task: true }));
-    expect(button('New task from jot')!.disabled).to.equal(true);
+    expect(button('New task from jot')).to.equal(null);
     await act(async () => typeInto(field(), 'Call Priya tomorrow'));
     expect(status()).to.equal('As a task: due tomorrow');
     outcome = 'kept';

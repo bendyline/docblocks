@@ -17,8 +17,18 @@ import {
   Download,
   createLucideIcon,
   Ellipsis,
+  File,
+  FileArchive,
+  FileBraces,
+  FileCode,
+  FileHeadphone,
+  FileImage,
+  FilePlay,
+  FileSpreadsheet,
+  FileText,
   Folder,
   FolderOpen,
+  FolderRoot,
   FileUp,
   FolderTree,
   House,
@@ -33,6 +43,7 @@ import {
   Paperclip,
   Pencil,
   Pin,
+  Presentation,
   Search,
   Settings2,
   Trash2,
@@ -126,6 +137,59 @@ export function FolderIcon() {
   return <ShellIcon icon={Folder} />;
 }
 
+/**
+ * The open/closed mark on a tree row: one right-pointing chevron that CSS
+ * turns down while its row is expanded. The ▸/▾ characters it replaced came
+ * from whichever font had them and sat lopsided. A step heavier than the
+ * shell's outlines, since it draws smaller than they do.
+ */
+export function DisclosureIcon() {
+  return <ShellIcon icon={ChevronRight} size="1em" strokeWidth={2.25} />;
+}
+
+/** File types, beside each file's name in the tree. */
+export function DocumentFileIcon() {
+  return <ShellIcon icon={FileText} />;
+}
+
+export function SpreadsheetFileIcon() {
+  return <ShellIcon icon={FileSpreadsheet} />;
+}
+
+export function PresentationFileIcon() {
+  return <ShellIcon icon={Presentation} />;
+}
+
+export function ImageFileIcon() {
+  return <ShellIcon icon={FileImage} />;
+}
+
+export function VideoFileIcon() {
+  return <ShellIcon icon={FilePlay} />;
+}
+
+export function AudioFileIcon() {
+  return <ShellIcon icon={FileHeadphone} />;
+}
+
+/** Source code. Web pages share its glyph: they are HTML too. */
+export function CodeFileIcon() {
+  return <ShellIcon icon={FileCode} />;
+}
+
+export function DataFileIcon() {
+  return <ShellIcon icon={FileBraces} />;
+}
+
+export function ArchiveFileIcon() {
+  return <ShellIcon icon={FileArchive} />;
+}
+
+/** A file of a type the tree does not tell apart. */
+export function GenericFileIcon() {
+  return <ShellIcon icon={File} />;
+}
+
 export function MoreIcon() {
   return <ShellIcon icon={Ellipsis} />;
 }
@@ -164,6 +228,11 @@ export function SourcedFactsIcon() {
 
 export function FilesIcon() {
   return <ShellIcon icon={FolderTree} />;
+}
+
+/** A workspace as the root of its folders, in the workspace folder picker. */
+export function WorkspaceRootIcon() {
+  return <ShellIcon icon={FolderRoot} />;
 }
 
 export function BackupIcon() {

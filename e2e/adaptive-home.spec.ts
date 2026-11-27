@@ -38,9 +38,10 @@ test.describe('Home and tasks on touch devices', () => {
     const quickJot = page.getByRole('region', { name: 'Quick Jot' });
     const field = quickJot.getByLabel('Jot something down');
     const addTask = quickJot.getByRole('button', { name: 'New task from jot', exact: true });
-    await expect(addTask).toBeVisible({ timeout: 15_000 });
     for (const text of ['Call Priya tomorrow', 'Book dentist friday']) {
       await field.fill(text);
+      // The make buttons show once the box has something in it.
+      await expect(addTask).toBeVisible({ timeout: 15_000 });
       await addTask.click();
       await expect(field).toHaveValue('');
     }

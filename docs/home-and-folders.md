@@ -98,6 +98,29 @@ folder), made a task (moved into the default tasks folder's default bucket),
 or deleted after a confirmation. Where semantic search is on, a note gets a
 suggested folder: where the passages nearest to it already live.
 
+**File in…** drops down the workspace folder picker
+(`packages/react/src/FolderPicker/`): a tree with every workspace on the
+device as a root and its folders beneath, kind folders wearing their glyphs,
+and a field that finds a folder by name in every workspace. One click on a
+folder (or on a workspace, for its top) files the note there; the chevron
+opens a folder without choosing it. Every workspace starts open, so a click
+meant to open one never files a note at its top. The open workspace answers
+from its index; the others are listed from their storage
+(`listProviderFolders`) as the dropdown opens. The suggested folder is shown
+open and marked; the drawer and the folders inside it cannot be chosen.
+Folders no document belongs in are never offered, nor anything inside them
+(`isDestinationFolderName` in core's entry rules): dot folders and tool
+folders such as `node_modules`, companions and a file manager's copies of one
+(`notes_files - Copy`), and DocBlocks' own support folders (`_templates`,
+`_squisq`). Other underscore folders, such as a static site's `_posts`, are
+offered. Filing into another workspace is a copy and then a removal
+(`moveFileBetweenWorkspaces` in core): the note and its companion are written
+there, numbered past a name already taken, and the original is removed only at
+the version that was copied, so nothing is lost if either side fails. Its pin
+follows it, and that workspace's digest is read again. The picker takes any
+`WorkspaceFolderSource`, so other places that ask "where should this go?" can
+use it.
+
 ## Finding folder settings
 
 Every lister skips dot entries, so `.docblocks/` folders were invisible. The
@@ -142,6 +165,16 @@ service holds. `WorkspaceIndexStatus.upgrading` counts what is left.
   and Unfiled drawer (a chats folder has no button: Ask is its page). Each
   button's tooltip and accessible name give its label and any count (tasks
   due now, notes waiting), which a corner badge also shows.
+- **File tree glyphs.** Each tree row shows a glyph before its name
+  (`packages/react/src/FileExplorer/entry-glyph.ts`). A kind folder shows its
+  kind's place glyph, chats included, and other folders (a tasks folder's lists
+  among them) show a plain folder. Files show a glyph for their type, read
+  from the extension. The shell passes its kind folders to the explorer as
+  `kindFolders`, so a new kind fails typecheck until it has a glyph. A folder
+  known to hold nothing the tree shows has no disclosure chevron
+  (`folder-contents.ts`): the tree's own listing or the workspace index must
+  say it is empty, and neither may have seen contents. Clicking a folder
+  still lists it, so a stale index corrects itself on the first click.
 - **Routes.** `#<workspace>/:home`, `#<workspace>/:tasks`, `#<workspace>/:ask`
   and `#<workspace>/:folder/<path>` (`shell-routes.ts`). Document routes
   percent-encode their path, so a raw `:` never appears in one. Clicking any
@@ -222,6 +255,14 @@ those keys out so they are not offered twice. Both props are spread untyped
 row. Edits go through the editor (`applySourceEdits`), one undoable step each,
 so `DocumentSession` stays the only writer of the open document.
 
+List appears only for a task in a tasks folder, and only when it offers a
+place the Done box cannot reach (`offersListChoice`). Done finishes a task into
+the first done list and reopens it into the default list, so in a folder with
+just one of each (Active and Done) List would repeat the box and is left out.
+It appears when the folder has a second open list (Someday) or a second done
+list (Archived), or when the task sits at the folder's top level and could be
+filed into a list without being finished.
+
 ## Home across workspaces
 
 Home and the Tasks page list what is due in every workspace on the device, not
@@ -300,7 +341,10 @@ channel when one is chosen. Reminders are off until turned on from Home.
 - **The Ask page** (`#<workspace>/:ask`, `Home/AskPage.tsx`) shows the saved
   chats beside the conversation; the side panel beside a document keeps them
   behind a **Chats** button, as the page does when it is narrow. Insert is
-  hidden on the page, where there is no document to insert into.
+  hidden on the page, where there is no document to insert into. Opening a
+  chats folder from the file tree shows the Ask page too (the folder stays
+  selected and the Ask place is marked current); without AI it lists its files
+  as any folder does.
 - **Chats are Markdown files.** Each conversation is one file in the
   workspace's chats folder (`kind: "chats"`, `Chats/` by default, set up on
   the first answer), named for its first message. Each exchange is appended

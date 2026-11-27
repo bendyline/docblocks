@@ -252,6 +252,12 @@ test.describe('adaptive shell on a phone', () => {
     // stamps the shell. Measuring in that frame reads the fine-pointer token
     // defaults (28px) rather than the settled coarse-pointer hit areas.
     await expect(shell).toHaveAttribute('data-db-pointer', 'coarse');
+    // The tree lists the welcome document a moment later. Measured before
+    // then there were no rows, so the rows' More actions buttons (always
+    // shown without hover) went unmeasured and passed at 26px.
+    await expect(page.locator('.db-tree-row .db-tree-more').first()).toBeAttached({
+      timeout: 30_000,
+    });
 
     const undersized = await page.evaluate(() => {
       const selectors = [

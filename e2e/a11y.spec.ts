@@ -1,4 +1,4 @@
-import type { Page, TestInfo } from '@playwright/test';
+import type { Locator, Page, TestInfo } from '@playwright/test';
 import { expect, test } from './helpers/test.js';
 import AxeBuilder from '@axe-core/playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -53,6 +53,9 @@ for (const theme of ['Light', 'Dark']) {
       await expect(accentRadio).toBeChecked();
       await dialog.getByRole('button', { name: 'Close', exact: true }).click();
       await page.mouse.move(0, 0);
+      // Squisq's toolbar buttons fade their colors over 120ms, and the steps
+      // above fit inside that after a theme switch: measure where they land.
+      await settleAnimations(page.locator('.squisq-toolbar'), page.locator('.squisq-status-bar'));
       // Squisq owns the markup, but DocBlocks supplies these foreground and
       // background colors; excluding the editor would hide host palette bugs.
       const { violations } = await new AxeBuilder({ page })
@@ -63,9 +66,7 @@ for (const theme of ['Light', 'Dark']) {
       expect(violations, `${theme} / ${accent}: ${formatViolations(violations)}`).toEqual([]);
       // Active text and its hover state both need readable ink on the tint.
       await heading.hover();
-      await heading.evaluate(async (element) => {
-        await Promise.all(element.getAnimations({ subtree: true }).map((entry) => entry.finished));
-      });
+      await settleAnimations(heading);
       const hovered = await new AxeBuilder({ page })
         .include('.squisq-toolbar-button--active')
         .withRules(['color-contrast'])
@@ -76,9 +77,7 @@ for (const theme of ['Light', 'Dark']) {
       ).toEqual([]);
       const viewMenu = await openViewMenu(page);
       // Measure the settled menu, not the partially transparent entrance frame.
-      await viewMenu.evaluate(async (element) => {
-        await Promise.all(element.getAnimations({ subtree: true }).map((entry) => entry.finished));
-      });
+      await settleAnimations(viewMenu);
       const menuScan = await new AxeBuilder({ page })
         .include('.squisq-view-mode-menu')
         .withRules(['color-contrast'])
@@ -90,6 +89,30 @@ for (const theme of ['Light', 'Dark']) {
       await closeViewMenu(page);
     }
   });
+}
+
+/**
+ * Wait until no finite animation runs in or under `targets`, so axe measures
+ * settled colors rather than a frame of a transition. An interrupted
+ * transition is cancelled (its promise rejects) and replaced, so this checks
+ * again until nothing is left.
+ */
+async function settleAnimations(...targets: Locator[]) {
+  for (const target of targets) {
+    await target.evaluateAll(async (elements) => {
+      for (;;) {
+        const running = elements
+          .flatMap((element) => element.getAnimations({ subtree: true }))
+          .filter(
+            (animation) =>
+              animation.playState === 'running' &&
+              animation.effect?.getComputedTiming().endTime !== Infinity,
+          );
+        if (running.length === 0) return;
+        await Promise.allSettled(running.map((animation) => animation.finished));
+      }
+    });
+  }
 }
 
 function buildScan(page: Page) {

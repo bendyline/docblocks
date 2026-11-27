@@ -43,29 +43,22 @@ replaced Desktop in the primary navigation; `/desktop/` is still the direct-down
 Mac App Store listing's marketing URL), reached from `/apps/` and from every page's footer. The
 store listings tell people the desktop apps are free at docblocks.com, so never remove that link.
 
-The static pages allow no scripts, so a store going live is a markup change. Every listing that is
-not live yet is a `.store-pending` plate with its live badge in a comment beside it.
-`grep -rn "store:" packages/site/public` finds every place.
+Every store listing is live, and each badge links straight to it. A store that has not approved
+DocBlocks shows a `.store-pending` plate of our own ("Coming soon"), never a faded badge; the
+styles stay in `marketing.css` for the next one.
 
-| Store                    | Marker                | State   | Link                                                                    |
-| ------------------------ | --------------------- | ------- | ----------------------------------------------------------------------- |
-| App Store (iPhone, iPad) | none                  | live    | `https://apps.apple.com/us/app/docblocks-markdown-editor/id6792768923`  |
-| Google Play              | none                  | live    | `https://play.google.com/store/apps/details?id=com.bendyline.docblocks` |
-| Mac App Store            | `store:mac-app-store` | pending | the App Store link above (one listing, universal purchase)              |
-| Microsoft Store          | none                  | live    | `https://apps.microsoft.com/detail/9MTLPD213DL0`                        |
+| Store                    | Link                                                                                |
+| ------------------------ | ----------------------------------------------------------------------------------- |
+| App Store (iPhone, iPad) | `https://apps.apple.com/us/app/docblocks-markdown-editor/id6792768923`              |
+| Mac App Store            | `https://apps.apple.com/us/app/docblocks-markdown-editor/id6792768923?platform=mac` |
+| Google Play              | `https://play.google.com/store/apps/details?id=com.bendyline.docblocks`             |
+| Microsoft Store          | `https://apps.microsoft.com/detail/9MTLPD213DL0`                                    |
 
-### When a store approves DocBlocks
-
-1. In `public/apps/index.html` and `public/desktop/index.html`, delete that store's
-   `pending` comment and plate, and uncomment the `live` badge below it.
-2. Reword the sentences that say "coming to": the note under the computer cards on `/apps/`
-   and the store panel on `/desktop/`. For the Mac, also add
-   "One purchase covers iPhone, iPad, and Mac." to the iPhone and iPad card. Name the store in the
-   trademark line at the foot of `/apps/`.
-3. Add the store's offer to the `offers` list in `index.html`'s structured data.
-4. Make the same change on bendyline.com (`index.html` there carries the same markers).
-5. Run `npm test`. `seo.test.ts` fails if a store is both pending and live, or if `STORE_ID` is
-   still in the page.
+The App Store listing is one purchase for iPhone, iPad, and Mac, so the structured data in
+`index.html` carries one Apple offer for all three. A listing that moves or changes price is a
+markup change on `/apps/` (badges, "What it costs", the note under the computer cards),
+`/desktop/` (the store panel), `index.html`'s `offers`, and bendyline.com's `index.html`.
+`seo.test.ts` fails if a store is both pending and live on a page.
 
 The four badges in `public/marketing/stores/` are the stores' own artwork. Size them only through
 `.store-badge img`; never recolor or crop them. The phone screenshots on `/apps/` are the App Store

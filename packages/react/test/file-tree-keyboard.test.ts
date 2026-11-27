@@ -273,21 +273,62 @@ describe('FileTreeNode keyboard access', () => {
 
   it('uses compact indentation for nested rows', async () => {
     const row = await renderNode({ depth: 2 });
-    expect(row.style.paddingLeft).to.equal('36px');
+    expect(row.style.paddingLeft).to.equal('28px');
   });
 
-  it('adds an 8px inset without reserving the full disclosure-icon space for nested files', async () => {
-    const row = await renderNode({ depth: 1 });
-    expect(row.style.paddingLeft).to.equal('24px');
-    expect(row.querySelector('.db-tree-icon')).to.equal(null);
-  });
-
-  it('keeps the disclosure icon for nested folders', async () => {
-    const row = await renderNode({
+  it('indents files and folders alike, so glyphs at one depth line up', async () => {
+    const file = await renderNode({ depth: 1 });
+    const filePadding = file.style.paddingLeft;
+    // Files keep an empty disclosure slot so their glyph sits where a sibling folder's does.
+    expect(file.querySelector('.db-tree-icon')?.childElementCount).to.equal(0);
+    const folder = await renderNode({
       depth: 1,
       entry: { kind: 'directory', name: 'guides', path: '/guides' },
     });
-    expect(row.querySelector('.db-tree-icon')).not.to.equal(null);
+    expect(folder.style.paddingLeft).to.equal(filePadding);
+    expect(folder.querySelector('.db-tree-icon svg')).not.to.equal(null);
+  });
+
+  it('draws one chevron for both states and says which in aria-expanded', async () => {
+    const directory = { kind: 'directory', name: 'guides', path: '/guides' } as const;
+    const closed = await renderNode({ entry: directory, expanded: false });
+    const closedMark = closed.querySelector('.db-tree-icon')?.innerHTML;
+    expect(closed.getAttribute('aria-expanded')).to.equal('false');
+    // The stylesheet turns the chevron down from aria-expanded; the markup never changes.
+    const open = await renderNode({ entry: directory, expanded: true });
+    expect(open.getAttribute('aria-expanded')).to.equal('true');
+    expect(open.querySelector('.db-tree-icon')?.innerHTML).to.equal(closedMark);
+  });
+
+  it('puts a decorative type glyph before the name', async () => {
+    const row = await renderNode();
+    const glyph = row.querySelector('.db-tree-glyph');
+    expect(glyph?.getAttribute('data-glyph')).to.equal('document');
+    expect(glyph?.getAttribute('aria-hidden')).to.equal('true');
+    expect(glyph?.querySelector('svg')).not.to.equal(null);
+    expect(glyph?.nextElementSibling?.classList.contains('db-tree-label')).to.equal(true);
+  });
+
+  it("gives a kind folder its kind's glyph and any other folder a folder", async () => {
+    const tasks = await renderNode({
+      entry: { kind: 'directory', name: 'Tasks', path: '/Tasks' },
+      folderKind: 'tasks',
+    });
+    expect(tasks.querySelector('.db-tree-glyph')?.getAttribute('data-glyph')).to.equal('tasks');
+    const plain = await renderNode({
+      entry: { kind: 'directory', name: 'Active', path: '/Tasks/Active' },
+    });
+    expect(plain.querySelector('.db-tree-glyph')?.getAttribute('data-glyph')).to.equal('folder');
+  });
+
+  it('keeps the glyph while the name is being edited', async () => {
+    const row = await renderNode();
+    await act(async () => {
+      row.focus();
+      press(row, 'F2');
+    });
+    expect(row.querySelector('.db-tree-rename-input')).not.to.equal(null);
+    expect(row.querySelector('.db-tree-glyph')).not.to.equal(null);
   });
 
   it('leaves the tab stop to the tree via the focusable prop', async () => {

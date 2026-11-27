@@ -22,6 +22,7 @@ import {
   type FileSystemEntry,
   type FileSystemEntryMoveOptions,
 } from '@bendyline/docblocks/filesystem';
+import type { FolderKind, KindFolder } from '@bendyline/docblocks/folders';
 import { useFileTree } from './useFileTree.js';
 import { readIssueText } from './read-issue-text.js';
 import {
@@ -55,6 +56,7 @@ import { useWorkspaceVersionsToReview } from './useWorkspaceVersionsToReview.js'
 import { describeVersionCount } from '../DocBlocksShell/document-versions.js';
 import type { PinnedDocumentListItem } from '../DocBlocksShell/pinned-documents.js';
 import { filterVisibleFileEntries } from './entry-visibility.js';
+import { folderLooksEmpty, listedFolderContents, type FolderContents } from './folder-contents.js';
 import { sortFileEntries, type FileExplorerSortMode } from './entry-sort.js';
 import {
   createNewOutsideInDocument,
@@ -178,6 +180,14 @@ export interface FileExplorerProps {
   sortMode?: FileExplorerSortMode;
   /** Files left out of the tree (workspace paths, any case), e.g. generated catalog outputs. */
   hiddenPaths?: readonly string[];
+  /** The workspace's kind folders: each wears its kind's glyph instead of a plain folder's. */
+  kindFolders?: readonly KindFolder[];
+  /**
+   * What the host knows about a folder's contents beyond the tree's own
+   * listings (the shell asks its workspace index). Folders found empty draw no
+   * disclosure chevron; see `folder-contents.ts` for how the sources combine.
+   */
+  folderContents?: (path: string) => FolderContents;
   /** Called when a file ordering toolbar button is selected. */
   onSortModeChange?: (mode: FileExplorerSortMode) => void;
   /** Active workspace identity, used to decorate a selected cross-workspace pin. */
@@ -268,6 +278,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
     activeFileVersionCount = null,
     sortMode,
     hiddenPaths,
+    kindFolders,
+    folderContents,
     onSortModeChange,
     activeWorkspaceId,
     workspaceName,
@@ -745,10 +757,33 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
     [git],
   );
 
+  /** Kind by canonical folder path; kind folder paths are already canonical. */
+  const folderKinds = useMemo(
+    () =>
+      new Map<string, FolderKind>(
+        (kindFolders ?? []).map((folder) => [folder.path, folder.settings.kind]),
+      ),
+    [kindFolders],
+  );
+
   const orderedVisibleEntries = useCallback(
     (entries: readonly FileSystemEntry[]) =>
       sortFileEntries(filterVisibleFileEntries(entries, hiddenPaths), selectedSortMode),
     [hiddenPaths, selectedSortMode],
+  );
+
+  /** A folder the tree's listing or the host knows to be empty, and neither has seen anything in. */
+  const isEmptyFolder = useCallback(
+    (dirPath: string) => {
+      const listing = getEquivalentPathValue(childEntries, dirPath);
+      return folderLooksEmpty(
+        listedFolderContents(
+          listing === undefined ? undefined : filterVisibleFileEntries(listing, hiddenPaths),
+        ),
+        folderContents?.(dirPath) ?? 'unknown',
+      );
+    },
+    [childEntries, hiddenPaths, folderContents],
   );
 
   // The same walk renderEntries performs, as data — so arrow keys move
@@ -761,8 +796,9 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
           orderedVisibleEntries(getEquivalentPathValue(childEntries, dirPath) ?? []),
         isExpanded: (dirPath) => hasEquivalentPath(tree.expanded, dirPath),
         isVisible: () => true,
+        isEmpty: isEmptyFolder,
       }),
-    [tree.entries, tree.expanded, childEntries, orderedVisibleEntries],
+    [tree.entries, tree.expanded, childEntries, orderedVisibleEntries, isEmptyFolder],
   );
 
   // `selectedPath` can be slash-prefixed (reveal() takes the caller's form)
@@ -841,6 +877,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
               tree.selectedPath !== null &&
               normalisePath(tree.selectedPath) === normalisePath(entry.path)
             }
+            folderKind={
+              entry.kind === 'directory' ? folderKinds.get(normalisePath(entry.path)) : undefined
+            }
+            empty={entry.kind === 'directory' && isEmptyFolder(entry.path)}
             badge={badgeFor(entry)}
             deleteWarning={
               versionsWaiting(entry) > 0
@@ -897,6 +937,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
       handleRename,
       childEntries,
       childIssues,
+      folderKinds,
+      isEmptyFolder,
       badgeFor,
       versionsWaiting,
       gitActionsFor,

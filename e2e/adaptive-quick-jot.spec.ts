@@ -33,6 +33,9 @@ test.describe('Quick Jot on touch devices', () => {
     await expect(mic).toBeVisible();
 
     const field = jot.getByLabel('Jot something down');
+    // The make buttons show only with content; measure them too.
+    await field.fill('Groceries');
+    await expect(jot.getByRole('button', { name: 'New document from jot' })).toBeVisible();
     const measures = await jot.evaluate((section) => {
       const textarea = section.querySelector('textarea')!;
       const undersized = [...section.querySelectorAll<HTMLElement>('.db-quick-jot-btn')]
