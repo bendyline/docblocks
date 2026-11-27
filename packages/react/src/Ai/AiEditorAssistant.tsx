@@ -72,7 +72,7 @@ const AiStudyDialog = lazy(() =>
 );
 
 /** The AI side panels; at most one is open at a time. */
-export type AiPanel = 'review' | 'illustrate' | 'images';
+export type AiPanel = 'review' | 'illustrate' | 'images' | 'ask';
 
 export interface AiToolbarControlProps {
   ai: DocBlocksHostAiAPI;
@@ -81,6 +81,17 @@ export interface AiToolbarControlProps {
   onOpenPanel: (panel: AiPanel) => void;
   /** Opens Settings on AI, where a person with no model adds one. */
   onOpenSettings?: () => void;
+  /** Offer Ask, the chat panel. */
+  canAskWorkspace?: boolean;
+  /**
+   * While AI is off, show the control anyway and offer to turn AI on: the
+   * device can run a model worth having (see `ai-invitation.ts`).
+   */
+  invite?: boolean;
+  /** The person chose to turn AI on from the invitation. */
+  onAcceptInvite?: () => void;
+  /** The person declined the invitation. */
+  onDeclineInvite?: () => void;
 }
 
 export interface AiReviewPanelProps {
@@ -94,6 +105,10 @@ export function AiToolbarControl({
   openPanel,
   onOpenPanel,
   onOpenSettings,
+  canAskWorkspace = false,
+  invite = false,
+  onAcceptInvite,
+  onDeclineInvite,
 }: AiToolbarControlProps) {
   const {
     activeView,
@@ -105,6 +120,8 @@ export function AiToolbarControl({
     markdownSource,
     replaceSelection,
     selectionVersion,
+    setActiveView,
+    setLayoutMode,
     workspaceContainer,
   } = useEditorContext();
   const { status, recheck } = useLiveAiStatus(ai);
@@ -121,8 +138,10 @@ export function AiToolbarControl({
     handleTriggerKeyDown,
     closeMenu: closeInlineMenu,
   } = useMenuKeyboard(menuOpen, setMenuOpen);
-  const offered =
-    editorMode === 'markdown' && !(status?.kind === 'unavailable' && status.reason === 'opt-out');
+  const optedOut = status?.kind === 'unavailable' && status.reason === 'opt-out';
+  // Off, but on a device worth suggesting it on: the control invites instead.
+  const inviting = optedOut && invite;
+  const offered = editorMode === 'markdown' && (!optedOut || inviting);
   const { folded, itemsShown, closeMenu, foldedItems } = useDocumentActionMenu(
     offered ? { id: 'docblocks-ai', label: 'AI', icon: <SparklesGlyph />, submenu: true } : null,
     rootRef,
@@ -236,9 +255,45 @@ export function AiToolbarControl({
     setCapturedSelection(null);
   };
 
+  // The invitation stands in for the actions until AI is on.
+  const invitationItems = (
+    <>
+      <div className="db-ai-toolbar-status db-ai-invite">
+        <strong className="db-ai-invite-title">AI that stays on this device</strong>
+        This device can run a capable AI model privately. Turn it on to review drafts, rewrite
+        passages and draw diagrams. Nothing you write leaves it.
+        <span className="db-ai-invite-note">It needs a one-time download of a few gigabytes.</span>
+      </div>
+      <button
+        type="button"
+        role="menuitem"
+        tabIndex={-1}
+        className="db-toolbar-menu-item db-ai-invite-accept"
+        onClick={() => {
+          closeMenu(false);
+          onAcceptInvite?.();
+        }}
+      >
+        Turn on AI…
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        tabIndex={-1}
+        className="db-toolbar-menu-item"
+        onClick={() => {
+          closeMenu(false);
+          onDeclineInvite?.();
+        }}
+      >
+        Not now
+      </button>
+    </>
+  );
+
   // The same items fill the control's own dropdown and, when Squisq has
   // folded the document actions, its row's submenu there.
-  const menuItems = (
+  const actionItems = (
     <>
       {needsModel && onOpenSettings ? (
         <button
@@ -280,6 +335,21 @@ export function AiToolbarControl({
       >
         Rewrite selection…
       </button>
+      {canAskWorkspace && (
+        <button
+          type="button"
+          role="menuitem"
+          tabIndex={-1}
+          className="db-toolbar-menu-item"
+          disabled={!ready || readOnly}
+          onClick={() => {
+            closeMenu(false);
+            onOpenPanel('ask');
+          }}
+        >
+          {openPanel === 'ask' ? 'Show Ask' : 'Ask AI…'}
+        </button>
+      )}
       <button
         type="button"
         role="menuitem"
@@ -345,6 +415,26 @@ export function AiToolbarControl({
           {STUDY_AID_LABELS[kind].menu}
         </button>
       ))}
+      {/* Quiz questions and flashcards are kept with each section, in Squisq's
+          Study cards view, where Generate runs beside the cards it makes. These
+          open it; they do not start a run. */}
+      {(['Create quiz…', 'Create flashcards…'] as const).map((label) => (
+        <button
+          key={label}
+          type="button"
+          role="menuitem"
+          tabIndex={-1}
+          className="db-toolbar-menu-item"
+          disabled={!ready || markdownSource.trim().length === 0}
+          onClick={() => {
+            closeMenu(false);
+            setActiveView('wysiwyg');
+            setLayoutMode('study');
+          }}
+        >
+          {label}
+        </button>
+      ))}
       {ready && !selection && (
         <div className="db-ai-toolbar-status">Switch to Write or Source to edit with AI.</div>
       )}
@@ -356,6 +446,7 @@ export function AiToolbarControl({
       )}
     </>
   );
+  const menuItems = inviting ? invitationItems : actionItems;
 
   return (
     <>
@@ -364,13 +455,13 @@ export function AiToolbarControl({
           <button
             ref={triggerRef}
             type="button"
-            className={`squisq-toolbar-button db-ai-toolbar-trigger${openPanel ? ' squisq-toolbar-button--active' : ''}`}
+            className={`squisq-toolbar-button db-ai-toolbar-trigger${openPanel ? ' squisq-toolbar-button--active' : ''}${inviting ? ' db-ai-toolbar-trigger--invite' : ''}`}
             onClick={() => setMenuOpen((open) => !open)}
             onKeyDown={handleTriggerKeyDown}
-            aria-label="AI actions"
+            aria-label={inviting ? 'AI actions: turn on AI' : 'AI actions'}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
-            data-tooltip="AI actions"
+            data-tooltip={inviting ? 'Turn on AI' : 'AI actions'}
           >
             <SparklesGlyph />
           </button>
@@ -396,6 +487,7 @@ export function AiToolbarControl({
           model={status?.kind === 'ready' ? status.model : null}
           mode={draftMode}
           documentSource={markdownSource}
+          documentPath={fileName ?? null}
           capturedSelection={capturedSelection}
           getSelection={getSelection}
           replaceSelection={replaceSelection}
@@ -434,6 +526,8 @@ interface AiDraftDialogProps {
   model?: AiModelInfo | null;
   mode: AiDraftMode;
   documentSource: string;
+  /** The open document's workspace path, so footnotes can link cited notes. */
+  documentPath?: string | null;
   capturedSelection: EditorSelectionInfo;
   getSelection: () => EditorSelectionInfo | null;
   replaceSelection: (markdown: string) => boolean;
@@ -445,6 +539,7 @@ export function AiDraftDialog({
   model,
   mode,
   documentSource,
+  documentPath = null,
   capturedSelection,
   getSelection,
   replaceSelection,
@@ -731,6 +826,7 @@ export function AiDraftDialog({
               knowledge.evidence,
               new Map(knowledge.sources.map((source) => [source.catalogId, source.name])),
               documentSource,
+              documentPath,
             )
           : stripCitationMarkers(replacement);
     if (!replaceSelection(inserted)) {
@@ -742,6 +838,7 @@ export function AiDraftDialog({
     capturedSelection,
     selectedMarkdown,
     documentSource,
+    documentPath,
     draft,
     getSelection,
     mode,

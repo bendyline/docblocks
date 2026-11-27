@@ -25,7 +25,15 @@ public final class Storage {
     private var cloudRoots: Set<String> = []
     private var activeCloud = false
     private static let evicted = FileAttributeKey("DocBlocksNotDownloaded")
+    /// A local copy exists, but iCloud holds a newer version that has not arrived yet.
+    private static let stale = FileAttributeKey("DocBlocksStale")
     private static let downloading = "This file is still downloading from iCloud. Try again in a moment."
+    private static let newerVersion = "A newer version of this file is still downloading from iCloud. Try again in a moment."
+    private let cloud: CloudState
+    private let waits: CloudWaits
+    private let conflicts: ConflictVersionSource
+    /// When a change to a stale file was first refused, by path.
+    private var staleSince: [String: Date] = [:]
     private var instances: [String: String] = [:]
     private struct Transfer {
         let owner: String
@@ -40,7 +48,8 @@ public final class Storage {
     private var transfers: [String: Transfer] = [:]
     private var dead = false
 
-    public init(roots: [String: URL]) throws {
+    public init(roots: [String: URL], cloud: CloudState = SystemCloudState(), waits: CloudWaits = CloudWaits(), conflicts: ConflictVersionSource = SystemConflictVersions()) throws {
+        self.cloud = cloud; self.waits = waits; self.conflicts = conflicts
         self.roots = roots.mapValues { $0.standardizedFileURL.resolvingSymlinksInPath() }
         for root in self.roots.values {
             let attrs = try fm.attributesOfItem(atPath: root.path)
@@ -166,7 +175,13 @@ public final class Storage {
         catch { let e = error as NSError; if !(e.domain == NSCocoaErrorDomain && [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(e.code)) { throw error } }
         guard activeCloud else { return found }
         if found != nil {
-            if found?[.type] as? FileAttributeType == .typeRegular, (try? URL(fileURLWithPath: url.path).resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey]))?.ubiquitousItemDownloadingStatus == .notDownloaded { found?[Self.evicted] = true }
+            if found?[.type] as? FileAttributeType == .typeRegular {
+                switch cloud.freshness(of: url) {
+                case .notDownloaded: found?[Self.evicted] = true
+                case .stale: found?[Self.stale] = true
+                default: break
+                }
+            }
             return found
         }
         // iCloud represents a file that is not downloaded as a hidden ".name.icloud" stub.
@@ -184,51 +199,74 @@ public final class Storage {
         guard name.hasPrefix("."), name.hasSuffix(".icloud"), name.count > 8 else { return nil }
         return String(name.dropFirst().dropLast(7))
     }
-    /// Downloads a file before its content is read, replaced, moved or removed. This runs before
+    private enum Purpose { case read, change }
+    /// Brings a file up to date before its content is read, replaced, moved or removed. This runs before
     /// root coordination is taken, because iCloud writes the download with coordination of its own.
-    private func materialize(_ url: URL) throws {
-        guard try attributes(url)?[Self.evicted] != nil else { return }
-        try fm.startDownloadingUbiquitousItem(at: url)
-        let deadline = Date().addingTimeInterval(15)
+    private func materialize(_ url: URL, for purpose: Purpose) throws {
+        guard let attrs = try attributes(url) else { return }
+        if attrs[Self.evicted] != nil {
+            try cloud.startDownloading(url)
+            let deadline = Date().addingTimeInterval(waits.notDownloaded)
+            repeat {
+                Thread.sleep(forTimeInterval: waits.poll)
+                if cloud.downloadFailed(for: url) { throw StorageFailure("busy", "This file could not be downloaded from iCloud. Check your connection and try again.") }
+                if try attributes(url)?[Self.evicted] == nil { return }
+            } while Date() < deadline
+            throw StorageFailure("busy", Self.downloading)
+        }
+        guard attrs[Self.stale] != nil else { staleSince.removeValue(forKey: url.path); return }
+        // iCloud holds a newer version. Ask for it and give it a moment to arrive.
+        try? cloud.startDownloading(url)
+        let deadline = Date().addingTimeInterval(purpose == .read ? waits.staleRead : waits.staleChange)
+        var offline = false
         repeat {
-            Thread.sleep(forTimeInterval: 0.1)
-            let fresh = URL(fileURLWithPath: url.path)
-            if (try? fresh.resourceValues(forKeys: [.ubiquitousItemDownloadingErrorKey]))?.ubiquitousItemDownloadingError != nil { throw StorageFailure("busy", "This file could not be downloaded from iCloud. Check your connection and try again.") }
-            if try attributes(fresh)?[Self.evicted] == nil { return }
+            Thread.sleep(forTimeInterval: waits.poll)
+            offline = cloud.downloadFailed(for: url)
+            if offline { break }
+            if try attributes(url)?[Self.stale] == nil { staleSince.removeValue(forKey: url.path); return }
         } while Date() < deadline
-        throw StorageFailure("busy", Self.downloading)
+        // Opening the local copy beats refusing to open the document; a later check picks up the newer one.
+        if purpose == .read { return }
+        // With no way to fetch the newer version, diverging is unavoidable and iCloud keeps both.
+        if offline { staleSince.removeValue(forKey: url.path); return }
+        // Changing it now would be based on old content. Refuse for a bounded time, never indefinitely.
+        let first = staleSince[url.path] ?? Date()
+        if Date().timeIntervalSince(first) >= waits.staleGrace { staleSince.removeValue(forKey: url.path); return }
+        staleSince[url.path] = first
+        throw StorageFailure("busy", Self.newerVersion)
     }
     private func prefetch(_ r: [String: Any], _ root: URL) throws {
-        let path: String?
+        let path: String?, purpose: Purpose?
         switch r["op"] as? String {
-        case "readBegin", "remove": path = r["path"] as? String
-        case "move": path = r["oldPath"] as? String
+        case "readBegin": path = r["path"] as? String; purpose = .read
+        case "remove": path = r["path"] as? String; purpose = .change
+        case "move": path = r["oldPath"] as? String; purpose = .change
         case "writeFinish":
             guard let token = r["transferId"] as? String, let transfer = transfers[token], transfer.owner == r["instanceId"] as? String else { return }
-            path = transfer.path
+            path = transfer.path; purpose = .change
+        // A status check never waits, but it does ask iCloud to bring a stale file up to date.
+        case "stat": path = r["path"] as? String; purpose = nil
         default: return
         }
         // Invalid paths are rejected by dispatch with their usual errors.
         guard let path, !path.isEmpty, let url = try? resolve(root, path) else { return }
-        try materialize(url)
-    }
-    /// Keeps each losing iCloud version as a visible sibling instead of letting sync choose silently.
-    private func preserveConflicts(_ root: URL, _ path: String) throws {
-        let url = try resolve(root, path)
-        guard let versions = NSFileVersion.unresolvedConflictVersionsOfItem(at: url), !versions.isEmpty else { return }
-        let base = url.deletingPathExtension().lastPathComponent, suffix = url.pathExtension.isEmpty ? "" : "." + url.pathExtension
-        let folder = path.contains("/") ? String(path[..<path.lastIndex(of: "/")!]) + "/" : ""
-        let stamp = DateFormatter(); stamp.locale = Locale(identifier: "en_US_POSIX"); stamp.dateFormat = "yyyy-MM-dd HHmmss"
-        for version in versions {
-            let device = String((version.localizedNameOfSavingComputer ?? "another device").unicodeScalars.filter { $0.value >= 32 && $0.value != 127 && !"/\\:".unicodeScalars.contains($0) }.prefix(40))
-            let label = "\(base) (conflict from \(device.isEmpty ? "another device" : device) \(stamp.string(from: version.modificationDate ?? Date())))"
-            var name = label + suffix, attempt = 1
-            while try attributes(url.deletingLastPathComponent().appendingPathComponent(name)) != nil { attempt += 1; name = "\(label) \(attempt)" + suffix }
-            guard name.utf16.count <= 255 else { throw StorageFailure("conflict") }
-            _ = try write(root, folder + name, try readBytes(version.url), ["mode": "create"])
-            version.isResolved = true
+        guard let purpose else {
+            if (try? attributes(url))?[Self.stale] != nil { try? cloud.startDownloading(url) }
+            return
         }
-        try NSFileVersion.removeOtherVersionsOfItem(at: url)
+        try materialize(url, for: purpose)
+    }
+    /// Moves the versions iCloud set aside for a file into its sidecar, where they wait for review.
+    /// Never throws: a version that cannot be kept stays with iCloud, and the caller carries on.
+    private func preserveConflicts(_ root: URL, _ path: String) {
+        guard !path.isEmpty, let url = try? resolve(root, path) else { return }
+        let files = ConflictHarvester.Files(
+            isDirectory: { [unowned self] item in try self.attributes(self.resolve(root, item))?[.type] as? FileAttributeType == .typeDirectory },
+            names: { [unowned self] item in try self.names(self.resolve(root, item)) },
+            read: { [unowned self] item in try self.readBytes(self.resolve(root, item)) },
+            create: { [unowned self] item, data in _ = try self.write(root, item, data, ["mode": "create", "createParents": true]) })
+        let repository = ((try? attributes(root.appendingPathComponent(".git"))) ?? nil) != nil
+        ConflictHarvester(files: files, source: conflicts, gitIgnore: repository).harvest(path, at: url)
     }
     private func resolve(_ root: URL, _ path: String) throws -> URL {
         try canonical(path)
@@ -277,7 +315,7 @@ public final class Storage {
         var entry: [String: Any] = ["path": path, "name": path.isEmpty ? "" : url.lastPathComponent, "lastModified": iso.string(from: date), "kind": kind == .typeRegular ? "file" : "directory"]
         if kind == .typeRegular, attrs[Self.evicted] != nil {
             // Listing never downloads; content is fetched when the file is opened or changed.
-            if includeBytes { try? fm.startDownloadingUbiquitousItem(at: url); throw StorageFailure("busy", "Some files are still downloading from iCloud. Try again in a moment.") }
+            if includeBytes { try? cloud.startDownloading(url); throw StorageFailure("busy", "Some files are still downloading from iCloud. Try again in a moment.") }
             let size = (attrs[.size] as? NSNumber)?.intValue ?? 0
             guard size <= Self.fileBytes else { throw StorageFailure("quota-exceeded") }
             entry["size"] = size; entry["version"] = "icloud-" + hash(Data("\(size):\(date.timeIntervalSince1970)".utf8))
@@ -370,6 +408,32 @@ public final class Storage {
             throw error
         }
         switch op {
+        case "listMetadata":
+            // One folder's children from metadata, for the workspace index's walk. It never
+            // opens or downloads a file, and puts no size budget on what it lists.
+            try exact(r, ["op", "instanceId", "path"])
+            let path = try string(r, "path"); let url = try resolve(root, path)
+            guard let folder = try attributes(url) else { throw StorageFailure("not-found") }
+            guard folder[.type] as? FileAttributeType == .typeDirectory else { throw StorageFailure("type-mismatch") }
+            let iso = ISO8601DateFormatter(); iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return try names(url).compactMap { name -> [String: Any]? in
+                let childPath = path.isEmpty ? name : path + "/" + name
+                // Vanished, a link, or an unusable name: not part of the listing.
+                guard let attrs = try? attributes(resolve(root, childPath)) else { return nil }
+                let kind = attrs[.type] as? FileAttributeType
+                guard kind == .typeRegular || kind == .typeDirectory else { return nil }
+                let isFile = kind == .typeRegular
+                let date = (attrs[.modificationDate] as? Date) ?? Date(timeIntervalSince1970: 0)
+                let size = (attrs[.size] as? NSNumber)?.intValue ?? 0
+                let node = (attrs[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
+                var entry: [String: Any] = [
+                    "path": childPath, "name": name, "lastModified": iso.string(from: date),
+                    "kind": isFile ? "file" : "directory", "size": isFile ? size : NSNull(),
+                    "version": "meta:\(isFile ? "f" : "d"):\(node):\(isFile ? size : 0):\(date.timeIntervalSince1970)",
+                ]
+                if isFile, attrs[Self.evicted] != nil { entry["onlineOnly"] = true }
+                return entry
+            }
         case "stat", "list", "readBegin":
             try exact(r, ["op", "instanceId", "path"])
             let path = try string(r, "path"); let url = try resolve(root, path)
@@ -378,8 +442,8 @@ public final class Storage {
                 guard let current = try stat(root, path) else { throw StorageFailure("not-found") }
                 guard current["kind"] as? String == "directory" else { throw StorageFailure("type-mismatch") }
                 if activeCloud {
-                    for name in try names(url) where (try? url.appendingPathComponent(name).resourceValues(forKeys: [.ubiquitousItemHasUnresolvedConflictsKey]))?.ubiquitousItemHasUnresolvedConflicts == true {
-                        try preserveConflicts(root, path.isEmpty ? name : path + "/" + name)
+                    for name in try names(url) where conflicts.hasUnresolvedConflicts(url.appendingPathComponent(name)) {
+                        preserveConflicts(root, path.isEmpty ? name : path + "/" + name)
                     }
                 }
                 return try names(url).map { name -> [String: Any] in guard let item = try stat(root, path.isEmpty ? name : path + "/" + name) else { throw StorageFailure("conflict") }; return item }.sorted { a, b in
@@ -387,7 +451,7 @@ public final class Storage {
                     return ak == bk ? (a["name"] as! String) < (b["name"] as! String) : ak == "directory"
                 }
             }
-            if activeCloud, try attributes(url) != nil { try preserveConflicts(root, path) }
+            if activeCloud, try attributes(url) != nil { preserveConflicts(root, path) }
             guard var item = try stat(root, path) else { return NSNull() }
             guard item["kind"] as? String == "file" else { throw StorageFailure("type-mismatch") }
             let data = try readBytes(url); guard data.count <= Self.fileBytes else { throw StorageFailure("quota-exceeded") }
@@ -422,6 +486,9 @@ public final class Storage {
             }
             transfers.removeValue(forKey: token)
             guard transfer.data.count == transfer.size else { throw StorageFailure("corrupt") }
+            // Keep any versions iCloud set aside before adding another. One that cannot be kept
+            // stays with iCloud for the next read, so it never blocks the save.
+            if activeCloud, let target = try? resolve(root, transfer.path), (try? attributes(target)) != nil { preserveConflicts(root, transfer.path) }
             return try write(root, transfer.path, transfer.data, transfer.options)
         case "mkdir":
             try exact(r, ["op", "instanceId", "path", "options"])
@@ -440,6 +507,8 @@ public final class Storage {
             if current == nil { guard opts["missing"] as? String == "ignore" else { throw StorageFailure("not-found") } }
             else {
                 if try current?["kind"] as? String == "directory" && opts["recursive"] as? Bool != true && !fm.contentsOfDirectory(atPath: url.path).isEmpty { throw StorageFailure("not-empty") }
+                // Deleting a file also deletes what iCloud set aside for it, so keep that first.
+                if activeCloud, current?["kind"] as? String == "file" { preserveConflicts(root, path) }
                 try fm.removeItem(at: url)
             }
             return ["removed": current != nil, "version": try stat(root, "")!["version"]!]
@@ -452,6 +521,8 @@ public final class Storage {
             try expected(opts, current)
             if old == new { return current }
             guard try attributes(destination) == nil else { throw StorageFailure("already-exists") }
+            // Copies belong beside the name the document had when the versions were set aside.
+            if activeCloud, current["kind"] as? String == "file" { preserveConflicts(root, old) }
             let created = try parents(root, new, create: opts["createParents"] as? Bool ?? false)
             do { try fm.moveItem(at: source, to: destination); return try stat(root, new)! } catch { rollback(created); throw error }
         case "snapshot":

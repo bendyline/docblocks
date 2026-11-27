@@ -2,6 +2,7 @@ import type {
   FileSystemCreateDirectoryOptions,
   FileSystemDirectorySnapshot,
   FileSystemEntrySnapshot,
+  FileSystemEnumerationPage,
   FileSystemFileRead,
   FileSystemFileSnapshot,
   FileSystemMoveOptions,
@@ -28,6 +29,31 @@ export const FILE_SYSTEM_TRANSFER_LIMITS = Object.freeze({
 export interface HostFileSystemReadTransfer {
   readonly transferId: string;
   readonly entry: FileSystemFileSnapshot;
+}
+
+/**
+ * Children one directory listing may carry. Larger than the generic array
+ * limit: a flat notes folder can hold tens of thousands of notes, and each
+ * entry is a few hundred bytes. Recursive listings page instead (below).
+ */
+export const FILE_SYSTEM_DIRECTORY_LIMITS = Object.freeze({
+  entries: 100_000,
+});
+
+/** Recursive metadata listings cross the bridge in pages, each under the array limit. */
+export const FILE_SYSTEM_ENUMERATION_LIMITS = Object.freeze({
+  /** Entries plus unreadable folders in one page. */
+  pageEntries: 2_000,
+  /** Open listings per provider instance. */
+  sessions: 4,
+  /** A listing nobody continues is closed after this long. */
+  idleMs: 60_000,
+});
+
+/** One page of a metadata listing and the cursor for the next; null when it is complete. */
+export interface HostFileSystemEnumerationStep {
+  readonly cursor: string | null;
+  readonly page: FileSystemEnumerationPage;
 }
 
 /** Stable capabilities shared by the Electron v2 client and native backend. */
@@ -101,6 +127,16 @@ export interface DocBlocksHostFsV2API {
     transferId: string,
   ): Promise<HostFileSystemV2Result<FileSystemFileSnapshot>>;
   closeTransfer?(instanceId: string, transferId: string): Promise<HostFileSystemV2Result<null>>;
+  /** Optional for compatibility with older preload versions; see `FileSystemProviderV2.enumerate`. */
+  beginEnumerate?(
+    instanceId: string,
+    path: WorkspacePath,
+  ): Promise<HostFileSystemV2Result<HostFileSystemEnumerationStep>>;
+  continueEnumerate?(
+    instanceId: string,
+    cursor: string,
+  ): Promise<HostFileSystemV2Result<HostFileSystemEnumerationStep>>;
+  closeEnumerate?(instanceId: string, cursor: string): Promise<HostFileSystemV2Result<null>>;
   open(
     request: HostFileSystemV2OpenRequest,
   ): Promise<HostFileSystemV2Result<FileSystemProviderCapabilities>>;

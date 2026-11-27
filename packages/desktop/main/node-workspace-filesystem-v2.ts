@@ -1,11 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { BigIntStats } from 'node:fs';
+import type { BigIntStats, Dirent } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
   FsError,
+  SQUISQ_RUNTIME_DIRECTORY_NAME,
+  WORKSPACE_METADATA_DIRECTORY_NAME,
   WORKSPACE_ROOT,
   fsErrorFromUnknown,
+  isCompanionDirectoryName,
+  isEnumeratedWorkspaceEntryName,
   isIgnoredWorkspaceEntryName,
   isMarkdownFileName,
   parseFileSystemVersion,
@@ -19,6 +23,8 @@ import {
   type FileSystemEntryReadIssue,
   type FileSystemEntryWatchEvent,
   type FileSystemEntrySnapshot,
+  type FileSystemEnumerateOptions,
+  type FileSystemEnumerationPage,
   type FileSystemFileRead,
   type FileSystemFileSnapshot,
   type FileSystemMoveOptions,
@@ -41,6 +47,8 @@ import {
 } from '@bendyline/docblocks/filesystem';
 import {
   ELECTRON_FILE_SYSTEM_V2_CAPABILITIES,
+  FILE_SYSTEM_DIRECTORY_LIMITS,
+  FILE_SYSTEM_ENUMERATION_LIMITS,
   FILE_SYSTEM_TRANSFER_LIMITS,
   HOST_WIRE_LIMITS,
 } from '@bendyline/docblocks/host';
@@ -363,7 +371,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
 
       const abs = await this.resolveRead(canonical, 'list');
       const children = await fs.readdir(abs, { withFileTypes: true });
-      if (children.length > HOST_WIRE_LIMITS.arrayEntries) {
+      if (children.length > FILE_SYSTEM_DIRECTORY_LIMITS.entries) {
         throw this.error(
           'quota-exceeded',
           'list',
@@ -386,6 +394,182 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
       snapshots.sort(compareSnapshots);
       return Object.freeze(snapshots);
     });
+  }
+
+  /**
+   * Metadata-only recursive listing (`FileSystemProviderV2.enumerate`). It
+   * never opens a file, so it neither hashes content nor downloads an
+   * online-only placeholder. Each folder is read under the root lock on its
+   * own, so a long listing holds a save up for one directory read at most.
+   */
+  public async *enumerate(
+    path: WorkspacePath,
+    options: FileSystemEnumerateOptions = {},
+  ): AsyncGenerator<FileSystemEnumerationPage> {
+    const root = this.canonical(path);
+    const pageSize = FILE_SYSTEM_ENUMERATION_LIMITS.pageEntries;
+    const queue: WorkspacePath[] = [root];
+    const visited = new Set<string>();
+    const entries: FileSystemEntrySnapshot[] = [];
+    const unreadable: WorkspacePath[] = [];
+    let total = 0;
+    let yielded = false;
+    while (queue.length > 0) {
+      options.signal?.throwIfAborted();
+      const folder = queue.shift()!;
+      let listed: MetadataListing;
+      try {
+        listed = await this.execute('list', folder, null, () =>
+          this.listMetadata(folder, folder === root, visited),
+        );
+      } catch (error: unknown) {
+        if (folder === root) throw error;
+        // Gone since its parent was read, or outside the workspace: not "unreadable".
+        const code = error instanceof FsError ? error.code : null;
+        if (!ENUMERATION_SKIPPED_CODES.has(code)) unreadable.push(folder);
+        continue;
+      }
+      total += listed.entries.length;
+      if (total > ENUMERATION_ENTRY_LIMIT) {
+        throw this.error('quota-exceeded', 'list', root, 'Folder listing exceeds the entry limit.');
+      }
+      entries.push(...listed.entries);
+      queue.push(...listed.descend);
+      while (entries.length + unreadable.length >= pageSize) {
+        const folders = unreadable.splice(0, pageSize);
+        yield { entries: entries.splice(0, pageSize - folders.length), unreadable: folders };
+        yielded = true;
+      }
+    }
+    if (entries.length > 0 || unreadable.length > 0 || !yielded) {
+      yield { entries: entries.splice(0), unreadable: unreadable.splice(0) };
+    }
+  }
+
+  /**
+   * What a watch session compares before and after its watcher starts: the
+   * metadata identity of every entry it would report, from a walk that never
+   * opens a file. Hashing here read the whole workspace on every launch and
+   * stopped at the renderer's 10,000-entry wire limit, though none of it
+   * crosses the wire; this walk is bounded like `enumerate` instead. Unlike
+   * `enumerate`, it enters companion folders too, whose changes are reported.
+   */
+  private async watchBaseline(): Promise<Map<WorkspacePath, string>> {
+    const identities = new Map<WorkspacePath, string>();
+    const queue: WorkspacePath[] = [WORKSPACE_ROOT];
+    const visited = new Set<string>();
+    while (queue.length > 0) {
+      const folder = queue.shift()!;
+      let abs: string;
+      let children: Dirent[];
+      try {
+        abs = await this.resolveRead(folder, 'watch');
+        const real = await fs.realpath(abs);
+        if (visited.has(real)) continue;
+        visited.add(real);
+        children = await fs.readdir(abs, { withFileTypes: true });
+      } catch (error: unknown) {
+        if (folder === WORKSPACE_ROOT) throw error;
+        // Gone or unreadable now; a change to that is still a change.
+        identities.set(folder, 'unreadable');
+        continue;
+      }
+      const observed = await Promise.all(
+        children
+          .filter((child) => !isIgnoredWorkspaceEntryName(child.name))
+          .map(async (child) => {
+            const childPath = workspacePathJoin(folder, child.name);
+            try {
+              // A link is followed only where it stays inside the workspace.
+              const target = child.isSymbolicLink()
+                ? await this.roots.resolvePhysical(this.rootPath, childPath)
+                : path.join(abs, child.name);
+              return { childPath, stat: await fs.stat(target, { bigint: true }) };
+            } catch {
+              return null; // Vanished, outside the workspace, or an unusable name.
+            }
+          }),
+      );
+      for (const entry of observed) {
+        if (!entry || (!entry.stat.isFile() && !entry.stat.isDirectory())) continue;
+        identities.set(entry.childPath, versionForMetadata(entry.stat));
+        if (entry.stat.isDirectory()) queue.push(entry.childPath);
+      }
+      if (identities.size > ENUMERATION_ENTRY_LIMIT) {
+        throw this.error(
+          'quota-exceeded',
+          'watch',
+          WORKSPACE_ROOT,
+          'The workspace is too large to watch.',
+        );
+      }
+    }
+    return identities;
+  }
+
+  /** One folder's children from metadata, and the folders to enter next. */
+  private async listMetadata(
+    folder: WorkspacePath,
+    isRoot: boolean,
+    visited: Set<string>,
+  ): Promise<MetadataListing> {
+    if (isRoot) {
+      const kind = await this.nativeKind(folder, 'list');
+      if (kind === null) throw this.error('not-found', 'list', folder, 'Directory not found.');
+      if (kind !== 'directory') {
+        throw this.error('type-mismatch', 'list', folder, 'Expected a directory, found a file.');
+      }
+    }
+    const abs = await this.resolveRead(folder, 'list');
+    // A symbolic link back to a folder already listed would never end.
+    const real = await fs.realpath(abs);
+    if (visited.has(real)) return { entries: [], descend: [] };
+    visited.add(real);
+    const children = (await fs.readdir(abs, { withFileTypes: true }))
+      .filter((child) => isEnumeratedWorkspaceEntryName(child.name))
+      .sort((left, right) => compareText(left.name, right.name));
+    const observed = await Promise.all(
+      children.map(async (child): Promise<FileSystemEntrySnapshot | null> => {
+        let childPath: WorkspacePath;
+        let stat: BigIntStats;
+        try {
+          childPath = workspacePathJoin(folder, child.name);
+          // A link is followed only where it stays inside the workspace.
+          const target = child.isSymbolicLink()
+            ? await this.roots.resolvePhysical(this.rootPath, childPath)
+            : path.join(abs, child.name);
+          stat = await fs.stat(target, { bigint: true });
+        } catch {
+          return null; // Vanished, outside the workspace, or an unusable name.
+        }
+        const common = {
+          path: childPath,
+          name: child.name,
+          version: versionForMetadata(stat),
+          lastModified: stat.mtime.toISOString(),
+        };
+        if (stat.isDirectory()) return { kind: 'directory', size: null, ...common };
+        if (!stat.isFile()) return null;
+        return {
+          kind: 'file',
+          size: Number(stat.size),
+          ...common,
+          ...(this.isOnlineOnly(stat) ? { onlineOnly: true as const } : {}),
+        };
+      }),
+    );
+    const entries = observed.filter((entry): entry is FileSystemEntrySnapshot => entry !== null);
+    const descend = entries
+      .filter(
+        (entry) =>
+          entry.kind === 'directory' &&
+          !isCompanionDirectoryName(entry.name) &&
+          entry.name !== SQUISQ_RUNTIME_DIRECTORY_NAME &&
+          // Listed so a folder's settings can be found; its contents are not walked.
+          entry.name !== WORKSPACE_METADATA_DIRECTORY_NAME,
+      )
+      .map((entry) => entry.path);
+    return { entries, descend };
   }
 
   /** Capture a stable large file into a main-owned spool with bounded memory. */
@@ -1551,7 +1735,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
 
   private async openWatchSession(session: WatchSession): Promise<void> {
     try {
-      const before = await this.scanEntry(WORKSPACE_ROOT, false, new Set(), 'watch');
+      const before = await this.watchBaseline();
       if (isClosingWatchSession(session)) return;
       const physicalRoot = await fs.realpath(await this.roots.resolvePhysical(this.rootPath, ''));
       if (isClosingWatchSession(session)) return;
@@ -1569,9 +1753,10 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
       }
       await handle.ready;
       if (isClosingWatchSession(session)) return;
-      const after = await this.scanEntry(WORKSPACE_ROOT, false, new Set(), 'watch');
+      const after = await this.watchBaseline();
       if (isClosingWatchSession(session)) return;
-      if (before.root.version !== after.root.version) {
+      // Something changed while the watcher was starting, unseen by it.
+      if (!sameIdentities(before, after)) {
         this.emitExternal({
           type: 'overflow',
           kind: null,
@@ -1655,6 +1840,10 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
         return;
       }
 
+      // The watch baseline versions no file, so a path seen for the first
+      // time here may have changed since the folders above it were versioned.
+      // Move them on, as a second, different observation of it would.
+      const seenBefore = this.observedVersions.has(itemPath);
       const scanned = await this.tryScanEntry(itemPath, false, 'watch');
       if (!scanned) {
         this.emitExternal({
@@ -1667,6 +1856,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
         });
         return;
       }
+      if (!seenBefore) this.invalidateAncestors(itemPath);
       const previous = this.knownEntries.get(itemPath);
       this.remember(scanned.entries);
       this.emitExternal({
@@ -2099,6 +2289,32 @@ function copyBytes(data: ArrayBuffer | Uint8Array): ArrayBuffer {
   return copy.buffer as ArrayBuffer;
 }
 
+interface MetadataListing {
+  readonly entries: readonly FileSystemEntrySnapshot[];
+  readonly descend: readonly WorkspacePath[];
+}
+
+/** A whole-workspace metadata listing stops past this many entries. */
+const ENUMERATION_ENTRY_LIMIT = 1_000_000;
+
+/** Folder failures that mean "not part of this listing" rather than "could not read". */
+const ENUMERATION_SKIPPED_CODES: ReadonlySet<FsErrorCode | null> = new Set<FsErrorCode | null>([
+  'not-found',
+  'type-mismatch',
+  'path-escape',
+  'invalid-path',
+]);
+
+/**
+ * A version from metadata alone (inode, size, modification time): it moves
+ * whenever any of them does, without reading the file. Not comparable with
+ * the content versions the rest of this provider returns.
+ */
+function versionForMetadata(stat: BigIntStats): FileSystemVersion {
+  const kind = stat.isDirectory() ? 'd' : 'f';
+  return parseFileSystemVersion(`meta:${kind}:${stat.ino}:${stat.size}:${stat.mtimeNs}`);
+}
+
 function compareSnapshots(left: FileSystemEntrySnapshot, right: FileSystemEntrySnapshot): number {
   if (left.kind !== right.kind) return left.kind === 'directory' ? -1 : 1;
   return compareText(left.name, right.name);
@@ -2106,6 +2322,18 @@ function compareSnapshots(left: FileSystemEntrySnapshot, right: FileSystemEntryS
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/** Two watch baselines saw the same entries, each with the same identity. */
+function sameIdentities(
+  before: ReadonlyMap<WorkspacePath, string>,
+  after: ReadonlyMap<WorkspacePath, string>,
+): boolean {
+  if (before.size !== after.size) return false;
+  for (const [itemPath, identity] of before) {
+    if (after.get(itemPath) !== identity) return false;
+  }
+  return true;
 }
 
 function sameEntryState(

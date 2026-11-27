@@ -1,5 +1,10 @@
 import { expect } from 'chai';
-import { parseAiKnowledgeAction, parseAiKnowledgeState } from '../src/host/ai-knowledge.js';
+import {
+  knowledgeChatEvent,
+  parseAiKnowledgeAction,
+  parseAiKnowledgeState,
+} from '../src/host/ai-knowledge.js';
+import { parseAiChatEvent } from '../src/host/ai-wire-policy.js';
 
 describe('AI knowledge wire policy', () => {
   const state = { catalogs: [], improvement: { downloadBytes: 24_000_000, downloading: false } };
@@ -34,5 +39,41 @@ describe('AI knowledge wire policy', () => {
       { action: 'remove', catalogId: '\0' },
     ])
       expect(parseAiKnowledgeAction(value)).to.equal(null);
+  });
+});
+
+describe('the knowledge chat event', () => {
+  it("carries each passage's citation so a workspace note can be opened", () => {
+    const event = knowledgeChatEvent(
+      'used',
+      [
+        {
+          title: 'Aphid',
+          catalogId: 'pnw',
+          text: 'Sap-sucking.',
+          uri: 'knowledge://pnw/wiki/aphid',
+        },
+        {
+          title: 'Rose bed',
+          catalogId: 'workspace',
+          text: 'Aphids on new growth.',
+          uri: 'knowledge://local/ws-1/garden/roses.md#line=3-9',
+        },
+        { title: 'Untraced', catalogId: 'pnw', text: 'No citation.', uri: 'https://x.test/a' },
+      ],
+      new Map([['workspace', 'This workspace']]),
+      true,
+    );
+    expect(event).to.deep.include({ outcome: 'used' });
+    const evidence = event?.outcome === 'used' ? event.evidence : [];
+    expect(evidence.map((entry) => entry.uri)).to.deep.equal([
+      'knowledge://pnw/wiki/aphid',
+      'knowledge://local/ws-1/garden/roses.md#line=3-9',
+      undefined,
+    ]);
+    expect(parseAiChatEvent({ kind: 'knowledge', knowledge: event })).to.deep.equal({
+      kind: 'knowledge',
+      knowledge: event,
+    });
   });
 });

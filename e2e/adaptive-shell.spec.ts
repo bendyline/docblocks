@@ -1,5 +1,8 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './helpers/test.js';
+import { showUseView, viewButton } from './helpers/toolbar.js';
+import { documentTitleField, newDocumentGallery } from './helpers/new-document.js';
+import { touchDrag } from './helpers/touch.js';
 
 /**
  * Layout behaviour of the adaptive shell. Runs on the touch-emulating device
@@ -26,36 +29,6 @@ async function openWelcomeDocument(page: Page): Promise<void> {
   if ((await shell.getAttribute('data-db-layout')) === 'single-pane') {
     await expect(shell).toHaveAttribute('data-db-drawer', 'closed');
   }
-}
-
-/**
- * A touch drag through Chromium's own input pipeline. Synthetic DOM events
- * would skip the part that matters: the browser deciding, from touch-action,
- * whether a sideways move is its scroll or the page's pointer drag.
- */
-async function touchDrag(
-  page: Page,
-  from: { x: number; y: number },
-  to: { x: number; y: number },
-  /** Runs with the finger halfway there and still down. */
-  midway?: () => Promise<void>,
-): Promise<void> {
-  const cdp = await page.context().newCDPSession(page);
-  const STEPS = 12;
-  await cdp.send('Input.dispatchTouchEvent', {
-    type: 'touchStart',
-    touchPoints: [{ x: from.x, y: from.y, id: 1 }],
-  });
-  for (let step = 1; step <= STEPS; step++) {
-    if (step === STEPS / 2 + 1) await midway?.();
-    const t = step / STEPS;
-    await cdp.send('Input.dispatchTouchEvent', {
-      type: 'touchMove',
-      touchPoints: [{ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t, id: 1 }],
-    });
-  }
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await cdp.detach();
 }
 
 /** The stamped contract that `docblocks.css` keys off. */
@@ -236,12 +209,20 @@ test.describe('adaptive shell on a phone', () => {
     });
 
     await create.click();
-    await page.getByRole('textbox', { name: 'Document name', exact: true }).fill('first-draft');
-    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await newDocumentGallery(page).getByRole('button', { name: 'Blank', exact: true }).click();
+    // Created and open: its name waits in the title field. One editor so far.
+    await expect(documentTitleField(page)).toBeFocused({ timeout: 30_000 });
+    await expect(page.locator('.ProseMirror')).toHaveCount(1);
+    expect(
+      await page.evaluate(() => (window as Window & { editorMounts?: number }).editorMounts),
+      'creating a document mounted a throwaway editor first',
+    ).toBe(1);
+    await documentTitleField(page).fill('first-draft');
+    await documentTitleField(page).press('Enter');
 
-    // Settled: the shell has adopted the new path, and the welcome document's
-    // editor is gone. Tiptap destroys a replaced editor on a deferred tick, so
-    // a second mount, had there been one, has happened by now.
+    // Settled: the shell has adopted the renamed path, and the welcome
+    // document's editor is gone. Tiptap destroys a replaced editor on a
+    // deferred tick, so a further mount, had there been one, has happened.
     // By path rather than role: the closed drawer is outside the accessibility
     // tree on WebKit, and getByRole skips hidden elements.
     await expect(
@@ -257,10 +238,9 @@ test.describe('adaptive shell on a phone', () => {
       page.locator('.ProseMirror').getByRole('heading', { level: 1, name: /^first-draft\b/ }),
     ).toBeVisible();
 
-    const mounts = await page.evaluate(
-      () => (window as Window & { editorMounts?: number }).editorMounts,
-    );
-    expect(mounts, 'creating a document mounted a throwaway editor first').toBe(1);
+    // Naming it reopens it under the new name. Keys are held until the
+    // caret is in that editor, so how many times it reopens is not counted.
+    await expect(page.locator('.ProseMirror')).toBeFocused();
   });
 
   test('gives every shell control a reachable touch target', async ({ page }, testInfo) => {
@@ -272,9 +252,21 @@ test.describe('adaptive shell on a phone', () => {
     // stamps the shell. Measuring in that frame reads the fine-pointer token
     // defaults (28px) rather than the settled coarse-pointer hit areas.
     await expect(shell).toHaveAttribute('data-db-pointer', 'coarse');
+    // The tree lists the welcome document a moment later. Measured before
+    // then there were no rows, so the rows' More actions buttons (always
+    // shown without hover) went unmeasured and passed at 26px.
+    await expect(page.locator('.db-tree-row .db-tree-more').first()).toBeAttached({
+      timeout: 30_000,
+    });
 
     const undersized = await page.evaluate(() => {
-      const selectors = ['.db-tree-row', '.db-tree-more', '.db-explorer-btn'];
+      const selectors = [
+        '.db-tree-row',
+        '.db-tree-more',
+        '.db-explorer-btn',
+        '.db-explorer-workspace-controls button',
+        '.db-quick-jot-btn',
+      ];
       const offenders: string[] = [];
       for (const selector of selectors) {
         for (const element of document.querySelectorAll<HTMLElement>(selector)) {
@@ -327,51 +319,31 @@ test.describe('adaptive shell on a phone', () => {
     expect(fontSize).toBeGreaterThanOrEqual(16);
   });
 
-  test('centres the mode buttons on the Write and Slideshow labels at any text size', async ({
-    page,
-  }, testInfo) => {
+  test('centres the view button name and its ▾ at any text size', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
     await openWelcomeDocument(page);
-    const modeButtons = [
-      { name: 'Choose Write mode', view: 'wysiwyg' },
-      { name: 'Choose Use mode', view: 'preview' },
-    ] as const;
-    for (const { name } of modeButtons) {
-      await expect(page.getByRole('button', { name, exact: true })).toBeVisible();
-    }
+    const button = viewButton(page);
+    await expect(button).toBeVisible();
     // Android scales every font to the system text size and leaves padding
-    // alone; scaling both font sizes reproduces that here.
+    // alone; scaling the button's font size reproduces that here.
     for (const zoom of [1, 1.15, 1.3]) {
-      await page.locator('.db-shell').evaluate((shell, scale) => {
-        for (const node of shell.querySelectorAll<HTMLElement>(
-          '.squisq-toolbar-view-tab, .squisq-view-mode-trigger',
-        )) {
-          node.style.fontSize = `${13 * scale}px`;
-        }
+      const geometry = await button.evaluate((node, scale) => {
+        node.style.fontSize = `${13 * scale}px`;
+        const label = node.querySelector('.squisq-toolbar-view-button-label--long');
+        const chevron = node.querySelector('.squisq-toolbar-view-button-chevron');
+        if (!label || !chevron) throw new Error('View button label or chevron not found');
+        const range = document.createRange();
+        range.selectNodeContents(label);
+        const text = range.getBoundingClientRect();
+        const mark = chevron.getBoundingClientRect();
+        const box = node.getBoundingClientRect();
+        return {
+          offset: (mark.top + mark.bottom) / 2 - (text.top + text.bottom) / 2,
+          inside: text.top >= box.top && text.bottom <= box.bottom,
+        };
       }, zoom);
-      for (const { name, view } of modeButtons) {
-        const geometry = await page
-          .getByRole('button', { name, exact: true })
-          .evaluate((button, tabView) => {
-            const label = document.querySelector(
-              `.squisq-toolbar-view-tab[data-view="${tabView}"]`,
-            );
-            if (!label) throw new Error(`${tabView} tab not found`);
-            const range = document.createRange();
-            range.selectNodeContents(label);
-            const text = range.getBoundingClientRect();
-            const face = button.querySelector('.squisq-view-mode-trigger-face');
-            if (!face) throw new Error('Mode button face not found');
-            const rect = face.getBoundingClientRect();
-            return {
-              offset: (rect.top + rect.bottom) / 2 - (text.top + text.bottom) / 2,
-              border: Number.parseFloat(getComputedStyle(face).borderTopWidth),
-            };
-          }, view);
-        expect(Math.abs(geometry.offset), `${name} at ${zoom * 100}% text`).toBeLessThanOrEqual(1);
-        // A visible outline, so the arrow reads as a button.
-        expect(geometry.border).toBeGreaterThanOrEqual(1);
-      }
+      expect(Math.abs(geometry.offset), `▾ at ${zoom * 100}% text`).toBeLessThanOrEqual(1);
+      expect(geometry.inside, `name inside the button at ${zoom * 100}% text`).toBe(true);
     }
   });
 
@@ -385,7 +357,6 @@ test.describe('adaptive shell on a phone', () => {
     await expect(group).toHaveAttribute('data-toolbar-folded', 'true');
     // The quick tools stay on the row.
     await expect(page.getByRole('button', { name: 'Find in document' })).toBeVisible();
-    await expect(page.locator('.squisq-toolbar > .squisq-view-menu')).toBeVisible();
     // One divider, the group's, drawn before all of the document actions;
     // Export no longer draws its own.
     await expect(group.locator(':scope > .squisq-toolbar-separator')).toBeVisible();
@@ -423,7 +394,7 @@ test.describe('adaptive shell on a phone', () => {
   }, testInfo) => {
     test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
     await openWelcomeDocument(page);
-    await page.locator('.squisq-toolbar-use-tab .squisq-toolbar-view-tab').click();
+    await showUseView(page);
     await expect(page.locator('.squisq-toolbar > .squisq-preview-controls')).toBeVisible();
 
     // The document actions stay folded, as they were in Write: their menu's
@@ -435,8 +406,9 @@ test.describe('adaptive shell on a phone', () => {
     if (!triggerBox) throw new Error('Document actions trigger not laid out');
     // The row ends at the right edge rather than starting a row alone.
     expect(viewport.width - (triggerBox.x + triggerBox.width)).toBeLessThanOrEqual(2);
-    const viewMenu = await page.locator('.squisq-toolbar > .squisq-view-menu').boundingBox();
-    expect(viewMenu?.y).toBe(triggerBox.y);
+    // The quick tools share that row.
+    const find = await page.getByRole('button', { name: 'Find in document' }).boundingBox();
+    expect(find?.y).toBe(triggerBox.y);
 
     await trigger.click();
     await page.getByRole('menuitem', { name: 'Export' }).click();
@@ -458,9 +430,12 @@ test.describe('adaptive shell on a phone', () => {
       if (!box || !glyph) throw new Error(`${selector} is not laid out`);
       return { center: box.y + box.height / 2, height: box.height, glyph: glyph.width };
     };
-    const write = await measure('.squisq-toolbar > .squisq-view-menu .squisq-toolbar-button');
+    // The folded Document actions trigger, one of Squisq's toolbar buttons,
+    // ends Write's formatting row.
+    const documentActions = '.squisq-toolbar-document-actions-trigger';
+    const write = await measure(documentActions);
 
-    await page.locator('.squisq-toolbar-use-tab .squisq-toolbar-view-tab').click();
+    await showUseView(page);
     await expect(page.locator('.squisq-toolbar > .squisq-preview-controls')).toBeVisible();
     // Squisq sizes these as a compact desktop cluster; on a phone they sat in
     // ~31px rows with 24px segments and a 14px print glyph.
@@ -471,7 +446,7 @@ test.describe('adaptive shell on a phone', () => {
     }
     expect((await measure('.squisq-print-trigger')).glyph).toBeCloseTo(write.glyph, 0);
     // The document controls wrap to their own row, a full Write row below.
-    const documentRow = await measure('.squisq-toolbar > .squisq-view-menu .squisq-toolbar-button');
+    const documentRow = await measure(documentActions);
     expect(documentRow.center - write.center).toBeGreaterThanOrEqual(44);
   });
 

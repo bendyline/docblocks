@@ -4,7 +4,13 @@
  * typing a new title produced an extension-less file.
  */
 import { expect } from 'chai';
-import { displayFileName, renameDraft, renamedFileName } from '../src/FileExplorer/file-names.js';
+import {
+  displayFileName,
+  renameDraft,
+  renamedFileName,
+  renamedFromTitle,
+  titleFieldName,
+} from '../src/FileExplorer/file-names.js';
 
 describe('displayFileName', () => {
   it('hides .md and nothing else', () => {
@@ -78,5 +84,24 @@ describe('renamedFileName', () => {
     expect(renamedFileName('draft.md', '   ', 'file')).to.equal(null);
     expect(renamedFileName('draft.md', 'draft', 'file')).to.equal(null);
     expect(renamedFileName('Price Sheet.docx', 'Price Sheet', 'file')).to.equal(null);
+  });
+});
+
+describe('the title field’s name', () => {
+  it('drops the extension of every type, but not a dotfile’s dot or a version', () => {
+    expect(titleFieldName('Spring Quote.md')).to.equal('Spring Quote');
+    expect(titleFieldName('Price Sheet 2026.xlsx')).to.equal('Price Sheet 2026');
+    expect(titleFieldName('.gitignore')).to.equal('.gitignore');
+    expect(titleFieldName('README')).to.equal('README');
+    expect(titleFieldName('Pricing v1.2')).to.equal('Pricing v1.2');
+  });
+
+  it('keeps the document’s type through a rename', () => {
+    expect(renamedFromTitle('Q3.docx', 'Q3 review')).to.equal('Q3 review.docx');
+    expect(renamedFromTitle('Q3.docx', 'Q3 review.DOCX')).to.equal('Q3 review.DOCX');
+    expect(renamedFromTitle('Q3.docx', 'Q3 review.pdf')).to.equal('Q3 review.pdf.docx');
+    expect(renamedFromTitle('README', 'Read me')).to.equal('Read me');
+    expect(renamedFromTitle('Q3.docx', ' Q3 ')).to.equal(null);
+    expect(renamedFromTitle('Q3.docx', '   ')).to.equal(null);
   });
 });

@@ -1,4 +1,5 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -62,9 +63,121 @@ export function runNpmStep(
   return result.status ?? 1;
 }
 
-export function runCanonicalGate(): number {
+/**
+ * The local servers the root E2E configs start and, off CI, reuse
+ * (`reuseExistingServer`) when something already answers on the port:
+ * playwright.config.ts and playwright.cross-browser.config.ts (site dev
+ * server), playwright.offline.config.ts (production preview).
+ */
+export const E2E_SERVER_PORTS = [
+  { port: 5220, purpose: 'site dev server' },
+  { port: 5230, purpose: 'offline preview server' },
+] as const;
+
+export interface BusyE2EPort {
+  readonly port: number;
+  readonly purpose: string;
+  /** What is listening (`pid 123, started …: command`), where the OS can say. */
+  readonly listener: string | null;
+}
+
+/** Whether anything accepts connections on `port` at localhost. */
+export function isPortListening(port: number, timeoutMs = 1000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ port, host: 'localhost' });
+    const finish = (listening: boolean) => {
+      socket.destroy();
+      resolve(listening);
+    };
+    socket.setTimeout(timeoutMs, () => finish(false));
+    socket.once('connect', () => finish(true));
+    socket.once('error', () => finish(false));
+  });
+}
+
+/** The listening process's pid, start time and command, via lsof and ps; null where unavailable. */
+function describeListener(port: number): string | null {
+  if (process.platform === 'win32') return null;
+  const lsof = spawnSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'], {
+    encoding: 'utf8',
+  });
+  const pid = lsof.status === 0 ? lsof.stdout.split(/\s+/u).find(Boolean) : undefined;
+  if (!pid) return null;
+  const ps = spawnSync('ps', ['-o', 'lstart=,command=', '-p', pid], { encoding: 'utf8' });
+  const line = ps.status === 0 ? ps.stdout.trim() : '';
+  // `lstart` is a fixed 24-character date: "Tue Nov 24 12:07:16 2026".
+  return line.length > 24
+    ? `pid ${pid}, started ${line.slice(0, 24)}: ${line.slice(24).trim()}`
+    : `pid ${pid}`;
+}
+
+export async function findBusyE2EPorts(): Promise<BusyE2EPort[]> {
+  const busy: BusyE2EPort[] = [];
+  for (const { port, purpose } of E2E_SERVER_PORTS) {
+    if (await isPortListening(port)) busy.push({ port, purpose, listener: describeListener(port) });
+  }
+  return busy;
+}
+
+/** Why the gate will not run its E2E steps while these ports are taken. */
+export function describeBusyE2EPorts(busy: readonly BusyE2EPort[], before: string): string {
+  const lines = busy.map(
+    ({ port, purpose, listener }) =>
+      `  port ${port} (${purpose}): ${listener ?? 'something is listening'}`,
+  );
+  return [
+    `Canonical gate stopped before ${before}: a server is already running where the E2E suites start their own.`,
+    ...lines,
+    'Off CI, Playwright reuses a server it finds there, so the E2E steps would test that server instead of this checkout.',
+    'One started before a Squisq link, unlink, or npm install keeps serving the old dependencies and fails every outside-in document test.',
+    'Stop it, then run the gate again.',
+    '',
+  ].join('\n');
+}
+
+/**
+ * The command that keeps this machine awake for the gate, or null where none
+ * is needed. The gate runs for 40 minutes or more, long enough for a Mac on
+ * battery with its display off to idle-sleep mid-run. Every test in flight
+ * then freezes, and its waits all expire together on wake, as unrelated
+ * failures written in the same second (burn-ins on 2026-11-23 and
+ * 2026-11-26). `caffeinate -i` holds an assertion against idle sleep, on
+ * battery too, without keeping the display on; `-w` ends it when the gate's
+ * process exits, however it exits. Closing the lid still sleeps the Mac.
+ */
+export function idleSleepGuardCommand(
+  platform: NodeJS.Platform,
+  pid: number,
+): { command: string; args: string[] } | null {
+  if (platform !== 'darwin') return null;
+  return { command: 'caffeinate', args: ['-i', '-w', String(pid)] };
+}
+
+function preventIdleSleep(): void {
+  const guard = idleSleepGuardCommand(process.platform, process.pid);
+  if (!guard) return;
+  const child = spawn(guard.command, guard.args, { stdio: 'ignore' });
+  // Without caffeinate the gate runs as it always has.
+  child.on('error', () => undefined);
+  child.unref();
+}
+
+export async function runCanonicalGate(): Promise<number> {
+  preventIdleSleep();
+  // Checked before anything runs, so a stale server costs seconds rather than
+  // the build and test steps ahead of the first E2E step, and again before
+  // each E2E step in case one was started meanwhile.
+  const blocked = async (before: string): Promise<boolean> => {
+    const busy = await findBusyE2EPorts();
+    if (busy.length === 0) return false;
+    process.stderr.write(describeBusyE2EPorts(busy, before));
+    return true;
+  };
+  if (await blocked('its first step')) return 1;
+
   let built = false;
   for (const script of canonicalGateScripts) {
+    if (script.startsWith('test:e2e') && (await blocked(canonicalGateCommand(script)))) return 1;
     const status = runNpmStep(script, gateStepEnvironment(built));
     if (status !== 0) {
       process.stderr.write(
@@ -78,5 +191,5 @@ export function runCanonicalGate(): number {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === scriptPath) {
-  process.exitCode = runCanonicalGate();
+  process.exitCode = await runCanonicalGate();
 }

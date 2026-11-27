@@ -75,6 +75,8 @@ export type {
   FileSystemWatchErrorListener,
   FileSystemWatchOptions,
   FileSystemWatchSubscription,
+  FileSystemEnumerationPage,
+  FileSystemEnumerateOptions,
 } from './v2.js';
 export { parseFileSystemVersion, tryParseFileSystemVersion } from './v2.js';
 export {
@@ -128,9 +130,12 @@ export {
 export {
   MARKDOWN_FILE_EXTENSIONS,
   SQUISQ_RUNTIME_DIRECTORY_NAME,
+  WORKSPACE_METADATA_DIRECTORY_NAME,
   isBrowsableWorkspaceEntry,
   isCompanionDirectoryName,
+  isDestinationFolderName,
   isDiscoverableWorkspaceEntry,
+  isEnumeratedWorkspaceEntryName,
   isIgnoredWorkspaceEntryName,
   isMarkdownFileName,
 } from './workspace-entry-rules.js';
@@ -139,7 +144,39 @@ export {
   moveFileSystemEntry,
   type FileSystemEntryMoveOptions,
 } from './move-entry.js';
+export { imageEditCompanionPath, isEditableImagePath } from './companion-path.js';
+export { moveFileBetweenWorkspaces } from './move-between.js';
 export { rewriteCompanionReferences } from './companion-references.js';
+export {
+  publishFileSystemChangeHint,
+  subscribeFileSystemChangeHints,
+  type FileSystemChangeHint,
+  type FileSystemChangeHintListener,
+} from './change-hints.js';
+export {
+  CONFLICT_COPIES_DIRECTORY_NAME,
+  CONFLICT_COPIES_OTHER_DIRECTORY_NAME,
+  PREMERGE_COPY_LIFETIME_MS,
+  PREMERGE_COPY_LIMIT,
+  conflictCopyHash,
+  conflictCopyScope,
+  formatConflictCopyName,
+  isConflictCopyPath,
+  isReviewableConflictCopy,
+  listConflictCopies,
+  parseConflictCopyName,
+  pruneConflictCopies,
+  readConflictCopy,
+  removeConflictCopy,
+  sanitizeConflictCopyLabel,
+  writeConflictCopy,
+  type ConflictCopy,
+  type ConflictCopyName,
+  type ConflictCopyOrigin,
+  type ConflictCopyScope,
+  type WriteConflictCopyOptions,
+  type WriteConflictCopyResult,
+} from './conflict-copies.js';
 export {
   FileSystemMoveRecoveryError,
   FileSystemPartialMoveError,

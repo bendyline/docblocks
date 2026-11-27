@@ -8,6 +8,35 @@ const { SUPERVISOR_PORT_ENV, SUPERVISOR_TOKEN_ENV } = require('./dev-lifecycle.c
 const { sourceBuildStagingProblem } = require('./stage-gezel-native.cjs');
 
 const MAX_LIFECYCLE_MESSAGE_BYTES = 128;
+// Keep in step with DESKTOP_DEV_SERVER_PORT in dev-renderer-marker.ts.
+const DESKTOP_DEV_SERVER_PORT = 5221;
+
+/**
+ * Whether something already accepts connections on the renderer's port. Vite
+ * would refuse to start there (`strictPort`); checking first lets the message
+ * name the usual cause. Any doubt resolves to false and leaves it to Vite.
+ */
+function portAcceptsConnections(port, connect = net.connect) {
+  return new Promise((resolve) => {
+    const socket = connect({ host: 'localhost', port });
+    const finish = (inUse) => {
+      socket.destroy();
+      resolve(inUse);
+    };
+    socket.setTimeout(1_000, () => finish(false));
+    socket.once('connect', () => finish(true));
+    socket.once('error', () => finish(false));
+  });
+}
+
+function portInUseMessage(port) {
+  return (
+    `\nPort ${port} is already in use, so the desktop renderer cannot start. ` +
+    'Another desktop dev session may still be running, or a site dev server ' +
+    '(`npm run site` moves to the next free port when 5220 is busy). ' +
+    'Stop it, then run this again.\n'
+  );
+}
 
 function listenOnLoopback(server) {
   return new Promise((resolve, reject) => {
@@ -117,11 +146,15 @@ if (require.main === module) {
   // AI and dictation will be off; staging stays an explicit command.
   void sourceBuildStagingProblem()
     .catch(() => null)
-    .then((problem) => {
+    .then(async (problem) => {
       if (problem) {
         console.warn(
           `\n${problem} Built-in AI and dictation stay off until you run \`npm run stage:gezel-native\`.\n`,
         );
+      }
+      if (await portAcceptsConnections(DESKTOP_DEV_SERVER_PORT)) {
+        console.error(portInUseMessage(DESKTOP_DEV_SERVER_PORT));
+        return 1;
       }
       return runDesktopDev();
     })
@@ -130,4 +163,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { runDesktopDev };
+module.exports = { portAcceptsConnections, runDesktopDev };

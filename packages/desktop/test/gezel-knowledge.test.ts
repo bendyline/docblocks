@@ -1,5 +1,8 @@
 import { expect } from 'chai';
-import type { GezelApp } from '@bendyline/gezel-app-sdk';
+import { GezelApp } from '@bendyline/gezel-app-sdk';
+import { AppKnowledgeQuerySchema } from '@bendyline/gezel/app-models';
+import { v1KnowledgeRoutes } from '@bendyline/gezel-inference/internal/http/routes/v1-knowledge';
+import { AI_WIRE_LIMITS, parseAiWorkspacePassages } from '@bendyline/docblocks/host';
 import {
   gezelKnowledgeState,
   updateGezelKnowledge,
@@ -147,6 +150,220 @@ describe('Gezel knowledge in inference', () => {
   });
 });
 
+describe('workspace passages in Gezel knowledge', () => {
+  const note = {
+    uri: 'knowledge://local/ws-0123456789abcdef/garden/pests.md#line=3-5',
+    title: 'Garden notes › Pests',
+    text: 'Aphids gather under the leaves.',
+  };
+
+  it('hands workspace passages to Gezel as candidates and names the ones it chose', async () => {
+    let observed: Record<string, unknown> | undefined;
+    const result = await withGezelKnowledge(
+      app(async (request) => {
+        observed = request;
+        // Gezel returns a chosen candidate under its collection, version `local`.
+        return {
+          reranked: true,
+          passages: [passage, { ...note, catalogId: 'ws-0123456789abcdef', version: 'local' }],
+        };
+      }),
+      messages,
+      new AbortController().signal,
+      { workspacePassages: [note] },
+    );
+    expect(observed?.candidates).to.deep.equal([note]);
+    expect(result.messages[0].content).to.contain(passage.text);
+    expect(result.messages[0].content).to.contain(note.text);
+    expect(result.messages[0].content).to.contain(note.uri);
+    expect(result.knowledge).to.deep.include({ outcome: 'used' });
+    expect(result.knowledge?.outcome === 'used' && result.knowledge.sources).to.deep.equal([
+      { catalogId: 'science', name: 'Science Library', titles: ['Science'] },
+      { catalogId: 'workspace', name: 'This workspace', titles: ['Garden notes › Pests'] },
+    ]);
+  });
+
+  it('still grounds a request in workspace passages when catalog retrieval fails', async () => {
+    const result = await withGezelKnowledge(
+      app(async () => {
+        throw Object.assign(new Error('busy'), { code: 'rate_limited' });
+      }),
+      messages,
+      new AbortController().signal,
+      { workspacePassages: [note] },
+    );
+    expect(result.messages[0].content).to.contain(note.text);
+    expect(result.knowledge?.outcome === 'used' && result.knowledge.sources).to.deep.equal([
+      { catalogId: 'workspace', name: 'This workspace', titles: ['Garden notes › Pests'] },
+    ]);
+  });
+
+  it('grounds a request in workspace passages where Gezel offers no catalogs', async () => {
+    const result = await withGezelKnowledge(
+      {} as GezelApp,
+      messages,
+      new AbortController().signal,
+      { catalogs: false, workspacePassages: [note] },
+    );
+    expect(result.messages[0].content).to.contain(note.text);
+    expect(result.knowledge?.outcome === 'used' && result.knowledge.sources).to.deep.equal([
+      { catalogId: 'workspace', name: 'This workspace', titles: ['Garden notes › Pests'] },
+    ]);
+  });
+});
+
+/**
+ * Gezel's own `/v1/knowledge` routes behind the real SDK client, over stub
+ * catalogs and a stub relevance scorer: what a desktop request with workspace
+ * passages gets from the installed Gezel. The routes are Gezel internals, so a
+ * Gezel bump that moves them fails here, at the bump.
+ */
+describe('workspace passages through Gezel’s knowledge route', () => {
+  const notes = [
+    {
+      uri: 'knowledge://local/ws-0123456789abcdef/garden/pests.md#line=3-5',
+      title: 'Garden notes › Pests',
+      text: 'Aphids gather under the rose leaves in May.',
+    },
+    {
+      uri: 'knowledge://local/ws-0123456789abcdef/travel/lisbon.md#line=1-4',
+      title: 'Lisbon trip',
+      text: 'Tram 28 climbs to the castle.',
+    },
+  ];
+  const article = 'Photosynthesis turns light into sugar in the leaves.';
+
+  function gezel(options: { catalog: boolean; scores?: Record<string, number> }) {
+    const scored: string[][] = [];
+    const catalogUri = 'knowledge://bendyline/science/photosynthesis';
+    const relevance = {
+      status: async () => ({
+        models: [{ id: 'relevance', installed: options.scores !== undefined, approxBytes: 1 }],
+        modelId: 'relevance',
+        status: 'ready',
+      }),
+      forSurface: async () =>
+        options.scores ? { model: 'relevance', thresholds: { keep: 0.5 } } : null,
+      scorer: {
+        score: async ({ passages }: { passages: string[] }) => {
+          scored.push(passages);
+          return { status: 'scored', scores: passages.map((text) => options.scores?.[text] ?? 0) };
+        },
+      },
+    };
+    const knowledge = {
+      list: async () =>
+        options.catalog
+          ? [
+              {
+                enabled: true,
+                mounted: true,
+                source: 'registry',
+                name: 'Science Library',
+                ref: { catalogId: 'science', version: '1' },
+                updateAvailable: false,
+              },
+            ]
+          : [],
+      available: async () => [],
+      activeInstalls: () => [],
+      getJob: () => undefined,
+      // A vector hit above Gezel's bar for passages its model has not judged.
+      searchUnified: async () => [
+        { uri: catalogUri, arm: 'vector', kind: 'knowledge', score: 1, relevance: 0.9 },
+      ],
+      resolveCitation: async () => ({
+        ok: true,
+        title: 'Photosynthesis',
+        chunk: { text: article },
+        uri: { catalogId: 'science' },
+        catalogVersion: '1',
+      }),
+    };
+    const routes = v1KnowledgeRoutes({ knowledge, relevance } as unknown as Parameters<
+      typeof v1KnowledgeRoutes
+    >[0]);
+    const fetchRoutes: typeof fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      return routes.fetch(
+        new Request(`http://gezel${url.pathname.replace('/v1/knowledge', '')}`, init),
+      );
+    };
+    return {
+      app: new GezelApp({ baseUrl: 'http://gezel', token: 'token', fetch: fetchRoutes }),
+      scored,
+    };
+  }
+  const ask = (target: GezelApp) =>
+    withGezelKnowledge(
+      target,
+      [{ role: 'user', content: 'What eats my roses?' }],
+      new AbortController().signal,
+      { citations: true, workspacePassages: notes },
+    );
+  const evidence = (result: Awaited<ReturnType<typeof ask>>) =>
+    result.knowledge?.outcome === 'used'
+      ? result.knowledge.evidence.map((entry) => [entry.catalogId, entry.text])
+      : result.knowledge;
+
+  it('judges notes and catalog passages together and keeps only what clears its bar', async () => {
+    const { app: target, scored } = gezel({
+      catalog: true,
+      scores: { [notes[0].text]: 0.9, [article]: 0.7, [notes[1].text]: 0.1 },
+    });
+    const result = await ask(target);
+    expect(scored).to.deep.equal([[article, notes[0].text, notes[1].text]]);
+    expect(evidence(result)).to.deep.equal([
+      ['workspace', notes[0].text],
+      ['science', article],
+    ]);
+    expect(result.knowledge?.outcome === 'used' && result.knowledge.sources).to.deep.equal([
+      { catalogId: 'workspace', name: 'This workspace', titles: ['Garden notes › Pests'] },
+      { catalogId: 'science', name: 'Science Library', titles: ['Photosynthesis'] },
+    ]);
+    expect(result.messages[0].content).to.contain(notes[0].uri).and.not.contain(notes[1].text);
+  });
+
+  it('takes turns with catalog passages, a catalog passage first, without the model', async () => {
+    const { app: target, scored } = gezel({ catalog: true });
+    expect(evidence(await ask(target))).to.deep.equal([
+      ['science', article],
+      ['workspace', notes[0].text],
+      ['workspace', notes[1].text],
+    ]);
+    expect(scored).to.deep.equal([]);
+  });
+
+  it('judges notes alone where no catalog is enabled', async () => {
+    const { app: target } = gezel({
+      catalog: false,
+      scores: { [notes[0].text]: 0.8, [notes[1].text]: 0.2 },
+    });
+    expect(evidence(await ask(target))).to.deep.equal([['workspace', notes[0].text]]);
+    const none = await ask(gezel({ catalog: false, scores: {} }).app);
+    expect(none.knowledge).to.deep.equal({ outcome: 'none' });
+  });
+
+  it('accepts every workspace passage DocBlocks puts on the wire', () => {
+    const longest = `${'n'.repeat(250)}.md`;
+    const passages = parseAiWorkspacePassages(
+      Array.from({ length: AI_WIRE_LIMITS.workspacePassages }, (_, index) => ({
+        uri: `knowledge://local/ws-0123456789abcdef/${longest}#line=${index}-999999999`,
+        title: 't'.repeat(AI_WIRE_LIMITS.knowledgeTitleCharacters),
+        text: 'x'.repeat(
+          AI_WIRE_LIMITS.workspacePassagesCharacters / AI_WIRE_LIMITS.workspacePassages,
+        ),
+      })),
+    );
+    expect(passages).to.have.length(AI_WIRE_LIMITS.workspacePassages);
+    expect(AppKnowledgeQuerySchema.shape.candidates.safeParse(passages).success).to.equal(true);
+    const single = parseAiWorkspacePassages([
+      { ...notes[0], text: 'x'.repeat(AI_WIRE_LIMITS.workspacePassageCharacters) },
+    ]);
+    expect(AppKnowledgeQuerySchema.shape.candidates.safeParse(single).success).to.equal(true);
+  });
+});
+
 describe('Gezel knowledge reported to the renderer', () => {
   it('names the catalogs and distinct articles a request cited', async () => {
     const result = await withGezelKnowledge(
@@ -171,10 +388,25 @@ describe('Gezel knowledge reported to the renderer', () => {
       ],
       // Every passage the model saw, for checking its output against.
       evidence: [
-        { title: 'Science', catalogId: 'science', text: 'A cited fact.' },
-        { title: 'Science', catalogId: 'science', text: 'More.' },
-        { title: 'Physics', catalogId: 'science', text: 'A cited fact.' },
-        { title: 'Statute', catalogId: 'law', text: 'A cited fact.' },
+        { title: 'Science', catalogId: 'science', text: 'A cited fact.', uri: passage.uri },
+        {
+          title: 'Science',
+          catalogId: 'science',
+          text: 'More.',
+          uri: 'knowledge://publisher/science/article#2',
+        },
+        {
+          title: 'Physics',
+          catalogId: 'science',
+          text: 'A cited fact.',
+          uri: 'knowledge://publisher/physics/a',
+        },
+        {
+          title: 'Statute',
+          catalogId: 'law',
+          text: 'A cited fact.',
+          uri: 'knowledge://publisher/law/a',
+        },
       ],
     });
   });
@@ -203,7 +435,9 @@ describe('Gezel knowledge reported to the renderer', () => {
     expect(result.knowledge).to.deep.equal({
       outcome: 'used',
       sources: [{ catalogId: 'science', name: 'science', titles: ['Science'] }],
-      evidence: [{ title: 'Science', catalogId: 'science', text: 'A cited fact.' }],
+      evidence: [
+        { title: 'Science', catalogId: 'science', text: 'A cited fact.', uri: passage.uri },
+      ],
     });
     // Without state, "nothing matched" cannot be told from "nothing enabled".
     const none = await withGezelKnowledge(
@@ -401,8 +635,13 @@ describe('Gezel knowledge for cited drafts', () => {
     // The model was asked to cite evidence[0] as [1].
     expect(cited.knowledge).to.deep.include({
       evidence: [
-        { title: 'Science', catalogId: 'science', text: 'A cited fact.' },
-        { title: 'B', catalogId: 'science', text: 'A cited fact.' },
+        { title: 'Science', catalogId: 'science', text: 'A cited fact.', uri: passage.uri },
+        {
+          title: 'B',
+          catalogId: 'science',
+          text: 'A cited fact.',
+          uri: 'knowledge://publisher/science/b',
+        },
       ],
     });
     const plain = await withGezelKnowledge(app(two), messages, new AbortController().signal);

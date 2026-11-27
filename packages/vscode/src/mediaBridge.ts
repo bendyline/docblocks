@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { isConflictCopyPath } from '@bendyline/docblocks/filesystem';
 import { HOST_WIRE_LIMITS } from '@bendyline/docblocks/host';
 import type { MediaEntryMessage, WebviewToExtensionMessage } from '@bendyline/docblocks/vscode';
 import {
@@ -165,6 +166,8 @@ async function walkMediaFolder(
     const relativePath = `${relativeFolder}/${name}`;
     await assertNoSymbolicLinkComponents(childUri);
     if ((type & vscode.FileType.Directory) !== 0) {
+      // Versions of the document set aside for review are not media it uses.
+      if (isConflictCopyPath(relativePath)) continue;
       await walkMediaFolder(childUri, relativePath, entries, depth + 1);
       continue;
     }

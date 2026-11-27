@@ -60,9 +60,6 @@ describe('study aid sections', () => {
     const small = studyBudget(null);
     expect(small.contextTokens).to.equal(4_096);
     expect(small.summaryTokens).to.be.at.most(1_024);
-    expect(small.itemTokens).to.be.at.most(1_024);
-    // What one call carries, plus its output, fits the window at 3 characters a token.
-    expect(small.chunkCharacters / 3 + small.itemTokens).to.be.below(small.contextTokens);
     const large = studyBudget(131_072);
     expect(large.chunkCharacters).to.equal(24_000);
     expect(large.maxChunks).to.be.greaterThan(small.maxChunks);
@@ -129,5 +126,30 @@ describe('study aid sections', () => {
     expect(
       chunkStudySections(segmentStudySections('# Title\n\n```js\nx\n```\n'), studyBudget(4_096)),
     ).to.deep.equal({ chunks: [], shortened: false });
+  });
+
+  it('leaves out slide summaries and study cards kept in the document', () => {
+    const sections = segmentStudySections(
+      [
+        '# Plants',
+        '',
+        'Leaves catch the light.',
+        '',
+        '## A slide {[summary]}',
+        '',
+        '- Zanzibar slide point',
+        '',
+        '## Where? {[quiz]}',
+        '',
+        '- [x] Zanzibar choice',
+        '- [ ] Elsewhere',
+        '',
+        '## Watering',
+        '',
+        'Water in the morning.',
+      ].join('\n'),
+    );
+    expect(sections.map((section) => section.heading)).to.deep.equal(['Plants', 'Watering']);
+    expect(JSON.stringify(sections)).to.not.contain('Zanzibar');
   });
 });

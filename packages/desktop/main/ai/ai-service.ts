@@ -29,7 +29,8 @@ import {
   parseAiChatProgress,
   parseAiKnowledgeState,
 } from '@bendyline/docblocks/host';
-import type { AiKnowledgeState, AiKnowledgeAction } from '@bendyline/docblocks/host';
+import type { AiDeviceFit, AiKnowledgeState, AiKnowledgeAction } from '@bendyline/docblocks/host';
+import { createAiDeviceProbe } from './ai-device.js';
 import type {
   AiChatEvent,
   AiChatKnowledge,
@@ -101,6 +102,9 @@ export interface ProviderChatRequest {
   readonly responseFormat?: AiResponseFormat;
   readonly knowledgeQuery?: string;
   readonly knowledgeCitations?: boolean;
+  /** False: search no knowledge catalog for this request. */
+  readonly searchKnowledge?: boolean;
+  readonly workspacePassages?: AiChatRequest['workspacePassages'];
 }
 
 export interface ProviderChatChunk {
@@ -174,6 +178,8 @@ export interface AiServiceOptions {
   /** A status read re-detects an absent provider at most this often. */
   readonly redetectIntervalMs?: number;
   readonly now?: () => number;
+  /** How well this computer could run a local model; measured without the provider. */
+  readonly deviceFit?: () => Promise<AiDeviceFit>;
 }
 
 export type AiChatEmitter = (event: AiChatEvent) => void;
@@ -269,6 +275,7 @@ export class AiService {
   private readonly firstTextTimeoutMs: number;
   private readonly redetectIntervalMs: number;
   private readonly now: () => number;
+  private readonly measureDevice: () => Promise<AiDeviceFit>;
 
   private status: AiStatus = unavailable('opt-out');
   private readonly listeners = new Set<(status: AiStatus) => void>();
@@ -303,6 +310,15 @@ export class AiService {
     this.firstTextTimeoutMs = options.firstTextTimeoutMs ?? DEFAULT_FIRST_TEXT_TIMEOUT_MS;
     this.redetectIntervalMs = options.redetectIntervalMs ?? DEFAULT_REDETECT_INTERVAL_MS;
     this.now = options.now ?? Date.now;
+    this.measureDevice = options.deviceFit ?? createAiDeviceProbe();
+  }
+
+  /**
+   * Whether this computer is worth suggesting AI on. Measured once, without
+   * the provider, so it answers while AI is off.
+   */
+  deviceFit(): Promise<AiDeviceFit> {
+    return this.measureDevice();
   }
 
   /** Load preferences and, when AI is on, reconnect silently. */
@@ -660,6 +676,10 @@ export class AiService {
       ...(request.responseFormat === undefined ? {} : { responseFormat: request.responseFormat }),
       ...(request.knowledgeQuery === undefined ? {} : { knowledgeQuery: request.knowledgeQuery }),
       ...(request.knowledgeCitations ? { knowledgeCitations: true } : {}),
+      ...(request.searchKnowledge === false ? { searchKnowledge: false } : {}),
+      ...(request.workspacePassages?.length
+        ? { workspacePassages: request.workspacePassages }
+        : {}),
     };
     void this.runChat(connection, chat, providerRequest, emit).finally(() => {
       this.chats.delete(streamKey);

@@ -321,6 +321,10 @@ other `--image-*` value is checked before the document is read, so a typo fails
 without launching a browser. Passing an `--image-*` option without `png` in
 `--formats` is refused rather than silently ignored.
 
+Side information kept in a Markdown document — slide summaries and study cards
+(`{[summary]}`, `{[flashcard]}`, `{[quiz]}` Squisq accessory blocks) — is kept
+when converting to Markdown or DBK and left out of every other output.
+
 ## `docblocks video <input> [output]`
 
 ```bash
@@ -343,7 +347,11 @@ PDF, spreadsheet, HTML, Markdown, JSON Doc, DBK/ZIP, and folder sources are vali
 The linked default dimensions are 1920x1080 landscape and 1080x1920 portrait.
 
 **Dynamic slides** (`squisq-transform: dynamic-slides`) regenerates the visual
-presentation from current prose and optional `squisq-presentation-hints`. Its cues
+presentation from current prose and the design saved in the document (summary keys,
+`slideLayout=` heading settings — including `feature`, which draws a chart or other
+picture block on the last slide of the section before it — and `{[summary]}`
+blocks; legacy
+`squisq-presentation-hints` is still read). Its cues
 are resolved from the current narration and adjacent timing sidecar, including
 WebM audio. Keep the Markdown and its media folder together. Stale narration or
 missing timings fail export with a repair message. Legacy `squisq-presentation`

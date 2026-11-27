@@ -11,7 +11,10 @@ import type {
   MobileProvider,
 } from '@bendyline/gezel/mobile-providers';
 import type { AiChatEvent, AiPreferences, AiStatus } from '@bendyline/docblocks/host';
-import type { EmbeddingConnection } from '@bendyline/gezel-app-sdk/browser';
+import {
+  interleaveKnowledgeCandidates,
+  type EmbeddingConnection,
+} from '@bendyline/gezel-app-sdk/browser';
 import { createMobileAi } from '../src/ai/host';
 import { buildReviewRequest } from '../../react/src/Ai/ai-assistant';
 import { WELCOME_DOCUMENT_CONTENT } from '../../react/src/DocBlocksShell/welcome-document';
@@ -208,6 +211,8 @@ describe('mobile AI through the Gezel App SDK', () => {
         // Settings tells the OS model apart from downloaded weights by this flag.
         assert.equal(models.value.find((m) => m.id === modelId)?.system, true);
         assert.equal(models.value.find((m) => m.id !== modelId)?.system, undefined);
+        // Gezel does not rate Apple's model; Settings shows DocBlocks' measurement.
+        assert.equal(models.value.find((m) => m.id === modelId)?.docbench?.version, '0.2.2');
       }
       const result = await f.ai.chat({ ...request, maxTokens: 2048 }, () => {}).done;
       assert.ok(result.ok, JSON.stringify(result));
@@ -285,6 +290,48 @@ describe('mobile AI through the Gezel App SDK', () => {
     assert.equal((await f.ai.installModel!(catalog[0].id).done).ok, false);
     assert.equal((await f.ai.chat(request, () => {}).done).ok, false);
     assert.deepEqual(f.calls, []);
+  });
+  it('measures the phone for the AI invitation while off, without loading the runtime', async () => {
+    const GIB = 1024 ** 3;
+    for (const [bytes, suggestAi] of [
+      [11.2 * GIB, true],
+      [7.5 * GIB, false],
+      [null, false],
+    ] as const) {
+      let asked = 0;
+      let loaded = 0;
+      const { ai } = createMobileAi({
+        load: async () => {
+          loaded += 1;
+          throw new Error('Not loaded for a device question');
+        },
+        readPreferences: () => ({ enabled: false, model: null, reviewMode: 'explicit' }),
+        writePreferences: () => undefined,
+        deviceMemoryBytes: async () => {
+          asked += 1;
+          return bytes;
+        },
+      });
+      assert.deepEqual(await ai.deviceFit!(), { memory: 'mobile', bytes, suggestAi });
+      await ai.deviceFit!();
+      assert.equal(asked, 1, 'measured once');
+      assert.equal(loaded, 0);
+    }
+    const unmeasured = createMobileAi({
+      load: async () => {
+        throw new Error('unused');
+      },
+      readPreferences: () => ({ enabled: false, model: null, reviewMode: 'explicit' }),
+      writePreferences: () => undefined,
+      deviceMemoryBytes: async () => {
+        throw new Error('listModels failed');
+      },
+    });
+    assert.deepEqual(await unmeasured.ai.deviceFit!(), {
+      memory: 'mobile',
+      bytes: null,
+      suggestAi: false,
+    });
   });
   it('streams the real SDK transport, reconciles suffixes, caps context and keeps capabilities honest', async () => {
     const f = fixture();
@@ -369,6 +416,36 @@ describe('mobile AI through the Gezel App SDK', () => {
     assert.equal((await f.ai.status()).kind, 'error');
     assert.ok(!f.calls.includes('generate'));
   });
+  it('lets a reply that keeps streaming run past the stall timeout', async () => {
+    // The fixture's stall timeout is 40 ms; this reply streams for about 150 ms.
+    const f = fixture({ enabled: true });
+    const pieces = [
+      'One ',
+      'two ',
+      'three ',
+      'four ',
+      'five ',
+      'six ',
+      'seven ',
+      'eight ',
+      'nine ',
+      'ten.',
+    ];
+    f.runtime.generate = async (input) => {
+      for (const piece of pieces) {
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        f.emit(input.requestId, piece);
+      }
+      return { text: pieces.join(''), stopReason: 'stop' };
+    };
+    const result = await f.ai.chat(request, () => {}).done;
+    assert.ok(result.ok, JSON.stringify(result));
+    if (result.ok) {
+      assert.equal(result.value.finishReason, 'stop');
+      assert.equal(result.value.text, pieces.join(''));
+    }
+  });
+
   for (const action of ['cancel', 'disable', 'background', 'timeout'] as const) {
     it(`settles exactly once and cancels native work on ${action}`, async () => {
       const f = fixture({ enabled: true });
@@ -990,7 +1067,9 @@ describe('mobile knowledge', () => {
     assert.deepEqual(knowledge?.kind === 'knowledge' && knowledge.knowledge, {
       outcome: 'used',
       sources: [{ catalogId: catalog.id, name: 'Pacific Northwest', titles: [passage.title] }],
-      evidence: [{ title: passage.title, catalogId: catalog.id, text: passage.text }],
+      evidence: [
+        { title: passage.title, catalogId: catalog.id, text: passage.text, uri: passage.uri },
+      ],
     });
     // The names stay cached for the next request.
     const calls = f.stateCalls();
@@ -1045,6 +1124,125 @@ describe('mobile knowledge', () => {
     assert.equal(routed?.messages.at(-1)?.content, 'Hello');
     const knowledge = events.find((event) => event.kind === 'knowledge');
     assert.ok(knowledge?.kind === 'knowledge' && knowledge.knowledge.outcome !== 'used');
+    await f.ai.setPreferences({ enabled: false });
+  });
+
+  const note = {
+    uri: 'knowledge://local/ws-0123456789abcdef/garden/pests.md#line=3-5',
+    title: 'Garden notes › Pests',
+    text: 'Aphids gather under the leaves.',
+  };
+
+  it('hands workspace passages to Gezel as candidates and names them', async () => {
+    const offered: unknown[] = [];
+    const f = withKnowledge({
+      // The plugin's retrieval: candidates take turns with catalog passages.
+      retrieve: async (query) => {
+        offered.push(query.candidates);
+        return interleaveKnowledgeCandidates(
+          { reranked: false, passages: [passage] },
+          query.candidates ?? [],
+          query,
+        );
+      },
+    });
+    let routed: Parameters<GezelRuntimePlugin['generate']>[0] | undefined;
+    f.runtime.generate = async (input) => {
+      routed = input;
+      return { text: 'Aphids.', stopReason: 'stop' };
+    };
+    const events: AiChatEvent[] = [];
+    const result = await f.ai.chat(
+      {
+        purpose: 'write',
+        messages: [{ role: 'user', content: 'What eats my roses?' }],
+        knowledgeQuery: 'What eats my roses?',
+        workspacePassages: [note],
+      },
+      (event) => events.push(event),
+    ).done;
+    assert.ok(result.ok, JSON.stringify(result));
+    assert.deepEqual(offered, [[note]]);
+    assert.ok(routed?.messages[0]?.content.includes(note.text));
+    assert.ok(routed?.messages[0]?.content.includes(passage.text));
+    const knowledge = events.find((event) => event.kind === 'knowledge');
+    assert.deepEqual(knowledge?.kind === 'knowledge' && knowledge.knowledge, {
+      outcome: 'used',
+      sources: [
+        { catalogId: catalog.id, name: 'Pacific Northwest', titles: [passage.title] },
+        { catalogId: 'workspace', name: 'This workspace', titles: [note.title] },
+      ],
+      evidence: [
+        { title: passage.title, catalogId: catalog.id, text: passage.text, uri: passage.uri },
+        { title: note.title, catalogId: 'workspace', text: note.text, uri: note.uri },
+      ],
+    });
+    await f.ai.setPreferences({ enabled: false });
+  });
+
+  it('grounds a request in workspace passages when catalog retrieval fails', async () => {
+    const f = withKnowledge({
+      retrieve: async () => {
+        throw new Error('The knowledge worker stopped');
+      },
+    });
+    let routed: Parameters<GezelRuntimePlugin['generate']>[0] | undefined;
+    f.runtime.generate = async (input) => {
+      routed = input;
+      return { text: 'Aphids.', stopReason: 'stop' };
+    };
+    const events: AiChatEvent[] = [];
+    const result = await f.ai.chat(
+      {
+        purpose: 'write',
+        messages: [{ role: 'user', content: 'What eats my roses?' }],
+        knowledgeQuery: 'What eats my roses?',
+        workspacePassages: [note],
+      },
+      (event) => events.push(event),
+    ).done;
+    assert.ok(result.ok, JSON.stringify(result));
+    assert.ok(routed?.messages[0]?.content.includes(note.text));
+    const knowledge = events.find((event) => event.kind === 'knowledge');
+    assert.deepEqual(knowledge?.kind === 'knowledge' && knowledge.knowledge.outcome, 'used');
+    assert.deepEqual(
+      knowledge?.kind === 'knowledge' &&
+        knowledge.knowledge.outcome === 'used' &&
+        knowledge.knowledge.sources,
+      [{ catalogId: 'workspace', name: 'This workspace', titles: [note.title] }],
+    );
+    await f.ai.setPreferences({ enabled: false });
+  });
+
+  it('sends a request that opts out of knowledge as written', async () => {
+    const f = withKnowledge();
+    let routed: Parameters<GezelRuntimePlugin['generate']>[0] | undefined;
+    f.runtime.generate = async (input) => {
+      routed = input;
+      return { text: 'Tidy prose.', stopReason: 'stop' };
+    };
+    const events: AiChatEvent[] = [];
+    const result = await f.ai.chat(
+      {
+        purpose: 'chat',
+        searchKnowledge: false,
+        messages: [
+          { role: 'system', content: 'Edit a speech transcript.' },
+          { role: 'user', content: 'um the panama hotel' },
+        ],
+      },
+      (event) => events.push(event),
+    ).done;
+    assert.ok(result.ok, JSON.stringify(result));
+    assert.deepEqual(f.queries, []);
+    assert.equal(
+      events.some((event) => event.kind === 'knowledge'),
+      false,
+    );
+    assert.deepEqual(routed?.messages, [
+      { role: 'system', content: 'Edit a speech transcript.' },
+      { role: 'user', content: 'um the panama hotel' },
+    ]);
     await f.ai.setPreferences({ enabled: false });
   });
 });

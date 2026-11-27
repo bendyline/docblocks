@@ -1,9 +1,11 @@
 // A stand-in for `gezel-whisper-server` that speaks just enough of its HTTP
 // surface for the engine tests and the desktop e2e. Behaviour is chosen with
-// FAKE_WHISPER_MODE; the transcript with FAKE_WHISPER_TEXT.
+// FAKE_WHISPER_MODE; the transcript with FAKE_WHISPER_TEXT; a slow model with
+// FAKE_WHISPER_INFERENCE_DELAY_MS.
 import { Buffer } from 'node:buffer';
 import { createServer } from 'node:http';
 import process from 'node:process';
+import { setTimeout } from 'node:timers';
 
 const args = process.argv.slice(2);
 const option = (name) => {
@@ -14,6 +16,7 @@ const port = Number(option('--port'));
 const model = option('--model');
 const mode = process.env.FAKE_WHISPER_MODE ?? 'ok';
 const readyDelayMs = Number(process.env.FAKE_WHISPER_READY_DELAY_MS ?? 0);
+const inferenceDelayMs = Number(process.env.FAKE_WHISPER_INFERENCE_DELAY_MS ?? 0);
 const startedAt = Date.now();
 let requests = 0;
 
@@ -32,7 +35,7 @@ const server = createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/inference') {
     const chunks = [];
     req.on('data', (chunk) => chunks.push(chunk));
-    req.on('end', () => {
+    const respond = () => {
       requests += 1;
       const body = Buffer.concat(chunks).toString('latin1');
       if (mode === 'exit-on-request') process.exit(1);
@@ -77,7 +80,8 @@ const server = createServer((req, res) => {
             : { error: 'expected a WAV file' },
         ),
       );
-    });
+    };
+    req.on('end', () => setTimeout(respond, inferenceDelayMs));
     return;
   }
   res.writeHead(404);

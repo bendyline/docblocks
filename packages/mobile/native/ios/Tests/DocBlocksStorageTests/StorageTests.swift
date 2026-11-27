@@ -73,6 +73,100 @@ final class StorageTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(".note.md.icloud").path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("note.md").path))
     }
+    // MARK: A local copy that iCloud has already replaced
+
+    /// Opens `note.md` in a cloud root whose iCloud state is scripted by the test.
+    private func openStale(_ cloud: FakeCloudState, _ waits: CloudWaits) throws -> Storage {
+        try Data("old".utf8).write(to: root.appendingPathComponent("note.md"))
+        cloud.freshness["note.md"] = .stale
+        let synced = try Storage(roots: ["local": root], cloud: cloud, waits: waits)
+        try synced.register("cloud", root: root, cloud: true)
+        _ = synced.request(["op": "open", "instanceId": "cloud", "providerId": "cloud", "label": "iCloud"])
+        return synced
+    }
+    private func quickWaits() -> CloudWaits {
+        var waits = CloudWaits(); waits.poll = 0.01; waits.staleRead = 0.05; waits.staleChange = 0.05; waits.staleGrace = 60
+        return waits
+    }
+    private func version(_ storage: Storage, _ path: String) throws -> String {
+        try XCTUnwrap((storage.request(["op": "stat", "instanceId": "cloud", "path": path])["value"] as? [String: Any])?["version"] as? String)
+    }
+    private func replace(_ storage: Storage, _ path: String, with text: String, expecting version: String) throws -> [String: Any] {
+        let bytes = Data(text.utf8)
+        let begin = storage.request(["op": "writeBegin", "instanceId": "cloud", "path": path, "byteLength": bytes.count, "options": ["mode": "replace", "expectedVersion": version]])
+        let token = try XCTUnwrap(begin["value"] as? String)
+        _ = storage.request(["op": "writeChunk", "instanceId": "cloud", "transferId": token, "offset": 0, "data": bytes.base64EncodedString()])
+        return storage.request(["op": "writeFinish", "instanceId": "cloud", "transferId": token])
+    }
+    private func text(_ name: String) throws -> String { try String(contentsOf: root.appendingPathComponent(name), encoding: .utf8) }
+    private func code(_ response: [String: Any]) -> String? { (response["error"] as? [String: Any])?["code"] as? String }
+
+    func testReadingAStaleFileWaitsForTheNewerVersion() throws {
+        let cloud = FakeCloudState()
+        cloud.onStart = { [root] name in
+            try? Data("new".utf8).write(to: root!.appendingPathComponent(name)); cloud.freshness[name] = .current
+        }
+        let synced = try openStale(cloud, quickWaits()); defer { synced.shutdown() }
+        let read = try XCTUnwrap(synced.request(["op": "readBegin", "instanceId": "cloud", "path": "note.md"])["value"] as? [String: Any])
+        let token = try XCTUnwrap(read["transferId"] as? String)
+        let chunk = try XCTUnwrap(synced.request(["op": "readChunk", "instanceId": "cloud", "transferId": token, "offset": 0])["value"] as? String)
+        XCTAssertEqual(Data(base64Encoded: chunk), Data("new".utf8))
+        XCTAssertEqual(cloud.started, ["note.md"])
+    }
+    func testReadingAStaleFileFallsBackToTheLocalCopy() throws {
+        let cloud = FakeCloudState()
+        let synced = try openStale(cloud, quickWaits()); defer { synced.shutdown() }
+        let read = try XCTUnwrap(synced.request(["op": "readBegin", "instanceId": "cloud", "path": "note.md"])["value"] as? [String: Any])
+        XCTAssertEqual((read["entry"] as? [String: Any])?["size"] as? Int, 3)
+        XCTAssertEqual(cloud.started, ["note.md"])
+    }
+    func testCheckingAStaleFileAsksForTheNewerVersionWithoutWaiting() throws {
+        let cloud = FakeCloudState()
+        var waits = quickWaits(); waits.staleRead = 30; waits.staleChange = 30
+        let synced = try openStale(cloud, waits); defer { synced.shutdown() }
+        let started = Date()
+        _ = try version(synced, "note.md")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 5)
+        XCTAssertEqual(cloud.started, ["note.md"])
+    }
+    func testAStaleFileIsNotOverwrittenWhileTheNewerVersionIsArriving() throws {
+        let cloud = FakeCloudState()
+        let synced = try openStale(cloud, quickWaits()); defer { synced.shutdown() }
+        let response = try replace(synced, "note.md", with: "mine", expecting: try version(synced, "note.md"))
+        XCTAssertEqual(code(response), "busy")
+        XCTAssertEqual((response["error"] as? [String: Any])?["retryable"] as? Bool, true)
+        XCTAssertEqual(try text("note.md"), "old")
+        // Moving or deleting it would also act on old content.
+        XCTAssertEqual(code(synced.request(["op": "remove", "instanceId": "cloud", "path": "note.md", "options": [:]])), "busy")
+        XCTAssertEqual(code(synced.request(["op": "move", "instanceId": "cloud", "oldPath": "note.md", "newPath": "moved.md", "options": [:]])), "busy")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), ["note.md"])
+    }
+    func testAWriteBasedOnStaleContentBecomesAConflictOnceTheNewerVersionArrives() throws {
+        let cloud = FakeCloudState()
+        let synced = try openStale(cloud, quickWaits()); defer { synced.shutdown() }
+        let old = try version(synced, "note.md")
+        cloud.onStart = { [root] name in
+            try? Data("new".utf8).write(to: root!.appendingPathComponent(name)); cloud.freshness[name] = .current
+        }
+        XCTAssertEqual(code(try replace(synced, "note.md", with: "mine", expecting: old)), "conflict")
+        XCTAssertEqual(try text("note.md"), "new")
+    }
+    func testAStaleFileCanStillBeSavedOffline() throws {
+        let cloud = FakeCloudState(); cloud.failed = ["note.md"]
+        let synced = try openStale(cloud, quickWaits()); defer { synced.shutdown() }
+        XCTAssertEqual(try replace(synced, "note.md", with: "mine", expecting: try version(synced, "note.md"))["ok"] as? Bool, true)
+        XCTAssertEqual(try text("note.md"), "mine")
+    }
+    func testAStaleFileIsNeverRefusedIndefinitely() throws {
+        let cloud = FakeCloudState()
+        var waits = quickWaits(); waits.staleGrace = 0.2
+        let synced = try openStale(cloud, waits); defer { synced.shutdown() }
+        let old = try version(synced, "note.md")
+        XCTAssertEqual(code(try replace(synced, "note.md", with: "mine", expecting: old)), "busy")
+        Thread.sleep(forTimeInterval: 0.25)
+        XCTAssertEqual(try replace(synced, "note.md", with: "mine", expecting: old)["ok"] as? Bool, true)
+        XCTAssertEqual(try text("note.md"), "mine")
+    }
     func testExportStagingRequiresCompleteOrderedDataAndCancels() throws {
         let staging = try ExportStaging(root: root.appendingPathComponent("exports"))
         let token = try staging.begin(filename: "report.md", size: 3)
@@ -84,4 +178,15 @@ final class StorageTests: XCTestCase {
         try staging.cancel(token); try staging.cancel(token)
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
     }
+}
+
+/// iCloud's view of a root, scripted by file name. Storage calls it under its own lock.
+private final class FakeCloudState: CloudState {
+    var freshness: [String: CloudFreshness] = [:]
+    var failed: Set<String> = []
+    var started: [String] = []
+    var onStart: ((String) -> Void)?
+    func freshness(of url: URL) -> CloudFreshness? { freshness[url.lastPathComponent] }
+    func downloadFailed(for url: URL) -> Bool { failed.contains(url.lastPathComponent) }
+    func startDownloading(_ url: URL) throws { started.append(url.lastPathComponent); onStart?(url.lastPathComponent) }
 }

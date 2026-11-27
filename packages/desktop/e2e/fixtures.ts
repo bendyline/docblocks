@@ -89,6 +89,8 @@ const FAKE_WHISPER_SERVER = path.resolve(
   'fake-whisper-server.mjs',
 );
 const FAKE_KOKORO_UTILITY = path.resolve(__dirname, 'fake-kokoro-utility.cjs');
+/** And for semantic search's embedding model. */
+const FAKE_EMBEDDING_UTILITY = path.resolve(__dirname, 'fake-embedding-utility.cjs');
 
 function cleanEnv(workspaceDir: string, gezelHome: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
@@ -98,6 +100,8 @@ function cleanEnv(workspaceDir: string, gezelHome: string): NodeJS.ProcessEnv {
   env.DOCBLOCKS_SPEECH_WHISPER_BIN = process.execPath;
   env.DOCBLOCKS_SPEECH_WHISPER_SCRIPT = FAKE_WHISPER_SERVER;
   env.DOCBLOCKS_SPEECH_KOKORO_ENTRY = FAKE_KOKORO_UTILITY;
+  // Semantic search embeds with deterministic vectors and no model files.
+  env.DOCBLOCKS_EMBEDDINGS_ENTRY = FAKE_EMBEDDING_UTILITY;
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_NO_ATTACH_CONSOLE;
   delete env.NODE_OPTIONS;

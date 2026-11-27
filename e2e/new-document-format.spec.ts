@@ -1,11 +1,12 @@
 import type { Page } from '@playwright/test';
 import { openInitializedSite } from './helpers/site.js';
+import { createDocument, newDocumentGallery } from './helpers/new-document.js';
 import { expect, test } from './helpers/test.js';
 
 /**
  * The type last used to create a document in a workspace is that workspace's
- * next default, in both the New document dialog and the explorer's New File
- * form, and survives a reload. Other workspaces keep their own default.
+ * next default in the New document gallery, however it is opened, and
+ * survives a reload. Other workspaces keep their own default.
  */
 
 async function switchWorkspace(page: Page, name: string) {
@@ -16,10 +17,12 @@ async function switchWorkspace(page: Page, name: string) {
   ).toBeVisible();
 }
 
+/** The type chip the gallery opens with, from the file list's New File. */
 async function explorerDefaultType(page: Page): Promise<string> {
   await page.getByRole('button', { name: 'New File', exact: true }).click();
-  const type = await page.getByLabel('New file type').inputValue();
-  await page.locator('.db-new-item-input').press('Escape');
+  const gallery = newDocumentGallery(page);
+  const type = await gallery.getByRole('radio', { checked: true }).innerText();
+  await gallery.getByRole('button', { name: 'Cancel' }).click();
   return type;
 }
 
@@ -39,11 +42,10 @@ test('remembers the last document type per workspace', async ({ page }) => {
     .locator('.db-workspace-empty-content')
     .getByRole('button', { name: 'New document' })
     .click();
-  const dialog = page.getByRole('dialog', { name: 'New document' });
-  await expect(dialog.getByLabel('Type')).toHaveValue('markdown');
-  await dialog.getByLabel('Type').selectOption('web-static');
-  await dialog.getByLabel('Document name').fill('first');
-  await dialog.getByRole('button', { name: 'Create' }).click();
+  await expect(newDocumentGallery(page).getByRole('radio', { checked: true })).toHaveText(
+    'Markdown',
+  );
+  await createDocument(page, 'first.html', { type: 'Static web page', openGallery: true });
   await expect(
     page.locator('.db-tree-row[data-path="first.html"], .db-tree-row[data-path="/first.html"]'),
   ).toBeVisible({
@@ -52,18 +54,15 @@ test('remembers the last document type per workspace', async ({ page }) => {
 
   // The next document defaults to the type just used, in both entry points.
   await page.keyboard.press('ControlOrMeta+KeyN');
-  await expect(page.getByRole('dialog', { name: 'New document' }).getByLabel('Type')).toHaveValue(
-    'web-static',
+  await expect(newDocumentGallery(page).getByRole('radio', { checked: true })).toHaveText(
+    'Static web page',
   );
-  await page
-    .getByRole('dialog', { name: 'New document' })
-    .getByRole('button', { name: 'Cancel' })
-    .click();
-  expect(await explorerDefaultType(page)).toBe('web-static');
+  await newDocumentGallery(page).getByRole('button', { name: 'Cancel' }).click();
+  expect(await explorerDefaultType(page)).toBe('Static web page');
 
   // Another workspace keeps its own default.
   await switchWorkspace(page, 'My Documents');
-  expect(await explorerDefaultType(page)).toBe('markdown');
+  expect(await explorerDefaultType(page)).toBe('Markdown');
 
   // And the choice survives a reload.
   await switchWorkspace(page, 'Static pages');
@@ -71,5 +70,5 @@ test('remembers the last document type per workspace', async ({ page }) => {
   await expect(
     page.getByRole('button', { name: 'Switch workspace, current: Static pages' }),
   ).toBeVisible({ timeout: 75_000 });
-  expect(await explorerDefaultType(page)).toBe('web-static');
+  expect(await explorerDefaultType(page)).toBe('Static web page');
 });

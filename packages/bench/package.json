@@ -38,9 +38,9 @@
   "dependencies": {
     "@bendyline/docblocks": "2.8.5",
     "@bendyline/docblocks-react": "2.8.6",
-    "@bendyline/gezel": "1.3.3",
-    "@bendyline/squisq": "2.13.20",
-    "@bendyline/squisq-editor-react": "2.13.31",
+    "@bendyline/gezel": "1.3.5",
+    "@bendyline/squisq": "2.14.3",
+    "@bendyline/squisq-editor-react": "2.14.3",
     "@happy-dom/global-registrator": "20.9.0"
   }
 }

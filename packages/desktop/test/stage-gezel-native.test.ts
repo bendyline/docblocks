@@ -12,6 +12,7 @@ const {
   stageForTarget,
 } = require('../scripts/stage-gezel-native.cjs');
 const { REQUIRED_DLLS } = require('../scripts/stage-vc-runtime.cjs');
+const { stageCloudHelper } = require('../scripts/stage-cloud-helper.cjs');
 
 /** What Gezel's packager extracts for one Windows architecture. */
 async function stagedWindowsEngines({
@@ -47,6 +48,8 @@ describe('Gezel native packaging adapter', () => {
   it('hands the MAS OS and electron-builder destination to the inference packager', async () => {
     const calls: unknown[] = [];
     const verificationCalls: unknown[] = [];
+    const modelCalls: unknown[] = [];
+    const helperCalls: unknown[] = [];
     await stageForTarget(
       {
         packager: { info: { appDir: root }, platform: { buildConfigurationKey: 'mac' } },
@@ -61,8 +64,17 @@ describe('Gezel native packaging adapter', () => {
           expect(calls).to.have.length(1);
           verificationCalls.push(options);
         },
+        stageEmbeddingModel: async (options: unknown) => {
+          modelCalls.push(options);
+        },
+        stageCloudHelper: async (options: unknown) => {
+          helperCalls.push(options);
+        },
       },
     );
+    expect(modelCalls).to.deep.equal([{ appDir: root }]);
+    // Every Mac package, store or direct, carries the iCloud helper.
+    expect(helperCalls).to.deep.equal([{ appDir: root, platform: 'darwin', arch: 'arm64' }]);
     expect(verificationCalls).to.deep.equal([
       { directory: path.join(root, 'dist', 'gezel-native', 'mac-arm64'), platform: 'darwin' },
     ]);
@@ -173,6 +185,62 @@ describe('Gezel native packaging adapter', () => {
     ).to.equal(null);
   });
 
+  it('builds the iCloud helper only for macOS, from the shared Swift package', async () => {
+    const commands: Array<{ args: string[]; cwd: string }> = [];
+    const built = path.join(root, 'swift-bin');
+    await mkdir(built);
+    await writeFile(path.join(built, 'CloudHelper'), 'helper');
+    const swift = async (args: string[], options: { cwd: string }) => {
+      commands.push({ args, cwd: options.cwd });
+      return { stdout: `${built}\n` };
+    };
+    expect(
+      await stageCloudHelper({ appDir: root, platform: 'linux', arch: 'x64' }, { swift }),
+    ).to.equal(null);
+    expect(
+      await stageCloudHelper({ appDir: root, platform: 'win32', arch: 'arm64' }, { swift }),
+    ).to.equal(null);
+    expect(commands).to.deep.equal([]);
+
+    const staged = await stageCloudHelper(
+      { appDir: root, platform: 'darwin', arch: 'arm64' },
+      { swift },
+    );
+    expect(staged).to.equal(path.join(root, 'dist', 'cloud-helper', 'docblocks-cloud-helper'));
+    expect(await readFile(staged, 'utf8')).to.equal('helper');
+    expect(commands.map((command) => command.args.join(' '))).to.deep.equal([
+      'build -c release --arch arm64 --product CloudHelper',
+      'build -c release --arch arm64 --show-bin-path',
+    ]);
+    expect(commands[0]!.cwd).to.equal(path.join(root, '..', 'mobile', 'native', 'ios'));
+
+    let refused = '';
+    try {
+      await stageCloudHelper({ appDir: root, platform: 'darwin', arch: 'x64' }, { swift });
+    } catch (error) {
+      refused = (error as Error).message;
+    }
+    expect(refused).to.contain('darwin-x64');
+  });
+
+  it('says what is missing when the Swift toolchain cannot build the helper', async () => {
+    let message = '';
+    try {
+      await stageCloudHelper(
+        { appDir: root, platform: 'darwin', arch: 'arm64' },
+        {
+          swift: async () => {
+            throw Object.assign(new Error('spawn swift ENOENT'), { stderr: 'no such tool' });
+          },
+        },
+      );
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).to.contain('needs the Swift toolchain');
+    expect(message).to.contain('no such tool');
+  });
+
   it('stages the app-local Visual C++ runtime beside a Windows package', async () => {
     const crt = path.join(root, 'crt');
     await mkdir(crt);
@@ -185,6 +253,7 @@ describe('Gezel native packaging adapter', () => {
       },
       {
         stageElectronNative: stagedWindowsEngines,
+        stageEmbeddingModel: async () => {},
         vcRuntime: { env: { DOCBLOCKS_VCRUNTIME_DIR: crt }, verify: () => undefined },
       },
     );
@@ -198,6 +267,7 @@ describe('Gezel native packaging adapter', () => {
       { appDir: root, platform: 'win32', arch: 'arm64' },
       {
         stageElectronNative: stagedWindowsEngines,
+        stageEmbeddingModel: async () => {},
         verifyNativePlatformRequirements: async () => {},
       },
     );
@@ -226,6 +296,7 @@ describe('Gezel native packaging adapter', () => {
         { appDir: root, platform, arch },
         {
           stageElectronNative: stagedUnixEngines(`${platform}-${arch}`),
+          stageEmbeddingModel: async () => {},
           verifyNativePlatformRequirements: async () => {},
         },
       );
@@ -244,6 +315,8 @@ describe('Gezel native packaging adapter', () => {
       },
       {
         stageElectronNative: stagedUnixEngines('darwin-arm64'),
+        stageEmbeddingModel: async () => {},
+        stageCloudHelper: async () => {},
         verifyNativePlatformRequirements: async () => {},
       },
     );

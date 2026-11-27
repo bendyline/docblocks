@@ -5,7 +5,7 @@
     <title>DocBlocks — Local-First Markdown Editor</title>
     <meta
       name="description"
-      content="Write Markdown visually, keep files local, and export to Word, PDF, slides, e-books, or video. Available on the web, desktop, VS Code, and CLI."
+      content="Write Markdown visually, keep files local, and export to Word, PDF, slides, e-books, or video. On the web, iPhone, iPad, Android, desktop, VS Code, and CLI."
     />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <link rel="canonical" href="https://docblocks.com/" />
@@ -78,10 +78,40 @@
             "name": "DocBlocks",
             "alternateName": "DocBlocks Markdown Editor",
             "url": "https://docblocks.com/",
-            "description": "A local-first Markdown editor for the web, desktop, VS Code, and CLI that converts one source document into Word, PDF, slides, e-books, video, and more.",
+            "description": "A local-first Markdown editor for the web, iPhone, iPad, Android, desktop, VS Code, and CLI that converts one source document into Word, PDF, slides, e-books, video, and more.",
             "applicationCategory": "ProductivityApplication",
-            "operatingSystem": "Web, Windows, macOS, Linux",
-            "isAccessibleForFree": true,
+            "operatingSystem": "Web, iOS, iPadOS, Android, Windows, macOS, Linux",
+            "downloadUrl": "https://docblocks.com/apps/",
+            "offers": [
+              {
+                "@type": "Offer",
+                "name": "Web editor, desktop app, VS Code extension, and CLI",
+                "price": "0",
+                "priceCurrency": "USD",
+                "url": "https://docblocks.com/apps/"
+              },
+              {
+                "@type": "Offer",
+                "name": "iPhone, iPad, and Mac app (one App Store purchase)",
+                "price": "9.99",
+                "priceCurrency": "USD",
+                "url": "https://apps.apple.com/us/app/docblocks-markdown-editor/id6792768923"
+              },
+              {
+                "@type": "Offer",
+                "name": "Android app",
+                "price": "9.99",
+                "priceCurrency": "USD",
+                "url": "https://play.google.com/store/apps/details?id=com.bendyline.docblocks"
+              },
+              {
+                "@type": "Offer",
+                "name": "Windows app from the Microsoft Store",
+                "price": "9.99",
+                "priceCurrency": "USD",
+                "url": "https://apps.microsoft.com/detail/9MTLPD213DL0"
+              }
+            ],
             "license": "https://github.com/bendyline/docblocks/blob/main/LICENSE",
             "publisher": { "@id": "https://docblocks.com/#organization" },
             "featureList": [
@@ -89,6 +119,7 @@
               "Visual and source editing",
               "Document workspaces",
               "DOCX, PDF, PPTX, EPUB, HTML, MP4, and GIF export",
+              "iPhone, iPad, and Android apps",
               "VS Code extension",
               "Command-line interface and local MCP server"
             ]
@@ -352,24 +383,23 @@
         }
       }
 
+      /* The workspace picker leads the files toolbar, folded to its folder
+         glyph as the app shows it short of a wide sidebar. */
       .db-seo-bootstrap-workspace {
         display: flex;
-        min-width: 0;
-        flex: 1;
+        flex: none;
         align-items: center;
-        justify-content: space-between;
         gap: 6px;
-        padding: 6px 8px;
+        padding: 3px 8px;
         border: 1px solid var(--db-boot-border);
         border-radius: 4px;
         color: var(--db-boot-text-secondary);
-        font-size: 12px;
       }
 
-      .db-seo-bootstrap-workspace-label {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+      .db-seo-bootstrap-folder {
+        width: 14px;
+        height: 14px;
+        flex: none;
       }
 
       .db-seo-bootstrap-caret {
@@ -540,15 +570,6 @@
         margin-top: 0;
       }
 
-      .db-seo-bootstrap-kicker {
-        margin-bottom: 12px;
-        color: var(--db-boot-text-muted);
-        font-size: 0.72rem;
-        font-weight: 700;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-      }
-
       .db-seo-bootstrap h1 {
         max-width: 760px;
         margin-bottom: 12px;
@@ -658,8 +679,21 @@
               src="/_res/siteimages/docblocks-dark.svg"
               alt=""
             />
-            <span class="db-seo-bootstrap-workspace"
-              ><span class="db-seo-bootstrap-workspace-label">My Documents</span
+          </div>
+          <div class="db-seo-bootstrap-files-header">
+            <span class="db-seo-bootstrap-workspace" aria-hidden="true"
+              ><svg
+                class="db-seo-bootstrap-folder"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+                /></svg
               ><svg
                 class="db-seo-bootstrap-caret"
                 viewBox="0 0 10 6"
@@ -668,13 +702,9 @@
                 stroke-width="1.4"
                 stroke-linecap="round"
                 stroke-linejoin="round"
-                aria-hidden="true"
               >
                 <path d="m1 1.25 4 3.5 4-3.5" /></svg
             ></span>
-          </div>
-          <div class="db-seo-bootstrap-files-header">
-            <span>Files</span>
             <span class="db-seo-bootstrap-files-actions" aria-hidden="true">＋ ▯</span>
           </div>
           <div class="db-seo-bootstrap-file">Welcome</div>
@@ -732,7 +762,6 @@
           </div>
           <div class="db-seo-bootstrap-document-scroll">
             <article class="db-seo-bootstrap-document">
-              <p class="db-seo-bootstrap-kicker">Welcome to DocBlocks</p>
               <h1>The Markdown editor that turns one file into anything.</h1>
               <p class="db-seo-bootstrap-copy">
                 Write visually or in source, keep your files local, and publish the same Markdown as
@@ -740,12 +769,13 @@
                 document format.
               </p>
               <nav class="db-seo-bootstrap-document-nav" aria-label="Learn about DocBlocks">
+                <a href="/apps/">Apps for phone and computer</a>
                 <a href="/web/">Web</a>
                 <a href="/desktop/">Desktop</a>
                 <a href="/vscode/">VS Code</a>
                 <a href="/cli/">CLI and MCP</a>
                 <a href="/formats/">Formats</a>
-                <a href="/docs/">Apps and getting started</a>
+                <a href="/docs/">Getting started</a>
               </nav>
               <p class="db-seo-bootstrap-loading-note">
                 Still loading&hellip; If this page doesn&rsquo;t finish loading, please

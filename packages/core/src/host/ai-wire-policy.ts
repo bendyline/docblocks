@@ -1,4 +1,5 @@
 import { HOST_WIRE_LIMITS, isBoundedString } from './wire-policy.js';
+import { parseWorkspacePassageUri } from './ai-workspace-knowledge.js';
 import type {
   AiChatEvent,
   AiChatEvidence,
@@ -11,6 +12,7 @@ import type {
   AiChatProgress,
   AiChatPurpose,
   AiChatRequest,
+  AiWorkspacePassage,
   AiConnectionStep,
   AiError,
   AiErrorCode,
@@ -57,6 +59,11 @@ export const AI_WIRE_LIMITS = Object.freeze({
   /** Passage texts sent with a knowledge report; Gezel caps a retrieval at 24,000 characters. */
   knowledgeEvidence: 8,
   knowledgeEvidenceCharacters: 24 * 1024,
+  /** Workspace passages one request may carry, and their text; a passage is ~420 tokens. */
+  workspacePassages: 6,
+  workspacePassageCharacters: 4_000,
+  workspacePassagesCharacters: 12_000,
+  workspacePassageUriCharacters: 2_048,
   /**
    * A fact check reads one draft against every passage its run was given. It
    * runs synchronously in the host; at these bounds it takes tens of ms.
@@ -425,6 +432,8 @@ export function parseAiChatRequest(value: unknown): AiChatRequest | null {
         'responseFormat',
         'knowledgeQuery',
         'knowledgeCitations',
+        'searchKnowledge',
+        'workspacePassages',
       ],
     )
   ) {
@@ -475,6 +484,23 @@ export function parseAiChatRequest(value: unknown): AiChatRequest | null {
   if (value.knowledgeCitations !== undefined && typeof value.knowledgeCitations !== 'boolean') {
     return null;
   }
+  const workspacePassages =
+    value.workspacePassages === undefined
+      ? undefined
+      : parseAiWorkspacePassages(value.workspacePassages);
+  if (workspacePassages === null) return null;
+  if (value.searchKnowledge !== undefined && typeof value.searchKnowledge !== 'boolean') {
+    return null;
+  }
+  // A request that searches nothing has nothing to search for, cite or merge.
+  if (
+    value.searchKnowledge === false &&
+    (value.knowledgeQuery !== undefined ||
+      value.knowledgeCitations === true ||
+      workspacePassages !== undefined)
+  ) {
+    return null;
+  }
 
   return {
     messages,
@@ -489,7 +515,34 @@ export function parseAiChatRequest(value: unknown): AiChatRequest | null {
     ...(value.knowledgeCitations === undefined
       ? {}
       : { knowledgeCitations: value.knowledgeCitations as boolean }),
+    ...(value.searchKnowledge === undefined
+      ? {}
+      : { searchKnowledge: value.searchKnowledge as boolean }),
+    ...(workspacePassages === undefined ? {} : { workspacePassages }),
   };
+}
+
+/** Workspace passages on a chat request: bounded, `knowledge://local/` citations only. */
+export function parseAiWorkspacePassages(value: unknown): AiWorkspacePassage[] | null {
+  if (!Array.isArray(value) || value.length > AI_WIRE_LIMITS.workspacePassages) return null;
+  const passages: AiWorkspacePassage[] = [];
+  let total = 0;
+  for (const entry of value) {
+    if (!isRecord(entry) || !hasKeysWithin(entry, ['uri', 'title', 'text'], [])) return null;
+    const { uri, title, text } = entry;
+    if (
+      !isBoundedString(uri, AI_WIRE_LIMITS.workspacePassageUriCharacters, 1) ||
+      !parseWorkspacePassageUri(uri)
+    ) {
+      return null;
+    }
+    if (!isBoundedString(title, AI_WIRE_LIMITS.knowledgeTitleCharacters, 1)) return null;
+    if (!isBoundedString(text, AI_WIRE_LIMITS.workspacePassageCharacters, 1)) return null;
+    total += text.length;
+    if (total > AI_WIRE_LIMITS.workspacePassagesCharacters) return null;
+    passages.push({ uri, title, text });
+  }
+  return passages;
 }
 
 export function parseAiChatProgress(value: unknown): AiChatProgress | null {
@@ -579,13 +632,28 @@ function parseAiChatEvidence(value: unknown): AiChatEvidence[] | null {
   const evidence: AiChatEvidence[] = [];
   let total = 0;
   for (const entry of value) {
-    if (!isRecord(entry) || !hasExactKeys(entry, ['title', 'catalogId', 'text'])) return null;
+    if (!isRecord(entry) || !hasKeysWithin(entry, ['title', 'catalogId', 'text'], ['uri'])) {
+      return null;
+    }
     if (!isBoundedString(entry.title, AI_WIRE_LIMITS.knowledgeTitleCharacters)) return null;
     if (!isBoundedString(entry.catalogId, HOST_WIRE_LIMITS.identifierCharacters, 1)) return null;
     if (!isBoundedString(entry.text, AI_WIRE_LIMITS.knowledgeEvidenceCharacters, 1)) return null;
+    const { uri } = entry;
+    if (
+      uri !== undefined &&
+      (!isBoundedString(uri, AI_WIRE_LIMITS.workspacePassageUriCharacters, 1) ||
+        !uri.startsWith('knowledge://'))
+    ) {
+      return null;
+    }
     total += entry.text.length;
     if (total > AI_WIRE_LIMITS.knowledgeEvidenceCharacters) return null;
-    evidence.push({ title: entry.title, catalogId: entry.catalogId, text: entry.text });
+    evidence.push({
+      title: entry.title,
+      catalogId: entry.catalogId,
+      text: entry.text,
+      ...(uri === undefined ? {} : { uri }),
+    });
   }
   return evidence;
 }

@@ -14,6 +14,8 @@ export const MAS_BUNDLE_ID = 'com.bendyline.docblocks';
  * absent: it only provisions Python for MLX, which store builds withhold.
  */
 export const MAS_NATIVE_HELPERS: readonly string[] = ['gezel-apple-fm', 'gezel-llama-server'];
+/** Collects the versions iCloud sets aside; built from this repo by stage-cloud-helper.cjs. */
+export const MAS_CLOUD_HELPER = 'docblocks-cloud-helper';
 
 /** Every Microsoft Store submission carries one package per architecture. */
 export const MSIX_ARCHITECTURES: readonly string[] = ['x64', 'arm64'];
@@ -123,11 +125,12 @@ export interface BundleEntry {
   readonly target?: string;
 }
 
-/** `Contents/Helpers` holds the Gezel engines and ggml plugin links, nothing else. */
+/** `Contents/Helpers` holds the Gezel engines, ggml plugin links and the iCloud helper, nothing else. */
 export function masHelperViolations(entries: readonly BundleEntry[]): string[] {
   const violations: string[] = [];
+  const required = [...MAS_NATIVE_HELPERS, MAS_CLOUD_HELPER];
   for (const entry of entries) {
-    if (entry.type === 'file' && MAS_NATIVE_HELPERS.includes(entry.name)) continue;
+    if (entry.type === 'file' && required.includes(entry.name)) continue;
     if (
       entry.type === 'symlink' &&
       /\.so$/u.test(entry.name) &&
@@ -140,7 +143,7 @@ export function masHelperViolations(entries: readonly BundleEntry[]): string[] {
         : `unexpected helper ${entry.name}`,
     );
   }
-  for (const name of MAS_NATIVE_HELPERS)
+  for (const name of required)
     if (!entries.some((entry) => entry.type === 'file' && entry.name === name))
       violations.push(`missing helper ${name}`);
   return violations;

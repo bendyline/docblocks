@@ -9,10 +9,11 @@
  * half-applied.
  */
 
+import { WORKSPACE_METADATA_DIRECTORY_NAME } from '../filesystem/workspace-entry-rules.js';
 import { parseWorkspacePath, type WorkspacePath } from '../filesystem/workspace-path.js';
 
-export const WORKSPACE_SETTINGS_DIRECTORY = '.docblocks';
-export const WORKSPACE_SETTINGS_PATH = '.docblocks/workspace.json';
+export const WORKSPACE_SETTINGS_DIRECTORY = WORKSPACE_METADATA_DIRECTORY_NAME;
+export const WORKSPACE_SETTINGS_PATH = `${WORKSPACE_METADATA_DIRECTORY_NAME}/workspace.json`;
 export const WORKSPACE_SETTINGS_VERSION = 1;
 
 export const DEFAULT_CATALOG_TITLE = 'Documents';

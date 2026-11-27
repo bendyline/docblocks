@@ -50,6 +50,7 @@
   --accent: #a0461f;
   --accent-dark: #7a3418;
   --border: rgba(35, 31, 24, 0.18);
+  --border-strong: rgba(35, 31, 24, 0.42);
   --shadow: 0 24px 70px rgba(66, 48, 29, 0.12);
 }
 
@@ -230,13 +231,11 @@ img {
   align-items: end;
 }
 
-.eyebrow {
-  margin: 0 0 18px;
-  color: var(--accent);
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+/* The date line under a policy page's title. */
+.page-meta {
+  margin: 0 0 22px;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 h1,
@@ -256,10 +255,12 @@ h1 {
   line-height: 0.88;
 }
 
+/* Section titles are plain labels ("Downloads", "Quick start"), so they are
+   sized as labels. At the old display size a label wrapped onto three lines. */
 h2 {
-  margin-bottom: 18px;
-  font-size: clamp(2.2rem, 4vw, 3.65rem);
-  line-height: 1;
+  margin-bottom: 12px;
+  font-size: clamp(1.75rem, 2.6vw, 2.3rem);
+  line-height: 1.1;
 }
 
 h3 {
@@ -497,11 +498,11 @@ h3 {
   box-shadow: var(--shadow);
 }
 
-/* A summary card beside the hero, not a second headline: at the section h2
-   size its three words wrapped onto three lines and outweighed the h1. */
+/* A summary card beside the hero. Most have no title; where one does ("What
+   it costs", "On this page") it is a small label, below a section title. */
 .hero-aside h2 {
-  font-size: clamp(1.55rem, 2.3vw, 2.1rem);
-  line-height: 1.08;
+  font-size: 1.35rem;
+  line-height: 1.15;
 }
 
 .hero-aside p,
@@ -522,19 +523,16 @@ h3 {
 }
 
 .section {
-  padding-top: clamp(72px, 10vw, 124px);
+  padding-top: clamp(56px, 7vw, 88px);
 }
 
+/* A title with its introduction underneath. */
 .section-heading {
-  display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(320px, 1.2fr);
-  gap: 30px 80px;
-  align-items: end;
-  margin-bottom: 32px;
+  margin-bottom: 26px;
 }
 
 .section-copy {
-  max-width: 700px;
+  max-width: 760px;
   margin: 0;
 }
 
@@ -593,9 +591,9 @@ h3 {
 }
 
 .prose h2 {
-  margin-top: 58px;
-  margin-bottom: 14px;
-  font-size: 2.4rem;
+  margin-top: 46px;
+  margin-bottom: 12px;
+  font-size: clamp(1.5rem, 2.2vw, 1.9rem);
 }
 
 .prose h3 {
@@ -686,6 +684,223 @@ h3 {
   color: #8a6e58;
 }
 
+/* Store listings (apps page, desktop page, docs).
+   The four badges in /marketing/stores/ are the stores' own artwork. Size them
+   only through `.store-badge img`; never recolor, crop, or dim one. Each store
+   asks for clear space of a quarter of the badge's height, which is what the
+   row gap provides, and a height of at least 40px.
+   A listing that is not live yet is a `.store-pending` plate of our own, never
+   a faded badge. Swapping one for the other is a markup change: every pending
+   plate sits beside a comment holding its live badge (search `store:`). */
+.store-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+}
+
+.store-badge {
+  display: inline-flex;
+  flex: none;
+  border-radius: 9px;
+}
+
+.store-badge img {
+  display: block;
+  width: auto;
+  height: 48px;
+}
+
+.store-badge:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.store-pending {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 11px;
+  min-height: 48px;
+  padding: 6px 16px 6px 13px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: 9px;
+  color: var(--muted);
+}
+
+.store-pending svg {
+  flex: none;
+  width: 21px;
+  height: 21px;
+}
+
+.store-pending__text {
+  display: grid;
+  gap: 2px;
+}
+
+.store-pending__status {
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.store-pending__name {
+  color: var(--ink);
+  font-size: 0.98rem;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+/* Phone screenshots: the store listings' own captioned captures. */
+.phone-gallery {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin: 0;
+  padding: clamp(42px, 7vw, 82px) 0 0;
+  list-style: none;
+}
+
+.phone-gallery:focus-visible {
+  outline: 3px solid var(--accent-dark);
+  outline-offset: 6px;
+}
+
+.phone-gallery img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  box-shadow: var(--shadow);
+}
+
+/* One card per place DocBlocks runs: what it is, what it costs, how to get it. */
+.app-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.app-grid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.app-card {
+  display: flex;
+  flex-direction: column;
+  padding: 25px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--paper-bright);
+}
+
+.app-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.app-card__icon {
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.app-card__icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.app-card__head h3 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.price-tag {
+  margin-left: auto;
+  padding: 3px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--paper-deep);
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.app-card p {
+  margin: 0 0 12px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.app-card__requires {
+  font-size: 0.86rem;
+}
+
+.app-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  margin-top: auto;
+  padding-top: 10px;
+}
+
+.app-card__actions > a:not([class]) {
+  font-weight: 800;
+}
+
+/* A note under a grid: the fine print that belongs with the cards above it. */
+.section-note {
+  max-width: 830px;
+  margin: 22px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.7;
+}
+
+/* The trademark attributions the store badges require. */
+.legal-note {
+  max-width: 830px;
+  margin: 46px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+
+/* Store editions on the direct-download page: a quiet panel, not a second hero. */
+.store-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px 36px;
+  align-items: center;
+  margin-top: clamp(42px, 7vw, 82px);
+  padding: 25px 27px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--paper-bright);
+}
+
+.store-panel h2 {
+  margin-bottom: 8px;
+  font-size: 1.65rem;
+  line-height: 1.1;
+}
+
+.store-panel p {
+  max-width: 640px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
 .site-footer {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -722,11 +937,12 @@ h3 {
   }
 
   .hero,
-  .section-heading {
+  .store-panel {
     grid-template-columns: 1fr;
   }
 
-  .card-grid {
+  .card-grid,
+  .app-grid--three {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -795,6 +1011,8 @@ h3 {
   }
 
   .card-grid,
+  .app-grid,
+  .app-grid--three,
   .callout,
   .site-footer {
     grid-template-columns: 1fr;
@@ -802,6 +1020,31 @@ h3 {
 
   .card {
     min-height: 0;
+  }
+
+  /* Three phones side by side are 110px wide at 390px: too small to read.
+     One swipeable row keeps each at a legible size. */
+  .phone-gallery {
+    grid-auto-columns: 72%;
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    gap: 14px;
+    padding-bottom: 6px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scroll-snap-type: inline mandatory;
+  }
+
+  .phone-gallery li {
+    scroll-snap-align: start;
+  }
+
+  .store-badge img {
+    height: 44px;
+  }
+
+  .store-pending {
+    min-height: 44px;
   }
 
   .site-footer {
@@ -819,6 +1062,7 @@ h3 {
     --accent: #e0835a;
     --accent-dark: #f0c2aa;
     --border: rgba(243, 236, 221, 0.17);
+    --border-strong: rgba(243, 236, 221, 0.4);
     --shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
   }
 
@@ -830,6 +1074,8 @@ h3 {
 
   .hero-aside,
   .card,
+  .app-card,
+  .store-panel,
   .table-wrap {
     background: rgba(38, 36, 29, 0.72);
   }

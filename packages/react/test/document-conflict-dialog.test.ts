@@ -5,6 +5,7 @@ import { resolveTheme } from '@bendyline/squisq/schemas';
 import DocumentConflictDialog, {
   type DocumentConflictDialogProps,
 } from '../src/DocBlocksShell/DocumentConflictDialog.js';
+import { startsOnPhoneLayout } from '../src/DocBlocksShell/compare-layout.js';
 
 describe('Document conflict comparison', () => {
   let container: HTMLDivElement;
@@ -75,6 +76,44 @@ describe('Document conflict comparison', () => {
     return probe.style.background;
   }
 
+  it('lets the user combine both versions by hand and saves what they end up with', async () => {
+    const merged: string[] = [];
+    props.conflict = { ...props.conflict, recoveredDraft: false };
+    props.onUseMerged = async (content) => {
+      merged.push(content);
+      return true;
+    };
+    await render();
+    await click('Combine by hand');
+    expect(document.body.querySelector('section[aria-label="Combined version"]')).not.to.equal(
+      null,
+    );
+    // The two whole-version choices step aside while combining.
+    expect(document.body.querySelector<HTMLElement>('.db-conflict-columns')?.hidden).to.equal(true);
+    await click('Back to comparing');
+    expect(document.body.querySelector('section[aria-label="Combined version"]')).to.equal(null);
+
+    await click('Combine by hand');
+    await click('Save combined version');
+    // Untouched, the combined version is the user's own text.
+    expect(merged).to.deep.equal(['# Old draft\n\nUnfinished thoughts']);
+    expect(localChoices + savedChoices).to.equal(0);
+    expect(closes).to.equal(1);
+  });
+
+  it('offers no combining when the file was deleted or the host cannot save a combination', async () => {
+    await render();
+    const combine = () =>
+      [...document.body.querySelectorAll('button')].some(
+        (item) => item.textContent === 'Combine by hand',
+      );
+    expect(combine()).to.equal(false);
+    props.onUseMerged = async () => true;
+    props.conflict = { ...props.conflict, externalContent: null };
+    await render();
+    expect(combine()).to.equal(false);
+  });
+
   it('renders both versions as pages beside a source diff and distinguishes capture time from file modification', async () => {
     await render();
     expect(document.body.querySelectorAll('textarea')).to.have.length(0);
@@ -138,11 +177,11 @@ describe('Document conflict comparison', () => {
     expect(previews.every((item) => item.readOnly)).to.equal(true);
   });
 
-  for (const choice of ['Replace file with draft', 'Use saved file']) {
+  for (const choice of ['Use draft', 'Use saved file']) {
     it(`resolves only the explicitly selected branch: ${choice}`, async () => {
       await render();
       await click(choice);
-      expect(localChoices).to.equal(choice === 'Replace file with draft' ? 1 : 0);
+      expect(localChoices).to.equal(choice === 'Use draft' ? 1 : 0);
       expect(savedChoices).to.equal(choice === 'Use saved file' ? 1 : 0);
       expect(closes).to.equal(1);
     });
@@ -186,15 +225,112 @@ describe('Document conflict comparison', () => {
         finish = resolve;
       });
     await render();
-    await click('Replace file with draft');
+    await click('Use draft');
     const choices = [
-      ...document.body.querySelectorAll<HTMLButtonElement>('.db-conflict-version button'),
+      ...document.body.querySelectorAll<HTMLButtonElement>('.db-compare-actions button'),
     ];
+    expect(choices.map((button) => button.textContent)).to.deep.equal([
+      'Use draft',
+      'Use saved file',
+      'Decide later',
+    ]);
     expect(choices.every((button) => button.disabled)).to.equal(true);
     await click('Use saved file');
     expect(savedChoices).to.equal(0);
     await act(async () => finish(false));
     expect(choices.every((button) => !button.disabled)).to.equal(true);
     expect(closes).to.equal(0);
+  });
+
+  it('puts the choices before the versions they choose between', async () => {
+    props.onUseMerged = async () => true;
+    await render();
+    const body = document.body.querySelector('.db-dialog-body')!;
+    const actions = body.querySelector('.db-compare-actions')!;
+    const columns = body.querySelector('.db-conflict-columns')!;
+    // Nothing to choose with sits inside or after the versions.
+    expect(
+      actions.compareDocumentPosition(columns) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).to.not.equal(0);
+    expect(columns.querySelectorAll('button')).to.have.length(0);
+    expect(
+      [...actions.querySelectorAll('button')].map((button) => button.textContent),
+    ).to.deep.equal(['Use draft', 'Use saved file', 'Combine by hand', 'Decide later']);
+    // While combining, the bar holds the choices for that.
+    await click('Combine by hand');
+    expect(
+      [...actions.querySelectorAll('button')].map((button) => button.textContent),
+    ).to.deep.equal(['Save combined version', 'Back to comparing', 'Decide later']);
+  });
+
+  it('names each version in a tab, starting on the differences, and switches with the arrow keys', async () => {
+    await render();
+    const tabs = [...document.body.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    expect(tabs.map((tab) => tab.textContent)).to.deep.equal(['Draft', 'Changes', 'Saved file']);
+    const selected = () =>
+      tabs
+        .filter((tab) => tab.getAttribute('aria-selected') === 'true')
+        .map((tab) => tab.textContent);
+    const shown = () =>
+      document.body.querySelector('.db-compare-pane--active')?.getAttribute('aria-label');
+    expect(selected()).to.deep.equal(['Changes']);
+    expect(shown()).to.equal('Differences');
+    // Each tab controls the region it shows.
+    for (const tab of tabs) {
+      expect(document.getElementById(tab.getAttribute('aria-controls')!)?.tagName).to.equal(
+        'SECTION',
+      );
+    }
+    await act(async () => tabs[2]!.click());
+    expect(shown()).to.equal('Saved file');
+    await act(async () => {
+      tabs[2]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    });
+    expect(selected()).to.deep.equal(['Draft']);
+    expect(shown()).to.equal('Recovery draft');
+    expect(tabs[0]!.tabIndex).to.equal(0);
+    expect(tabs[2]!.tabIndex).to.equal(-1);
+  });
+
+  it('shows only the changes, at first, on a phone', async () => {
+    expect(startsOnPhoneLayout()).to.equal(false);
+    document.documentElement.dataset.dbWidth = 'compact';
+    try {
+      expect(startsOnPhoneLayout()).to.equal(true);
+      await render();
+      expect(
+        document.body.querySelector<HTMLSelectElement>('.db-conflict-diff select')!.value,
+      ).to.equal('changes');
+    } finally {
+      delete document.documentElement.dataset.dbWidth;
+    }
+  });
+
+  it('marks each version, its tab and the choice that keeps it with the same side of the diff', async () => {
+    await render();
+    const side = (selector: string) =>
+      [...document.body.querySelectorAll<HTMLElement>(selector)].map((element) => [
+        element.getAttribute('aria-label') ?? element.textContent,
+        element.dataset.side ?? null,
+      ]);
+    // The diff runs from the draft to the saved file: the draft's lines show
+    // as taken out (red), the saved file's as added (green).
+    expect(side('.db-compare-actions button')).to.deep.equal([
+      ['Use draft', 'removed'],
+      ['Use saved file', 'inserted'],
+      ['Decide later', null],
+    ]);
+    expect(side('[role="tab"]')).to.deep.equal([
+      ['Draft', 'removed'],
+      ['Changes', null],
+      ['Saved file', 'inserted'],
+    ]);
+    expect(side('.db-conflict-columns > section')).to.deep.equal([
+      ['Recovery draft', 'removed'],
+      ['Differences', null],
+      ['Saved file', 'inserted'],
+    ]);
+    // Nothing above the choices but the title: the versions say the rest.
+    expect(document.body.querySelector('.db-compare-intro')).to.equal(null);
   });
 });

@@ -25,6 +25,46 @@ describe('knowledge citations in inserted text', () => {
     );
   });
 
+  it('names a workspace passage as a note in this workspace', () => {
+    expect(
+      citationsToFootnotes(
+        'Aphids hide under leaves [2], as the history notes [1].',
+        [
+          ...evidence.slice(0, 1),
+          { title: 'Garden notes › Pests', catalogId: 'workspace', text: 'Aphids.' },
+        ],
+        names,
+        '',
+      ),
+    ).to.equal(
+      'Aphids hide under leaves[^source-1], as the history notes[^source-2].\n\n' +
+        '[^source-1]: Garden notes › Pests, a note in this workspace.\n' +
+        '[^source-2]: Panama Hotel (Seattle), from the Pacific Northwest knowledge catalog.',
+    );
+  });
+
+  it('links a cited note relative to the open document', () => {
+    const note = {
+      title: 'Rose bed › Pests [2026]',
+      catalogId: 'ws-0123456789abcdef',
+      text: 'Aphids.',
+      uri: 'knowledge://local/ws-0123456789abcdef/garden/rose%20bed.md#line=3-9',
+    };
+    expect(
+      citationsToFootnotes('Aphids return [1].', [note], names, '', 'journal/2026/nov.md'),
+    ).to.equal(
+      'Aphids return[^source-1].\n\n' +
+        '[^source-1]: [Rose bed › Pests \\[2026\\]](../../garden/rose%20bed.md), a note in this workspace.',
+    );
+    expect(
+      citationsToFootnotes('Aphids return [1].', [note], names, '', 'garden/log.md'),
+    ).to.contain('](rose%20bed.md)');
+    // Without the open document's path, the title stands alone.
+    expect(citationsToFootnotes('Aphids return [1].', [note], names, '')).to.contain(
+      '[^source-1]: Rose bed › Pests [2026], a note in this workspace.',
+    );
+  });
+
   it("keeps clear of the document's footnotes, links and code, and drops unknown numbers", () => {
     const result = citationsToFootnotes(
       'See [the site](https://example.com) and note[^1] [2] [9].\n\n```\nlist[1]\n```',

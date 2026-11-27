@@ -1,10 +1,9 @@
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
+import { createDocument as createNamedDocument } from './helpers/new-document.js';
 
 async function createDocument(page: import('@playwright/test').Page, name: string) {
-  await page.getByRole('button', { name: 'New File', exact: true }).click();
-  await page.getByRole('textbox', { name: 'New file name' }).fill(name);
-  await page.getByRole('textbox', { name: 'New file name' }).press('Enter');
+  await createNamedDocument(page, name);
   await expect(page).toHaveTitle(`${name.replace(/\.md$/u, '')} - DocBlocks`, { timeout: 15_000 });
 }
 

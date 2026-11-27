@@ -33,6 +33,29 @@ describe('parseAiChatRequest', () => {
     }
   });
 
+  it('accepts an opt-out of knowledge only when nothing asks for knowledge', () => {
+    const optOut = { ...VALID_REQUEST, searchKnowledge: false };
+    expect(parseAiChatRequest(optOut)).to.deep.equal(optOut);
+    const search = { ...VALID_REQUEST, searchKnowledge: true, knowledgeQuery: 'Panama Hotel' };
+    expect(parseAiChatRequest(search)).to.deep.equal(search);
+    const passage = {
+      uri: 'knowledge://local/ws-0123456789abcdef/notes.md#line=1-2',
+      title: 'Notes',
+      text: 'A note.',
+    };
+    expect(parseAiChatRequest({ ...VALID_REQUEST, workspacePassages: [passage] })).not.to.equal(
+      null,
+    );
+    for (const invalid of [
+      { ...VALID_REQUEST, searchKnowledge: 'no' },
+      { ...optOut, knowledgeQuery: 'Panama Hotel' },
+      { ...optOut, knowledgeCitations: true },
+      { ...optOut, workspacePassages: [passage] },
+    ]) {
+      expect(parseAiChatRequest(invalid)).to.equal(null);
+    }
+  });
+
   it('accepts a minimal request and drops nothing', () => {
     expect(parseAiChatRequest({ ...VALID_REQUEST })).to.deep.equal({
       messages: [{ role: 'user', content: 'Draft an intro.' }],
@@ -248,7 +271,12 @@ describe('parseAiChatEvent', () => {
           catalogId: 'pnw',
           text: 'Built in 1910 by Sabro Ozasa.',
         },
-        { title: '', catalogId: 'law', text: 'City of Seattle.' },
+        {
+          title: '',
+          catalogId: 'law',
+          text: 'City of Seattle.',
+          uri: 'knowledge://local/ws-1/notes/law.md#line=2-4',
+        },
       ],
     };
     expect(parseAiChatEvent({ kind: 'knowledge', knowledge })).to.deep.equal({
@@ -292,6 +320,12 @@ describe('parseAiChatEvent', () => {
       { outcome: 'used', sources: [source], evidence: [{ ...passage, text: '' }] },
       { outcome: 'used', sources: [source], evidence: [{ ...passage, catalogId: '' }] },
       { outcome: 'used', sources: [source], evidence: [{ ...passage, extra: true }] },
+      { outcome: 'used', sources: [source], evidence: [{ ...passage, uri: 'https://x.test' }] },
+      {
+        outcome: 'used',
+        sources: [source],
+        evidence: [{ ...passage, uri: `knowledge://local/ws-1/${'a'.repeat(2_048)}` }],
+      },
       { outcome: 'used', sources: [source], evidence: ['A passage.'] },
       {
         outcome: 'used',

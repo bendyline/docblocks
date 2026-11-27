@@ -1,18 +1,20 @@
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
+import { createDocument } from './helpers/new-document.js';
 
 test('Ctrl/Cmd+Shift+F finds saved text and opens the match beside the results', async ({
   page,
 }) => {
   await openInitializedSite(page);
-  await page.getByRole('button', { name: 'New File', exact: true }).click();
-  await page.getByRole('textbox', { name: 'New file name' }).fill('search-target.md');
-  await page.getByRole('textbox', { name: 'New file name' }).press('Enter');
+  await createDocument(page, 'search-target.md');
   // The welcome document's editor is in Write too until this one replaces it.
   const editor = page.getByRole('textbox', { name: /^Edit \/?search-target\.md$/ });
   await expect(editor).toBeVisible({ timeout: 15_000 });
   await editor.click();
   await page.keyboard.insertText('A Zebracorn lantern glows here.');
+  await page.keyboard.press('Enter');
+  // Capitalized differently, so Match case below still finds nothing.
+  await page.keyboard.insertText('Another ZEBRACORN sleeps.');
 
   // Move away so the next open is a real navigation, then search.
   await page.locator('.db-tree-row', { hasText: 'Welcome' }).click();
@@ -35,10 +37,21 @@ test('Ctrl/Cmd+Shift+F finds saved text and opens the match beside the results',
   await page.getByRole('button', { name: 'Match case' }).click();
   await expect(document).toBeVisible({ timeout: 5_000 });
 
-  await results.locator('.db-search-line').first().click();
+  // Opening a line lands on that match: Find opens with the same query and
+  // selects the line's occurrence.
+  const lines = results.locator('.db-search-line');
+  await expect(lines).toHaveCount(2, { timeout: 15_000 });
+  await lines.nth(1).click();
   await expect(page).toHaveTitle('search-target - DocBlocks');
   await expect(input).toBeVisible();
   await expect(input).toHaveValue('zebracorn');
+  const findInput = page.getByRole('searchbox', { name: 'Find in document' });
+  await expect(findInput).toHaveValue('zebracorn', { timeout: 15_000 });
+  await expect(page.locator('.squisq-find-count')).toHaveText('2 of 2');
+
+  // A hit in the document already open moves the selection without reloading.
+  await lines.first().click();
+  await expect(page.locator('.squisq-find-count')).toHaveText('1 of 2');
 
   // Back to Files; the tree is exactly as it was.
   await page.getByRole('button', { name: 'Show files' }).click();

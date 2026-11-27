@@ -12,7 +12,12 @@
  * section at a heading depth that cannot capture what follows.
  */
 
-import { extractPlainText, parseMarkdown, type MarkdownNode } from '@bendyline/squisq/markdown';
+import {
+  extractPlainText,
+  parseMarkdown,
+  withoutAccessorySectionNodes,
+  type MarkdownNode,
+} from '@bendyline/squisq/markdown';
 import {
   TEMPLATE_METADATA,
   isContainerTemplate,
@@ -210,7 +215,8 @@ export function segmentPassages(
   const every = options.everyBlock === true;
   let children: MarkdownNode[];
   try {
-    children = parseMarkdown(source).children;
+    // Slide summaries and study cards kept in the document are not passages.
+    children = withoutAccessorySectionNodes(parseMarkdown(source).children);
   } catch {
     return [];
   }

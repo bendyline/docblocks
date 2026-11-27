@@ -1,5 +1,11 @@
 import type { ReactNode } from 'react';
-import type { AiChatKnowledge, AiFactCheck } from '@bendyline/docblocks/host';
+import {
+  parseWorkspacePassageUri,
+  type AiChatEvidence,
+  type AiChatKnowledge,
+  type AiFactCheck,
+  type WorkspacePassageReference,
+} from '@bendyline/docblocks/host';
 
 import { KnowledgeIcon, SourcedFactsIcon, UnsourcedFactsIcon } from '../icons.js';
 
@@ -9,11 +15,36 @@ const QUIET_NOTES = {
     'Your knowledge catalogs could not be searched for this request. A long document can leave no room for reference passages.',
 } as const;
 
+export interface AiKnowledgeIndicatorProps {
+  knowledge: AiChatKnowledge | null;
+  /**
+   * Opens a cited workspace note at its lines. Offer it only where switching
+   * documents cannot cost the person work, never inside a draft dialog.
+   */
+  onOpenNote?: (reference: WorkspacePassageReference) => void;
+}
+
+/** The workspace notes among the evidence, by catalog and title. */
+function citedNotes(evidence: readonly AiChatEvidence[]): Map<string, WorkspacePassageReference> {
+  const notes = new Map<string, WorkspacePassageReference>();
+  for (const passage of evidence) {
+    const reference = passage.uri ? parseWorkspacePassageUri(passage.uri) : null;
+    const key = `${passage.catalogId}\u0000${passage.title.trim()}`;
+    if (reference && !notes.has(key)) notes.set(key, reference);
+  }
+  return notes;
+}
+
+function lineSpan({ lineStart, lineEnd }: WorkspacePassageReference): string {
+  return lineEnd > lineStart ? `lines ${lineStart}–${lineEnd}` : `line ${lineStart}`;
+}
+
 /**
- * A small pill saying whether the person's knowledge catalogs informed the AI
- * output; it opens to list the cited articles or explain why none were.
+ * A small pill saying whether the person's knowledge catalogs (or workspace
+ * notes) informed the AI output; it opens to list what was cited, with each
+ * note's place, or explain why nothing was.
  */
-export function AiKnowledgeIndicator({ knowledge }: { knowledge: AiChatKnowledge | null }) {
+export function AiKnowledgeIndicator({ knowledge, onOpenNote }: AiKnowledgeIndicatorProps) {
   if (!knowledge) return null;
   if (knowledge.outcome !== 'used') {
     return (
@@ -28,6 +59,12 @@ export function AiKnowledgeIndicator({ knowledge }: { knowledge: AiChatKnowledge
   }
   const several = knowledge.sources.length > 1;
   const count = knowledge.sources.reduce((sum, source) => sum + source.titles.length, 0);
+  const notes = citedNotes(knowledge.evidence);
+  const noteAt = (catalogId: string, title: string) => notes.get(`${catalogId}\u0000${title}`);
+  const cited = knowledge.sources.flatMap((source) =>
+    source.titles.map((title) => noteAt(source.catalogId, title) !== undefined),
+  );
+  const noun = cited.every(Boolean) ? 'note' : cited.some(Boolean) ? 'source' : 'article';
   return (
     <details className="db-ai-knowledge db-ai-knowledge--used">
       <summary>
@@ -39,18 +76,38 @@ export function AiKnowledgeIndicator({ knowledge }: { knowledge: AiChatKnowledge
         {count > 0 && (
           <span className="db-ai-knowledge-count">
             {' '}
-            · {count} {count === 1 ? 'article' : 'articles'}
+            · {count} {count === 1 ? noun : `${noun}s`}
           </span>
         )}
       </summary>
-      <p>Passages from these articles were given to the model as reference material:</p>
+      <p>Passages from these {noun}s were given to the model as reference material:</p>
       {knowledge.sources.map((source) => (
         <div key={source.catalogId} className="db-ai-knowledge-source">
           {several && <p className="db-ai-knowledge-catalog">{source.name}</p>}
           <ul>
-            {source.titles.map((title) => (
-              <li key={title}>{title}</li>
-            ))}
+            {source.titles.map((title) => {
+              const note = noteAt(source.catalogId, title);
+              if (!note) return <li key={title}>{title}</li>;
+              return (
+                <li key={title}>
+                  {onOpenNote ? (
+                    <button
+                      type="button"
+                      className="db-ai-knowledge-note"
+                      onClick={() => onOpenNote(note)}
+                    >
+                      {title}
+                    </button>
+                  ) : (
+                    title
+                  )}
+                  <span className="db-ai-knowledge-where">
+                    {' '}
+                    · {note.path}, {lineSpan(note)}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       ))}

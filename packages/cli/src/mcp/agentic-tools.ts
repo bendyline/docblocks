@@ -65,6 +65,11 @@ import {
   shapeSelectionGuidance,
 } from './shape-guidance.js';
 import {
+  STUDY_CARD_FORMATS,
+  STUDY_CARD_GUIDANCE,
+  authoringGuideStudyCards,
+} from './study-guidance.js';
+import {
   MOTION_SELECTION_GUIDANCE,
   STYLE_SELECTION_GUIDANCE,
   TRANSFORM_SELECTION_GUIDANCE,
@@ -732,15 +737,17 @@ function registerAuthoringGuideResource(server: McpServer): void {
       annotations: { audience: ['assistant'], priority: 1 },
     },
     async () => {
-      const [templates, schemaModule, transformModule, pictures, drawnLists] = await Promise.all([
-        authoringTemplateCatalog(),
-        import('@bendyline/squisq/schemas'),
-        import('@bendyline/squisq/transform'),
-        authoringGuidePictures(),
-        authoringGuideShapes(),
-      ]);
+      const [templates, schemaModule, transformModule, pictures, drawnLists, studyCards] =
+        await Promise.all([
+          authoringTemplateCatalog(),
+          import('@bendyline/squisq/schemas'),
+          import('@bendyline/squisq/transform'),
+          authoringGuidePictures(),
+          authoringGuideShapes(),
+          authoringGuideStudyCards(),
+        ]);
       const guide = {
-        version: 12,
+        version: 13,
         workflow: [
           'plain text and ordinary Markdown can be passed directly to convert_document without a preflight or template annotations',
           'for deliberate PPTX slide boundaries, use one level-one Markdown heading per slide; headings alone create the boundaries, so do not add --- between them unless a visible horizontal rule is intended',
@@ -750,6 +757,7 @@ function registerAuthoringGuideResource(server: McpServer): void {
           TRANSFORM_SELECTION_GUIDANCE,
           MOTION_SELECTION_GUIDANCE,
           'for pictures, choose a format from pictures.choose, follow pictures.svgRules for ```svg fences, and check pictures.exports for the target; never write raw <svg> HTML, which is silently dropped',
+          'for study material, put flashcards and multiple-choice questions under the section they test as studyCards.rules describes; they are kept only in studyCards.keptIn formats',
           'use a bundle source when assets must travel with the document, or create_document_bundle when one draft will be reused by two or more inspect, preview, or convert calls',
           'use inspect_document or preview_document only when the user asks for document analysis or visual evidence',
           'convert_document creates immutable artifacts; save_artifact only when a durable file is required',
@@ -760,6 +768,7 @@ function registerAuthoringGuideResource(server: McpServer): void {
           'A standalone annotation creates an additional heading-less block. Bind the annotation to a heading unless that extra block is deliberate.',
         pictures,
         drawnLists,
+        studyCards,
         fidelity: {
           semantic: 'Prioritize meaning and portability.',
           'editable-native': 'Produce editable native structures with target-specific diagnostics.',
@@ -868,7 +877,10 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
               import('@bendyline/squisq/doc'),
               import('@bendyline/squisq/recommend'),
             ]);
-            const blocks = flattenBlocks(prepared.doc.blocks);
+            // A slide summary (`{[summary]}`) is side information, never a block to retype.
+            const blocks = flattenBlocks(prepared.doc.blocks).filter(
+              (block) => !block.accessoryBlock,
+            );
             const limit = maxBlocks ?? 50;
             recommendations = blocks.slice(0, limit).map((block) => {
               const profile = recommendModule.profileBlockContents(block.contents ?? [], {
@@ -918,6 +930,9 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
                 ? 'This target flattens template annotations to semantic content, so annotations are unnecessary for the exported file.'
                 : 'Explicit valid annotations override automatic layout choices; invalid or unnecessary annotations should be omitted rather than repaired through a separate workflow.',
               ...(shapeGuidance ? [shapeGuidance] : []),
+              ...(!normalizedTarget || STUDY_CARD_FORMATS.includes(normalizedTarget)
+                ? [STUDY_CARD_GUIDANCE]
+                : []),
               PICTURE_SELECTION_GUIDANCE,
               ...(pictureExport ? [pictureExport] : []),
               'Pass Markdown directly to convert_document. Use a bundle source for assets, or create_document_bundle only when one draft will be reused by two or more inspect, preview, or convert calls.',
@@ -1059,7 +1074,10 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
           const candidates = candidateTemplateIds ?? available;
           const unknown = candidates.find((id) => !available.includes(id));
           if (unknown) throw new Error(`Unknown template "${unknown}"`);
-          const blocks = flattenBlocks(prepared.doc.blocks);
+          // A slide summary (`{[summary]}`) is side information, never a block to retype.
+          const blocks = flattenBlocks(prepared.doc.blocks).filter(
+            (block) => !block.accessoryBlock,
+          );
           const limit = maxBlocks ?? 50;
           const recommendations = blocks.slice(0, limit).map((block) => {
             // The heading says as much about a list as its items do ("The water

@@ -3,6 +3,7 @@ import JSZip from 'jszip';
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
 import { openAttachments } from './helpers/toolbar.js';
+import { createDocument } from './helpers/new-document.js';
 
 /**
  * Edited clips outside the editor, end to end on the site: a recording is cut
@@ -46,10 +47,8 @@ test('bakes a cut clip for a saved copy and for a plain Web page export', async 
   test.setTimeout(240_000);
   await openInitializedSite(page);
 
-  await page.getByRole('button', { name: 'New File' }).click();
-  await page.locator('.db-new-item-input').fill('cut-take');
-  await page.locator('.db-new-item-add').click();
-  const content = page.getByRole('textbox', { name: 'Edit cut-take.md', exact: true });
+  await createDocument(page, 'cut-take', { empty: true });
+  const content = page.getByRole('textbox', { name: /^Edit \/?cut-take\.md$/ });
   await expect(content).toBeVisible({ timeout: 30_000 });
 
   await openAttachments(page);

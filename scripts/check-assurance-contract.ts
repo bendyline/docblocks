@@ -201,6 +201,7 @@ async function requirePrivateStoreReleaseWorkflow(relativePath: string): Promise
   // Store uploads read the verified package back from the draft. They neither
   // check out nor install anything, so store credentials never meet build code.
   for (const [uploader, builder] of [
+    ['upload-msix', 'build-msix'],
     ['upload-mas', 'build-mas'],
     ['upload-aab', 'build-aab'],
     ['upload-ipa', 'build-ipa'],
@@ -270,20 +271,80 @@ async function requirePrivateStoreReleaseWorkflow(relativePath: string): Promise
       );
     }
   }
+  requireFlightOnlyMicrosoftStoreUpload(relativePath, parsed.jobs);
+
+  const oidcJobs = ['upload-msix', 'upload-vsix'];
   if (isRecord(parsed.permissions) && 'id-token' in parsed.permissions) {
-    throw new Error(`${relativePath}: id-token may be granted only to upload-vsix`);
+    throw new Error(`${relativePath}: id-token may be granted only to ${oidcJobs.join(' and ')}`);
   }
   for (const [jobName, job] of Object.entries(parsed.jobs)) {
     if (
-      jobName !== 'upload-vsix' &&
+      !oidcJobs.includes(jobName) &&
       isRecord(job) &&
       isRecord(job.permissions) &&
       'id-token' in job.permissions
     ) {
       throw new Error(
-        `${relativePath}: id-token may be granted only to upload-vsix, not ${jobName}`,
+        `${relativePath}: id-token may be granted only to ${oidcJobs.join(' and ')}, not ${jobName}`,
       );
     }
+  }
+}
+
+/**
+ * Any API update to the public Microsoft Store listing resends its price, and
+ * an empty price makes the paid app free without an error. Flight submissions
+ * carry no price, so every submission API call must stay under the flight.
+ */
+function requireFlightOnlyMicrosoftStoreUpload(relativePath: string, jobs: UnknownRecord): void {
+  const runScripts = (job: unknown): string =>
+    isRecord(job) && Array.isArray(job.steps)
+      ? job.steps
+          .filter(isRecord)
+          .map((step) => (typeof step.run === 'string' ? step.run : ''))
+          .join('\n')
+      : '';
+  for (const [jobName, job] of Object.entries(jobs)) {
+    if (jobName !== 'upload-msix' && runScripts(job).includes('manage.devcenter.microsoft.com')) {
+      throw new Error(
+        `${relativePath}: only upload-msix may call the Microsoft Store submission API, not ${jobName}`,
+      );
+    }
+  }
+
+  const uploader = jobs['upload-msix'];
+  if (!isRecord(uploader) || uploader.environment !== 'microsoft-store') {
+    throw new Error(
+      `${relativePath}: upload-msix must run in the microsoft-store environment its Entra credential names`,
+    );
+  }
+  if (!isRecord(uploader.permissions) || uploader.permissions['id-token'] !== 'write') {
+    throw new Error(`${relativePath}: upload-msix needs id-token: write to sign in to Entra`);
+  }
+  const script = runScripts(uploader);
+  const paths = [...script.matchAll(/\bapi (?:GET|POST|PUT|PATCH|DELETE) ["']?([^"'\s)|]+)/gu)].map(
+    ([, apiPath]) => apiPath,
+  );
+  if (paths.length === 0) {
+    throw new Error(`${relativePath}: upload-msix makes no recognizable submission API call`);
+  }
+  for (const apiPath of paths) {
+    if (!/^(?:listflights\?|flights$|flights\/\$flight_id(?:\/|$))/u.test(apiPath)) {
+      throw new Error(
+        `${relativePath}: upload-msix may call only package flight endpoints: ${apiPath}`,
+      );
+    }
+  }
+  // The checked `api` helper must be the only place a request URL is built.
+  if (
+    [...script.matchAll(/\$\{?app\b/gu)].length !== 1 ||
+    !script.includes('"$app/$path"') ||
+    [...script.matchAll(/\/my\/applications\b/gu)].length !== 1 ||
+    /\bpric(?:e|eId|ing)\b/iu.test(script)
+  ) {
+    throw new Error(
+      `${relativePath}: upload-msix must reach the submission API only through its api helper, and must not send a price`,
+    );
   }
 }
 

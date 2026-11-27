@@ -81,3 +81,29 @@ export function renamedFileName(
   }
   return next === name ? null : next;
 }
+
+/**
+ * The toolbar title field's name for a document: its name without the
+ * extension, whatever its type. The field renames a document; it never
+ * changes its type. That stays with the file list's rename, which shows the
+ * full name.
+ */
+export function titleFieldName(name: string): string {
+  const start = hidesExtension(name) ? name.length - HIDDEN_EXTENSION.length : extensionStart(name);
+  return start >= 0 ? name.slice(0, start) : name;
+}
+
+/**
+ * The name a title-field edit produces: what was typed, with the document's
+ * own extension put back. Typing that extension anyway does not double it;
+ * any other ending is part of the name, never a new type. `null` when the
+ * edit is empty or changes nothing.
+ */
+export function renamedFromTitle(name: string, typed: string): string | null {
+  const next = typed.trim();
+  if (!next) return null;
+  const extension = name.slice(titleFieldName(name).length);
+  const renamed =
+    extension && !next.toLowerCase().endsWith(extension.toLowerCase()) ? next + extension : next;
+  return renamed === name ? null : renamed;
+}

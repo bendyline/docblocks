@@ -175,10 +175,11 @@ describe('store package policy', () => {
       ]);
     });
 
-    it('allows only the Gezel engines and ggml plugin links as helpers, never UV', () => {
+    it('allows only the Gezel engines, ggml plugin links and the iCloud helper, never UV', () => {
       const helpers = [
         { name: 'gezel-apple-fm', type: 'file' as const },
         { name: 'gezel-llama-server', type: 'file' as const },
+        { name: 'docblocks-cloud-helper', type: 'file' as const },
         {
           name: 'libggml-metal.so',
           type: 'symlink' as const,
@@ -194,7 +195,11 @@ describe('store package policy', () => {
           helpers[0],
           { name: 'libggml-metal.so', type: 'symlink', target: '/tmp/libggml-metal.so' },
         ]),
-      ).to.deep.equal(['unexpected helper libggml-metal.so', 'missing helper gezel-llama-server']);
+      ).to.deep.equal([
+        'unexpected helper libggml-metal.so',
+        'missing helper gezel-llama-server',
+        'missing helper docblocks-cloud-helper',
+      ]);
     });
 
     it('requires the installer to be signed by a Mac Installer Distribution identity of the team', () => {

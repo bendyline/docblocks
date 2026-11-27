@@ -1,11 +1,11 @@
 import { expect, test } from './helpers/test.js';
+import { viewButton } from './helpers/toolbar.js';
 import { openInitializedSite } from './helpers/site.js';
+import { createDocument } from './helpers/new-document.js';
 
 test('Ctrl/Cmd+F opens one find bar in Write and Source', async ({ page }) => {
   await openInitializedSite(page);
-  await page.getByRole('button', { name: 'New File', exact: true }).click();
-  await page.getByRole('textbox', { name: 'New file name' }).fill('find-shortcut.md');
-  await page.getByRole('textbox', { name: 'New file name' }).press('Enter');
+  await createDocument(page, 'find-shortcut.md');
   // The welcome document's editor is in Write too until this one replaces it.
   const editor = page.getByRole('textbox', { name: /^Edit \/?find-shortcut\.md$/ });
   await expect(editor).toBeVisible({ timeout: 15_000 });
@@ -27,7 +27,7 @@ test('Ctrl/Cmd+F opens one find bar in Write and Source', async ({ page }) => {
   // Source: the same bar, not Monaco's built-in find widget.
   await editor.click();
   await page.keyboard.press('ControlOrMeta+Shift+2');
-  await expect(page.locator('[data-view="raw"]')).toHaveAttribute('aria-selected', 'true');
+  await expect(viewButton(page)).toHaveAttribute('data-active-view', 'raw');
   await page.locator('.monaco-editor textarea').press('ControlOrMeta+f');
   await expect(findInput).toBeFocused();
   await expect(page.locator('.monaco-editor .find-widget.visible')).toHaveCount(0);

@@ -60,19 +60,22 @@ try {
   page = await attach();
   await page.locator('.db-shell').waitFor();
   const name = `mobile-smoke-${randomUUID()}.md`;
+  // Every new document starts in the gallery and is named in the title field.
   if (await page.getByRole('button', { name: 'Create a document', exact: true }).isVisible()) {
     await page.getByRole('button', { name: 'Create a document', exact: true }).click();
-    await page.getByRole('textbox', { name: 'Document name', exact: true }).fill(name);
-    await page.getByRole('button', { name: 'Create', exact: true }).click();
-    await expect(page.getByRole('dialog', { name: 'New document' })).toBeHidden();
   } else {
     if ((await page.locator('.db-shell-sidebar').getAttribute('inert')) !== null)
       await page.getByRole('button', { name: 'Show file list', exact: true }).click();
-    if (!(await page.getByRole('textbox', { name: 'New file name', exact: true }).isVisible()))
-      await page.getByRole('button', { name: 'New File', exact: true }).click();
-    await page.getByRole('textbox', { name: 'New file name', exact: true }).fill(name);
-    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await page.getByRole('button', { name: 'New File', exact: true }).click();
   }
+  const gallery = page.getByRole('dialog', { name: 'New document' });
+  await gallery.getByRole('radio', { name: 'Markdown', exact: true }).click();
+  await gallery.getByRole('button', { name: 'Blank', exact: true }).click();
+  await expect(gallery).toBeHidden();
+  const title = page.getByRole('textbox', { name: 'Rename document', exact: true });
+  await expect(title).toBeFocused({ timeout: 30000 });
+  await title.fill(name.replace(/\.md$/, ''));
+  await title.press('Enter');
   await expect(page.locator('.db-shell-editor-area')).not.toHaveAttribute('inert');
   const text = `Native Android persistence ${randomUUID()}`;
   const editor = page.locator('.tiptap[contenteditable=true]');
@@ -88,9 +91,12 @@ try {
   await device.shell(`am start -n ${app}/com.bendyline.docblocks.mobile.MainActivity`);
   page = await attach();
   await expect(page.locator('.tiptap')).toContainText(text, { timeout: 30000 });
-  await page.getByRole('tab', { name: 'Source', exact: true }).click();
+  // Source and Write are both chosen from the menu beside the editing tab.
+  await page.getByRole('button', { name: 'Choose Write mode', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: 'Source', exact: true }).click();
   await expect(page.locator('.monaco-editor').first()).toBeVisible();
-  await page.getByRole('tab', { name: 'Write', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose Write mode', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: 'Write', exact: true }).click();
   // A same-origin child frame must not receive native authority.
   await page.evaluate(() => {
     window.__nativeProbe = [];

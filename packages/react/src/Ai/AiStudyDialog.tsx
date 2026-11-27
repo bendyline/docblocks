@@ -1,9 +1,10 @@
 /**
- * Summarize document, Create quiz, and Create flashcards.
+ * Summarize document.
  *
- * One dialog for all three. It opens on a start screen that offers the
- * study aid saved with this document, when there is one, beside a button to
- * generate a new one; a finished study aid is saved to the document's
+ * It opens on a start screen that offers the summary saved with this
+ * document, when there is one, beside a button to generate a new one; (quiz
+ * questions and flashcards are study cards kept with each section, made in
+ * Squisq's Study cards view — see `Study/`) a finished study aid is saved to the document's
  * sidecar folder before it is shown, so the viewer always shows what will
  * be there next time. See `study-pipeline.ts` for the model calls and
  * `study-aids.ts` for where and how the result is saved.
@@ -12,10 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { usePreviewSettingsOptional } from '@bendyline/squisq-editor-react';
-import { FlashcardView } from '@bendyline/squisq-react';
 import { LinearDocView } from '@bendyline/squisq-react/page';
-import { markdownToDoc } from '@bendyline/squisq/doc';
-import { parseMarkdown } from '@bendyline/squisq/markdown';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import type { AiChatEvent, DocBlocksHostAiAPI } from '@bendyline/docblocks/host';
 
@@ -58,12 +56,9 @@ type SavedState =
 
 const INTRO: Readonly<Record<StudyAidKind, string>> = {
   summary: 'Write a short summary of this document: an overview, then its key points.',
-  quiz: 'Write a multiple-choice quiz that checks understanding of this document.',
-  flashcards:
-    'Write a deck of flashcards for studying the terms, facts and ideas in this document.',
 };
 
-function stageLabel(kind: StudyAidKind, stage: StudyStage | null): string {
+function stageLabel(stage: StudyStage | null): string {
   if (!stage) return 'Starting…';
   switch (stage.kind) {
     case 'notes':
@@ -72,12 +67,6 @@ function stageLabel(kind: StudyAidKind, stage: StudyStage | null): string {
       return 'Condensing notes…';
     case 'writing':
       return 'Writing the summary…';
-    case 'items':
-      // Counts what was asked for, never the calls it takes to ask.
-      return (
-        `Writing ${String(stage.planned)} ${kind === 'quiz' ? 'questions' : 'flashcards'}…` +
-        (stage.written > 0 ? ` ${String(stage.written)} so far.` : '')
-      );
   }
 }
 
@@ -97,32 +86,14 @@ function describeProvenance(provenance: StudyAidProvenance | null): string {
 
 const STALE_NOTE = 'The document has changed since this was generated.';
 
-/** The study aid as a reader sees it: a page for a summary, a study deck otherwise. */
-function StudyAidViewer({ kind, markdown }: { kind: StudyAidKind; markdown: string }) {
+/** The summary as a reader sees it: a page. */
+function StudyAidViewer({ markdown }: { kind: StudyAidKind; markdown: string }) {
   const theme = usePreviewSettingsOptional()?.activeTheme;
   const body = useMemo(() => studyAidBody(markdown), [markdown]);
-  const doc = useMemo(() => {
-    if (kind === 'summary') return null;
-    try {
-      return markdownToDoc(parseMarkdown(markdown));
-    } catch {
-      return null;
-    }
-  }, [kind, markdown]);
-  if (kind === 'summary') {
-    return (
-      <div className="db-ai-study-summary">
-        {/* Page margins, unlike a diagram preview: this is prose to read. */}
-        <LinearDocView markdown={body} showCover={false} theme={theme} />
-      </div>
-    );
-  }
-  if (!doc) {
-    return <p className="db-ai-error">This file could not be read as a study deck.</p>;
-  }
   return (
-    <div className="db-ai-study-deck">
-      <FlashcardView doc={doc} source="explicit" theme={theme} density="compact" />
+    <div className="db-ai-study-summary">
+      {/* Page margins, unlike a diagram preview: this is prose to read. */}
+      <LinearDocView markdown={body} showCover={false} theme={theme} />
     </div>
   );
 }
@@ -376,7 +347,7 @@ export function AiStudyDialog({
   const progress = running && (
     <div className="db-ai-study-running">
       <p className="db-ai-study-stage" aria-live="polite">
-        {stageLabel(kind, stage)}
+        {stageLabel(stage)}
       </p>
       {generation && <AiGenerationStatus state={generation} characters={0} />}
       <AiKnowledgeIndicator knowledge={knowledge} />
@@ -387,8 +358,7 @@ export function AiStudyDialog({
     <Dialog
       title={labels.dialogTitle}
       onClose={onClose}
-      // A deck needs the room; the start screen and progress do not.
-      size={kind !== 'summary' && shown && !running ? 'full' : 'wide'}
+      size="wide"
       closeOnBackdrop={!running}
       initialFocusRef={primaryRef as RefObject<HTMLElement | null>}
       className={`db-ai-study-dialog db-ai-study-dialog--${kind}`}

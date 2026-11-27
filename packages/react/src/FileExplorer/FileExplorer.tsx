@@ -5,7 +5,16 @@
  * for creating new files/folders.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   isFileSystemMoveStateError,
   parseWorkspacePath,
@@ -13,6 +22,7 @@ import {
   type FileSystemEntry,
   type FileSystemEntryMoveOptions,
 } from '@bendyline/docblocks/filesystem';
+import type { FolderKind, KindFolder } from '@bendyline/docblocks/folders';
 import { useFileTree } from './useFileTree.js';
 import { readIssueText } from './read-issue-text.js';
 import {
@@ -40,8 +50,13 @@ import { useGitContext } from '../Git/GitContext.js';
 import { IMPORT_ACCEPT } from '../DocBlocksShell/import-file-types.js';
 import { BADGE_GLYPHS, BADGE_LABELS, isFileDirty } from '../Git/git-status.js';
 import { PinnedDocuments } from './PinnedDocuments.js';
+import { displayFileName } from './file-names.js';
+import { useConflictCopyCounts } from './useConflictCopyCounts.js';
+import { useWorkspaceVersionsToReview } from './useWorkspaceVersionsToReview.js';
+import { describeVersionCount } from '../DocBlocksShell/document-versions.js';
 import type { PinnedDocumentListItem } from '../DocBlocksShell/pinned-documents.js';
 import { filterVisibleFileEntries } from './entry-visibility.js';
+import { folderLooksEmpty, listedFolderContents, type FolderContents } from './folder-contents.js';
 import { sortFileEntries, type FileExplorerSortMode } from './entry-sort.js';
 import {
   createNewOutsideInDocument,
@@ -78,6 +93,23 @@ export type FileTreeMutationHandler = (
   change: FileTreeChange,
   mutate: (options?: FileSystemEntryMoveOptions) => Promise<void>,
 ) => Promise<void>;
+
+/** What a host can ask of a mounted explorer from outside the tree. */
+export interface FileExplorerHandle {
+  /**
+   * Rename or move an entry exactly as the tree's own rename does: the
+   * `onTreeMutation` / `onTreeChange` hooks run, the tree carries its
+   * selection and expanded folders to the new path, and listings reload.
+   * Rejects with the failure rather than showing it in the explorer, so a
+   * caller outside the tree reports it where the user is looking.
+   */
+  renameEntry: (oldPath: string, newPath: string, kind: 'file' | 'directory') => Promise<void>;
+  /**
+   * Re-read the listings after something outside the tree created or removed
+   * entries. A provider that reports changes itself needs no call.
+   */
+  refresh: () => Promise<void>;
+}
 
 export interface WorkspaceMoveDestination {
   id: string;
@@ -138,16 +170,36 @@ export interface FileExplorerProps {
   metadataRefreshKey?: string | number | null;
   /** Active document to select and reveal by expanding all ancestor folders. */
   activeFilePath?: string | null;
+  /**
+   * How many other versions of the active document wait for review, when the
+   * host is tracking that live. Takes over from the explorer's own count for
+   * that one row, which only updates when the folder listing does.
+   */
+  activeFileVersionCount?: number | null;
   /** Presentation order for files within each directory. */
   sortMode?: FileExplorerSortMode;
   /** Files left out of the tree (workspace paths, any case), e.g. generated catalog outputs. */
   hiddenPaths?: readonly string[];
+  /** The workspace's kind folders: each wears its kind's glyph instead of a plain folder's. */
+  kindFolders?: readonly KindFolder[];
+  /**
+   * What the host knows about a folder's contents beyond the tree's own
+   * listings (the shell asks its workspace index). Folders found empty draw no
+   * disclosure chevron; see `folder-contents.ts` for how the sources combine.
+   */
+  folderContents?: (path: string) => FolderContents;
   /** Called when a file ordering toolbar button is selected. */
   onSortModeChange?: (mode: FileExplorerSortMode) => void;
   /** Active workspace identity, used to decorate a selected cross-workspace pin. */
   activeWorkspaceId?: string | null;
   /** Active workspace's name, shown as the tree's heading; "Files" without one. */
   workspaceName?: string | null;
+  /**
+   * Controls that lead the toolbar in place of the workspace-name heading:
+   * the shell puts its workspace picker and workspace settings button here, so
+   * pinned documents stay above them and the file actions share their row.
+   */
+  toolbarStart?: ReactNode;
   /** Documents pinned across every workspace, shown above the active file tree. */
   pinnedDocuments?: readonly PinnedDocumentListItem[];
   /** Canonical paths pinned inside the active workspace. */
@@ -203,6 +255,12 @@ export interface FileExplorerProps {
    * with the message the form shows when the file cannot be created.
    */
   onCreateDocument?: (path: string, format: NewFileFormat) => Promise<void>;
+  /**
+   * New File asks the host to create a document instead of opening the
+   * inline name form: the shell shows its New document gallery. Called with
+   * the selected folder, or `''` for the workspace's top level.
+   */
+  onRequestNewDocument?: (folder: string) => void;
   /** Shows a Search button that switches the sidebar to workspace search. */
   onShowSearch?: () => void;
   /** Tooltip shortcut for the Search button, e.g. `Ctrl+Shift+F`. */
@@ -211,40 +269,48 @@ export interface FileExplorerProps {
   className?: string;
 }
 
-export function FileExplorer({
-  provider,
-  loading = false,
-  metadataRefreshKey,
-  activeFilePath,
-  sortMode,
-  hiddenPaths,
-  onSortModeChange,
-  activeWorkspaceId,
-  workspaceName,
-  pinnedDocuments = [],
-  pinnedPaths = [],
-  onPinnedDocumentSelect,
-  onPinnedDocumentUnpin,
-  onPinnedDocumentRename,
-  onPinnedDocumentDelete,
-  onTogglePin,
-  onSelect,
-  onOpenWorkspaceFolder,
-  actionsForEntry,
-  onTreeMutation,
-  onTreeChange,
-  onImportFiles,
-  confirmDelete,
-  moveDestinations = [],
-  onMoveToWorkspace,
-  outsideInRender,
-  defaultNewFileFormat = 'markdown',
-  onNewFileFormatUsed,
-  onCreateDocument,
-  onShowSearch,
-  searchShortcutLabel,
-  className,
-}: FileExplorerProps) {
+export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(function FileExplorer(
+  {
+    provider,
+    loading = false,
+    metadataRefreshKey,
+    activeFilePath,
+    activeFileVersionCount = null,
+    sortMode,
+    hiddenPaths,
+    kindFolders,
+    folderContents,
+    onSortModeChange,
+    activeWorkspaceId,
+    workspaceName,
+    toolbarStart,
+    pinnedDocuments = [],
+    pinnedPaths = [],
+    onPinnedDocumentSelect,
+    onPinnedDocumentUnpin,
+    onPinnedDocumentRename,
+    onPinnedDocumentDelete,
+    onTogglePin,
+    onSelect,
+    onOpenWorkspaceFolder,
+    actionsForEntry,
+    onTreeMutation,
+    onTreeChange,
+    onImportFiles,
+    confirmDelete,
+    moveDestinations = [],
+    onMoveToWorkspace,
+    outsideInRender,
+    defaultNewFileFormat = 'markdown',
+    onNewFileFormatUsed,
+    onCreateDocument,
+    onRequestNewDocument,
+    onShowSearch,
+    searchShortcutLabel,
+    className,
+  }: FileExplorerProps,
+  ref,
+) {
   const tree = useFileTree(provider, metadataRefreshKey, activeFilePath);
   const { childEntries, childIssues } = tree;
   const { reveal } = tree;
@@ -496,9 +562,8 @@ export function FileExplorer({
     [tree, runTreeMutation],
   );
 
-  const handleRename = useCallback(
+  const renameEntry = useCallback(
     async (oldPath: string, newPath: string, kind: 'file' | 'directory') => {
-      setMoveError(null);
       const change: FileTreeChange = { type: 'move', oldPath, newPath, kind };
       try {
         await runTreeMutation(change, (options) =>
@@ -509,11 +574,29 @@ export function FileExplorer({
         if (isFileSystemMoveStateError(error) && error.documentLocation === 'destination') {
           onTreeChange?.(change);
         }
-        setMoveError(error instanceof Error ? error.message : 'Unable to move this entry.');
+        throw error;
       }
     },
     [tree, runTreeMutation, onTreeChange],
   );
+
+  const handleRename = useCallback(
+    async (oldPath: string, newPath: string, kind: 'file' | 'directory') => {
+      setMoveError(null);
+      try {
+        await renameEntry(oldPath, newPath, kind);
+      } catch (error: unknown) {
+        setMoveError(error instanceof Error ? error.message : 'Unable to move this entry.');
+      }
+    },
+    [renameEntry],
+  );
+
+  const refreshTree = tree.refresh;
+  useImperativeHandle(ref, () => ({ renameEntry, refresh: refreshTree }), [
+    renameEntry,
+    refreshTree,
+  ]);
 
   const handleMove = useCallback(
     async (entry: FileSystemEntry, directoryPath: string) => {
@@ -593,15 +676,70 @@ export function FileExplorer({
     [draggedEntry, handleMove],
   );
 
+  // Documents with other versions set aside in their sidecar, waiting for review.
+  const listings = useMemo(
+    () => [tree.entries, ...childEntries.values()],
+    [tree.entries, childEntries],
+  );
+  const versionCounts = useConflictCopyCounts(provider, listings);
+  const versionsWaiting = useCallback(
+    (entry: FileSystemEntry): number => {
+      if (entry.kind !== 'file') return 0;
+      const path = normalisePath(entry.path);
+      if (
+        activeFileVersionCount !== null &&
+        activeFilePath &&
+        normalisePath(activeFilePath) === path
+      ) {
+        return activeFileVersionCount;
+      }
+      return versionCounts.get(path.replace(/^\/+/, '')) ?? 0;
+    },
+    [activeFilePath, activeFileVersionCount, versionCounts],
+  );
+
+  // The same, for the whole workspace: documents in folders nobody has opened.
+  const versionsSignature = useMemo(
+    () => [...versionCounts].map(([path, count]) => `${path}:${count}`).join('|'),
+    [versionCounts],
+  );
+  const workspaceVersions = useWorkspaceVersionsToReview(
+    provider,
+    `${versionsSignature}#${activeFileVersionCount ?? ''}`,
+  );
+  // The open document announces its own; this is for the ones out of sight.
+  const versionsElsewhere = useMemo(() => {
+    const active = activeFilePath ? normalisePath(activeFilePath) : null;
+    return workspaceVersions.filter((item) => item.path !== active);
+  }, [activeFilePath, workspaceVersions]);
+  const openNextToReview = useCallback(() => {
+    const next = versionsElsewhere[0];
+    if (!next) return;
+    // Match the slash style of the paths this tree already holds.
+    const rooted = tree.entries.some((entry) => entry.path.startsWith('/'));
+    const path = rooted ? `/${next.path}` : next.path;
+    reveal(path, 'file');
+    onSelect?.(path, 'file');
+  }, [onSelect, reveal, tree.entries, versionsElsewhere]);
+
   const badgeFor = useCallback(
     (entry: FileSystemEntry): FileTreeNodeBadge | undefined => {
+      // Unreviewed versions outrank a git status: they hold text nobody has seen merged.
+      const waiting = versionsWaiting(entry);
+      if (waiting > 0) {
+        return {
+          kind: 'versions',
+          glyph: waiting > 9 ? '9+' : String(waiting),
+          label: describeVersionCount(waiting),
+        };
+      }
       if (!git?.repo) return undefined;
       const key = entry.path.startsWith('/') ? entry.path : `/${entry.path}`;
       const kind = git.badges.get(key);
       if (!kind) return undefined;
       return { kind, glyph: BADGE_GLYPHS[kind], label: BADGE_LABELS[kind] };
     },
-    [git],
+    [git, versionsWaiting],
   );
 
   const gitActionsFor = useCallback(
@@ -619,10 +757,33 @@ export function FileExplorer({
     [git],
   );
 
+  /** Kind by canonical folder path; kind folder paths are already canonical. */
+  const folderKinds = useMemo(
+    () =>
+      new Map<string, FolderKind>(
+        (kindFolders ?? []).map((folder) => [folder.path, folder.settings.kind]),
+      ),
+    [kindFolders],
+  );
+
   const orderedVisibleEntries = useCallback(
     (entries: readonly FileSystemEntry[]) =>
       sortFileEntries(filterVisibleFileEntries(entries, hiddenPaths), selectedSortMode),
     [hiddenPaths, selectedSortMode],
+  );
+
+  /** A folder the tree's listing or the host knows to be empty, and neither has seen anything in. */
+  const isEmptyFolder = useCallback(
+    (dirPath: string) => {
+      const listing = getEquivalentPathValue(childEntries, dirPath);
+      return folderLooksEmpty(
+        listedFolderContents(
+          listing === undefined ? undefined : filterVisibleFileEntries(listing, hiddenPaths),
+        ),
+        folderContents?.(dirPath) ?? 'unknown',
+      );
+    },
+    [childEntries, hiddenPaths, folderContents],
   );
 
   // The same walk renderEntries performs, as data — so arrow keys move
@@ -635,8 +796,9 @@ export function FileExplorer({
           orderedVisibleEntries(getEquivalentPathValue(childEntries, dirPath) ?? []),
         isExpanded: (dirPath) => hasEquivalentPath(tree.expanded, dirPath),
         isVisible: () => true,
+        isEmpty: isEmptyFolder,
       }),
-    [tree.entries, tree.expanded, childEntries, orderedVisibleEntries],
+    [tree.entries, tree.expanded, childEntries, orderedVisibleEntries, isEmptyFolder],
   );
 
   // `selectedPath` can be slash-prefixed (reveal() takes the caller's form)
@@ -715,7 +877,16 @@ export function FileExplorer({
               tree.selectedPath !== null &&
               normalisePath(tree.selectedPath) === normalisePath(entry.path)
             }
+            folderKind={
+              entry.kind === 'directory' ? folderKinds.get(normalisePath(entry.path)) : undefined
+            }
+            empty={entry.kind === 'directory' && isEmptyFolder(entry.path)}
             badge={badgeFor(entry)}
+            deleteWarning={
+              versionsWaiting(entry) > 0
+                ? `Its ${describeVersionCount(versionsWaiting(entry))} will be deleted too.`
+                : undefined
+            }
             gitActions={gitActionsFor(entry)}
             actions={actionsForEntry?.(entry)}
             onToggle={tree.toggleExpand}
@@ -766,7 +937,10 @@ export function FileExplorer({
       handleRename,
       childEntries,
       childIssues,
+      folderKinds,
+      isEmptyFolder,
       badgeFor,
+      versionsWaiting,
       gitActionsFor,
       actionsForEntry,
       draggedEntry,
@@ -803,16 +977,22 @@ export function FileExplorer({
       )}
 
       {/* Toolbar */}
-      <div className="db-explorer-toolbar">
-        {/* A long name is cut short; the tooltip carries all of it. In a narrow
-            sidebar it is hidden outright -- the workspace picker above already
-            names the workspace. */}
-        <span
-          className="db-explorer-title db-explorer-workspace-name"
-          title={workspaceName || undefined}
-        >
-          {workspaceName || 'Files'}
-        </span>
+      <div
+        className={`db-explorer-toolbar${toolbarStart ? ' db-explorer-toolbar--workspace' : ''}`}
+      >
+        {toolbarStart ? (
+          // The host's workspace picker names the workspace itself.
+          <div className="db-explorer-workspace-controls">{toolbarStart}</div>
+        ) : (
+          // A long name is cut short; the tooltip carries all of it. In a
+          // narrow sidebar it is hidden outright, leaving the actions the room.
+          <span
+            className="db-explorer-title db-explorer-workspace-name"
+            title={workspaceName || undefined}
+          >
+            {workspaceName || 'Files'}
+          </span>
+        )}
         <div className="db-explorer-actions">
           <div className="db-explorer-sort-actions" role="group" aria-label="File sorting">
             <button
@@ -877,6 +1057,12 @@ export function FileExplorer({
             className="db-explorer-btn"
             disabled={newItemCreationPending}
             onClick={() => {
+              if (onRequestNewDocument) {
+                onRequestNewDocument(
+                  tree.selectedKind === 'directory' && tree.selectedPath ? tree.selectedPath : '',
+                );
+                return;
+              }
               setNewItemError(null);
               setNewFileFormat(defaultNewFileFormat);
               setNewItemType('file');
@@ -1081,6 +1267,19 @@ export function FileExplorer({
         </div>
       )}
 
+      {versionsElsewhere.length > 0 && (
+        <div className="db-tree-versions" role="status">
+          <span>
+            {versionsElsewhere.length === 1
+              ? `${displayFileName(versionsElsewhere[0]!.path.split('/').pop() ?? '')} has ${describeVersionCount(versionsElsewhere[0]!.count)}`
+              : `${versionsElsewhere.length.toLocaleString()} documents have other versions to review`}
+          </span>
+          <button type="button" onClick={openNextToReview}>
+            {versionsElsewhere.length === 1 ? 'Open' : 'Open next'}
+          </button>
+        </div>
+      )}
+
       {/* Tree — role="tree" only when there are real treeitem children; the
           loading/empty states get a status role so axe doesn't flag the
           tree as missing required children. */}
@@ -1107,4 +1306,4 @@ export function FileExplorer({
       )}
     </div>
   );
-}
+});

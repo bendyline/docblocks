@@ -168,6 +168,28 @@ An absolute `DOCBLOCKS_GEZEL_NATIVE_BIN_DIR` points it at another staged
 payload. A source build never downloads an engine at runtime; `dev` warns when
 the staged payload is missing or older than the installed service's pin.
 
+### The iCloud helper (macOS)
+
+On a Mac, a folder in iCloud Drive is ordinary files to DocBlocks, which hides
+the versions iCloud sets aside when two devices save the same document. A small
+native helper, `docblocks-cloud-helper`, reads them and moves them into the
+document's sidecar (`name_files/conflicts/`), where the editor offers them for
+review. It is the `CloudHelper` target of the Swift package that also holds
+the iPhone and iPad storage layer (`packages/mobile/native/ios`), so both
+platforms collect versions with the same code.
+
+`beforePack` builds it from source (`scripts/stage-cloud-helper.cjs`, needs the
+Swift toolchain) and packaging places it in `Contents/Helpers`, signed by the
+app's own signing pass; in the Mac App Store build that gives it the inherited
+sandbox, which `scripts/check-store-packages.ts` verifies. A source checkout
+stages it with `npm run stage:cloud-helper` and simply runs without it
+otherwise. It needs macOS 13 or later; on macOS 12 the editor works as before
+and set-aside versions stay with iCloud. The main process starts it on first
+use, sends one JSON request per line (`main/cloud-helper.ts`), and decides when
+to look (`main/cloud-conflicts.ts`): when a folder opens, when a document is
+read or changes on disk, when the app comes forward, and when the computer
+wakes. Everything it does is best effort, and it only ever adds files.
+
 macOS distributions support Apple Silicon only; 2.7.1 is Intel Macs' final
 version (see [Intel Macs](#intel-macs)). Mac App Store builds include
 AI through a private service inside `userData/ai/gezel`, with standalone Gezel
@@ -316,8 +338,18 @@ for each architecture.
 The **Release Store Builds** workflow (`.github/workflows/store-release.yml`)
 builds the Mac App Store `.pkg` and x64 and arm64 Microsoft Store packages, with
 the mobile store builds, and attaches them only to a private draft release. With
-`publish: testing` (the default), a separate job sends the Mac App Store `.pkg`
-to TestFlight; the Microsoft Store packages are always submitted by hand.
+`publish: testing` (the default), separate jobs send the Mac App Store `.pkg` to
+TestFlight and the Windows packages to the `DocBlocks CI` package flight in the
+Microsoft Store.
+
+The flight job runs only from `main`. It stops once Microsoft accepts the
+packages; certification then takes hours to days, and the flight reaches only
+its tester group. Testers get the flight's package instead of the public one.
+To release a build, start an update in Partner Center after the flight is
+published, copy the packages from the flight on its Packages page, update What's
+new, and submit. CI never touches the public listing: the submission API resends
+the price with every update there, and can make the paid app free without an
+error.
 
 ```bash
 # MAS needs embedded.provisionprofile and the MAS signing identities.

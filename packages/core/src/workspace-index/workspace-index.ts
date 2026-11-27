@@ -12,7 +12,7 @@
  * lock as the user's saves, and parallel reads would only make saves wait.
  */
 
-import { FsError } from '../filesystem/fs-error.js';
+import { isFsErrorCode, type FsErrorCode } from '../filesystem/fs-error.js';
 import type {
   FileSystemEntrySnapshot,
   FileSystemVersion,
@@ -20,6 +20,7 @@ import type {
   FileSystemWatchSubscription,
 } from '../filesystem/v2.js';
 import {
+  WORKSPACE_METADATA_DIRECTORY_NAME,
   isCompanionDirectoryName,
   isDiscoverableWorkspaceEntry,
   isMarkdownFileName,
@@ -29,23 +30,28 @@ import {
   parseWorkspacePath,
   tryParseWorkspacePath,
   workspacePathContains,
+  workspacePathDirname,
   type WorkspacePath,
 } from '../filesystem/workspace-path.js';
+import { folderOfSettingsPath } from '../folders/folder-settings.js';
+import { readFolderSettings } from '../folders/folder-store.js';
 import {
   chooseOutsideInMarkdownPath,
   resolveOutsideInLayout,
   type OutsideInLayout,
 } from '../workspace-settings/outside-in-layout.js';
+import { DOCUMENT_ANALYZER_REVISION, nameOnlyDocument, type DocumentIdentity } from './analyze.js';
 import {
-  analyzeDocumentBytes,
-  nameOnlyDocument,
-  type AnalyzedDocument,
-  type DocumentIdentity,
-} from './analyze.js';
-import { createCheckpoint, searchDocuments, type SearchableDocument } from './search.js';
+  createMemoryEngine,
+  type EngineSearchDocument,
+  type StoredDocument,
+  type WorkspaceIndexEngine,
+} from './engine.js';
+import { createCheckpoint } from './search.js';
 import {
   WORKSPACE_INDEX_LIMITS,
   type IndexedDocument,
+  type IndexedFolderMarker,
   type WorkspaceIndex,
   type WorkspaceIndexFile,
   type WorkspaceIndexFileKind,
@@ -54,6 +60,8 @@ import {
   type WorkspaceIndexSource,
   type WorkspaceIndexStatus,
   type WorkspaceIndexTruncation,
+  type WorkspaceFindOptions,
+  type WorkspacePassageHit,
   type WorkspaceSearchLimits,
   type WorkspaceSearchQuery,
   type WorkspaceSearchResult,
@@ -63,6 +71,13 @@ interface IndexedFile extends WorkspaceIndexFile {
   readonly version: FileSystemVersion;
 }
 
+/** What the index knows from reading a document; its text lives in the engine. */
+interface DocumentAnalysis {
+  readonly record: IndexedDocument;
+  /** Characters of searchable text the engine holds for it. */
+  readonly characters: number;
+}
+
 interface DocumentState {
   readonly identity: DocumentIdentity;
   /** Version of the Markdown source when listed; null when there is none. */
@@ -70,9 +85,24 @@ interface DocumentState {
   readonly sourceSize: number;
   readonly layout: OutsideInLayout | null;
   /** Null while queued for analysis. */
-  analysis: AnalyzedDocument | null;
+  analysis: DocumentAnalysis | null;
   /** Source version the analysis was built from. */
   analysisVersion: FileSystemVersion | null;
+  /** Kept online by a cloud sync client: reading it would download it. */
+  readonly sourceOnlineOnly: boolean;
+  /**
+   * The analysis was stored by an earlier analyzer revision. It is used as it
+   * is until `upgrade` rebuilds it, so fields that revision did not know are
+   * missing meanwhile.
+   */
+  stale: boolean;
+}
+
+function nameOnly(
+  identity: DocumentIdentity,
+  issue: Parameters<typeof nameOnlyDocument>[1],
+): DocumentAnalysis {
+  return { record: nameOnlyDocument(identity, issue).record, characters: 0 };
 }
 
 interface TreeState {
@@ -80,6 +110,8 @@ interface TreeState {
   readonly documents: Map<WorkspacePath, DocumentState>;
   readonly directories: Set<WorkspacePath>;
   readonly unreadable: Set<WorkspacePath>;
+  /** Listed folders holding a `.docblocks` folder, which may hold folder settings. */
+  readonly markerCandidates: Set<WorkspacePath>;
 }
 
 interface Truncation {
@@ -88,7 +120,13 @@ interface Truncation {
 }
 
 function emptyTree(): TreeState {
-  return { files: new Map(), documents: new Map(), directories: new Set(), unreadable: new Set() };
+  return {
+    files: new Map(),
+    documents: new Map(),
+    directories: new Set(),
+    unreadable: new Set(),
+    markerCandidates: new Set(),
+  };
 }
 
 /** Thrown inside the work loop once the index is disposed. */
@@ -96,8 +134,15 @@ class IndexStopped extends Error {}
 
 class RootListingError extends Error {}
 
-function fsCode(error: unknown): string | null {
-  return error instanceof FsError ? error.code : null;
+/**
+ * Structural rather than `instanceof FsError`: a provider can come from a
+ * different copy of core than the index (a bundle that resolves one from
+ * `src` and the other from `dist`), and its errors then fail `instanceof`.
+ */
+function fsCode(error: unknown): FsErrorCode | null {
+  if (!error || typeof error !== 'object') return null;
+  const { name, code } = error as { readonly name?: unknown; readonly code?: unknown };
+  return name === 'FsError' && isFsErrorCode(code) ? code : null;
 }
 
 function isVanished(error: unknown): boolean {
@@ -123,12 +168,16 @@ function defaultNow(): number {
 }
 
 const PUBLISH_INTERVAL_MS = 250;
+/** A query embedding slower than this leaves that search lexical. */
+const QUERY_EMBED_BUDGET_MS = 1_500;
 const SLICE_MS = 8;
 
 class WorkspaceIndexImpl implements WorkspaceIndex {
   public readonly workspaceId: string;
 
   private readonly source: WorkspaceIndexSource;
+  private readonly engine: WorkspaceIndexEngine;
+  private readonly embedQuery: WorkspaceIndexOptions['embedQuery'];
   private readonly limits: WorkspaceIndexLimits;
   private readonly yieldControl: () => Promise<void>;
   private readonly now: () => number;
@@ -137,6 +186,11 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
   private readonly abort = new AbortController();
 
   private tree: TreeState = emptyTree();
+  /** What the engine kept from an earlier session, until the first full listing settles. */
+  private restored: ReadonlyMap<WorkspacePath, StoredDocument> | null = null;
+  private restoreDone = false;
+  private persistence: 'memory' | 'persistent' = 'memory';
+  private ranked = false;
   private truncation: Truncation | null = null;
   private analysisTruncation: Truncation | null = null;
   private rootError: string | null = null;
@@ -158,10 +212,15 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
   private queue: DocumentState[] = [];
   private queueIndex = 0;
   private queueDirty = true;
+  private staleQueue: DocumentState[] = [];
+  private staleQueueIndex = 0;
+  private staleQueueDirty = true;
   private sliceStart = 0;
 
   private subscription: FileSystemWatchSubscription | null = null;
   private watching = false;
+  /** The source's `enumerate` said `not-supported` (an older host): walk folders instead. */
+  private enumerateUnsupported = false;
 
   private readonly listeners = new Set<() => void>();
   private readonly listedWaiters = new Set<(listed: boolean) => void>();
@@ -169,12 +228,18 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
   private lastPublish = 0;
   private filesCache: readonly WorkspaceIndexFile[] | null = null;
   private directoriesCache: readonly WorkspacePath[] | null = null;
+  /** What each folder's settings file said when last read, by folder. */
+  private readonly markers = new Map<WorkspacePath, IndexedFolderMarker>();
+  private markersCache: readonly IndexedFolderMarker[] | null = null;
+  private markerTruncation: Truncation | null = null;
   private documentsCache: readonly IndexedDocument[] | null = null;
   private statusCache: WorkspaceIndexStatus | null = null;
 
   public constructor(options: WorkspaceIndexOptions) {
     this.workspaceId = options.workspaceId;
     this.source = options.source;
+    this.engine = options.engine ?? createMemoryEngine();
+    this.embedQuery = options.embedQuery;
     this.limits = { ...WORKSPACE_INDEX_LIMITS, ...options.limits };
     this.yieldControl = options.yieldControl ?? defaultYield;
     this.now = options.now ?? defaultNow;
@@ -187,8 +252,10 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
   public getStatus(): WorkspaceIndexStatus {
     if (this.statusCache) return this.statusCache;
     let pendingCount = 0;
+    let upgrading = 0;
     for (const state of this.tree.documents.values()) {
       if (state.analysis === null) pendingCount += 1;
+      else if (state.stale) upgrading += 1;
     }
     const phase = this.disposed
       ? 'disposed'
@@ -209,10 +276,13 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       pendingCount,
       watching: this.watching,
       listed: this.listedOnce,
-      truncated: this.truncation ?? this.analysisTruncation,
+      truncated: this.truncation ?? this.analysisTruncation ?? this.markerTruncation,
       issues: this.tree.unreadable.size + this.readIssues,
       error: this.rootError,
       generation: this.generation,
+      persistence: this.persistence,
+      ranked: this.ranked,
+      ...(upgrading > 0 ? { upgrading } : {}),
     });
     return this.statusCache;
   }
@@ -267,6 +337,13 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       this.directoriesCache = Object.freeze([...directories].sort(compareCodeUnits));
     }
     return this.directoriesCache;
+  }
+
+  public getFolderMarkers(): readonly IndexedFolderMarker[] {
+    this.markersCache ??= Object.freeze(
+      [...this.markers.values()].sort((left, right) => compareCodeUnits(left.path, right.path)),
+    );
+    return this.markersCache;
   }
 
   public getDocument(path: string): IndexedDocument | null {
@@ -326,18 +403,48 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       readonly limits?: Partial<WorkspaceSearchLimits>;
     } = {},
   ): Promise<WorkspaceSearchResult> {
-    const documents: SearchableDocument[] = [...this.tree.documents.values()].map((state) => ({
+    const documents: EngineSearchDocument[] = [...this.tree.documents.values()].map((state) => ({
       record: this.recordOf(state),
-      text: state.analysis?.text ?? null,
       pending: state.analysis === null,
     }));
     documents.sort((left, right) => compareCodeUnits(left.record.path, right.record.path));
-    return searchDocuments(
-      documents,
-      query,
-      createCheckpoint(this.yieldControl, this.now, options.signal, SLICE_MS),
-      options.limits,
-    );
+    return this.engine.search(documents, query, {
+      checkpoint: createCheckpoint(this.yieldControl, this.now, options.signal, SLICE_MS),
+      limits: options.limits,
+      signal: options.signal,
+    });
+  }
+
+  public async find(
+    query: string,
+    options?: WorkspaceFindOptions,
+  ): Promise<readonly WorkspacePassageHit[]> {
+    if (!this.engine.find || this.disposed) return [];
+    const vector = options?.vector ?? (await this.queryVector(query));
+    const hits = await this.engine.find(query, vector ? { ...options, vector } : options);
+    // The store may still hold a document the latest listing no longer has.
+    return hits.filter((hit) => this.tree.documents.has(hit.path as WorkspacePath));
+  }
+
+  /** The query's embedding, or null when there is no embedder or it was too slow. */
+  private async queryVector(query: string): Promise<ArrayLike<number> | null> {
+    if (!this.embedQuery || !query.trim()) return null;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // A race, not just the signal: an embedder that ignores it still cannot hold search.
+    const late = new Promise<null>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        resolve(null);
+      }, QUERY_EMBED_BUDGET_MS);
+    });
+    try {
+      return await Promise.race([this.embedQuery(query, controller.signal), late]);
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   public refresh(options: { readonly force?: boolean } = {}): void {
@@ -377,6 +484,7 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     this.watching = false;
     if (subscription) void subscription.dispose().catch(() => undefined);
     for (const waiter of [...this.listedWaiters]) waiter(false);
+    this.engine.dispose();
     this.publish();
     this.listeners.clear();
   }
@@ -412,6 +520,12 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     this.sliceStart = this.now();
     try {
       while (!this.disposed && !this.paused) {
+        if (!this.restoreDone) {
+          this.restoreDone = true;
+          this.restored = await this.restoreStored();
+          if (this.disposed) throw new IndexStopped();
+          continue;
+        }
         if (this.walkRequested) {
           this.walkRequested = false;
           await this.fullWalk();
@@ -425,8 +539,15 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
           continue;
         }
         const next = this.nextPendingDocument();
-        if (!next) break;
-        await this.analyze(next);
+        if (next) {
+          await this.analyze(next);
+          this.maybePublish();
+          continue;
+        }
+        // Last, so nothing new waits behind records that are merely out of date.
+        const stale = this.nextStaleDocument();
+        if (!stale) break;
+        await this.upgrade(stale);
         this.maybePublish();
       }
     } catch (error: unknown) {
@@ -436,6 +557,33 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     } finally {
       this.pumping = false;
       if (!this.disposed) this.publish();
+    }
+  }
+
+  /** What the engine kept from an earlier session; nothing if it cannot say. */
+  private async restoreStored(): Promise<ReadonlyMap<WorkspacePath, StoredDocument>> {
+    // An engine that does not report how it opened ranks if it can.
+    if (!this.engine.opened) this.ranked = typeof this.engine.find === 'function';
+    void this.engine.opened?.then(
+      (opened) => {
+        if (this.disposed) return;
+        this.persistence = opened.persistence;
+        this.ranked = opened.ranks ?? typeof this.engine.find === 'function';
+        this.publish();
+      },
+      () => undefined,
+    );
+    try {
+      return await this.engine.restore();
+    } catch {
+      return new Map();
+    }
+  }
+
+  /** Tell the engine about documents `before` held that the tree no longer lists. */
+  private forgetMissing(before: Iterable<WorkspacePath>): void {
+    for (const path of before) {
+      if (!this.tree.documents.has(path)) this.engine.forget(path);
     }
   }
 
@@ -517,12 +665,83 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     this.truncation = truncation;
     this.rootError = null;
     this.lastWalkEnd = this.now();
+    this.forgetMissing(previous.keys());
+    if (this.restored) {
+      // Stored documents the workspace no longer has. A truncated listing may
+      // simply not have reached them, so keep them for a later walk.
+      if (truncation === null) this.forgetMissing(this.restored.keys());
+      this.restored = null;
+    }
     this.afterStructuralChange();
+    await this.readMarkers(WORKSPACE_ROOT);
     if (!this.listedOnce) {
       this.listedOnce = true;
       for (const waiter of [...this.listedWaiters]) waiter(true);
     }
     this.publish();
+  }
+
+  // ── Folder settings ───────────────────────────────────────────────────
+
+  /**
+   * Read the settings of every listed folder under `scope` that holds a
+   * `.docblocks` folder, and drop what was known for folders that no longer
+   * do. One small read per such folder; most workspaces have a handful.
+   */
+  private async readMarkers(scope: WorkspacePath): Promise<void> {
+    for (const folder of [...this.markers.keys()]) {
+      if (workspacePathContains(scope, folder) && !this.tree.markerCandidates.has(folder)) {
+        this.markers.delete(folder);
+      }
+    }
+    if (scope === WORKSPACE_ROOT) this.markerTruncation = null;
+    const candidates = [...this.tree.markerCandidates]
+      .filter((folder) => workspacePathContains(scope, folder))
+      .sort(compareCodeUnits);
+    for (const folder of candidates) {
+      await this.checkpoint();
+      await this.readMarker(folder);
+    }
+  }
+
+  private async readMarker(folder: WorkspacePath): Promise<void> {
+    const previous = this.markers.get(folder);
+    if (!previous && this.markers.size >= this.limits.maxFolderMarkers) {
+      this.markerTruncation ??= { reason: 'folder-markers', limit: this.limits.maxFolderMarkers };
+      return;
+    }
+    const state = await readFolderSettings(this.source, folder);
+    if (this.disposed) throw new IndexStopped();
+    if (state.status === 'missing') {
+      // A `.docblocks` folder holding other things: an ordinary folder.
+      this.markers.delete(folder);
+      return;
+    }
+    if (state.status === 'error') {
+      // Not known to be gone: keep what the folder was, marked as unconfirmed.
+      this.markers.set(folder, {
+        path: folder,
+        status: 'unreadable',
+        settings: previous?.settings ?? null,
+        version: previous?.version ?? null,
+      });
+      return;
+    }
+    this.markers.set(folder, {
+      path: folder,
+      status: state.status === 'ready' ? 'ok' : state.status,
+      settings: state.settings,
+      version: state.version,
+    });
+  }
+
+  /** A change at or inside `<folder>/.docblocks`: re-read that folder's settings. */
+  private async refreshMarker(folder: WorkspacePath): Promise<void> {
+    // Only folders the index lists carry settings; one under an ignored or
+    // unlisted folder is found when a walk reaches it.
+    if (!this.tree.directories.has(folder)) return;
+    this.tree.markerCandidates.add(folder);
+    await this.readMarker(folder);
   }
 
   /**
@@ -536,6 +755,15 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     rootDepth: number,
     progressive: boolean,
   ): Promise<Truncation | null> {
+    if (this.source.enumerate && !this.enumerateUnsupported) {
+      try {
+        return await this.enumerateTree(target, previous, root, rootDepth, progressive);
+      } catch (error: unknown) {
+        // Refused before its first page, so `target` is untouched.
+        if (fsCode(error) !== 'not-supported') throw error;
+        this.enumerateUnsupported = true;
+      }
+    }
     let truncation: Truncation | null = null;
     const queue: { readonly path: WorkspacePath; readonly depth: number }[] = [
       { path: root, depth: rootDepth },
@@ -574,6 +802,7 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       const directoryNames = new Set(
         children.filter((child) => child.kind === 'directory').map((child) => child.name),
       );
+      if (directoryNames.has(WORKSPACE_METADATA_DIRECTORY_NAME)) target.markerCandidates.add(path);
       for (const child of children) {
         if (!isDiscoverableWorkspaceEntry(child.name, child.kind)) continue;
         entries += 1;
@@ -611,6 +840,114 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     for (const { file, layout } of companions) {
       await this.checkpoint();
       const source = await this.companionSource(layout);
+      target.documents.set(
+        file.path,
+        this.outsideInState(file, layout, source, previous.get(file.path)),
+      );
+    }
+    return truncation;
+  }
+
+  /**
+   * `listTree` over the source's recursive metadata listing: one call per
+   * page instead of one per folder, and no content reads or hashes. Same
+   * rules and limits as the folder-by-folder walk.
+   */
+  private async enumerateTree(
+    target: TreeState,
+    previous: ReadonlyMap<WorkspacePath, DocumentState>,
+    root: WorkspacePath,
+    rootDepth: number,
+    progressive: boolean,
+  ): Promise<Truncation | null> {
+    let truncation: Truncation | null = null;
+    let entries = 0;
+    let directories = 1;
+    // Depth of each folder whose children belong in the index; others' are skipped.
+    const depths = new Map<WorkspacePath, number>([[root, rootDepth]]);
+    // Every child folder name per folder, companions included, for outside-in documents.
+    const folderNames = new Map<WorkspacePath, Set<string>>();
+    const outsideIn: FileSystemEntrySnapshot[] = [];
+    let listedRoot = false;
+    try {
+      walk: for await (const page of this.source.enumerate!(root, { signal: this.abort.signal })) {
+        if (this.disposed) throw new IndexStopped();
+        if (!listedRoot) {
+          listedRoot = true;
+          target.directories.add(root);
+        }
+        for (const entry of page.entries) {
+          const parent = workspacePathDirname(entry.path);
+          const depth = depths.get(parent);
+          if (depth === undefined) continue;
+          if (entry.kind === 'directory') {
+            let names = folderNames.get(parent);
+            if (!names) folderNames.set(parent, (names = new Set()));
+            names.add(entry.name);
+            if (entry.name === WORKSPACE_METADATA_DIRECTORY_NAME) {
+              target.markerCandidates.add(parent);
+            }
+          }
+          if (!isDiscoverableWorkspaceEntry(entry.name, entry.kind)) continue;
+          entries += 1;
+          if (entries > this.limits.maxEntries) {
+            truncation ??= { reason: 'entries', limit: this.limits.maxEntries };
+            break walk;
+          }
+          if (entry.kind === 'directory') {
+            if (depth + 1 > this.limits.maxDepth) {
+              truncation ??= { reason: 'depth', limit: this.limits.maxDepth };
+              continue;
+            }
+            directories += 1;
+            if (directories > this.limits.maxDirectories) {
+              truncation ??= { reason: 'directories', limit: this.limits.maxDirectories };
+              break walk;
+            }
+            depths.set(entry.path, depth + 1);
+            target.directories.add(entry.path);
+            continue;
+          }
+          const kind = classify(entry);
+          target.files.set(entry.path, this.fileOf(entry, kind));
+          if (kind === 'markdown') {
+            target.documents.set(entry.path, this.markdownState(entry, previous.get(entry.path)));
+          } else if (kind === 'outside-in') {
+            outsideIn.push(entry);
+          }
+        }
+        for (const folder of page.unreadable) {
+          if (!depths.has(folder)) continue;
+          target.directories.delete(folder);
+          target.unreadable.add(folder);
+        }
+        if (progressive) this.maybePublish();
+        await this.checkpoint();
+      }
+    } catch (error: unknown) {
+      if (this.disposed || error instanceof IndexStopped) throw new IndexStopped();
+      if (!listedRoot && fsCode(error) === 'not-supported') throw error;
+      if (!listedRoot && root === WORKSPACE_ROOT) {
+        throw new RootListingError(
+          error instanceof Error ? error.message : 'The workspace could not be listed.',
+        );
+      }
+      if (!listedRoot && isVanished(error)) return truncation;
+      if (!listedRoot) {
+        target.unreadable.add(root);
+        return truncation;
+      }
+      // The listing broke off partway: what was listed stands, the rest is unknown.
+      target.unreadable.add(root);
+    }
+
+    for (const file of outsideIn) {
+      await this.checkpoint();
+      const layout = resolveOutsideInLayout(file.path)!;
+      const siblings = folderNames.get(workspacePathDirname(file.path));
+      const source = siblings?.has(layout.companionName)
+        ? await this.companionSource(layout)
+        : null;
       target.documents.set(
         file.path,
         this.outsideInState(file, layout, source, previous.get(file.path)),
@@ -703,11 +1040,14 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       layout,
       analysis: null,
       analysisVersion: null,
+      sourceOnlineOnly,
+      stale: false,
     };
+    const stored = this.restored?.get(identity.path);
     if (identity.sourcePath === null) {
-      state.analysis = nameOnlyDocument(identity, 'no-companion');
+      state.analysis = nameOnly(identity, 'no-companion');
     } else if (sourceSize > this.limits.maxDocumentBytes) {
-      state.analysis = nameOnlyDocument(identity, 'too-large');
+      state.analysis = nameOnly(identity, 'too-large');
     } else if (
       previous?.analysis &&
       previous.identity.sourcePath === identity.sourcePath &&
@@ -716,13 +1056,27 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     ) {
       state.analysis = {
         record: { ...previous.analysis.record, lastModified: identity.lastModified },
-        text: previous.analysis.text,
+        characters: previous.analysis.characters,
       };
       state.analysisVersion = previous.analysisVersion;
+      state.stale = previous.stale;
+    } else if (
+      stored &&
+      sourceVersion !== null &&
+      stored.version === sourceVersion &&
+      stored.record.sourcePath === identity.sourcePath
+    ) {
+      // Analyzed in an earlier session from these exact bytes: no read needed.
+      state.analysis = {
+        record: { ...stored.record, lastModified: identity.lastModified },
+        characters: stored.characters,
+      };
+      state.analysisVersion = stored.version;
+      state.stale = stored.analyzer !== undefined && stored.analyzer < DOCUMENT_ANALYZER_REVISION;
     } else if (sourceOnlineOnly) {
       // Reading would download it from the cloud. Index it by name until a
       // later listing finds it on this device, which queues a real read.
-      state.analysis = nameOnlyDocument(identity, 'online-only');
+      state.analysis = nameOnly(identity, 'online-only');
     }
     return state;
   }
@@ -744,6 +1098,14 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       return;
     }
     const segments = path.split('/');
+    const markerFolder =
+      segments[segments.length - 1] === WORKSPACE_METADATA_DIRECTORY_NAME
+        ? workspacePathDirname(path)
+        : folderOfSettingsPath(path);
+    if (markerFolder !== null) {
+      await this.refreshMarker(markerFolder);
+      return;
+    }
     for (let index = 0; index < segments.length - 1; index += 1) {
       const segment = segments[index]!;
       if (isCompanionDirectoryName(segment)) {
@@ -780,9 +1142,12 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       }
       if (!isDiscoverableWorkspaceEntry(name, 'directory')) return;
       const previous = new Map(this.tree.documents);
-      this.removeSubtree(path);
+      // Re-listed below, carrying analysis over; only what is truly gone is forgotten.
+      this.removeSubtree(path, false);
       const truncation = await this.listTree(this.tree, previous, path, segments.length, false);
       this.truncation ??= truncation;
+      this.forgetMissing([...previous.keys()].filter((key) => workspacePathContains(path, key)));
+      await this.readMarkers(path);
       return;
     }
     if (!isDiscoverableWorkspaceEntry(name, 'file')) return;
@@ -818,15 +1183,26 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     }
   }
 
-  private removeSubtree(path: WorkspacePath): void {
+  private removeSubtree(path: WorkspacePath, forget = true): void {
     const within = (candidate: WorkspacePath) => workspacePathContains(path, candidate);
     for (const key of [...this.tree.files.keys()]) if (within(key)) this.tree.files.delete(key);
     for (const key of [...this.tree.documents.keys()]) {
-      if (within(key)) this.tree.documents.delete(key);
+      if (!within(key)) continue;
+      this.tree.documents.delete(key);
+      if (forget) this.engine.forget(key);
     }
     for (const key of [...this.tree.directories])
       if (within(key)) this.tree.directories.delete(key);
     for (const key of [...this.tree.unreadable]) if (within(key)) this.tree.unreadable.delete(key);
+    for (const key of [...this.tree.markerCandidates]) {
+      if (within(key)) this.tree.markerCandidates.delete(key);
+    }
+    // A subtree being listed again keeps its folder settings until the new
+    // listing settles them (`readMarkers`), so nobody asking meanwhile sees a
+    // tasks folder as an ordinary one.
+    if (forget) {
+      for (const key of [...this.markers.keys()]) if (within(key)) this.markers.delete(key);
+    }
   }
 
   /** Recount totals and requeue analysis after the tree changed shape. */
@@ -835,11 +1211,12 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     let characters = 0;
     for (const state of this.tree.documents.values()) {
       if (state.analysis && state.analysis.record.content !== 'name-only') analyzed += 1;
-      characters += state.analysis?.text?.characters ?? 0;
+      characters += state.analysis?.characters ?? 0;
     }
     this.analyzedCount = analyzed;
     this.textCharacters = characters;
     this.queueDirty = true;
+    this.staleQueueDirty = true;
   }
 
   // ── Analysis ──────────────────────────────────────────────────────────
@@ -871,10 +1248,74 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     return null;
   }
 
+  private nextStaleDocument(): DocumentState | null {
+    if (this.staleQueueDirty) {
+      this.staleQueue = [...this.tree.documents.values()].filter(
+        (state) => state.stale && state.analysis !== null,
+      );
+      this.staleQueueIndex = 0;
+      this.staleQueueDirty = false;
+    }
+    while (this.staleQueueIndex < this.staleQueue.length) {
+      const state = this.staleQueue[this.staleQueueIndex]!;
+      this.staleQueueIndex += 1;
+      if (this.tree.documents.get(state.identity.path) === state && state.stale) return state;
+    }
+    return null;
+  }
+
+  /**
+   * Bring a record an earlier analyzer stored up to date. The engine rebuilds
+   * it from the text it kept, so nothing is read from the workspace; only a
+   * document it kept no text for is queued for an ordinary read.
+   */
+  private async upgrade(state: DocumentState): Promise<void> {
+    const { identity } = state;
+    const previous = state.analysis;
+    const version = state.analysisVersion;
+    state.stale = false;
+    if (!previous || version === null || identity.sourcePath === null) return;
+
+    let rebuilt: DocumentAnalysis | null = null;
+    if (this.engine.reanalyze) {
+      try {
+        rebuilt = await this.engine.reanalyze(identity, version, {
+          maxParseBytes: this.limits.maxParseBytes,
+          signal: this.abort.signal,
+        });
+      } catch {
+        if (this.disposed) throw new IndexStopped();
+        rebuilt = null;
+      }
+    }
+    if (this.disposed) throw new IndexStopped();
+    if (this.tree.documents.get(identity.path) !== state || state.analysis !== previous) return;
+    await this.checkpoint();
+
+    const counted = (analysis: DocumentAnalysis) =>
+      analysis.record.content !== 'name-only' ? 1 : 0;
+    if (rebuilt) {
+      this.textCharacters += rebuilt.characters - previous.characters;
+      this.analyzedCount += counted(rebuilt) - counted(previous);
+      state.analysis = {
+        record: { ...rebuilt.record, lastModified: identity.lastModified },
+        characters: rebuilt.characters,
+      };
+      return;
+    }
+    // Reading a file the cloud holds would download it; its record stays as it is.
+    if (state.sourceOnlineOnly) return;
+    this.textCharacters -= previous.characters;
+    this.analyzedCount -= counted(previous);
+    state.analysis = null;
+    state.analysisVersion = null;
+    this.queueDirty = true;
+  }
+
   private async analyze(state: DocumentState): Promise<void> {
     const { identity } = state;
     if (this.analyzedCount >= this.limits.maxDocuments) {
-      state.analysis = nameOnlyDocument(identity, 'over-budget');
+      state.analysis = nameOnly(identity, 'over-budget');
       this.analysisTruncation ??= { reason: 'documents', limit: this.limits.maxDocuments };
       return;
     }
@@ -886,49 +1327,58 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       if (this.disposed) throw new IndexStopped();
       if (isVanished(error)) {
         this.enqueueChange(identity.path);
-        state.analysis = nameOnlyDocument(identity, 'read-error');
+        state.analysis = nameOnly(identity, 'read-error');
         return;
       }
       this.readIssues += 1;
-      state.analysis = nameOnlyDocument(identity, 'read-error');
+      state.analysis = nameOnly(identity, 'read-error');
       return;
     }
     if (this.disposed) throw new IndexStopped();
     if (this.tree.documents.get(identity.path) !== state) return;
     if (read === null) {
       this.enqueueChange(identity.path);
-      state.analysis = nameOnlyDocument(identity, 'read-error');
+      state.analysis = nameOnly(identity, 'read-error');
       return;
     }
     await this.checkpoint();
 
-    let analyzed: AnalyzedDocument;
+    // Tagged with the version the listing reported, in memory and in a
+    // persistent engine's store alike, so the next listing (this session's or
+    // the next launch's) compares like with like: an enumerated version
+    // describes metadata and never equals a read's content version. Bytes that
+    // changed after the listing just earn one extra read later.
+    const analysisVersion = state.sourceVersion ?? read.entry.version;
+    let analyzed: DocumentAnalysis;
     if (read.data.byteLength > this.limits.maxDocumentBytes) {
-      analyzed = nameOnlyDocument(identity, 'too-large');
+      analyzed = nameOnly(identity, 'too-large');
     } else {
       try {
-        analyzed = await analyzeDocumentBytes(identity, read.data, {
+        analyzed = await this.engine.analyze(identity, analysisVersion, read.data, {
           maxParseBytes: this.limits.maxParseBytes,
           signal: this.abort.signal,
         });
       } catch {
         if (this.disposed) throw new IndexStopped();
-        analyzed = nameOnlyDocument(identity, 'read-error');
+        analyzed = nameOnly(identity, 'read-error');
       }
     }
     if (this.tree.documents.get(identity.path) !== state) return;
 
-    const characters = analyzed.text?.characters ?? 0;
-    if (characters > 0 && this.textCharacters + characters > this.limits.maxTextCharacters) {
+    if (
+      analyzed.characters > 0 &&
+      this.textCharacters + analyzed.characters > this.limits.maxTextCharacters
+    ) {
+      this.engine.forget(identity.path);
       analyzed = {
         record: { ...analyzed.record, content: 'name-only', issue: 'over-budget' },
-        text: null,
+        characters: 0,
       };
       this.analysisTruncation ??= { reason: 'text', limit: this.limits.maxTextCharacters };
     }
     state.analysis = analyzed;
-    state.analysisVersion = read.entry.version;
-    this.textCharacters += analyzed.text?.characters ?? 0;
+    state.analysisVersion = analysisVersion;
+    this.textCharacters += analyzed.characters;
     if (analyzed.record.content !== 'name-only') this.analyzedCount += 1;
   }
 
@@ -947,6 +1397,7 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     this.lastPublish = this.now();
     this.filesCache = null;
     this.directoriesCache = null;
+    this.markersCache = null;
     this.documentsCache = null;
     this.statusCache = null;
     for (const listener of [...this.listeners]) {

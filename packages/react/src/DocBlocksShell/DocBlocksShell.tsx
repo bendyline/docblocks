@@ -2,11 +2,18 @@ import { dismissTopmostDialog } from '../components/dialog-stack.js';
 import type { AiPanel } from '../Ai/AiEditorAssistant.js';
 import type { HostFileSystemProvider } from '@bendyline/docblocks/filesystem/host';
 import { prepareHostLifecycle } from './host-lifecycle.js';
+import {
+  readStableFileSnapshot,
+  useExternalDocumentObserver,
+} from './useExternalDocumentObserver.js';
+import { createPresentationAssistant } from '../Presentation/presentation-assistant.js';
+import { createStudyAssistant } from '../Study/study-assistant.js';
 /**
  * DocBlocksShell -- top-level layout component.
  *
- * Composes the left sidebar (WorkspacePicker + FileExplorer) with
- * the center editor area (squisq EditorShell).
+ * Composes the left sidebar (app menu header, then the FileExplorer, whose
+ * toolbar leads with the WorkspacePicker) with the center editor area
+ * (squisq EditorShell).
  */
 
 import {
@@ -18,14 +25,17 @@ import {
   useMemo,
   lazy,
   Suspense,
+  type ReactNode,
 } from 'react';
 import type {
   CalcEngineFactory,
   EditorColorScheme,
   EditorView,
+  FindRequest,
   NavigationSheetPanel,
   ProofingCapability,
   ProofingIgnoreStore,
+  ViewMenuToggleItem,
   ViewPreferences,
 } from '@bendyline/squisq-editor-react';
 import type { CodeBlockCopyHandler } from '@bendyline/squisq-react';
@@ -53,11 +63,16 @@ import {
   decodeUtf8Text,
   FsError,
   getFileSystemProviderV2,
+  imageEditCompanionPath,
+  isEditableImagePath,
   isQuotaExceededError,
+  moveFileBetweenWorkspaces,
   moveFileSystemEntry,
   rewriteCompanionReferences,
   parseWorkspacePath,
   workspacePathContains,
+  workspacePathDirname,
+  workspacePathJoin,
   findWikiArticle,
   suggestWikiArticles,
 } from '@bendyline/docblocks/filesystem';
@@ -76,7 +91,13 @@ import {
   hostSupports,
   maybeGetDocBlocksHost,
 } from '@bendyline/docblocks/host';
-import type { ElectronWorkspaceInfo, OpenRequest } from '@bendyline/docblocks/host';
+import type {
+  AiChatRequest,
+  AiWorkspacePassage,
+  ElectronWorkspaceInfo,
+  OpenRequest,
+  WorkspacePassageReference,
+} from '@bendyline/docblocks/host';
 import {
   parseSharedDocumentHash,
   type SharedDocumentMode,
@@ -96,18 +117,32 @@ import {
   unregisterTransientWorkspace,
   appendWorkspaceBackup,
   finishWorkspaceBackup,
+  readWorkspaceDigests,
   type BackupWorkspace,
 } from '@bendyline/docblocks/workspace';
 import { AppMenu, type AppSettingsSection } from '../AppMenu/AppMenu.js';
+import {
+  DEVICE_WORKSPACE_ID,
+  chooseUnfiledDrawer,
+  declineInboxIds,
+  fileIncomingDocument,
+  isPhoneInboxPath,
+  listPhoneInbox,
+  loadDeclinedInboxIds,
+  type PhoneInboxItem,
+} from './incoming-share.js';
 import { restoreBrowserBackup } from './restore-backup.js';
 import { pickEmptyDocumentPrompt, useResponsivePreviewViewportPreset } from '../editor.js';
 import {
   FileExplorer,
+  type FileExplorerHandle,
   type FileExplorerSortMode,
   type FileTreeChange,
   type FileTreeMutationHandler,
 } from '../FileExplorer/FileExplorer.js';
+import { DocumentTitleField } from './DocumentTitleField.js';
 import { filterVisibleFileEntries } from '../FileExplorer/entry-visibility.js';
+import { indexFolderContents } from '../FileExplorer/folder-contents.js';
 import { renameDraft, renamedFileName } from '../FileExplorer/file-names.js';
 import { WorkspacePicker } from '../WorkspacePicker/WorkspacePicker.js';
 import { WorkspaceSettingsButton } from '../WorkspacePicker/WorkspaceSettingsButton.js';
@@ -193,11 +228,6 @@ const AiToolbarControl = lazy(() =>
     default: module.AiToolbarControl,
   })),
 );
-const PresentationMaker = lazy(() =>
-  import('../Presentation/PresentationMaker.js').then((module) => ({
-    default: module.PresentationMaker,
-  })),
-);
 const AiReviewPanel = lazy(() =>
   import('../Ai/AiEditorAssistant.js').then((module) => ({
     default: module.AiReviewPanel,
@@ -211,6 +241,26 @@ const AiIllustratePanel = lazy(() =>
 const AiImagePanel = lazy(() =>
   import('../Ai/AiImagePanel.js').then((module) => ({
     default: module.AiImagePanel,
+  })),
+);
+const AiAskPanel = lazy(() =>
+  import('../Ai/AiAskPanel.js').then((module) => ({
+    default: module.AiAskPanel,
+  })),
+);
+// Home, Tasks, and the pages of folders that say what they are for.
+const ShellPage = lazy(() =>
+  import('../Home/pages.js').then((module) => ({ default: module.ShellPage })),
+);
+const KindFolderPage = lazy(() =>
+  import('../Home/pages.js').then((module) => ({ default: module.KindFolderPage })),
+);
+const AskPage = lazy(() =>
+  import('../Home/AskPage.js').then((module) => ({ default: module.AskPage })),
+);
+const DocumentPropertiesStrip = lazy(() =>
+  import('../Properties/DocumentPropertiesStrip.js').then((module) => ({
+    default: module.DocumentPropertiesStrip,
   })),
 );
 const TextFromNarration = lazy(() =>
@@ -258,12 +308,16 @@ import {
   saveProofingPreferences,
   type ProofingPreferences,
 } from '../preferences/proofing.js';
+import { loadQuickJotVisible, saveQuickJotVisible } from '../preferences/quick-jot.js';
+import { QuickJot } from '../QuickJot/QuickJot.js';
+import { createQuickJotActions } from '../QuickJot/quick-jot-actions.js';
 import { retainFileSystemProvider } from '../provider-lease.js';
 import { useDocumentTitle } from './document-title.js';
 import { decodeDbkWorkspace } from './dbk-import.js';
 import { resolveShellEditorLinkTarget } from './editor-link-navigation.js';
 import { ensureShellWikiArticle, wikiArticleExtension } from './wiki-articles.js';
 import { importDroppedFiles, summariseImport } from './import-files.js';
+import { createImageWriteBack } from './image-write-back.js';
 import { importingMessage } from './import-file-types.js';
 import {
   createNewOutsideInDocument,
@@ -286,11 +340,16 @@ import {
 import { providerEntryExists, removeProviderEntry, writeProviderText } from './provider-io.js';
 import { usePromptDialog } from '../components/usePromptDialog.js';
 import { useConfirmDialog } from '../components/useConfirmDialog.js';
-import { NewDocumentDialog, type NewDocumentChoice } from '../components/NewDocumentDialog.js';
+import {
+  NewDocumentGallery,
+  type NewDocumentGalleryChoice,
+} from '../components/NewDocumentGallery.js';
+import { firstFreeDocumentPath, newDocumentMarkdown } from './new-document-templates.js';
 import { startTypedWhileOpening, type TypedWhileOpening } from './typedWhileOpening.js';
 import { EditorErrorBoundary } from './EditorErrorBoundary.js';
 import { localDateStamp } from '../local-date.js';
 import { openExternalUrl } from '../external-url.js';
+import { friendlyWorkspaceLocation } from '../workspace-location.js';
 import {
   loadPageTemplateEngine,
   readOutsideInHtmlOutput,
@@ -322,7 +381,11 @@ import {
   SIDEBAR_WIDTH_MAX,
   SIDEBAR_WIDTH_MIN,
 } from './shell-preferences.js';
-import { resolveLayoutMode, type DbSidebarPreference } from '../layout/form-factor.js';
+import {
+  resolveLayoutMode,
+  toggledSidebarPreference,
+  type DbSidebarPreference,
+} from '../layout/form-factor.js';
 import { useFormFactor } from '../layout/useFormFactor.js';
 import { useInert } from '../layout/useInert.js';
 import { useKeyboardInset } from '../layout/useKeyboardInset.js';
@@ -334,14 +397,12 @@ import { useShellShortcuts, type ShellShortcutHandlers } from './useShellShortcu
 import { findShortcutLabel, isApplePlatform, shortcutLabel } from './keyboard-shortcuts.js';
 import type { QuickOpenItem, QuickOpenPin } from '../QuickOpen/quick-open-ranking.js';
 import type { WorkspaceSearchOpenRequest } from '../WorkspaceSearch/WorkspaceSearchPanel.js';
+import { findRequestForSearchOpen } from '../WorkspaceSearch/search-find-request.js';
 import { FindButton } from '../components/FindButton.js';
 import { focusFindInput } from '../components/find-input.js';
-import { DocumentConflictBanner, DocumentConflictNotice } from './DocumentConflictBanner.js';
-import {
-  dismissConflict,
-  isConflictDismissed,
-  type DismissedConflict,
-} from './conflict-dismissal.js';
+import { DocumentConflictNotice } from './DocumentConflictNotice.js';
+import { DocumentVersionsLayer } from './DocumentVersionsLayer.js';
+import { autoSavePacingFor } from './synced-storage.js';
 import {
   clearRegeneratedPageTemplateWarning,
   isPageTemplateWarningFor,
@@ -351,9 +412,91 @@ import {
 } from './page-template-warning.js';
 import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
 import { CompactWelcomeScreen, WelcomeScreen } from './WelcomeScreen.js';
+import {
+  kindFolderFor,
+  kindFoldersOf,
+  locateTask,
+  markdownFileNameForTitle,
+  orderBuckets,
+  titleOfFileName,
+  type FolderKind,
+} from '@bendyline/docblocks/folders';
+import { DOCUMENT_PROPERTY_KEYS, localDateOf } from '@bendyline/docblocks/properties';
+import { createPageActions, describeActionError } from '../Home/page-actions.js';
+import { amendDigestAfterToggle, toggleTaskElsewhere } from '../Home/elsewhere-tasks.js';
+import { keepDocumentVersion } from '../Home/keep-version.js';
+import type { ShellPageContext } from '../Home/page-context.js';
+import {
+  describeChoice,
+  type FolderChoice,
+  type WorkspaceFolderSource,
+} from '../FolderPicker/folder-tree.js';
+import { listProviderFolders } from '../FolderPicker/list-folders.js';
+import { ShellNav, type ShellNavItem } from '../Home/ShellNav.js';
+import {
+  buildShellPageHash,
+  parseShellPageHash,
+  type ShellPageLocation,
+  type ShellRoute,
+} from '../Home/shell-routes.js';
+import { useToday } from '../Home/useToday.js';
+import { loadLaunchView } from '../preferences/launch-view.js';
+import {
+  loadReminderPreferences,
+  saveReminderPreferences,
+  type ReminderPreferences,
+} from '../preferences/reminders.js';
+import { useReminderSync } from '../Home/useReminderSync.js';
+import { taskFacts } from '../Ai/task-context.js';
+import { useWorkspaceTasks } from '../Home/useWorkspaceTasks.js';
+import { parseHomeDigest, projectHomeDigest } from '../Home/home-digest.js';
+import { useHomeDigests, type HomeDigestSources } from '../Home/useHomeDigests.js';
+import { sectionTasks, type TaskItem } from '../Tasks/task-model.js';
+import { createProviderTaskGateway, type TaskGateway } from '../Tasks/task-operations.js';
+import { PasteDocumentDialog } from './PasteDocumentDialog.js';
+import {
+  fileNameForPastedTitle,
+  pastedContentToMarkdown,
+  titleForPastedMarkdown,
+  type PastedContent,
+} from './pasted-document.js';
 import { WindowDragGrip } from './WindowDragGrip.js';
 import { useDocumentLinkProvider } from './useDocumentLinkProvider.js';
-import { useWorkspaceIndex, type WorkspaceIndexMode } from '../WorkspaceIndex/useWorkspaceIndex.js';
+import {
+  useWorkspaceIndex,
+  type WorkspaceIndexMode,
+  type WorkspaceIndexWorkerOption,
+} from '../WorkspaceIndex/useWorkspaceIndex.js';
+import { useHostSemanticSearch } from '../WorkspaceIndex/host-embedder.js';
+import {
+  findTextForPassage,
+  findWorkspacePassages,
+  useAiProviderRemote,
+  withWorkspaceGrounding,
+  workspaceCatalogId,
+} from '../Ai/workspace-grounding.js';
+import type { AskNotice } from '../Ai/AiAskPanel.js';
+import type { AskActions } from '../Ai/ask-proposals.js';
+import { useAiInvitation } from '../Ai/ai-invitation.js';
+import { useAiOffered } from '../Ai/ai-status.js';
+import type { AskChat, AskTurn, WorkspaceAskSession } from '../Ai/workspace-ask.js';
+import type { ChatStore } from '../Ai/ask-chats.js';
+import type { AskChats } from '../Ai/AskChatList.js';
+import { chatDocumentPaths, listChats } from '../Ai/chat-folders.js';
+import {
+  loadWorkspaceGroundingChoices,
+  saveWorkspaceGroundingChoices,
+  workspaceGroundingEnabled,
+} from '../preferences/ai-workspace.js';
+import {
+  keepsSearchIndex,
+  loadSearchIndexChoices,
+  saveSearchIndexChoices,
+} from '../preferences/search-index.js';
+import {
+  loadSemanticSearchEnabled,
+  saveSemanticSearchEnabled,
+} from '../preferences/semantic-search.js';
 import {
   forgetRecentDocuments,
   loadRecentDocuments,
@@ -386,6 +529,7 @@ import {
   missingPinnedDocumentMessage,
   movePinnedDocumentsToWorkspace,
   pinnedDocumentKey,
+  relocatePinnedDocumentToWorkspace,
   relocatePinnedDocuments,
   removePinnedDocument,
   renamePinnedDocumentWorkspace,
@@ -591,6 +735,13 @@ export interface DocBlocksShellProps {
    * feature first needs it (hosts whose listings are expensive), `off` never.
    */
   workspaceIndex?: WorkspaceIndexMode;
+  /**
+   * Runs the workspace index's analysis, storage and search in a worker
+   * (`startWorkspaceIndexWorker` from `@bendyline/docblocks-react/workspace-index-worker`),
+   * so it survives relaunches and ranks passages. Without it the index lives
+   * in page memory for the session. Keep the object stable across renders.
+   */
+  workspaceIndexWorker?: WorkspaceIndexWorkerOption;
   /** Show Copy controls on ordinary fenced code blocks (default: true). */
   showCodeCopyButton?: boolean;
   /**
@@ -651,6 +802,19 @@ function useOsTheme(): 'light' | 'dark' {
   return dark ? 'dark' : 'light';
 }
 
+/** How a document opens when it should not open in Write. */
+interface DocumentOpenView {
+  view: EditorView;
+  sharedMode: SharedDocumentMode | null;
+}
+
+/**
+ * Something a first-time visitor brought opens as slides: seeing their own
+ * words become a designed deck is the quickest way to show what DocBlocks
+ * does. Write is one tab away.
+ */
+const OPEN_AS_SLIDESHOW: DocumentOpenView = { view: 'preview', sharedMode: 'slideshow' };
+
 /** Encode workspace + optional file path into a URL hash. */
 function buildHash(workspaceId: string, filePath?: string | null): string {
   const ws = encodeURIComponent(workspaceId);
@@ -697,6 +861,17 @@ function editorPageTemplateProps(pageTemplates: PageTemplateOption | null): obje
   return pageTemplates ? { pageTemplates } : {};
 }
 
+/**
+ * `EditorShell`'s `documentHeaderSlot` (the row between the toolbar and the
+ * document), spread untyped for the same reason: a Squisq release without it
+ * leaves the row out and the document works as before. The keys the row
+ * edits go with it (`hostFrontmatterKeys`), so Squisq's own Properties list
+ * does not offer them a second time.
+ */
+function editorDocumentHeaderProps(header: ReactNode): object {
+  return header ? { documentHeaderSlot: header, hostFrontmatterKeys: DOCUMENT_PROPERTY_KEYS } : {};
+}
+
 function basenameOf(p: string): string {
   const clean = p.replace(/^\/+/, '');
   const idx = clean.lastIndexOf('/');
@@ -708,6 +883,34 @@ function basenameOf(p: string): string {
  *  stay readable (`<basename>.<timestamp>.md`). */
 function stripExtension(name: string): string {
   return name.replace(/\.[^.]+$/, '');
+}
+
+/** Write a new Markdown document; throws when a document already has that path. */
+async function createMarkdownFile(
+  provider: FileSystemProvider,
+  path: string,
+  content: string,
+): Promise<void> {
+  if (getFileSystemProviderV2(provider)) {
+    try {
+      await writeProviderText(provider, path, content, 'create');
+    } catch (error: unknown) {
+      if (error instanceof FsError && error.code === 'already-exists') {
+        throw new Error('A document with that name already exists.');
+      }
+      throw error;
+    }
+  } else if (provider.commitFile) {
+    const result = await provider.commitFile(path, content, null);
+    if (result.status === 'conflict') {
+      throw new Error('A document with that name already exists.');
+    }
+  } else {
+    if (await providerEntryExists(provider, path)) {
+      throw new Error('A document with that name already exists.');
+    }
+    await writeProviderText(provider, path, content);
+  }
 }
 
 function normaliseProviderPath(p: string): string {
@@ -785,41 +988,6 @@ async function removePinnedProviderFile(
   if (!(await provider.exists(path))) return false;
   await provider.delete(path);
   return true;
-}
-
-async function readStableFileSnapshot(
-  provider: FileSystemProvider,
-  path: string,
-): Promise<{ content: string | null; version: string | null; lastModified: string | null }> {
-  const providerV2 = getFileSystemProviderV2(provider);
-  if (providerV2) {
-    const read = await providerV2.readFile(parseWorkspacePath(path));
-    return {
-      content: read
-        ? decodeUtf8Text(read.data, {
-            label: 'The document',
-            path: parseWorkspacePath(path),
-          })
-        : null,
-      version: read?.entry.version ?? null,
-      lastModified: read?.entry.lastModified ?? null,
-    };
-  }
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const before = await provider.stat(path);
-    const content = await provider.readFile(path);
-    const after = await provider.stat(path);
-    const unchanged = before?.lastModified === after?.lastModified && before?.size === after?.size;
-    const existenceMatches = (content !== null) === (after !== null);
-    if (unchanged && existenceMatches) {
-      return {
-        content,
-        version: after ? `${after.lastModified}:${after.size}` : null,
-        lastModified: after?.lastModified ?? null,
-      };
-    }
-  }
-  throw new Error('The file kept changing while DocBlocks was reading it.');
 }
 
 async function sha256Hex(data: ArrayBuffer): Promise<string> {
@@ -932,6 +1100,8 @@ async function createHostProviderFromWorkspace(
 // than spending 44px of chrome on a toolbar that was still mostly usable.
 const DESKTOP_TOOLBAR_WRAP_WIDTH = 900;
 const WEB_TOOLBAR_WRAP_WIDTH = 700;
+/** How often an open document is re-checked on storage that cannot report changes. */
+const UNWATCHED_DOCUMENT_HEARTBEAT_MS = 20_000;
 
 function FolderGlyph() {
   return (
@@ -1006,6 +1176,7 @@ export function DocBlocksShell({
   onApplyUpdate,
   statusBarSlotRight,
   workspaceIndex: workspaceIndexMode = 'eager',
+  workspaceIndexWorker,
   showCodeCopyButton = true,
   onCopyCode,
   allowRecording = true,
@@ -1041,7 +1212,21 @@ export function DocBlocksShell({
   // Settings choice > the host's `theme` prop > the OS. See resolve-theme.ts
   // for why that order. Stamped as `data-theme` on the shell root below.
   const resolvedTheme = resolveShellTheme({ preference: themePreference, hostTheme, osTheme });
-  const ai = hostSupports('aiAssist') ? maybeGetDocBlocksHost()?.ai : undefined;
+  const hostAi = hostSupports('aiAssist') ? maybeGetDocBlocksHost()?.ai : undefined;
+  // Every AI action that searches knowledge also carries passages from the
+  // open workspace (set below, once the index and the open note are known).
+  const workspaceGroundingRef = useRef<
+    (request: AiChatRequest) => Promise<readonly AiWorkspacePassage[]>
+  >(async () => []);
+  const ai = useMemo(
+    () =>
+      hostAi
+        ? withWorkspaceGrounding(hostAi, (request) => workspaceGroundingRef.current(request))
+        : undefined,
+    [hostAi],
+  );
+  const aiProviderRemote = useAiProviderRemote(hostAi);
+  const [groundingChoices, setGroundingChoices] = useState(loadWorkspaceGroundingChoices);
   const speech = hostSupports('speechModelManagement')
     ? maybeGetDocBlocksHost()?.speech
     : undefined;
@@ -1063,6 +1248,31 @@ export function DocBlocksShell({
     () => setSettingsRequest(({ count }) => ({ count: count + 1, section: 'ai' })),
     [],
   );
+  const openSearchSettings = useCallback(
+    () => setSettingsRequest(({ count }) => ({ count: count + 1, section: 'search' })),
+    [],
+  );
+  // While AI is off, a device that runs a capable model is invited to turn it on.
+  const aiInvitation = useAiInvitation(hostAi);
+  const dismissAiInvitation = aiInvitation.dismiss;
+  // AI Squisq's views offer — "Suggest with AI" in the Custom summary designer
+  // (Write › Summarize) and Generate in Write › Study cards — only while AI is
+  // on, or this device is invited to turn it on: hidden AI is not shown disabled.
+  const aiOffered = useAiOffered(ai, aiInvitation.invite);
+  const presentationAssistant = useMemo(
+    () => (ai && aiOffered ? createPresentationAssistant(ai) : undefined),
+    [ai, aiOffered],
+  );
+  const studyAssistant = useMemo(
+    () => (ai && aiOffered ? createStudyAssistant(ai) : undefined),
+    [ai, aiOffered],
+  );
+  const acceptAiInvitation = useCallback(async () => {
+    dismissAiInvitation();
+    // On before Settings opens, so it opens on the model download.
+    await hostAi?.setPreferences({ enabled: true }).catch(() => undefined);
+    openAiSettings();
+  }, [hostAi, dismissAiInvitation, openAiSettings]);
   // Squisq re-resolves a changed capability and cancels any session in
   // progress, so the provider must keep one identity for the bridge's life.
   const speechInput = useMemo(
@@ -1108,6 +1318,33 @@ export function DocBlocksShell({
     saveProofingPreferences(settings);
   }, []);
 
+  const [quickJotVisible, setQuickJotVisible] = useState(loadQuickJotVisible);
+  const quickJotSetting = useMemo(
+    () => ({
+      visible: quickJotVisible,
+      onChange: (visible: boolean) => {
+        setQuickJotVisible(visible);
+        saveQuickJotVisible(visible);
+      },
+    }),
+    [quickJotVisible],
+  );
+  /** True while Quick Jot holds the microphone; the editor's own dictation waits. */
+  const [quickJotDictating, setQuickJotDictating] = useState(false);
+
+  // Semantic search needs the host's embedding model and the worker index.
+  const semanticSearchAvailable =
+    workspaceIndexWorker !== undefined && hostSupports('semanticEmbeddings');
+  const [semanticSearchEnabled, setSemanticSearchEnabled] = useState(loadSemanticSearchEnabled);
+  const handleSemanticSearchChange = useCallback((enabled: boolean) => {
+    setSemanticSearchEnabled(enabled);
+    saveSemanticSearchEnabled(enabled);
+  }, []);
+  // Present whenever the host can embed, so the index keeps the model's
+  // chunking (and its vectors) while the switch is off.
+  const hostSemanticSearch = useHostSemanticSearch(semanticSearchAvailable);
+  const workspaceEmbedder = hostSemanticSearch.embedder;
+
   const [viewPreferences, setViewPreferences] = useState<ViewPreferences>(loadViewPreferences);
   const handleViewPreferencesChange = useCallback((prefs: ViewPreferences) => {
     setViewPreferences(prefs);
@@ -1152,6 +1389,31 @@ export function DocBlocksShell({
   // A "Restore split view" button exits it, and is only offered where the
   // viewport can actually hold both panes (splitPaneAllowed).
   const canRestoreSplitView = sidebarPreference === 'collapsed' && formFactor.splitPaneAllowed;
+  // Files, in the Navigation column of Squisq's View menu beside its Outline.
+  // It docks and undocks the file pane as the resizer and Restore split view
+  // do, so it is listed only where the viewport can hold both panes. Narrower
+  // layouts have the toolbar's own Files button for the drawer, which would
+  // open under this menu, since toggles leave it open.
+  const toggleDockedFilePane = useCallback(() => {
+    const next = toggledSidebarPreference(layoutMode);
+    updateSidebarPreference(next);
+    // Collapse as the resizer does: single-pane, showing the document.
+    if (next === 'collapsed') setMobileShowEditor(true);
+  }, [layoutMode, updateSidebarPreference]);
+  const viewMenuNavigation = useMemo<readonly ViewMenuToggleItem[] | undefined>(
+    () =>
+      formFactor.splitPaneAllowed
+        ? [
+            {
+              id: 'docblocks-files',
+              label: 'Files',
+              checked: !singlePane,
+              onToggle: toggleDockedFilePane,
+            },
+          ]
+        : undefined,
+    [formFactor.splitPaneAllowed, singlePane, toggleDockedFilePane],
+  );
   const editorAreaRef = useRef<HTMLElement>(null);
   const [desktopToolbarWrapped, setDesktopToolbarWrapped] = useState(false);
   useEffect(() => {
@@ -1215,6 +1477,10 @@ export function DocBlocksShell({
     if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
     saveToastTimerRef.current = setTimeout(() => setSaveToast(null), 3000);
   }, []);
+  const declineAiInvitation = useCallback(() => {
+    dismissAiInvitation();
+    showToast('success', 'You can turn on AI any time in Settings › AI.');
+  }, [dismissAiInvitation, showToast]);
   // "Opening …" while a clicked document is still loading, so a slow open
   // (a cloud file downloading first) never looks like a dead click.
   const { notice: openingNotice, track: trackOpening } = useOpeningNotice();
@@ -1226,17 +1492,33 @@ export function DocBlocksShell({
   // The shell's stand-in for `window.prompt()`, which Electron's renderer does
   // not implement -- calling it there throws and the action dies silently.
   const { prompt: promptForText, promptDialog } = usePromptDialog();
-  const [newDocumentDialogOpen, setNewDocumentDialogOpen] = useState(false);
-  // The document the New document dialog just created, until its editor has
-  // the caret on the line beneath its title.
-  const [newDocumentCaretPath, setNewDocumentCaretPath] = useState<string | null>(null);
-  const clearNewDocumentCaret = useCallback(() => setNewDocumentCaretPath(null), []);
+  // The New document gallery, open for a folder ('' for the workspace's top).
+  const [newDocumentGallery, setNewDocumentGallery] = useState<{ folder: string } | null>(null);
+  // A just-created document still being named in the toolbar's title field:
+  // its path, and the `# Heading` it started with, which follows the name.
+  const [namingDocument, setNamingDocument] = useState<{
+    path: string;
+    heading: string;
+    template: boolean;
+  } | null>(null);
+  // A just-created (or just-named) document, until its editor has the caret:
+  // on the line beneath its title, or across a template's first sample line.
+  const [newDocumentCaret, setNewDocumentCaret] = useState<{
+    path: string;
+    at: 'end' | 'sample';
+    retitle: { from: string; to: string } | null;
+  } | null>(null);
+  const clearNewDocumentCaret = useCallback(() => setNewDocumentCaret(null), []);
   // Keys typed between Create and the new document's editor taking focus.
   const typedWhileOpeningRef = useRef<TypedWhileOpening | null>(null);
+  // What was typed after an Enter that named the document while it opened.
+  const typedAfterNamingRef = useRef('');
   const takeTypedWhileOpening = useCallback((): string => {
     const buffer = typedWhileOpeningRef.current;
     typedWhileOpeningRef.current = null;
-    return buffer ? buffer.take() : '';
+    const afterNaming = typedAfterNamingRef.current;
+    typedAfterNamingRef.current = '';
+    return afterNaming + (buffer ? buffer.take() : '');
   }, []);
   const cancelTypedWhileOpening = useCallback((): void => {
     typedWhileOpeningRef.current?.cancel();
@@ -1375,6 +1657,12 @@ export function DocBlocksShell({
   );
   const [activeWorkspaceDescriptor, setActiveWorkspaceDescriptor] =
     useState<WorkspaceDescriptor | null>(null);
+  // The descriptor follows renames; the provider's label covers the moment
+  // after a switch, before the new descriptor has loaded.
+  const activeWorkspaceLabel =
+    activeWorkspaceDescriptor?.id === activeWorkspaceId
+      ? activeWorkspaceDescriptor.name
+      : provider?.label;
   // Dismissed findings are keyed by workspace as well as path, so the store is
   // rebuilt when the active workspace changes. Squisq re-reads it per render,
   // so a fresh object costs nothing. `undefined` means "use the default";
@@ -1584,9 +1872,48 @@ export function DocBlocksShell({
   workspaceOutputsSchedulerRef.current = workspaceOutputs.scheduler;
   // The one shared listing of the workspace's documents. Workspace-wide
   // discovery (link picker, quick-open, search) reads it instead of walking.
-  const workspaceIndex = useWorkspaceIndex(provider, activeWorkspaceId, workspaceIndexMode);
+  const [searchIndexChoices, setSearchIndexChoices] = useState(loadSearchIndexChoices);
+  const keepSearchIndex = keepsSearchIndex(searchIndexChoices, activeWorkspaceId);
+  // A loose file or an opened bundle is gone next launch; keep nothing for it.
+  const transientWorkspace =
+    activeWorkspaceId !== null && getTransientWorkspace(activeWorkspaceId) !== null;
+  const workspaceIndex = useWorkspaceIndex(provider, activeWorkspaceId, workspaceIndexMode, {
+    worker: workspaceIndexWorker,
+    embedder: workspaceEmbedder,
+    semanticEnabled: semanticSearchEnabled,
+    persist: !transientWorkspace && keepSearchIndex,
+  });
+  const discardWorkspaceIndex = workspaceIndex.discard;
+  const handleKeepSearchIndexChange = useCallback(
+    (keep: boolean) => {
+      if (!activeWorkspaceId) return;
+      setSearchIndexChoices((current) => {
+        const next = { ...current, [activeWorkspaceId]: keep };
+        saveSearchIndexChoices(next);
+        return next;
+      });
+      // Off: the reopened index deletes the stored copy and stays in memory.
+      if (!keep) discardWorkspaceIndex();
+    },
+    [activeWorkspaceId, discardWorkspaceIndex],
+  );
   const workspaceIndexRef = useRef(workspaceIndex.index);
   workspaceIndexRef.current = workspaceIndex.index;
+  const workspaceGrounding =
+    semanticSearchAvailable &&
+    semanticSearchEnabled &&
+    workspaceGroundingEnabled(groundingChoices, activeWorkspaceId, aiProviderRemote);
+  const handleWorkspaceGroundingChange = useCallback(
+    (enabled: boolean) => {
+      if (!activeWorkspaceId) return;
+      setGroundingChoices((current) => {
+        const next = { ...current, [activeWorkspaceId]: enabled };
+        saveWorkspaceGroundingChoices(next);
+        return next;
+      });
+    },
+    [activeWorkspaceId],
+  );
   /**
    * Something in `workspaceId` changed; refresh that workspace's catalog
    * outputs and index. Every durable commit and tree mutation funnels here.
@@ -1656,6 +1983,17 @@ export function DocBlocksShell({
     void workspaceOutputsSchedulerRef.current?.regenerate({ force: true });
   }, []);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  /** Saved Ask chats in the open workspace: the model's words, never passages. */
+  const chatPathsRef = useRef<() => Set<string>>(() => new Set());
+  // Read at request time: the open workspace's index, minus the open note and saved chats.
+  workspaceGroundingRef.current = async (request) => {
+    if (!workspaceGrounding || !activeWorkspaceId || !request.knowledgeQuery) return [];
+    const exclude = chatPathsRef.current();
+    if (selectedFile) exclude.add(selectedFile).add(selectedFile.replace(/^\/+/u, ''));
+    return findWorkspacePassages(workspaceIndex.index, activeWorkspaceId, request.knowledgeQuery, {
+      ...(exclude.size > 0 ? { exclude } : {}),
+    });
+  };
   const selectedFileRef = useRef(selectedFile);
   selectedFileRef.current = selectedFile;
   const [selectedSourceFile, setSelectedSourceFile] = useState<string | null>(null);
@@ -1666,13 +2004,40 @@ export function DocBlocksShell({
     useState<EditableShellDocument['managedOutput']>(undefined);
   const [pageTemplateWarning, setPageTemplateWarning] = useState<PageTemplateWarning | null>(null);
   // Squisq's find bar is controlled here so Ctrl/Cmd+F, the toolbar button and
-  // the desktop Edit menu all drive one state. Each document starts closed.
+  // the desktop Edit menu all drive one state. Each document starts closed,
+  // except one opened from a workspace search result: Find opens on that hit.
   const [findMode, setFindMode] = useState(false);
   const findModeRef = useRef(findMode);
   findModeRef.current = findMode;
+  const [searchFind, setSearchFind] = useState<{
+    readonly path: string;
+    readonly request: FindRequest;
+  } | null>(null);
+  const searchFindRef = useRef(searchFind);
+  searchFindRef.current = searchFind;
   useEffect(() => {
+    const pending = searchFindRef.current;
+    if (pending !== null && selectedFile !== null && sameProviderPath(pending.path, selectedFile)) {
+      setFindMode(true);
+      return;
+    }
     setFindMode(false);
+    setSearchFind(null);
   }, [selectedFile]);
+  // Closing Find ends a search hit's request, so reopening it starts fresh.
+  const handleFindModeChange = useCallback((active: boolean) => {
+    setFindMode(active);
+    if (!active) setSearchFind(null);
+  }, []);
+  const editorFindRequest = useMemo(
+    () =>
+      searchFind !== null &&
+      selectedFile !== null &&
+      sameProviderPath(searchFind.path, selectedFile)
+        ? searchFind.request
+        : null,
+    [searchFind, selectedFile],
+  );
   // Squisq's phone-width outline and previews sheet, held here so it closes
   // with the document, and when the drawer covers it: left open underneath,
   // it would take the next Back press meant for the drawer.
@@ -1816,6 +2181,14 @@ export function DocBlocksShell({
   );
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [folderEntries, setFolderEntries] = useState<FileSystemEntry[]>([]);
+  /** Home or Tasks, when one of the shell's own pages is showing instead of a document. */
+  const [shellPage, setShellPage] = useState<Exclude<ShellRoute, { kind: 'folder' }> | null>(null);
+  /** A page route waiting for its workspace to finish opening (startup, Back, Forward). */
+  const [pendingShellRoute, setPendingShellRoute] = useState<ShellPageLocation | null>(null);
+  // Opening a document or a folder replaces whichever page was showing.
+  useEffect(() => {
+    if (selectedFile !== null || selectedFolder !== null) setShellPage(null);
+  }, [selectedFile, selectedFolder]);
   const hiddenOutputPaths = useMemo(
     () => hiddenCatalogOutputPaths(workspaceSettings.settings, workspaceOutputs.status.result),
     [workspaceSettings.settings, workspaceOutputs.status.result],
@@ -1920,6 +2293,8 @@ export function DocBlocksShell({
     return pickEmptyDocumentPrompt();
   }, [editorKey]);
   const [explorerKey, setExplorerKey] = useState(0);
+  /** The mounted explorer, so the toolbar's title field renames through it. */
+  const explorerRef = useRef<FileExplorerHandle>(null);
   // Over providers that cannot watch (IndexedDB, File System Access), catalog
   // writes are invisible until something re-reads: the explorer for a newly
   // created file, and the workspace index (quick open's only route to the
@@ -1975,6 +2350,53 @@ export function DocBlocksShell({
     },
     [gitScheduleRefresh, notifyWorkspaceChanged],
   );
+
+  // A PNG, JPEG, or WebP in a folder workspace opens in Squisq's layered image
+  // editor, outside-in: the picture stays the file, its layers live in the
+  // hidden `<name.ext>_files/` companion, and saving or leaving writes the
+  // flattened picture back. Loose files and opened bundles have no folder to
+  // keep layers in, and other formats cannot be saved back, so they open in
+  // the viewer.
+  const selectedImageEditable =
+    selectedImage !== undefined &&
+    selectedFile !== null &&
+    provider !== null &&
+    activeWorkspaceId !== null &&
+    getTransientWorkspace(activeWorkspaceId) === null &&
+    isEditableImagePath(selectedFile);
+  const imageEditorContainer = useMemo(
+    () =>
+      selectedImageEditable && provider && selectedFile
+        ? new FileSystemContentContainer(provider, imageEditCompanionPath(selectedFile))
+        : undefined,
+    [provider, selectedFile, selectedImageEditable],
+  );
+  const handleImageWriteBack = useMemo(() => {
+    if (!selectedImageEditable || !provider || !selectedFile || !activeWorkspaceId) {
+      return undefined;
+    }
+    const path = selectedFile;
+    const workspaceId = activeWorkspaceId;
+    return createImageWriteBack({
+      provider,
+      path,
+      onWritten: (data, mimeType) => {
+        afterWorkspaceCommit(workspaceId, path);
+        // Keep the open picture current, so the editor (were it to remount)
+        // checks its layers against what is on disk now. A leave that lands
+        // after another file opened must not replace that file's picture.
+        if (selectedFileRef.current === path) setSelectedImage({ data, mimeType });
+      },
+      onLeaveFailed: (message) => showToast('error', message),
+    });
+  }, [
+    activeWorkspaceId,
+    afterWorkspaceCommit,
+    provider,
+    selectedFile,
+    selectedImageEditable,
+    showToast,
+  ]);
 
   // Saving a page template regenerates the pages generated through it, one
   // pass at a time; saves during a pass coalesce into one more pass after it.
@@ -2058,6 +2480,8 @@ export function DocBlocksShell({
       ) {
         return {
           key: baseTarget.key,
+          // Lets the session combine separate edits and set unsaved text aside.
+          ...(baseTarget.park ? { park: baseTarget.park } : {}),
           async commit(request) {
             await assertNotGeneratedCatalog(fsProvider, filePath);
             const result = await baseTarget.commit(request);
@@ -2299,6 +2723,11 @@ export function DocBlocksShell({
       window.history.pushState(null, '', hash);
     }
   }, []);
+  /** Push a history entry for one of the shell's pages. */
+  const pushPageHash = useCallback((wsId: string, route: ShellRoute) => {
+    const hash = buildShellPageHash(wsId, route);
+    if (window.location.hash !== hash) window.history.pushState(null, '', hash);
+  }, []);
 
   /** Open a workspace (and optionally a file) from identifiers.
    *  Returns the FileSystemProvider on success, or null on failure. */
@@ -2380,6 +2809,7 @@ export function DocBlocksShell({
           adoptSelectedDocument(acceptedDocument);
           setSelectedFolder(null);
           setFolderEntries([]);
+          setShellPage(null);
           const effectiveView = view ?? 'wysiwyg';
           setInitialView(effectiveView);
           setInitialSharedMode(sharedMode);
@@ -2396,6 +2826,7 @@ export function DocBlocksShell({
           adoptSelectedDocument(null);
           setSelectedFolder(null);
           setFolderEntries([]);
+          setShellPage(null);
           setInitialSharedMode(null);
         }
 
@@ -2694,6 +3125,26 @@ export function DocBlocksShell({
         return;
       }
 
+      // A page of the shell's own (Home, Tasks, a folder's page): open its
+      // workspace, then show the page once the workspace is in place.
+      const pageRoute = parseShellPageHash(window.location.hash);
+      if (pageRoute) {
+        const restoredWorkspaceId =
+          workspaceIdRemap[pageRoute.workspaceId] ?? pageRoute.workspaceId;
+        const restoredProvider = await startupOpenFromIdsRef.current(
+          restoredWorkspaceId,
+          null,
+          false,
+          undefined,
+          requestId,
+        );
+        if (!isCurrent()) return;
+        if (restoredProvider) {
+          setPendingShellRoute({ workspaceId: restoredWorkspaceId, route: pageRoute.route });
+          return;
+        }
+      }
+
       // Try restoring an ordinary workspace route from the URL hash first.
       const hashState = parseHash();
       if (hashState) {
@@ -2720,6 +3171,27 @@ export function DocBlocksShell({
             );
           }
           return;
+        }
+      }
+
+      // Asked to open on Home: the last session's workspace, showing Home.
+      // A first run has no last session and still sees the welcome screen.
+      if (loadLaunchView() === 'home') {
+        const last = loadLastState();
+        if (last) {
+          const homeWorkspaceId = workspaceIdRemap[last.workspaceId] ?? last.workspaceId;
+          const opened = await startupOpenFromIdsRef.current(
+            homeWorkspaceId,
+            null,
+            false,
+            undefined,
+            requestId,
+          );
+          if (!isCurrent()) return;
+          if (opened) {
+            setPendingShellRoute({ workspaceId: homeWorkspaceId, route: { kind: 'home' } });
+            return;
+          }
         }
       }
 
@@ -2888,7 +3360,13 @@ export function DocBlocksShell({
       const requestedHash = window.location.hash;
       const restoreCurrentHash = () => {
         if (!activeWorkspaceId || window.location.hash !== requestedHash) return;
-        window.history.replaceState(null, '', buildHash(activeWorkspaceId, selectedFile));
+        window.history.replaceState(
+          null,
+          '',
+          shellPage && !selectedFile
+            ? buildShellPageHash(activeWorkspaceId, shellPage)
+            : buildHash(activeWorkspaceId, selectedFile),
+        );
       };
       const sharedHash = parseSharedDocumentHash(requestedHash);
       if (sharedHash.kind === 'invalid') {
@@ -2914,6 +3392,21 @@ export function DocBlocksShell({
         return;
       }
 
+      const pageRoute = parseShellPageHash(requestedHash);
+      if (pageRoute) {
+        if (pageRoute.workspaceId === activeWorkspaceId) {
+          setPendingShellRoute(pageRoute);
+          return;
+        }
+        void openFromIds(pageRoute.workspaceId, null, false)
+          .then((opened) => {
+            if (opened) setPendingShellRoute(pageRoute);
+            else restoreCurrentHash();
+          })
+          .catch(() => restoreCurrentHash());
+        return;
+      }
+
       const hashState = parseHash();
       if (hashState) {
         void openFromIds(hashState.workspaceId, hashState.filePath, false)
@@ -2933,7 +3426,7 @@ export function DocBlocksShell({
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [activeWorkspaceId, openFromIds, openSharedDocument, selectedFile, showToast]);
+  }, [activeWorkspaceId, openFromIds, openSharedDocument, selectedFile, shellPage, showToast]);
 
   useEffect(() => {
     if (!showBrowserStorageWarning || typeof navigator === 'undefined') return;
@@ -3022,13 +3515,15 @@ export function DocBlocksShell({
     return () => window.removeEventListener('click', handler, true);
   }, [activeWorkspaceId, selectedFile, closeWelcomeGateway]);
 
-  // Dismissing shrinks the conflict banner to a notice, not the conflict away:
-  // saving stays blocked, so the notice says so. A newer outside change, a
-  // blocked save or a blocked navigation brings the full banner back.
-  const [dismissedConflict, setDismissedConflict] = useState<DismissedConflict | null>(null);
+  // The comparison opens when the user asks (the conflict notice's Resolve)
+  // or tries to do something the conflict blocks: saving, or leaving the
+  // document. It never opens by itself, since a conflict can arrive mid-sentence.
+  const [showConflictComparison, setShowConflictComparison] = useState(false);
   const conflictTargetKey = documentSnapshot.conflict?.targetKey ?? null;
   useEffect(() => {
-    if (conflictTargetKey === null) setDismissedConflict(null);
+    // A conflict that settled by itself takes its comparison with it, so the
+    // next one does not open on its own.
+    if (conflictTargetKey === null) setShowConflictComparison(false);
   }, [conflictTargetKey]);
 
   const saveActiveDocument = useCallback(() => {
@@ -3037,7 +3532,7 @@ export function DocBlocksShell({
         await documentSession.flush('manual');
         showToast('success', 'Saved. You’re all set.');
       } catch (error: unknown) {
-        if (error instanceof DocumentSessionConflictError) setDismissedConflict(null);
+        if (error instanceof DocumentSessionConflictError) setShowConflictComparison(true);
         showToast(
           'error',
           isQuotaExceededError(error)
@@ -3219,103 +3714,24 @@ export function DocBlocksShell({
       : null;
   }, [selectedFile, selectedManagedOutput, workspaceOutputsResult]);
 
-  // React to external file changes watched by the Electron host (chokidar).
-  useEffect(() => {
-    if (!provider) return;
-    const providerV2 = getFileSystemProviderV2(provider);
-    const lifecycle = maybeGetDocBlocksHost()?.lifecycle;
-    if (
-      !providerV2 ||
-      (!providerV2.capabilities.watch && !lifecycle?.onResume && !managedOutputRefreshToken)
-    )
-      return;
-    const watchedFile = selectedSourceFile ?? selectedFile;
-    if (!watchedFile || !documentSnapshot.targetKey || selectedImage) return;
-    const targetKey = documentSnapshot.targetKey;
-    let disposed = false;
-    let reading = false;
-    let rerun = false;
-    let observationSequence = 0;
-
-    const drainWatcherReads = async () => {
-      if (reading) {
-        rerun = true;
-        return;
-      }
-      reading = true;
-      try {
-        do {
-          rerun = false;
-          const sequence = ++observationSequence;
-          const external = await readStableFileSnapshot(provider, watchedFile);
-          if (disposed) return;
-          const result = documentSession.observeExternal({
-            targetKey,
-            sequence,
-            content: external.content,
-            version: external.version,
-          });
-          if (result === 'applied') {
-            // observeExternal increments the session generation. The editor
-            // remount key and content both derive from that snapshot.
-          }
-        } while (rerun && !disposed);
-      } catch (error: unknown) {
-        if (!disposed)
-          showToast(
-            'error',
-            error instanceof Error
-              ? 'Could not check the current file: ' + error.message
-              : 'Could not check the current file.',
-          );
-      } finally {
-        reading = false;
-        if (rerun && !disposed) void drainWatcherReads();
-      }
-    };
-
-    const subscription = providerV2.capabilities.watch
-      ? providerV2.watch(
-          (event) => {
-            if (event.type === 'overflow') {
-              void drainWatcherReads();
-              return;
-            }
-            const changedCurrent = sameProviderPath(event.path, watchedFile);
-            const changedDestination =
-              event.destinationPath !== null &&
-              sameProviderPath(event.destinationPath, watchedFile);
-            if (changedCurrent || changedDestination) void drainWatcherReads();
-          },
-          {
-            onError: () => {
-              // Re-read the active file on watcher failure. The session decides
-              // whether the result is a clean update or an external conflict.
-              void drainWatcherReads();
-            },
-          },
-        )
-      : null;
-    const stopResume = lifecycle?.onResume?.(() => {
-      void drainWatcherReads();
-    });
-    void subscription?.ready.catch(() => undefined);
-    if (managedOutputRefreshToken) void drainWatcherReads();
-    return () => {
-      disposed = true;
-      stopResume?.();
-      void subscription?.dispose();
-    };
-  }, [
+  // Keep the open document in step with the file underneath it: watch events
+  // where the provider has them, and a re-check whenever the app comes back.
+  // The applied result needs no handling here: observeExternal increments the
+  // session generation, and the editor remount key and content derive from it.
+  const reportDocumentCheckFailed = useCallback(() => {
+    showToast('error', 'Could not check this document for changes made elsewhere.');
+  }, [showToast]);
+  const checkOpenDocument = useExternalDocumentObserver({
     provider,
-    selectedFile,
-    selectedSourceFile,
-    selectedImage,
-    managedOutputRefreshToken,
-    documentSession,
-    documentSnapshot.targetKey,
-    showToast,
-  ]);
+    path: selectedImage ? null : (selectedSourceFile ?? selectedFile),
+    targetKey: documentSnapshot.targetKey,
+    session: documentSession,
+    refreshToken: managedOutputRefreshToken,
+    // Storage on a phone or tablet reports no changes by itself, and a synced
+    // folder can change while the app stays open.
+    heartbeatMs: hostSupports('nativeWorkspaces') ? UNWATCHED_DOCUMENT_HEARTBEAT_MS : null,
+    onCheckFailed: reportDocumentCheckFailed,
+  });
 
   const transitionAwayFromDocument = useCallback(
     async (requestId: number): Promise<boolean> => {
@@ -3327,7 +3743,7 @@ export function DocBlocksShell({
         if (!transitioned || requestId !== navigationRequestRef.current) return false;
         return true;
       } catch (error: unknown) {
-        if (error instanceof DocumentSessionConflictError) setDismissedConflict(null);
+        if (error instanceof DocumentSessionConflictError) setShowConflictComparison(true);
         showToast(
           'error',
           error instanceof Error
@@ -3340,7 +3756,6 @@ export function DocBlocksShell({
     [documentSession, showToast],
   );
 
-  const [showConflictComparison, setShowConflictComparison] = useState(false);
   const readConflictFile = useCallback(async () => {
     const path = selectedSourceFile ?? selectedFile;
     // Transient providers describe an in-memory copy, not the origin file's
@@ -3391,6 +3806,49 @@ export function DocBlocksShell({
       return false;
     }
   }, [documentSession]);
+
+  const handleUseMergedDocument = useCallback(
+    async (content: string) => {
+      const conflictKey = documentSession.getSnapshot().conflict?.targetKey;
+      try {
+        await documentSession.resolveConflict('use-merged', { content });
+        if (conflictKey) pendingDbkConflictsRef.current.delete(conflictKey);
+        setSaveToast({ kind: 'success', message: 'Your combined version was saved.' });
+        return true;
+      } catch {
+        setSaveToast({ kind: 'error', message: 'Could not save your combined version.' });
+        return false;
+      }
+    },
+    [documentSession],
+  );
+
+  // A version of the open document was kept as its own document beside it.
+  const handleVersionDocumentCreated = useCallback(
+    (path: string) => {
+      if (activeWorkspaceId) afterWorkspaceCommit(activeWorkspaceId, path);
+      setExplorerKey((key) => key + 1);
+    },
+    [activeWorkspaceId, afterWorkspaceCommit],
+  );
+  const reportVersionsError = useCallback(
+    (message: string) => showToast('error', message),
+    [showToast],
+  );
+  // Other versions of the open document waiting for review, for its explorer row.
+  const [openDocumentVersionCount, setOpenDocumentVersionCount] = useState(0);
+
+  // Save less eagerly where a sync service keeps and uploads every version.
+  const workspaceLocation =
+    activeWorkspaceDescriptor?.id === activeWorkspaceId
+      ? (activeWorkspaceDescriptor?.rootPath ?? null)
+      : null;
+  const mobileHost = hostEnvironment?.surface === 'capacitor';
+  useEffect(() => {
+    documentSession.setAutoSavePacing(
+      autoSavePacingFor({ location: workspaceLocation, mobile: mobileHost }),
+    );
+  }, [documentSession, mobileHost, workspaceLocation]);
 
   useEffect(() => {
     const needsWarning = ['dirty', 'saving', 'error', 'conflict'].includes(documentSnapshot.status);
@@ -4013,60 +4471,49 @@ export function DocBlocksShell({
   );
 
   // Every "New document" entry point (landing page, shortcut, menu, PWA
-  // shortcut) opens the dialog; createNewDocument acts on its answer.
-  const handleNewFile = useCallback(() => {
-    if (provider) setNewDocumentDialogOpen(true);
-  }, [provider]);
+  // shortcut, the file list's New File) opens the gallery; createFromGallery
+  // acts on its answer. The file list's opens it for its selected folder.
+  const handleNewFileIn = useCallback(
+    (folder: string) => {
+      if (provider) setNewDocumentGallery({ folder });
+    },
+    [provider],
+  );
+  // Takes no arguments: it is also wired straight to buttons' onClick.
+  const handleNewFile = useCallback(() => handleNewFileIn(''), [handleNewFileIn]);
 
   /**
-   * Create a document at `requestedPath` and open it in Write view with the
-   * caret ready, keeping what is typed while it opens (NewDocumentCaret).
-   * Both ways of creating a document come here: the New document dialog and
-   * the file list's New File form, which used to write the file and merely
-   * select it, so nothing had focus and the first words typed were lost.
-   * A Markdown document starts as its name as a `# Title`, or empty when
-   * `blank` (New File makes a plain file). Throws when the document cannot be
-   * created, so each entry point reports that its own way.
+   * Create a document from the gallery's choice and open it in Write, with
+   * the toolbar's title field focused and its starting name selected, so the
+   * first thing typed names it (DocumentTitleField's `naming`). It starts as
+   * `Untitled`, or the template's name, numbered past any document already
+   * called that. What is typed while it opens goes to that name. Throws when
+   * the document cannot be created, so the caller reports it.
    */
   const createAndOpenDocument = useCallback(
-    async (
-      path: string,
-      format: NewFileFormat,
-      { blank = false }: { blank?: boolean } = {},
-    ): Promise<void> => {
+    async ({ template, format }: NewDocumentGalleryChoice, folder: string): Promise<void> => {
       if (!provider) return;
       const requestId = ++navigationRequestRef.current;
       const createdRef: { current: EditableShellDocument | null } = { current: null };
-      // The dialog has closed; the editor will not have focus for a while.
-      // Hold what is typed meanwhile and give it to NewDocumentCaret.
+      let heading = template.name;
+      // The dialog has closed; the title field will not have focus for a
+      // while. Hold what is typed meanwhile and give it to the name.
       cancelTypedWhileOpening();
+      typedAfterNamingRef.current = '';
       typedWhileOpeningRef.current = startTypedWhileOpening();
       try {
         const transitioned = await documentSession.transitionWithLoad(async () => {
           if (requestId !== navigationRequestRef.current) return null;
+          const { path, stem } = await firstFreeDocumentPath(
+            provider,
+            folder,
+            template.name,
+            format,
+          );
+          heading = stem;
+          const content = newDocumentMarkdown(template, stem);
           if (format === 'markdown') {
-            const content = blank ? '' : '# ' + basenameOf(path).replace(/\.[^.]+$/, '') + '\n';
-            const providerV2 = getFileSystemProviderV2(provider);
-            if (providerV2) {
-              try {
-                await writeProviderText(provider, path, content, 'create');
-              } catch (error: unknown) {
-                if (error instanceof FsError && error.code === 'already-exists') {
-                  throw new Error('A document with that name already exists.');
-                }
-                throw error;
-              }
-            } else if (provider.commitFile) {
-              const result = await provider.commitFile(path, content, null);
-              if (result.status === 'conflict') {
-                throw new Error('A document with that name already exists.');
-              }
-            } else {
-              if (await providerEntryExists(provider, path)) {
-                throw new Error('A document with that name already exists.');
-              }
-              await writeProviderText(provider, path, content);
-            }
+            await createMarkdownFile(provider, path, content);
             createdRef.current = {
               displayPath: path,
               sourcePath: path,
@@ -4080,6 +4527,7 @@ export function DocBlocksShell({
               path,
               newFileHtmlOutput(format),
               outsideInRenderRef.current,
+              content,
             );
           }
           if (requestId !== navigationRequestRef.current) return null;
@@ -4110,7 +4558,12 @@ export function DocBlocksShell({
       notifyWorkspaceChanged(activeWorkspaceId ?? provider.id, created.displayPath);
       rememberNewFileFormat(format);
       adoptSelectedDocument(created);
-      setNewDocumentCaretPath(created.displayPath);
+      setNewDocumentCaret(null);
+      setNamingDocument({
+        path: created.displayPath,
+        heading,
+        template: template.body !== '',
+      });
       // As selecting a document does: only the single-pane layout swaps the
       // file list for the editor.
       if (singlePane) setMobileShowEditor(true);
@@ -4142,10 +4595,10 @@ export function DocBlocksShell({
     ],
   );
 
-  const createNewDocument = useCallback(
-    async ({ filename, format }: NewDocumentChoice) => {
+  const createFromGallery = useCallback(
+    async (choice: NewDocumentGalleryChoice, folder: string) => {
       try {
-        await createAndOpenDocument('/' + filename, format);
+        await createAndOpenDocument(choice, folder);
       } catch (error: unknown) {
         showToast(
           'error',
@@ -4156,11 +4609,45 @@ export function DocBlocksShell({
     [createAndOpenDocument, showToast],
   );
 
-  /** The file list's New File form: a plain file, opened ready to type into. */
-  const createDocumentFromExplorer = useCallback(
-    (path: string, format: NewFileFormat) => createAndOpenDocument(path, format, { blank: true }),
-    [createAndOpenDocument],
+  /**
+   * Naming in the title field is over. When it ended with Enter or Escape
+   * and the document kept its name, the caret goes into the document now; a
+   * rename has already arranged that for the renamed document (see
+   * handleRenameOpenDocument). Leaving the field for somewhere else leaves
+   * focus where the person put it.
+   */
+  const handleNamingDone = useCallback(
+    (how: 'enter' | 'escape' | 'blur', typedAfter: string) => {
+      const naming = namingDocument;
+      setNamingDocument(null);
+      if (!naming || how === 'blur') return;
+      typedAfterNamingRef.current = typedAfter;
+      setNewDocumentCaret(
+        (pending) =>
+          pending ?? {
+            path: naming.path,
+            at: naming.template ? 'sample' : 'end',
+            retitle: null,
+          },
+      );
+    },
+    [namingDocument],
   );
+
+  // Enter or Escape is ending naming. Hold keys until the caret is in the
+  // document: a rename reopens it, and typing straight on would be lost.
+  const holdKeysAfterNaming = useCallback(() => {
+    cancelTypedWhileOpening();
+    typedWhileOpeningRef.current = startTypedWhileOpening();
+  }, [cancelTypedWhileOpening]);
+
+  // Opening another document ends naming: coming back later must not pull
+  // focus into the title field again.
+  useEffect(() => {
+    if (namingDocument && (!selectedFile || !sameProviderPath(namingDocument.path, selectedFile))) {
+      setNamingDocument(null);
+    }
+  }, [namingDocument, selectedFile]);
 
   const handleNewFolder = useCallback(async () => {
     if (!provider) return;
@@ -4471,7 +4958,12 @@ export function DocBlocksShell({
   // depends on -- see the `openTransient` + onOpenRequest effect below.
 
   const handleSelect = useCallback(
-    async (path: string, kind: 'file' | 'directory', createWikiArticle = false) => {
+    async (
+      path: string,
+      kind: 'file' | 'directory',
+      createWikiArticle = false,
+      openAs?: DocumentOpenView,
+    ) => {
       if (!provider || !activeWorkspaceId) return;
       const requestId = ++navigationRequestRef.current;
 
@@ -4483,7 +4975,7 @@ export function DocBlocksShell({
         const entries = await readProviderDirectory(provider, path);
         if (requestId !== navigationRequestRef.current) return;
         setFolderEntries(entries);
-        pushHash(activeWorkspaceId, null);
+        pushPageHash(activeWorkspaceId, { kind: 'folder', path });
       } else {
         // Already open: stay on it. Loading it again shows the same text, but
         // ends its undo history and discards what its panels hold, such as
@@ -4549,10 +5041,11 @@ export function DocBlocksShell({
           adoptSelectedDocument(openedDocument);
           setSelectedFolder(null);
           setFolderEntries([]);
-          setInitialView('wysiwyg');
-          setInitialSharedMode(null);
+          setInitialView(openAs?.view ?? 'wysiwyg');
+          setInitialSharedMode(openAs?.sharedMode ?? null);
           closeWelcomeGateway();
           pushHash(activeWorkspaceId, path);
+          // A reload comes back to Write, wherever this one opened.
           saveLastState({ workspaceId: activeWorkspaceId, filePath: path, view: 'wysiwyg' });
           if (singlePane) setMobileShowEditor(true);
         } finally {
@@ -4564,6 +5057,7 @@ export function DocBlocksShell({
       provider,
       activeWorkspaceId,
       pushHash,
+      pushPageHash,
       singlePane,
       closeWelcomeGateway,
       adoptSelectedDocument,
@@ -4576,6 +5070,907 @@ export function DocBlocksShell({
       defaultNewFileFormat,
     ],
   );
+
+  /**
+   * Show one of the shell's own pages. Leaving a document goes through the
+   * session exactly as opening a folder does, so nothing typed is lost.
+   */
+  const showShellRoute = useCallback(
+    async (route: ShellRoute) => {
+      if (!provider || !activeWorkspaceId) return;
+      if (route.kind === 'folder') {
+        await handleSelect(route.path, 'directory');
+        // From the list of places, a folder's page is the point: show it on a phone too.
+        closeWelcomeGateway();
+        if (singlePane) setMobileShowEditor(true);
+        return;
+      }
+      const requestId = ++navigationRequestRef.current;
+      if (!(await transitionAwayFromDocument(requestId))) return;
+      if (requestId !== navigationRequestRef.current) return;
+      adoptSelectedDocument(null);
+      setSelectedFolder(null);
+      setFolderEntries([]);
+      setShellPage(route);
+      pushPageHash(activeWorkspaceId, route);
+      closeWelcomeGateway();
+      if (singlePane) setMobileShowEditor(true);
+    },
+    [
+      provider,
+      activeWorkspaceId,
+      handleSelect,
+      closeWelcomeGateway,
+      singlePane,
+      transitionAwayFromDocument,
+      adoptSelectedDocument,
+      pushPageHash,
+    ],
+  );
+  const showShellRouteRef = useRef(showShellRoute);
+  showShellRouteRef.current = showShellRoute;
+
+  // A page route from startup or Back/Forward, once its workspace is open.
+  useEffect(() => {
+    if (!pendingShellRoute || !provider || activeWorkspaceId !== pendingShellRoute.workspaceId) {
+      return;
+    }
+    setPendingShellRoute(null);
+    void showShellRouteRef.current(pendingShellRoute.route);
+  }, [pendingShellRoute, provider, activeWorkspaceId]);
+
+  const today = useToday();
+  const workspaceTasks = useWorkspaceTasks(
+    workspaceIndex.index,
+    activeWorkspaceId ?? '',
+    workspaceIndex.status.generation,
+  );
+  const kindFoldersRef = useRef(workspaceTasks.kindFolders);
+  kindFoldersRef.current = workspaceTasks.kindFolders;
+  /** Which folders the index knows to be empty, so the file tree can leave off their chevrons. */
+  const indexedFolderContents = useMemo(
+    () =>
+      workspaceIndex.index
+        ? indexFolderContents(workspaceIndex.index, hiddenOutputPaths)
+        : undefined,
+    // `generation` is the index's own change signal; its getters are stable within one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [workspaceIndex.index, workspaceIndex.status.generation, hiddenOutputPaths],
+  );
+  /** The open workspace when an OS request arrives (see fileIncomingShare). */
+  const openWorkspaceRef = useRef({ workspaceId: activeWorkspaceId });
+  openWorkspaceRef.current = { workspaceId: activeWorkspaceId };
+  const shellPagesAvailable =
+    provider !== null &&
+    activeWorkspaceId !== null &&
+    workspaceIndexMode !== 'off' &&
+    getTransientWorkspace(activeWorkspaceId) === null;
+
+  /**
+   * How tasks reach their files. The open document changes through its
+   * session (so the editor shows it), moves go through the file tree's own
+   * rename (so the session, pins, history and listings follow), and anything
+   * else goes straight to storage with a conditional write.
+   */
+  const taskGateway = useMemo<TaskGateway | null>(() => {
+    if (!provider || !getFileSystemProviderV2(provider)) return null;
+    const storage = createProviderTaskGateway(provider);
+    const openSource = selectedSourceFile ?? selectedFile;
+    const isOpen = (path: string) => openSource !== null && sameProviderPath(openSource, path);
+    return {
+      ...storage,
+      read: (path) =>
+        isOpen(path) ? Promise.resolve(documentSession.getSnapshot().content) : storage.read(path),
+      async rewrite(path, transform) {
+        if (!isOpen(path)) return storage.rewrite(path, transform);
+        // Conditional, like the storage path: a transform can wait on I/O (an
+        // Ask edit keeps a version first), and typing or a merged change made
+        // meanwhile must not be overwritten. Redo it once on the new text.
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const current = documentSession.getSnapshot().content;
+          const next = await transform(current);
+          if (documentSession.getSnapshot().content !== current) continue;
+          if (next !== current) await documentSession.replaceContent(next);
+          return;
+        }
+        throw new Error('It changed while this was being done. Try again.');
+      },
+      async move(oldPath, newPath) {
+        const explorer = explorerRef.current;
+        const from = `/${parseWorkspacePath(oldPath)}`;
+        const to = `/${parseWorkspacePath(newPath)}`;
+        if (explorer) await explorer.renameEntry(from, to, 'file');
+        else await storage.move(from, to);
+      },
+    };
+  }, [provider, selectedFile, selectedSourceFile, documentSession]);
+
+  const pageActions = useMemo(() => {
+    if (!taskGateway || !provider || !activeWorkspaceId || !shellPagesAvailable) return null;
+    const storage = getFileSystemProviderV2(provider);
+    if (!storage) return null;
+    const workspaceId = activeWorkspaceId;
+    const watching = storage.capabilities.watch;
+    let treeRefresh: ReturnType<typeof setTimeout> | null = null;
+    return createPageActions({
+      gateway: taskGateway,
+      storage,
+      kindFolders: () => kindFoldersRef.current,
+      documentPaths: () =>
+        workspaceIndexRef.current?.getDocuments().map((document) => document.path) ?? [],
+      today: () => localDateOf(new Date()),
+      now: () => new Date(),
+      confirmDelete: confirmDeleteEntry,
+      report: showToast,
+      changed: (path) => {
+        notifyWorkspaceChanged(workspaceId, path);
+        if (watching) return;
+        // Storage that cannot report its own changes: re-read the tree once a burst settles.
+        if (treeRefresh !== null) clearTimeout(treeRefresh);
+        treeRefresh = setTimeout(() => {
+          treeRefresh = null;
+          void explorerRef.current?.refresh();
+        }, 150);
+      },
+      openDocument: (path) => void handleSelect(path, 'file'),
+      openFolder: (path) => void showShellRouteRef.current({ kind: 'folder', path }),
+      // Before an edit Ask proposed, the document's text is kept as a version
+      // in its companion folder, the same place the editor keeps them, even
+      // where saving versions automatically is turned off.
+      ...(allowVersioning
+        ? {
+            keepVersion: (path: string, source: string) =>
+              keepDocumentVersion(provider, path, source),
+          }
+        : {}),
+    });
+  }, [
+    allowVersioning,
+    taskGateway,
+    provider,
+    activeWorkspaceId,
+    shellPagesAvailable,
+    confirmDeleteEntry,
+    showToast,
+    notifyWorkspaceChanged,
+    handleSelect,
+  ]);
+
+  const shellNavItems = useMemo<readonly ShellNavItem[]>(() => {
+    if (!shellPagesAvailable) return [];
+    const items: ShellNavItem[] = [
+      { key: 'home', label: 'Home', icon: 'home', route: { kind: 'home' } },
+    ];
+    const { kindFolders, items: tasks, documents } = workspaceTasks;
+    if (kindFoldersOf(kindFolders, 'tasks').length > 0 || tasks.length > 0) {
+      const sections = sectionTasks(tasks, today);
+      const due = sections.overdue.length + sections.today.length;
+      items.push({
+        key: 'tasks',
+        label: 'Tasks',
+        icon: 'tasks',
+        route: { kind: 'tasks' },
+        count: due,
+        countLabel: due === 1 ? '1 due now' : `${due} due now`,
+      });
+    }
+    if (ai) {
+      items.push({ key: 'ask', label: 'Ask', icon: 'ask', route: { kind: 'ask' } });
+    }
+    for (const folder of kindFolders) {
+      // Tasks folders are behind Tasks, and chats behind Ask.
+      if (folder.settings.kind === 'tasks' || folder.settings.kind === 'chats') continue;
+      const label = folder.path.slice(folder.path.lastIndexOf('/') + 1) || 'Workspace';
+      const waiting =
+        folder.settings.kind === 'unfiled'
+          ? documents.filter((document) => document.path.startsWith(`${folder.path}/`)).length
+          : undefined;
+      items.push({
+        key: `folder:${folder.path}`,
+        label,
+        icon: folder.settings.kind,
+        route: { kind: 'folder', path: `/${folder.path}` },
+        ...(waiting !== undefined
+          ? { count: waiting, countLabel: waiting === 1 ? '1 waiting' : `${waiting} waiting` }
+          : {}),
+      });
+    }
+    return items;
+  }, [shellPagesAvailable, workspaceTasks, today, ai]);
+
+  /** The selected folder, when it is a folder that says what it is. */
+  const selectedFolderKind = useMemo(() => {
+    if (selectedFolder === null || selectedFile !== null) return null;
+    let canonical;
+    try {
+      canonical = parseWorkspacePath(selectedFolder);
+    } catch {
+      return null;
+    }
+    const nearest = kindFolderFor(workspaceTasks.kindFolders, canonical, true);
+    return nearest && nearest.path === canonical ? nearest : null;
+  }, [selectedFolder, selectedFile, workspaceTasks.kindFolders]);
+  /** The folder page showing in the main pane. Chats have Ask as their page instead. */
+  const selectedKindFolder =
+    selectedFolderKind && selectedFolderKind.settings.kind !== 'chats' ? selectedFolderKind : null;
+  // Opening a chats folder opens Ask, where its chats are listed beside the
+  // conversation. Without AI there is no Ask, so it lists as any folder does.
+  const chatsFolderShowsAsk = ai !== undefined && selectedFolderKind?.settings.kind === 'chats';
+
+  const currentNavKey = shellPage
+    ? shellPage.kind
+    : chatsFolderShowsAsk
+      ? 'ask'
+      : selectedKindFolder && selectedKindFolder.settings.kind !== 'tasks'
+        ? `folder:${selectedKindFolder.path}`
+        : selectedKindFolder
+          ? 'tasks'
+          : null;
+
+  // What the open workspace looks like from Home, kept on this device so the
+  // other workspaces' pages can show it while it is closed. Only a settled
+  // index is digested: a half-read workspace would hide tasks it has not reached.
+  const activeHomeDigest = useMemo(() => {
+    if (!shellPagesAvailable || !activeWorkspaceId) return null;
+    const status = workspaceIndex.status;
+    if (status.phase !== 'ready' || status.upgrading || status.truncated) return null;
+    const now = new Date();
+    return projectHomeDigest({
+      workspaceId: activeWorkspaceId,
+      kindFolders: workspaceTasks.kindFolders,
+      documents: workspaceTasks.documents,
+      items: workspaceTasks.items,
+      today,
+      now,
+    });
+  }, [shellPagesAvailable, activeWorkspaceId, workspaceIndex.status, workspaceTasks, today]);
+  const homeDigestSources = useMemo<HomeDigestSources>(
+    () => ({
+      async listWorkspaces() {
+        const electron = hostSupports('nativeWorkspaces');
+        return (await listWorkspaces())
+          .filter((workspace) =>
+            electron ? workspace.type === 'host-native' : workspace.type !== 'host-native',
+          )
+          .filter((workspace) => workspace.type !== 'transient')
+          .map((workspace) => ({ id: workspace.id, name: workspace.name }));
+      },
+      async openSilently(workspaceId) {
+        const workspace = await getWorkspace(workspaceId);
+        if (!workspace) return null;
+        let opened: FileSystemProvider | null = null;
+        if (workspace.type === 'indexeddb') {
+          opened = await createIndexedDbFileSystemProvider(workspace.id, workspace.name);
+        } else if (workspace.type === 'host-native' && hostSupports('nativeWorkspaces')) {
+          opened = await createHostProviderFromWorkspace(workspace);
+        }
+        // A browser-granted folder may ask for permission again: never in the background.
+        if (!opened) return null;
+        const provider = opened;
+        return {
+          provider,
+          release: async () => {
+            await getFileSystemProviderV2(provider)?.dispose();
+          },
+        };
+      },
+    }),
+    [],
+  );
+  const homeDigests = useHomeDigests({
+    enabled: shellPagesAvailable,
+    activeWorkspaceId,
+    activeDigest: activeHomeDigest,
+    refreshOthers: shellPage !== null,
+    sources: homeDigestSources,
+  });
+  const otherWorkspaces = homeDigests.summaries;
+  const amendHomeDigest = homeDigests.amend;
+  const refreshHomeDigest = homeDigests.refresh;
+
+  /**
+   * Storage for any workspace on this device: the open one's own, or one
+   * opened for the call and released after. Read through a ref: callers run
+   * after awaits, when the workspace that was open may have changed.
+   */
+  const acquireWorkspaceProviderRef = useRef<
+    ((document: PinnedDocument) => Promise<PinnedDocumentProviderAccess>) | null
+  >(null);
+  const withWorkspaceStorage = useCallback(
+    async <T,>(
+      workspaceId: string,
+      run: (storage: FileSystemProvider) => Promise<T>,
+    ): Promise<{ readonly result: T } | { readonly unavailable: string | null }> => {
+      const acquire = acquireWorkspaceProviderRef.current;
+      if (!acquire) return { unavailable: null };
+      const access = await acquire({ workspaceId, workspaceName: '', path: '' });
+      if (access.kind !== 'ready') {
+        return { unavailable: access.kind === 'unavailable' ? access.workspace.name : null };
+      }
+      try {
+        return { result: await run(access.provider) };
+      } finally {
+        if (access.owned) {
+          await Promise.resolve(getFileSystemProviderV2(access.provider)?.dispose()).catch(
+            () => undefined,
+          );
+        }
+      }
+    },
+    [],
+  );
+
+  /**
+   * A task from another workspace's digest, ticked on Home or the Tasks page:
+   * finished (or reopened) on that workspace's storage, then shown from an
+   * amended digest. Pins and recent documents follow a task that moved.
+   */
+  const toggleTaskInWorkspace = useCallback(
+    async (item: TaskItem) => {
+      const title = `“${item.title.length > 60 ? `${item.title.slice(0, 59)}…` : item.title}”`;
+      const doing = item.done ? `reopen ${title}` : `finish ${title}`;
+      const name =
+        otherWorkspaces.find((summary) => summary.workspaceId === item.workspaceId)?.name ??
+        'that workspace';
+      try {
+        const outcome = await withWorkspaceStorage(item.workspaceId, (storage) =>
+          toggleTaskElsewhere(storage, item, localDateOf(new Date())),
+        );
+        if (!('result' in outcome)) {
+          showToast(
+            'error',
+            outcome.unavailable === null
+              ? `Couldn't ${doing}. “${name}” is no longer on this device.`
+              : `Couldn't ${doing}. DocBlocks couldn't open “${outcome.unavailable}”: open it, then try again.`,
+          );
+          return;
+        }
+        const change = outcome.result;
+        const now = new Date();
+        amendHomeDigest(item.workspaceId, (digest) =>
+          amendDigestAfterToggle(digest, item, change, localDateOf(now), now),
+        );
+        if (change.path !== item.path) {
+          setPinnedDocuments((current) =>
+            relocatePinnedDocuments(current, item.workspaceId, item.path, change.path),
+          );
+          relocateRecentDocuments(item.workspaceId, item.path, change.path);
+        }
+        if (change.next) showToast('success', `Done. ${title} comes round again.`);
+      } catch (error: unknown) {
+        showToast('error', `Couldn't ${doing}. ${describeActionError(error)}`);
+      }
+    },
+    [otherWorkspaces, withWorkspaceStorage, amendHomeDigest, showToast],
+  );
+
+  /**
+   * Every workspace on this device and its folders, for choosing where
+   * something goes. The open workspace answers from its index; another is
+   * read when the picker opens it, its kind folders taken from its digest.
+   */
+  const workspaceFolderSource = useMemo<WorkspaceFolderSource | null>(() => {
+    if (!activeWorkspaceId) return null;
+    const unreadable = "DocBlocks couldn't read its folders.";
+    return {
+      workspaces: [
+        { id: activeWorkspaceId, name: activeWorkspaceDescriptor?.name ?? 'Workspace' },
+        ...otherWorkspaces.map((summary) => ({ id: summary.workspaceId, name: summary.name })),
+      ],
+      listFolders(workspaceId) {
+        const index = workspaceIndexRef.current;
+        if (workspaceId === activeWorkspaceId && index && index.workspaceId === workspaceId) {
+          const kinds = new Map(
+            kindFoldersRef.current.map((folder) => [folder.path as string, folder.settings.kind]),
+          );
+          return {
+            status: 'ready',
+            folders: index
+              .getDirectories()
+              .filter((path) => path !== '')
+              .map((path) => ({ path, kind: kinds.get(path) ?? null })),
+            partial: !index.getStatus().listed,
+          };
+        }
+        const digest = otherWorkspaces.find(
+          (summary) => summary.workspaceId === workspaceId,
+        )?.digest;
+        const kinds = new Map((digest?.folders ?? []).map((folder) => [folder.path, folder.kind]));
+        return withWorkspaceStorage(workspaceId, (storage) => listProviderFolders(storage)).then(
+          (outcome) =>
+            'result' in outcome
+              ? {
+                  status: 'ready' as const,
+                  folders: outcome.result.paths.map((path) => ({
+                    path,
+                    kind: kinds.get(path) ?? null,
+                  })),
+                  partial: outcome.result.partial,
+                }
+              : {
+                  status: 'unavailable' as const,
+                  message:
+                    outcome.unavailable === null
+                      ? 'It is no longer on this device.'
+                      : 'Open it once, then its folders show here.',
+                },
+          () => ({ status: 'unavailable' as const, message: unreadable }),
+        );
+      },
+    };
+  }, [activeWorkspaceId, activeWorkspaceDescriptor?.name, otherWorkspaces, withWorkspaceStorage]);
+
+  /**
+   * Move a document of the open workspace, with its companion folder, into a
+   * folder of another workspace. Its pin follows it, and the other
+   * workspace's digest is read again so Home and Tasks show it there.
+   */
+  const fileInWorkspace = useCallback(
+    async (path: string, choice: FolderChoice) => {
+      const source = provider;
+      const workspaceId = activeWorkspaceId;
+      if (!source || !workspaceId) return;
+      const from = parseWorkspacePath(path);
+      const name = titleOfFileName(from);
+      const title = `“${name.length > 60 ? `${name.slice(0, 59)}…` : name}”`;
+      try {
+        const outcome = await withWorkspaceStorage(choice.workspaceId, (destination) =>
+          moveFileBetweenWorkspaces(source, destination, from, choice.path),
+        );
+        if (!('result' in outcome)) {
+          showToast(
+            'error',
+            outcome.unavailable === null
+              ? `Couldn't move ${title}. “${choice.workspaceName}” is no longer on this device.`
+              : `Couldn't move ${title}. DocBlocks couldn't open “${outcome.unavailable}”: open it, then try again.`,
+          );
+          return;
+        }
+        notifyWorkspaceChanged(workspaceId, from);
+        if (!getFileSystemProviderV2(source)?.capabilities.watch) {
+          void explorerRef.current?.refresh();
+        }
+        setPinnedDocuments((current) =>
+          relocatePinnedDocumentToWorkspace(
+            current,
+            { workspaceId, path: from },
+            {
+              workspaceId: choice.workspaceId,
+              workspaceName: choice.workspaceName,
+              path: outcome.result,
+            },
+          ),
+        );
+        refreshHomeDigest(choice.workspaceId);
+        showToast('success', `Moved ${title} to ${describeChoice(choice)}.`);
+      } catch (error: unknown) {
+        showToast('error', `Couldn't move ${title}. ${describeActionError(error)}`);
+      }
+    },
+    [
+      provider,
+      activeWorkspaceId,
+      withWorkspaceStorage,
+      notifyWorkspaceChanged,
+      refreshHomeDigest,
+      showToast,
+    ],
+  );
+
+  // Documents shared to a phone before there was a drawer to file them in
+  // wait in its Inbox. The open workspace's drawer offers them, once each, on
+  // Home and on the drawer's own page.
+  const unfiledHere = kindFoldersOf(workspaceTasks.kindFolders, 'unfiled')[0]?.path;
+  const [phoneInbox, setPhoneInbox] = useState<readonly PhoneInboxItem[]>([]);
+  const [phoneInboxScan, setPhoneInboxScan] = useState(0);
+  const offerPhoneInbox =
+    mobileHost &&
+    shellPagesAvailable &&
+    unfiledHere !== undefined &&
+    (shellPage?.kind === 'home' || selectedKindFolder?.settings.kind === 'unfiled');
+  useEffect(() => {
+    if (!offerPhoneInbox) {
+      setPhoneInbox([]);
+      return;
+    }
+    let cancelled = false;
+    void withWorkspaceStorage(DEVICE_WORKSPACE_ID, (device) => listPhoneInbox(device))
+      .then((outcome) => {
+        if (cancelled) return;
+        const declined = loadDeclinedInboxIds();
+        setPhoneInbox(
+          'result' in outcome ? outcome.result.filter((item) => !declined.has(item.id)) : [],
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [offerPhoneInbox, activeWorkspaceId, unfiledHere, phoneInboxScan, withWorkspaceStorage]);
+
+  const filePhoneInbox = useCallback(async () => {
+    const items = phoneInbox;
+    const target = provider;
+    const workspaceId = activeWorkspaceId;
+    const folder = unfiledHere;
+    if (items.length === 0 || !target || !workspaceId || folder === undefined) return;
+    const drawerName = folder.slice(folder.lastIndexOf('/') + 1) || 'the workspace';
+    try {
+      const outcome = await withWorkspaceStorage(DEVICE_WORKSPACE_ID, async (device) => {
+        let moved = 0;
+        const stayed: string[] = [];
+        for (const item of items) {
+          const filed = await fileIncomingDocument({
+            source: device,
+            path: item.path,
+            target,
+            folder,
+          });
+          if (filed) moved += 1;
+          else stayed.push(item.id);
+        }
+        return { moved, stayed };
+      });
+      if (!('result' in outcome)) {
+        showToast('error', "Couldn't reach this phone's Inbox. Try again.");
+        return;
+      }
+      const { moved, stayed } = outcome.result;
+      // Offered once: what could not be moved stays in the Inbox folder, unasked.
+      declineInboxIds(stayed);
+      if (moved > 0) {
+        notifyWorkspaceChanged(workspaceId, folder);
+        if (workspaceId !== DEVICE_WORKSPACE_ID) notifyWorkspaceChanged(DEVICE_WORKSPACE_ID);
+        void explorerRef.current?.refresh();
+      }
+      const movedText =
+        moved === 1
+          ? `Moved 1 document to ${drawerName}.`
+          : `Moved ${moved} documents to ${drawerName}.`;
+      const stayedText =
+        stayed.length === 0
+          ? ''
+          : stayed.length === 1
+            ? "1 couldn't be moved and is still in this phone's Inbox folder."
+            : `${stayed.length} couldn't be moved and are still in this phone's Inbox folder.`;
+      showToast(
+        moved > 0 ? 'success' : 'error',
+        moved > 0 ? `${movedText}${stayedText ? ` ${stayedText}` : ''}` : stayedText,
+      );
+    } finally {
+      setPhoneInboxScan((scan) => scan + 1);
+    }
+  }, [
+    phoneInbox,
+    provider,
+    activeWorkspaceId,
+    unfiledHere,
+    withWorkspaceStorage,
+    notifyWorkspaceChanged,
+    showToast,
+  ]);
+
+  const declinePhoneInbox = useCallback(() => {
+    declineInboxIds(phoneInbox.map((item) => item.id));
+    setPhoneInbox([]);
+  }, [phoneInbox]);
+
+  // Reminders: every workspace's open tasks, from the open one's index and the
+  // others' digests, handed to the host whenever they change.
+  const notificationsHost = maybeGetDocBlocksHost()?.notifications ?? null;
+  const [reminderPreferences, setReminderPreferences] = useState(loadReminderPreferences);
+  const { reminderItems, reminderWorkspaceNames } = useMemo(() => {
+    const names = new Map<string, string>();
+    if (activeWorkspaceId) names.set(activeWorkspaceId, activeWorkspaceDescriptor?.name ?? '');
+    const items: TaskItem[] = [...workspaceTasks.items];
+    for (const summary of otherWorkspaces) {
+      names.set(summary.workspaceId, summary.name);
+      if (summary.digest) items.push(...summary.digest.items);
+    }
+    return { reminderItems: items, reminderWorkspaceNames: names };
+  }, [workspaceTasks.items, otherWorkspaces, activeWorkspaceId, activeWorkspaceDescriptor?.name]);
+  // Every Ask question carries the task list's facts, read when it is asked.
+  const askFactsRef = useRef<() => string | null>(() => null);
+  askFactsRef.current = () => taskFacts(reminderItems, today, reminderWorkspaceNames);
+  const askFacts = useCallback(() => askFactsRef.current(), []);
+  // What Ask suggests after an answer is carried out through the page actions,
+  // so a suggested task lands where a typed one would.
+  const askActions = useMemo<AskActions | undefined>(
+    () =>
+      pageActions
+        ? {
+            ...(activeWorkspaceId ? { catalogId: workspaceCatalogId(activeWorkspaceId) } : {}),
+            run: async (action) =>
+              (await import('../Ai/chat-actions.js')).applyProposedAction(action, pageActions),
+            open: (path) => void handleSelect(`/${path.replace(/^\/+/, '')}`, 'file'),
+          }
+        : undefined,
+    [pageActions, handleSelect, activeWorkspaceId],
+  );
+  useReminderSync({
+    notifications: notificationsHost,
+    // Only turning reminders off cancels them. A loose file opened from the
+    // OS, or no workspace yet, leaves the tasks unknown: the kept set stands.
+    enabled: reminderPreferences.enabled,
+    allDayTime: reminderPreferences.allDayTime,
+    items: reminderItems,
+    workspaceNames: reminderWorkspaceNames,
+    today,
+    ready:
+      shellPagesAvailable &&
+      workspaceIndex.status.phase === 'ready' &&
+      !workspaceIndex.status.upgrading,
+  });
+  const changeReminderPreferences = useCallback(
+    async (next: ReminderPreferences): Promise<string | null> => {
+      if (next.enabled && !reminderPreferences.enabled && notificationsHost) {
+        let permission;
+        try {
+          permission = await notificationsHost.requestPermission();
+        } catch {
+          permission = 'unavailable' as const;
+        }
+        if (permission === 'denied') {
+          return 'Notifications are turned off for DocBlocks. Turn them on in your system settings, then try again.';
+        }
+        if (permission === 'unavailable') return 'This device cannot show reminders.';
+      }
+      setReminderPreferences(next);
+      saveReminderPreferences(next);
+      return null;
+    },
+    [reminderPreferences.enabled, notificationsHost],
+  );
+
+  /**
+   * Import files into the Unfiled drawer, setting it up quietly if there is
+   * none: what a drop or paste on Home does, and what Quick Jot does with
+   * Word, PDF or slides dropped on their own. Resolves the imported paths.
+   */
+  const importFilesToUnfiled = useCallback(
+    async (files: readonly File[]): Promise<readonly string[]> => {
+      if (!pageActions || !provider || !activeWorkspaceId) return [];
+      const folder = await pageActions.ensureUnfiled();
+      if (folder === null) return [];
+      const result = await importDroppedFiles(files, provider, { folder });
+      notifyWorkspaceChanged(activeWorkspaceId, folder);
+      void explorerRef.current?.refresh();
+      const summary = summariseImport(result);
+      if (summary) showToast(summary.kind, summary.message);
+      return result.imported.map((imported) => imported.path);
+    },
+    [pageActions, provider, activeWorkspaceId, notifyWorkspaceChanged, showToast],
+  );
+
+  const offersQuickJotTask = kindFoldersOf(workspaceTasks.kindFolders, 'tasks').length > 0;
+  const offersQuickJotJournal = kindFoldersOf(workspaceTasks.kindFolders, 'journal').length > 0;
+  const quickJotActions = useMemo(
+    () =>
+      pageActions
+        ? createQuickJotActions({
+            actions: pageActions,
+            importToUnfiled: importFilesToUnfiled,
+            openDocument: (path) => void handleSelect(`/${path.replace(/^\/+/, '')}`, 'file'),
+            report: showToast,
+            today: () => localDateOf(new Date()),
+            offersTask: offersQuickJotTask,
+            offersJournal: offersQuickJotJournal,
+          })
+        : null,
+    [
+      pageActions,
+      importFilesToUnfiled,
+      handleSelect,
+      showToast,
+      offersQuickJotTask,
+      offersQuickJotJournal,
+    ],
+  );
+
+  const shellPageContext = useMemo<ShellPageContext | null>(() => {
+    if (!shellPagesAvailable || !activeWorkspaceId) return null;
+    const actions = pageActions;
+    return {
+      workspaceId: activeWorkspaceId,
+      workspaceName: activeWorkspaceDescriptor?.name ?? 'Workspace',
+      index: workspaceIndex.index,
+      generation: workspaceIndex.status.generation,
+      listing: !workspaceIndex.status.listed,
+      today,
+      actions: pageActions,
+      singlePane,
+      onShowFiles: () => setMobileShowEditor(false),
+      openDocument: (path) => void handleSelect(path, 'file'),
+      openFolder: (path) => void showShellRouteRef.current({ kind: 'folder', path }),
+      openRoute: (route) => void showShellRouteRef.current(route),
+      otherWorkspaces,
+      openInWorkspace: (workspaceId, path) => void openFromIds(workspaceId, `/${path}`, true),
+      toggleInWorkspace: toggleTaskInWorkspace,
+      ...(workspaceFolderSource ? { folderSource: workspaceFolderSource } : {}),
+      ...(provider ? { fileInWorkspace } : {}),
+      ...(phoneInbox.length > 0 && unfiledHere !== undefined
+        ? {
+            phoneInbox: {
+              count: phoneInbox.length,
+              drawerName: unfiledHere.slice(unfiledHere.lastIndexOf('/') + 1) || 'Unfiled',
+              fileAll: filePhoneInbox,
+              decline: declinePhoneInbox,
+            },
+          }
+        : {}),
+      reminders: notificationsHost
+        ? { preferences: reminderPreferences, change: changeReminderPreferences }
+        : null,
+      ...(actions && provider
+        ? {
+            importToUnfiled: async (files: readonly File[]) => {
+              await importFilesToUnfiled(files);
+            },
+          }
+        : {}),
+    };
+  }, [
+    shellPagesAvailable,
+    activeWorkspaceId,
+    activeWorkspaceDescriptor?.name,
+    otherWorkspaces,
+    openFromIds,
+    toggleTaskInWorkspace,
+    workspaceFolderSource,
+    fileInWorkspace,
+    phoneInbox,
+    unfiledHere,
+    filePhoneInbox,
+    declinePhoneInbox,
+    notificationsHost,
+    reminderPreferences,
+    changeReminderPreferences,
+    provider,
+    importFilesToUnfiled,
+    workspaceIndex.index,
+    workspaceIndex.status.generation,
+    workspaceIndex.status.listed,
+    today,
+    pageActions,
+    singlePane,
+    handleSelect,
+  ]);
+
+  /** Right-click actions that change what a folder is for. */
+  const folderKindActionsRef = useRef<
+    (entry: FileSystemEntry) => readonly { label: string; onSelect: () => void }[]
+  >(() => []);
+  folderKindActionsRef.current = (entry) => {
+    if (!pageActions) return [];
+    if (entry.kind === 'file') {
+      if (!/\.(?:md|markdown|mdown)$/i.test(entry.name)) return [];
+      return [
+        {
+          label: 'Add a due date or tags',
+          onSelect: () => {
+            try {
+              setDetailsRequestedFor(parseWorkspacePath(entry.path));
+            } catch {
+              return;
+            }
+            void handleSelect(entry.path, 'file');
+          },
+        },
+      ];
+    }
+    if (entry.kind !== 'directory') return [];
+    let path;
+    try {
+      path = parseWorkspacePath(entry.path);
+    } catch {
+      return [];
+    }
+    const kindFolders = workspaceTasks.kindFolders;
+    const own = kindFolders.find((folder) => folder.path === path);
+    if (own) {
+      return [
+        {
+          label: 'Make an ordinary folder',
+          onSelect: () => void pageActions.clearKind(entry.path),
+        },
+      ];
+    }
+    // A folder inside a tasks folder is one of its lists, not a place for a new kind.
+    if (kindFolderFor(kindFolders, path)?.settings.kind === 'tasks') return [];
+    const make = (kind: FolderKind, label: string) => ({
+      label,
+      onSelect: () => void pageActions.makeKind(entry.path, kind),
+    });
+    return [
+      make('tasks', 'Make this a tasks folder'),
+      make('journal', 'Make this a journal'),
+      ...(kindFoldersOf(kindFolders, 'unfiled').length === 0
+        ? [make('unfiled', 'Make this the Unfiled drawer')]
+        : []),
+    ];
+  };
+
+  /** A document whose details row was asked for although it carries no details yet. */
+  const [detailsRequestedFor, setDetailsRequestedFor] = useState<string | null>(null);
+  const openSourcePath = selectedSourceFile ?? selectedFile;
+  const documentHeader = useMemo(() => {
+    if (!pageActions || !openSourcePath || !/\.(?:md|markdown|mdown)$/i.test(openSourcePath)) {
+      return null;
+    }
+    let path: ReturnType<typeof parseWorkspacePath>;
+    try {
+      path = parseWorkspacePath(openSourcePath);
+    } catch {
+      return null;
+    }
+    const location = locateTask(workspaceTasks.kindFolders, path);
+    const directories = workspaceIndex.index?.getDirectories() ?? [];
+    const task = location
+      ? {
+          bucket: location.placement.bucket,
+          done: location.placement.done,
+          buckets: orderBuckets(
+            location.folder,
+            directories
+              .filter((candidate) => candidate.startsWith(`${location.folder.path}/`))
+              .map((candidate) => candidate.slice(location.folder.path.length + 1))
+              .filter((relative) => relative !== '' && !relative.includes('/')),
+          ).map((bucket) => ({ name: bucket.name, done: bucket.done })),
+        }
+      : null;
+    const categories = [
+      ...new Set(
+        workspaceTasks.documents
+          .map((document) => document.category)
+          .filter((category): category is string => Boolean(category)),
+      ),
+    ].sort((left, right) => left.localeCompare(right));
+    const itemFor = (): TaskItem =>
+      workspaceTasks.items.find((item) => item.path === path) ?? {
+        workspaceId: activeWorkspaceId ?? '',
+        path,
+        title: path.slice(path.lastIndexOf('/') + 1).replace(/\.[^.]+$/, ''),
+        done: location?.placement.done ?? false,
+        folder: location?.folder.path ?? null,
+        bucket: location?.placement.bucket ?? null,
+        group: location?.placement.group ?? '',
+        pending: false,
+        lastModified: '',
+      };
+    return (
+      <Suspense fallback={null}>
+        <DocumentPropertiesStrip
+          key={path}
+          task={task}
+          categories={categories}
+          forceOpen={detailsRequestedFor === path}
+          today={today}
+          onSetDone={(done) =>
+            done ? pageActions.complete(itemFor()) : pageActions.reopen(itemFor())
+          }
+          onMoveToBucket={(bucket) => pageActions.moveToBucket(itemFor(), bucket)}
+          onClose={() => setDetailsRequestedFor(null)}
+        />
+      </Suspense>
+    );
+    // `generation` re-reads the index's folders when it publishes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    pageActions,
+    openSourcePath,
+    workspaceTasks,
+    workspaceIndex.index,
+    workspaceIndex.status.generation,
+    detailsRequestedFor,
+    today,
+    activeWorkspaceId,
+  ]);
+
+  // The pages read the workspace index; make sure it is running while one shows.
+  const ensureIndexForPages = workspaceIndex.ensure;
+  useEffect(() => {
+    if (shellPage || selectedKindFolder || shellPagesAvailable) ensureIndexForPages();
+  }, [shellPage, selectedKindFolder, shellPagesAvailable, ensureIndexForPages]);
 
   const wikiNavigationRef = useRef(handleSelect);
   wikiNavigationRef.current = handleSelect;
@@ -4739,7 +6134,11 @@ export function DocBlocksShell({
         nativeWorkspaceId,
         maybeGetDocBlocksHost(),
       );
-      return [...nativeActions, ...outsideInActionsForEntry(entry)];
+      return [
+        ...nativeActions,
+        ...outsideInActionsForEntry(entry),
+        ...folderKindActionsRef.current(entry),
+      ];
     },
     [nativeWorkspaceId, outsideInActionsForEntry],
   );
@@ -4772,11 +6171,262 @@ export function DocBlocksShell({
     [activeWorkspaceId, handleSelect, handlePinnedDocumentSelect, pinnedDocumentItems],
   );
   const handleSearchOpen = useCallback(
-    (request: WorkspaceSearchOpenRequest) => {
-      void handleSelect(request.path, 'file');
+    (open: WorkspaceSearchOpenRequest) => {
+      // On a phone, Squisq's find toolbar replaces the one holding "Show file
+      // list", which would strand the person away from their results. There
+      // the document opens as before, without Find.
+      const request = singlePane ? null : findRequestForSearchOpen(open);
+      setSearchFind(request === null ? null : { path: open.path, request });
+      // Another document opens Find once it is selected (the effect above);
+      // the open one stays put in handleSelect, so its Find opens here.
+      const openFile = selectedFileRef.current;
+      if (request !== null && openFile !== null && sameProviderPath(openFile, open.path)) {
+        setFindMode(true);
+      }
+      void handleSelect(open.path, 'file');
     },
-    [handleSelect],
+    [handleSelect, singlePane],
   );
+
+  // Ask: the conversation is the shell's, so it outlives the panel when the
+  // editor remounts for a cited note, and a workspace switch too: the chat
+  // keeps going and stays saved in the workspace it started in.
+  const askSessionRef = useRef<WorkspaceAskSession | null>(null);
+  useEffect(() => () => askSessionRef.current?.clear(), []);
+  // Phones index on demand; asking is a demand.
+  useEffect(() => {
+    if (aiPanel === 'ask') ensureWorkspaceIndex();
+  }, [aiPanel, ensureWorkspaceIndex]);
+  const askFindPassages = useCallback(
+    (question: string) =>
+      activeWorkspaceId
+        ? findWorkspacePassages(workspaceIndexRef.current, activeWorkspaceId, question, {
+            exclude: chatPathsRef.current(),
+            // A person waiting on an answer can wait for a cold model too.
+            deadlineMs: 4_000,
+          })
+        : Promise.resolve([]),
+    [activeWorkspaceId],
+  );
+  const handleOpenCitedNote = useCallback(
+    (reference: WorkspacePassageReference, passage: string) => {
+      if (!activeWorkspaceId || reference.catalogId !== workspaceCatalogId(activeWorkspaceId)) {
+        const elsewhere = otherWorkspaces.find(
+          (summary) => workspaceCatalogId(summary.workspaceId) === reference.catalogId,
+        );
+        showToast(
+          'error',
+          elsewhere
+            ? `That note is in “${elsewhere.name}”. Open that workspace to see it.`
+            : 'That note is in another workspace.',
+        );
+        return;
+      }
+      // A compact window shows the panel over the editor; the note needs the room.
+      // The conversation is kept and returns when the panel is opened again.
+      if (formFactor.widthClass === 'compact') setAiPanel(null);
+      handleSearchOpen({
+        path: reference.path,
+        match: null,
+        query: findTextForPassage(passage),
+        matchCase: false,
+        wholeWord: false,
+      });
+    },
+    [activeWorkspaceId, formFactor.widthClass, handleSearchOpen, showToast, otherWorkspaces],
+  );
+  const handleSaveAnswerNote = useCallback(
+    async (title: string, markdownFor: (path: string) => string) => {
+      if (!provider) throw new Error('Open a workspace to save the answer as a note.');
+      // Into the Unfiled drawer when the workspace has one, to be filed later.
+      const unfiled = kindFoldersOf(kindFoldersRef.current, 'unfiled')[0]?.path;
+      const folder = unfiled ? `${unfiled}/` : '';
+      let path = `${folder}${title}.md`;
+      for (let n = 2; await providerEntryExists(provider, path); n += 1) {
+        path = `${folder}${title} ${n}.md`;
+      }
+      await createMarkdownFile(provider, path, markdownFor(path));
+      notifyWorkspaceChanged(activeWorkspaceId ?? provider.id, path);
+      setExplorerKey((key) => key + 1);
+      await handleSelect(path, 'file');
+    },
+    [provider, activeWorkspaceId, notifyWorkspaceChanged, handleSelect],
+  );
+  // Saved chats: one Markdown file per conversation in the workspace's chats
+  // folder, each answer appended as it settles (`Ai/ask-chats.ts`).
+  const askChatItems = useMemo(
+    () =>
+      shellPagesAvailable && workspaceIndex.index
+        ? listChats(workspaceIndex.index.getDocuments(), workspaceTasks.kindFolders)
+        : [],
+    // `generation` is the index's change signal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      shellPagesAvailable,
+      workspaceIndex.index,
+      workspaceIndex.status.generation,
+      workspaceTasks.kindFolders,
+    ],
+  );
+  /** Where the open workspace's chats are written: through the editor when one is open. */
+  const askChatStoreRef = useRef<{ workspaceId: string; store: ChatStore } | null>(null);
+  askChatStoreRef.current = (() => {
+    const storage = provider ? getFileSystemProviderV2(provider) : null;
+    if (!activeWorkspaceId || !taskGateway || !storage) return null;
+    if (getTransientWorkspace(activeWorkspaceId) !== null) return null;
+    return {
+      workspaceId: activeWorkspaceId,
+      store: { gateway: taskGateway, storage, kindFolders: workspaceTasks.kindFolders },
+    };
+  })();
+  const saveAskTurn = useCallback(
+    async (turn: AskTurn, chat: AskChat | null): Promise<AskChat | null> => {
+      const open = askChatStoreRef.current;
+      const workspaceId = chat?.workspaceId ?? open?.workspaceId;
+      if (!workspaceId) return null;
+      try {
+        const { saveChatTurn } = await import('../Ai/ask-chats.js');
+        if (open && open.workspaceId === workspaceId) {
+          const path = await saveChatTurn(open.store, chat?.path ?? null, turn);
+          notifyWorkspaceChanged(workspaceId, path);
+          if (!open.store.storage.capabilities.watch) void explorerRef.current?.refresh();
+          return { workspaceId, path };
+        }
+        // Started in a workspace that is no longer open: saved there all the same.
+        const outcome = await withWorkspaceStorage(workspaceId, async (other) => {
+          const storage = getFileSystemProviderV2(other);
+          if (!storage) return null;
+          const store = { gateway: createProviderTaskGateway(other), storage, kindFolders: [] };
+          return saveChatTurn(store, chat?.path ?? null, turn);
+        });
+        if ('result' in outcome) {
+          return outcome.result ? { workspaceId, path: outcome.result } : null;
+        }
+        showToast(
+          'error',
+          outcome.unavailable
+            ? `Couldn't save this chat in “${outcome.unavailable}”. Open that workspace to keep it.`
+            : "Couldn't save this chat: the workspace it started in is not on this device.",
+        );
+        return null;
+      } catch (error: unknown) {
+        showToast('error', `Couldn't save this chat. ${describeActionError(error)}`);
+        return null;
+      }
+    },
+    [notifyWorkspaceChanged, withWorkspaceStorage, showToast],
+  );
+  const openAskChat = useCallback(
+    async (path: string) => {
+      const open = askChatStoreRef.current;
+      const session = askSessionRef.current;
+      if (!open || !session) return;
+      const source = await open.store.gateway.read(path).catch(() => null);
+      if (source === null) {
+        showToast('error', 'That chat is no longer there.');
+        return;
+      }
+      const [{ chatTurnsFromMarkdown }, { resetAskProposals }] = await Promise.all([
+        import('../Ai/ask-chats.js'),
+        import('../Ai/ask-proposals.js'),
+      ]);
+      const turns = chatTurnsFromMarkdown(source, path, open.workspaceId);
+      if (!turns || turns.length === 0) {
+        // Not a conversation Ask can continue: open it as the note it is.
+        void handleSelect(`/${path.replace(/^\/+/u, '')}`, 'file');
+        return;
+      }
+      resetAskProposals(session);
+      session.restore(turns, { workspaceId: open.workspaceId, path });
+    },
+    [showToast, handleSelect],
+  );
+  const renameAskChat = useCallback(
+    async (path: string, title: string): Promise<boolean> => {
+      const gateway = askChatStoreRef.current?.store.gateway;
+      if (!gateway) return false;
+      const from = parseWorkspacePath(path);
+      const to = workspacePathJoin(
+        workspacePathDirname(from),
+        markdownFileNameForTitle(title, 'Chat'),
+      );
+      if (to === from) return true;
+      try {
+        // A change of case alone is the same file on most disks.
+        if (to.toLowerCase() !== from.toLowerCase() && (await gateway.exists(to))) {
+          showToast('error', `There is already a chat called “${titleOfFileName(to)}”.`);
+          return false;
+        }
+        await gateway.move(from, to);
+      } catch (error: unknown) {
+        showToast('error', `Couldn't rename that chat. ${describeActionError(error)}`);
+        return false;
+      }
+      askSessionRef.current?.moveChat(from, to);
+      return true;
+    },
+    [showToast],
+  );
+  const deleteAskChat = useCallback(
+    (path: string) => {
+      const open = askChatStoreRef.current;
+      if (!pageActions || !open) return;
+      void (async () => {
+        await pageActions.remove(path);
+        if (await open.store.gateway.exists(path).catch(() => true)) return;
+        // Deleting the chat showing starts a new one.
+        const session = askSessionRef.current;
+        if (session?.getSnapshot().chat?.path === path) session.clear();
+      })();
+    },
+    [pageActions],
+  );
+  const askChats = useMemo<AskChats | undefined>(
+    () =>
+      pageActions && activeWorkspaceId && askChatStoreRef.current
+        ? {
+            items: askChatItems,
+            workspaceId: activeWorkspaceId,
+            onOpen: (path) => void openAskChat(path),
+            onRename: renameAskChat,
+            onDelete: deleteAskChat,
+          }
+        : undefined,
+    [pageActions, activeWorkspaceId, askChatItems, openAskChat, renameAskChat, deleteAskChat],
+  );
+  chatPathsRef.current = () =>
+    workspaceIndexRef.current
+      ? chatDocumentPaths(workspaceIndexRef.current.getDocuments(), kindFoldersRef.current)
+      : new Set();
+
+  const askModel = hostSemanticSearch.status;
+  const askNotice: AskNotice | null = !semanticSearchAvailable
+    ? null
+    : !semanticSearchEnabled
+      ? { kind: 'semantic-off', onAllow: () => handleSemanticSearchChange(true) }
+      : askModel && askModel.state !== 'ready'
+        ? {
+            kind: 'not-ready',
+            message:
+              askModel.state === 'downloading'
+                ? 'The search model is downloading. Questions can be asked once it is ready.'
+                : askModel.state === 'download-required'
+                  ? 'Answers come from notes found by meaning, which needs the search model on this device.'
+                  : (askModel.reason ?? 'Search by meaning is not available on this device.'),
+            onOpenSettings: openSearchSettings,
+          }
+        : !workspaceGrounding
+          ? {
+              kind: 'grounding-off',
+              remote: aiProviderRemote,
+              onAllow: () => handleWorkspaceGroundingChange(true),
+            }
+          : null;
+  const askProgress = workspaceIndex.semantic;
+  const askCoverage =
+    askProgress && askProgress.total > 0 && askProgress.embedded < askProgress.total
+      ? `Answers can draw on ${Math.floor((askProgress.embedded / askProgress.total) * 100)}% of this workspace so far; the rest is still being prepared.`
+      : null;
 
   const handleEditorLinkClick = useCallback(
     (href: string): boolean => {
@@ -5025,6 +6675,7 @@ export function DocBlocksShell({
     },
     [activeWorkspaceId, provider],
   );
+  acquireWorkspaceProviderRef.current = acquirePinnedDocumentProvider;
 
   const markRelocatedPinnedDocument = useCallback((document: PinnedDocument, newPath: string) => {
     const relocated: PinnedDocument = {
@@ -5045,6 +6696,52 @@ export function DocBlocksShell({
       return next;
     });
   }, []);
+
+  /**
+   * The toolbar title field's rename. It runs the explorer's own rename, so
+   * the document's companion folder moves with it, the open session follows,
+   * and the tree keeps its expanded folders — the same as renaming the row.
+   */
+  const handleRenameOpenDocument = useCallback(
+    async (newName: string) => {
+      const oldPath = selectedFile;
+      const explorer = explorerRef.current;
+      if (!oldPath || !explorer) return;
+      if (/[\\/]/.test(newName)) {
+        showToast('error', 'Use a document name without slashes.');
+        return;
+      }
+      // Swap the name in place, keeping the path's own form as the tree does.
+      const newPath = `${oldPath.slice(0, oldPath.lastIndexOf('/') + 1)}${newName}`;
+      try {
+        parseWorkspacePath(newPath);
+      } catch {
+        showToast('error', 'Use a valid document name.');
+        return;
+      }
+      if (sameProviderPath(newPath, oldPath)) return;
+      try {
+        await explorer.renameEntry(oldPath, newPath, 'file');
+      } catch (error: unknown) {
+        showToast(
+          'error',
+          error instanceof Error ? error.message : 'The document could not be renamed.',
+        );
+        return;
+      }
+      // A just-created document has its name now. Renaming reopens it, so
+      // its heading follows the name and the caret goes in once it has.
+      if (namingDocument && sameProviderPath(namingDocument.path, oldPath)) {
+        setNamingDocument(null);
+        setNewDocumentCaret({
+          path: newPath,
+          at: namingDocument.template ? 'sample' : 'end',
+          retitle: { from: namingDocument.heading, to: newName.replace(/\.[^.]+$/, '') },
+        });
+      }
+    },
+    [namingDocument, selectedFile, showToast],
+  );
 
   const handlePinnedDocumentRename = useCallback(
     async (document: PinnedDocumentListItem) => {
@@ -5303,9 +7000,14 @@ export function DocBlocksShell({
    * Documents dropped onto the editor pane. Same import pipeline as the
    * explorer, with one addition: a single successful import opens straight
    * away, because someone who drags one file onto the page means "open this".
+   * `openFirst` opens the first of several too, for the paste-or-drop
+   * choices, where the person is waiting to see what they brought.
    */
   const handleImportFilesToEditor = useCallback(
-    async (files: File[]) => {
+    async (
+      files: File[],
+      { openAs, openFirst = false }: { openAs?: DocumentOpenView; openFirst?: boolean } = {},
+    ) => {
       if (!provider) return;
       const result = await withImportingNotice(files, () => importOrRestore(files));
       if (!result) return;
@@ -5314,14 +7016,12 @@ export function DocBlocksShell({
       const summary = summariseImport(result);
       if (summary) showToast(summary.kind, summary.message);
       const imported = result.imported;
-      if (
+      const opensOne =
         imported.length === 1 &&
         result.failed.length === 0 &&
-        !files.some((file) => /\.zip$/i.test(file.name))
-      ) {
-        const only = imported[0];
-        if (only) void handleSelect(only.path, 'file');
-      }
+        !files.some((file) => /\.zip$/i.test(file.name));
+      const first = imported[0];
+      if (first && (opensOne || openFirst)) void handleSelect(first.path, 'file', false, openAs);
     },
     [
       activeWorkspaceId,
@@ -5334,11 +7034,65 @@ export function DocBlocksShell({
     ],
   );
 
+  // A document dropped on the first-run welcome screen lands on the editor
+  // pane beneath it, and opens as slides like everything else brought there.
+  const welcomeScreenShownRef = useRef(welcomeScreenShown);
+  welcomeScreenShownRef.current = welcomeScreenShown;
   const editorDropActive = useEditorFileDrop(
     editorAreaRef,
     provider !== null,
-    (files) => void handleImportFilesToEditor(files),
+    (files) =>
+      void handleImportFilesToEditor(
+        files,
+        welcomeScreenShownRef.current ? { openAs: OPEN_AS_SLIDESHOW, openFirst: true } : {},
+      ),
   );
+
+  /**
+   * Make a Markdown document of pasted or dragged-in text, named from what
+   * it says, and open it. It is written through the import pipeline, so a
+   * name already taken becomes `Name (2).md` instead of replacing anything.
+   */
+  const createDocumentFromPaste = useCallback(
+    async (content: PastedContent, openAs?: DocumentOpenView) => {
+      if (!provider) return;
+      let markdown: string;
+      try {
+        markdown = await pastedContentToMarkdown(content);
+      } catch {
+        showToast('error', 'DocBlocks could not read that text. Try pasting it as plain text.');
+        return;
+      }
+      if (!markdown.trim()) {
+        showToast('error', 'There was no text to make a document from.');
+        return;
+      }
+      const name = fileNameForPastedTitle(await titleForPastedMarkdown(markdown));
+      const file = new File([markdown], name, { type: 'text/markdown' });
+      const result = await importDroppedFiles([file], provider);
+      const created = result.imported[0];
+      if (!created) {
+        showToast(
+          'error',
+          result.failed[0]?.message
+            ? `Could not create the document: ${result.failed[0].message}`
+            : 'Could not create the document.',
+        );
+        return;
+      }
+      notifyWorkspaceChanged(activeWorkspaceId);
+      setExplorerKey((k) => k + 1);
+      await handleSelect(created.path, 'file', false, openAs);
+    },
+    [activeWorkspaceId, handleSelect, notifyWorkspaceChanged, provider, showToast],
+  );
+
+  /** The welcome screen's paste-or-drop dialog; what it brings opens as a slideshow. */
+  const [pasteDialogOpen, setPasteDialogOpen] = useState(false);
+
+  const openWelcomePasteDialog = useCallback(() => {
+    setPasteDialogOpen(true);
+  }, []);
 
   const handleEditorChange = useCallback(
     (source: string) => {
@@ -5460,6 +7214,54 @@ export function DocBlocksShell({
     [adoptTransientWorkspace],
   );
 
+  /**
+   * A phone share or "Open with" lands in the device workspace's Inbox. When
+   * there is an Unfiled drawer for it (the open workspace's, or the only one
+   * among the other workspaces) it is filed there instead, and this resolves
+   * to where it went; null leaves it in the Inbox.
+   */
+  const fileIncomingShare = useCallback(
+    async (
+      workspaceId: string,
+      path: string,
+    ): Promise<{ workspaceId: string; path: string } | null> => {
+      if (!mobileHost || !isPhoneInboxPath(workspaceId, path)) return null;
+      const openId = openWorkspaceRef.current.workspaceId;
+      // A share that launched the app arrives before the index has found the
+      // open workspace's markers; the digests know where every drawer was.
+      const [workspaces, digests] = await Promise.all([
+        homeDigestSources.listWorkspaces().catch(() => []),
+        readWorkspaceDigests().catch(() => new Map<string, unknown>()),
+      ]);
+      const savedDrawers = new Map<string, string>();
+      for (const workspace of workspaces) {
+        const drawer = parseHomeDigest(digests.get(workspace.id), workspace.id)?.folders.find(
+          (folder) => folder.kind === 'unfiled',
+        );
+        if (drawer) savedDrawers.set(workspace.id, drawer.path);
+      }
+      const drawer = chooseUnfiledDrawer({
+        openWorkspaceId: openId,
+        openDrawer: kindFoldersOf(kindFoldersRef.current, 'unfiled')[0]?.path,
+        savedDrawers,
+      });
+      if (!drawer) return null;
+      // Both workspaces are opened for this alone unless one is the open one;
+      // the Inbox's and the drawer's may also be the same workspace.
+      const outcome = await withWorkspaceStorage(DEVICE_WORKSPACE_ID, async (source) => {
+        const filing = await withWorkspaceStorage(drawer.workspaceId, (target) =>
+          fileIncomingDocument({ source, path, target, folder: drawer.folder }),
+        );
+        return 'result' in filing ? filing.result : null;
+      });
+      const filed = 'result' in outcome ? outcome.result : null;
+      if (!filed) return null;
+      notifyWorkspaceChanged(drawer.workspaceId);
+      return { workspaceId: drawer.workspaceId, path: `/${filed}` };
+    },
+    [mobileHost, homeDigestSources, withWorkspaceStorage, notifyWorkspaceChanged],
+  );
+
   // Subscribe to OS open-file / deep-link requests.
   useEffect(() => {
     const host = maybeGetDocBlocksHost();
@@ -5471,9 +7273,12 @@ export function DocBlocksShell({
       const requestId = ++navigationRequestRef.current;
       void (
         req.kind === 'workspace-file'
-          ? workspaceAuthorityBarrier.wait().then(() => {
+          ? workspaceAuthorityBarrier.wait().then(async () => {
               if (requestId !== navigationRequestRef.current) return null;
-              return openFromIds(req.workspaceId, req.path, true, undefined, requestId).then(
+              const filed = await fileIncomingShare(req.workspaceId, req.path);
+              if (requestId !== navigationRequestRef.current) return null;
+              const target = filed ?? req;
+              return openFromIds(target.workspaceId, target.path, true, undefined, requestId).then(
                 (opened) => {
                   if (!opened && requestId === navigationRequestRef.current) {
                     throw new Error('The requested workspace file is no longer available.');
@@ -5495,7 +7300,14 @@ export function DocBlocksShell({
         );
       });
     });
-  }, [openFromIds, openTransient, workspaceAuthorityBarrier, showToast, closeWelcomeGateway]);
+  }, [
+    openFromIds,
+    openTransient,
+    workspaceAuthorityBarrier,
+    showToast,
+    closeWelcomeGateway,
+    fileIncomingShare,
+  ]);
 
   /**
    * Web counterpart of `openTransient`: a `.md` or `.dbk` launched into the
@@ -5791,7 +7603,9 @@ export function DocBlocksShell({
             : ws?.type === 'transient'
               ? `Remove ${name} from DocBlocks? The file on disk will not be deleted.`
               : `Remove ${name} from DocBlocks? ${
-                  ws?.rootPath ? `The folder ${ws.rootPath}` : 'The folder'
+                  ws?.rootPath
+                    ? `The folder ${friendlyWorkspaceLocation(ws.rootPath)}`
+                    : 'The folder'
                 } and its files will not be deleted. You can add it back later with Open Folder.`,
         confirmLabel: 'Remove',
         // Only these cases actually destroy the user's documents.
@@ -5932,12 +7746,40 @@ export function DocBlocksShell({
             <KeyboardShortcutsDialog onClose={() => setShortcutsOpen(false)} />
           </Suspense>
         )}
-        {newDocumentDialogOpen && (
-          <NewDocumentDialog
+        {newDocumentGallery && (
+          <NewDocumentGallery
             initialFormat={defaultNewFileFormat}
+            folder={newDocumentGallery.folder || null}
             onSettle={(choice) => {
-              setNewDocumentDialogOpen(false);
-              if (choice) void createNewDocument(choice);
+              const { folder } = newDocumentGallery;
+              setNewDocumentGallery(null);
+              if (choice) void createFromGallery(choice, folder);
+            }}
+            {...(pageActions
+              ? {
+                  onStartTasksFolder: () => {
+                    const { folder } = newDocumentGallery;
+                    setNewDocumentGallery(null);
+                    void pageActions.createKindFolder(folder, 'tasks');
+                  },
+                }
+              : {})}
+          />
+        )}
+        {pasteDialogOpen && (
+          <PasteDocumentDialog
+            title="Start from something you have"
+            onClose={() => setPasteDialogOpen(false)}
+            onContent={(content) => {
+              setPasteDialogOpen(false);
+              void createDocumentFromPaste(content, OPEN_AS_SLIDESHOW);
+            }}
+            onFiles={(files) => {
+              setPasteDialogOpen(false);
+              void handleImportFilesToEditor(files, {
+                openAs: OPEN_AS_SLIDESHOW,
+                openFirst: true,
+              });
             }}
           />
         )}
@@ -5967,21 +7809,31 @@ export function DocBlocksShell({
             DocBlocks is ready to work offline.
           </div>
         )}
+        <DocumentVersionsLayer
+          provider={provider}
+          session={documentSession}
+          snapshot={documentSnapshot}
+          documentPath={selectedImage ? null : selectedFile}
+          sourcePath={selectedSourceFile}
+          theme={resolvedTheme}
+          defaultThemeId={workspaceDefaultThemeId}
+          mediaProvider={mediaProviderCurrent ? mediaProvider : null}
+          heartbeatMs={hostSupports('nativeWorkspaces') ? UNWATCHED_DOCUMENT_HEARTBEAT_MS : null}
+          checkDocument={checkOpenDocument}
+          onDocumentCreated={handleVersionDocumentCreated}
+          onCountChange={setOpenDocumentVersionCount}
+          onError={reportVersionsError}
+        />
+        {/* While the session is about to combine both versions itself, there is
+            nothing for the user to decide and nothing to interrupt them with. */}
         {documentSnapshot.conflict &&
-          (isConflictDismissed(documentSnapshot.conflict, dismissedConflict) ? (
-            <DocumentConflictNotice onReview={() => setDismissedConflict(null)} />
-          ) : (
-            <DocumentConflictBanner
-              conflict={documentSnapshot.conflict}
-              readSavedFile={readConflictFile}
-              onCompare={() => setShowConflictComparison(true)}
-              onDismiss={() =>
-                setDismissedConflict(
-                  documentSnapshot.conflict ? dismissConflict(documentSnapshot.conflict) : null,
-                )
-              }
+          !documentSnapshot.conflict.merging &&
+          !showConflictComparison && (
+            <DocumentConflictNotice
+              recoveredDraft={documentSnapshot.conflict.recoveredDraft === true}
+              onResolve={() => setShowConflictComparison(true)}
             />
-          ))}
+          )}
         {documentSnapshot.conflict && showConflictComparison && (
           <Suspense fallback={<div role="status">Loading version comparison…</div>}>
             <DocumentConflictDialog
@@ -5993,6 +7845,12 @@ export function DocBlocksShell({
               readSavedFile={readConflictFile}
               onUseLocal={handleKeepLocalDocument}
               onUseSaved={handleUseExternalDocument}
+              // A staged bundle holds more than this text; it is taken or left whole.
+              onUseMerged={
+                pendingDbkConflictsRef.current.has(documentSnapshot.conflict.targetKey)
+                  ? undefined
+                  : handleUseMergedDocument
+              }
               onClose={() => setShowConflictComparison(false)}
             />
           </Suspense>
@@ -6075,8 +7933,44 @@ export function DocBlocksShell({
                 onWriteCanvasSettingsChange={handleWriteCanvasSettingsChange}
                 proofingPreferences={proofingPreferences}
                 onProofingPreferencesChange={handleProofingPreferencesChange}
+                quickJot={quickJotSetting}
                 versioningPreference={versioningPreference}
                 onVersioningPreferenceChange={handleVersioningPreferenceChange}
+                searchIndex={
+                  workspaceIndexWorker !== undefined && activeWorkspaceId && !transientWorkspace
+                    ? {
+                        keep: keepSearchIndex,
+                        onKeepChange: handleKeepSearchIndexChange,
+                        onClear: discardWorkspaceIndex,
+                        persistence: workspaceIndex.status.persistence ?? null,
+                      }
+                    : undefined
+                }
+                semanticSearch={
+                  semanticSearchAvailable
+                    ? {
+                        enabled: semanticSearchEnabled,
+                        onChange: handleSemanticSearchChange,
+                        progress: workspaceIndex.semantic,
+                        model: hostSemanticSearch.status,
+                        onDownload: hostSemanticSearch.prepare,
+                        waiting: workspaceIndex.status.phase === 'idle',
+                        ...(hostAi && activeWorkspaceId
+                          ? {
+                              aiGrounding: {
+                                enabled: workspaceGroundingEnabled(
+                                  groundingChoices,
+                                  activeWorkspaceId,
+                                  aiProviderRemote,
+                                ),
+                                onChange: handleWorkspaceGroundingChange,
+                                remote: aiProviderRemote,
+                              },
+                            }
+                          : {}),
+                      }
+                    : undefined
+                }
                 onOpenWorkspaceSettings={
                   activeWorkspaceDescriptor ? handleOpenWorkspaceSettings : undefined
                 }
@@ -6112,6 +8006,14 @@ export function DocBlocksShell({
                 settingsRequest={settingsRequest.count}
                 settingsRequestSection={settingsRequest.section}
               />
+              {/* Home, Tasks, Ask and the kind folders, as icons right after the logo. */}
+              {shellNavItems.length > 0 && (
+                <ShellNav
+                  items={shellNavItems}
+                  current={currentNavKey}
+                  onNavigate={(route) => void showShellRoute(route)}
+                />
+              )}
               <input
                 ref={restoreInputRef}
                 type="file"
@@ -6122,25 +8024,6 @@ export function DocBlocksShell({
                   const file = event.currentTarget.files?.[0];
                   event.currentTarget.value = '';
                   if (file) void handleRestoreBackup(file);
-                }}
-              />
-              <WorkspacePicker
-                activeWorkspaceId={activeWorkspaceId}
-                loading={workspaceStarting}
-                refreshKey={descriptorRefreshKey}
-                onSelect={handleWorkspaceSelect}
-                onOpenFolder={handleOpenFolder}
-                onCloneRepository={
-                  git.available ? () => git.openDialog({ kind: 'clone' }) : undefined
-                }
-                onRemoveWorkspace={(workspace) => void handleRemoveWorkspace(workspace.id)}
-              />
-              <WorkspaceSettingsButton
-                onSettings={handleOpenWorkspaceSettings}
-                onRename={handleRenameWorkspace}
-                onDownload={handleDownloadWorkspace}
-                onRemove={() => {
-                  if (activeWorkspaceId) void handleRemoveWorkspace(activeWorkspaceId);
                 }}
               />
               {canRestoreSplitView && (
@@ -6164,6 +8047,7 @@ export function DocBlocksShell({
               </Suspense>
             )}
             <FileExplorer
+              ref={explorerRef}
               key={explorerKey}
               loading={workspaceStarting}
               // Hidden, not unmounted, while search shows: it keeps its expanded folders.
@@ -6174,19 +8058,42 @@ export function DocBlocksShell({
               outsideInRender={outsideInRenderRef.current}
               defaultNewFileFormat={defaultNewFileFormat}
               onNewFileFormatUsed={rememberNewFileFormat}
-              onCreateDocument={createDocumentFromExplorer}
+              onRequestNewDocument={handleNewFileIn}
+              activeFileVersionCount={selectedFile ? openDocumentVersionCount : null}
               metadataRefreshKey={`${documentSnapshot.targetKey ?? ''}:${documentSnapshot.persistedRevision}`}
               activeWorkspaceId={activeWorkspaceId}
-              // The descriptor follows renames; the provider's label covers the
-              // moment after a switch, before the new descriptor has loaded.
-              workspaceName={
-                activeWorkspaceDescriptor?.id === activeWorkspaceId
-                  ? activeWorkspaceDescriptor.name
-                  : provider?.label
+              workspaceName={activeWorkspaceLabel}
+              // The workspace picker and its settings lead the files toolbar,
+              // below the pinned documents.
+              toolbarStart={
+                <>
+                  <WorkspacePicker
+                    activeWorkspaceId={activeWorkspaceId}
+                    activeWorkspaceLabel={activeWorkspaceLabel}
+                    loading={workspaceStarting}
+                    refreshKey={descriptorRefreshKey}
+                    onSelect={handleWorkspaceSelect}
+                    onOpenFolder={handleOpenFolder}
+                    onCloneRepository={
+                      git.available ? () => git.openDialog({ kind: 'clone' }) : undefined
+                    }
+                    onRemoveWorkspace={(workspace) => void handleRemoveWorkspace(workspace.id)}
+                  />
+                  <WorkspaceSettingsButton
+                    onSettings={handleOpenWorkspaceSettings}
+                    onRename={handleRenameWorkspace}
+                    onDownload={handleDownloadWorkspace}
+                    onRemove={() => {
+                      if (activeWorkspaceId) void handleRemoveWorkspace(activeWorkspaceId);
+                    }}
+                  />
+                </>
               }
               activeFilePath={selectedFile}
               sortMode={fileExplorerSortMode}
               hiddenPaths={hiddenOutputPaths}
+              kindFolders={workspaceTasks.kindFolders}
+              folderContents={indexedFolderContents}
               onSortModeChange={handleFileExplorerSortModeChange}
               pinnedDocuments={pinnedDocumentItems}
               pinnedPaths={activeWorkspacePinnedPaths}
@@ -6226,6 +8133,7 @@ export function DocBlocksShell({
                   focusRequest={searchFocusRequest}
                   onOpen={handleSearchOpen}
                   onShowFiles={() => setSidebarView('files')}
+                  semantic={semanticSearchEnabled ? workspaceIndex.semantic : null}
                 />
               </Suspense>
             )}
@@ -6242,6 +8150,25 @@ export function DocBlocksShell({
                   moving={movingToFolder}
                 />
               )}
+            {/* Under the files, above the footer: it grows upward as lines are added.
+                Outside the file list, which remounts often and would lose what was typed. */}
+            {quickJotVisible && quickJotActions && (
+              <QuickJot
+                key={activeWorkspaceId ?? ''}
+                actions={quickJotActions}
+                today={today}
+                dictation={
+                  allowDictation && speech && speechInput
+                    ? {
+                        provider: speechInput,
+                        speech,
+                        onOpenSettings: openDictationSettings,
+                      }
+                    : null
+                }
+                onDictatingChange={setQuickJotDictating}
+              />
+            )}
             <div className="db-shell-sidebar-footer">
               {/* Site links belong to the browser build; the apps reach Docs
                   from the app menu. Every surface keeps Report issue: Google
@@ -6384,6 +8311,11 @@ export function DocBlocksShell({
                               fileName={selectedSourceFile ?? selectedFile}
                               imageSrc={selectedImageUrl}
                               imageAlt={basenameOf(selectedFile)}
+                              imageMode={
+                                imageEditorContainer && handleImageWriteBack ? 'edit' : 'view'
+                              }
+                              imageEditorContainer={imageEditorContainer}
+                              onImageWriteBack={handleImageWriteBack}
                               saveCoverImageOutput={saveRenderedImageOutput}
                               saveDashboardImageOutput={saveRenderedImageOutput}
                               saveMediaEditOutput={saveRenderedImageOutput}
@@ -6396,6 +8328,7 @@ export function DocBlocksShell({
                               defaultThemeId={workspaceDefaultThemeId}
                               defaultThemeLabel="Workspace default"
                               {...editorPageTemplateProps(pageTemplates)}
+                              {...editorDocumentHeaderProps(documentHeader)}
                               writeCanvasSettings={editorWriteCanvasSettings}
                               height="100%"
                               placeholder={editorPlaceholder}
@@ -6411,19 +8344,28 @@ export function DocBlocksShell({
                               showCodeCopyButton={showCodeCopyButton}
                               onCopyCode={onCopyCode}
                               allowRecording={allowRecording}
-                              speechInput={allowDictation ? speechInput : null}
+                              speechInput={
+                                allowDictation && !quickJotDictating ? speechInput : null
+                              }
                               allowPresentationWindow={allowPresentationWindow}
                               allowPresentationFullscreen={allowPresentationFullscreen}
                               allowNarratePopOut={allowNarratePopOut}
                               documentLinkProvider={documentLinkProvider}
                               workspaceContainer={versionsContainer ?? undefined}
-                              allowVersioning={selectedImage === undefined && effectiveVersioning}
+                              // An editable image keeps its history in its own
+                              // companion; Squisq builds no text history for it.
+                              allowVersioning={
+                                (selectedImage === undefined || selectedImageEditable) &&
+                                effectiveVersioning
+                              }
                               viewPreferences={editorViewPreferences}
                               onViewPreferencesChange={handleViewPreferencesChange}
                               findMode={findMode}
-                              onFindModeChange={setFindMode}
+                              onFindModeChange={handleFindModeChange}
+                              findRequest={editorFindRequest}
                               navigationSheet={navigationSheet}
                               onNavigationSheetChange={setNavigationSheet}
+                              viewMenuNavigation={viewMenuNavigation}
                               versionBasename={
                                 versionBasename ?? stripExtension(basenameOf(selectedFile))
                               }
@@ -6439,6 +8381,21 @@ export function DocBlocksShell({
                                   <Suspense fallback={null}>
                                     {aiPanel === 'review' ? (
                                       <AiReviewPanel ai={ai} onClose={() => setAiPanel(null)} />
+                                    ) : aiPanel === 'ask' ? (
+                                      <AiAskPanel
+                                        sessionHolder={askSessionRef}
+                                        ai={ai}
+                                        findPassages={askFindPassages}
+                                        notice={askNotice}
+                                        coverage={askCoverage}
+                                        save={saveAskTurn}
+                                        {...(askChats ? { chats: askChats } : {})}
+                                        onOpenNote={handleOpenCitedNote}
+                                        onSaveNote={handleSaveAnswerNote}
+                                        onClose={() => setAiPanel(null)}
+                                        facts={askFacts}
+                                        {...(askActions ? { actions: askActions } : {})}
+                                      />
                                     ) : aiPanel === 'images' ? (
                                       <AiImagePanel ai={ai} onClose={() => setAiPanel(null)} />
                                     ) : (
@@ -6448,35 +8405,42 @@ export function DocBlocksShell({
                                 ) : undefined
                               }
                               toolbarSlotLeft={
-                                singlePane ? (
-                                  <button
-                                    className="db-mobile-back"
-                                    onClick={() => setMobileShowEditor(false)}
-                                    aria-label="Show file list"
-                                  >
-                                    <span className="db-mobile-files-icon">
-                                      <FolderGlyph />
-                                    </span>
-                                  </button>
-                                ) : undefined
+                                <>
+                                  {singlePane && (
+                                    <button
+                                      className="db-mobile-back"
+                                      onClick={() => setMobileShowEditor(false)}
+                                      aria-label="Show file list"
+                                    >
+                                      <span className="db-mobile-files-icon">
+                                        <FolderGlyph />
+                                      </span>
+                                    </button>
+                                  )}
+                                  <DocumentTitleField
+                                    fileName={basenameOf(selectedFile)}
+                                    onRename={handleRenameOpenDocument}
+                                    // Generated outputs are rewritten under their
+                                    // configured name on the next build.
+                                    readOnly={selectedManagedOutput !== undefined}
+                                    naming={
+                                      namingDocument !== null &&
+                                      sameProviderPath(namingDocument.path, selectedFile)
+                                    }
+                                    takeTypedText={takeTypedWhileOpening}
+                                    onNamingDone={handleNamingDone}
+                                    onNamingCommit={holdKeysAfterNaming}
+                                  />
+                                </>
                               }
-                              summarizationDesigner={
-                                selectedImage === undefined &&
-                                selectedManagedOutput === undefined &&
-                                (selectedOutsideIn === null || selectedOutsideInEditingEnabled)
-                                  ? (onClose) => (
-                                      <Suspense fallback={null}>
-                                        <PresentationMaker ai={ai ?? undefined} onClose={onClose} />
-                                      </Suspense>
-                                    )
-                                  : undefined
-                              }
+                              summarizationAssistant={presentationAssistant}
+                              studyAssistant={studyAssistant}
                               toolbarSlotQuickTools={
                                 <>
                                   {canFind && (
                                     <FindButton
                                       active={findMode}
-                                      onActiveChange={setFindMode}
+                                      onActiveChange={handleFindModeChange}
                                       shortcutLabel={findShortcut}
                                     />
                                   )}
@@ -6509,6 +8473,10 @@ export function DocBlocksShell({
                                         openPanel={aiPanel}
                                         onOpenPanel={setAiPanel}
                                         onOpenSettings={openAiSettings}
+                                        canAskWorkspace
+                                        invite={aiInvitation.invite}
+                                        onAcceptInvite={() => void acceptAiInvitation()}
+                                        onDeclineInvite={declineAiInvitation}
                                       />
                                     </Suspense>
                                   )}
@@ -6563,11 +8531,14 @@ export function DocBlocksShell({
                                 </>
                               }
                               toolbarSlotRight={
-                                newDocumentCaretPath === selectedFile ? (
+                                newDocumentCaret &&
+                                sameProviderPath(newDocumentCaret.path, selectedFile) ? (
                                   <Suspense fallback={null}>
                                     <NewDocumentCaret
                                       onPlaced={clearNewDocumentCaret}
                                       takeTypedText={takeTypedWhileOpening}
+                                      retitle={newDocumentCaret.retitle}
+                                      at={newDocumentCaret.at}
                                     />
                                   </Suspense>
                                 ) : undefined
@@ -6579,7 +8550,11 @@ export function DocBlocksShell({
                     </GeneratedFileFrame>
                   )}
                 </>
-              ) : selectedFolder ? (
+              ) : selectedFolder && selectedKindFolder && shellPageContext ? (
+                <Suspense fallback={<div className="db-shell-empty">Loading…</div>}>
+                  <KindFolderPage context={shellPageContext} folder={selectedKindFolder} />
+                </Suspense>
+              ) : selectedFolder && !chatsFolderShowsAsk ? (
                 <div className="db-folder-view">
                   {singlePane && (
                     <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
@@ -6614,6 +8589,31 @@ export function DocBlocksShell({
                     </ul>
                   )}
                 </div>
+              ) : ai && (chatsFolderShowsAsk || shellPage?.kind === 'ask') ? (
+                // One branch for both ways in, so moving between the Ask
+                // place and the chats folder keeps the same page mounted.
+                <Suspense fallback={<div className="db-shell-empty">Loading…</div>}>
+                  <AskPage
+                    sessionHolder={askSessionRef}
+                    ai={ai}
+                    findPassages={askFindPassages}
+                    notice={askNotice}
+                    coverage={askCoverage}
+                    save={saveAskTurn}
+                    {...(askChats ? { chats: askChats } : {})}
+                    onOpenNote={handleOpenCitedNote}
+                    onSaveNote={handleSaveAnswerNote}
+                    onClose={() => void showShellRoute({ kind: 'home' })}
+                    facts={askFacts}
+                    {...(askActions ? { actions: askActions } : {})}
+                    singlePane={singlePane}
+                    onShowFiles={() => setMobileShowEditor(false)}
+                  />
+                </Suspense>
+              ) : shellPage && shellPage.kind !== 'ask' && shellPageContext ? (
+                <Suspense fallback={<div className="db-shell-empty">Loading…</div>}>
+                  <ShellPage context={shellPageContext} route={shellPage} />
+                </Suspense>
               ) : (
                 <div className="db-shell-empty db-shell-empty--workspace">
                   {singlePane && (
@@ -6675,6 +8675,16 @@ export function DocBlocksShell({
                 onCreateDocument={handleNewFile}
                 onTour={handleTourWelcome}
                 onDismiss={handleTourWelcome}
+                onBringContent={openWelcomePasteDialog}
+                onPasteContent={(content) =>
+                  void createDocumentFromPaste(content, OPEN_AS_SLIDESHOW)
+                }
+                onDropFiles={(files) =>
+                  void handleImportFilesToEditor(files, {
+                    openAs: OPEN_AS_SLIDESHOW,
+                    openFirst: true,
+                  })
+                }
                 offerApps={hostEnvironment === null}
                 greeting={firstRunGreeting}
               />
@@ -6690,6 +8700,7 @@ export function DocBlocksShell({
               setMobileShowEditor(true);
             }}
             onDismiss={closeWelcomeGateway}
+            onBringContent={openWelcomePasteDialog}
             greeting={firstRunGreeting}
           />
         )}

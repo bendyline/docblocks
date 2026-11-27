@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status-bar icon for reminders: the DocBlocks "D" (docblocks_mark.png) as a
+     silhouette. Android draws only its shape, so it is one solid colour. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="700"
+    android:viewportHeight="700">
+    <group android:translateX="-188" android:translateY="-178">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M295,217H615L781,383V725L666,839H347L295,788Z M484,377H593V633L546,680H484Z" />
+    </group>
+</vector>

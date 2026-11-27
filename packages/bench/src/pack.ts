@@ -35,7 +35,7 @@ export const DOCBENCH_ID = 'docbench';
  * product shows it, not an empty reply; engine crashes in mid-stream are
  * infrastructure and retried. Scores move only where an engine crashed.
  */
-export const DOCBENCH_VERSION = '0.2.2';
+export const DOCBENCH_VERSION = '0.3.0';
 
 /**
  * What "good at DocBlocks work" weighs. Reviewing and writing are what people

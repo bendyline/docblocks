@@ -216,6 +216,25 @@ describe('tree-keyboard', () => {
       expect(treeKeyAction([], null, 'ArrowDown')).to.deep.equal({ type: 'none' });
     });
 
+    it('treats a folder known to be empty as a leaf', () => {
+      const flat = flattenVisibleRows({
+        ...shape([dir('/notes')], { '/notes': [dir('/notes/drafts')] }, [
+          '/notes',
+          '/notes/drafts',
+        ]),
+        isEmpty: (dirPath) => dirPath === '/notes/drafts',
+      });
+      // Its remembered expansion does not count: there is nothing to show.
+      const drafts = flat.find((entry) => entry.path === '/notes/drafts');
+      expect(drafts).to.deep.include({ expanded: false, empty: true });
+      expect(treeKeyAction(flat, '/notes/drafts', 'ArrowRight')).to.deep.equal({ type: 'none' });
+      expect(treeKeyAction(flat, '/notes/drafts', 'ArrowLeft')).to.deep.equal({
+        type: 'focus',
+        path: '/notes',
+      });
+      expect(flat.find((entry) => entry.path === '/notes')).not.to.have.property('empty');
+    });
+
     it('claims exactly the keys it handles', () => {
       expect([...TREE_NAV_KEYS].sort()).to.deep.equal([
         'ArrowDown',

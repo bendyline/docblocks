@@ -2,6 +2,7 @@ import { getFileSystemProviderV2, type FileSystemProvider } from '../filesystem/
 import { FsError } from '../filesystem/fs-error.js';
 import { parseWorkspacePath } from '../filesystem/workspace-path.js';
 import { decodeUtf8Text } from '../filesystem/utf8.js';
+import { conflictCopyScope, writeConflictCopy } from '../filesystem/conflict-copies.js';
 import { DocumentCommitConflictError } from './document-session.js';
 import type { DocumentCommitTarget, DocumentExternalVersion } from './types.js';
 
@@ -12,6 +13,12 @@ export interface FileSystemDocumentTargetOptions {
    */
   verifyExternalChanges?: boolean;
   onCommitted?: (content: string, revision: number) => void;
+  /**
+   * Whether text the session sets aside is kept as a conflict copy in the
+   * document's sidecar. On by default for documents that keep a sidecar
+   * (Markdown); other files have nowhere tidy to hold one and offer no `park`.
+   */
+  keepConflictCopies?: boolean;
 }
 
 /**
@@ -27,8 +34,19 @@ export function createFileSystemDocumentTarget(
   const verifyExternalChanges = options.verifyExternalChanges ?? true;
   const canonicalPath = parseWorkspacePath(path);
   const providerV2 = getFileSystemProviderV2(provider);
+  const copies = options.keepConflictCopies === false ? null : conflictCopyScope(path);
   return {
     key: provider.id + ':' + canonicalPath,
+    ...(copies
+      ? {
+          async park(request) {
+            await writeConflictCopy(provider, copies, request.content, {
+              origin: request.origin,
+              currentContent: request.currentContent,
+            });
+          },
+        }
+      : {}),
     async commit(request) {
       if (providerV2 && providerV2.capabilities.conditionalWrite !== 'none') {
         const current = await providerV2.readFile(canonicalPath);

@@ -7,6 +7,7 @@ import {
 } from './move-error.js';
 import { parseWorkspacePath } from './workspace-path.js';
 import { rewriteCompanionReferences } from './companion-references.js';
+import { companionPathFor, documentCompanionPath } from './companion-path.js';
 import { DocumentSession } from '../document/document-session.js';
 import { createFileSystemDocumentTarget } from '../document/filesystem-target.js';
 
@@ -19,35 +20,18 @@ function normalisePath(path: string): string {
   return parseWorkspacePath(path);
 }
 
-function dirname(path: string): string {
-  const slash = path.lastIndexOf('/');
-  return slash < 0 ? '' : path.slice(0, slash);
-}
-
 function basename(path: string): string {
   const slash = path.lastIndexOf('/');
   return slash < 0 ? path : path.slice(slash + 1);
 }
 
-/** Return the hidden companion directory used for a document's media and versions. */
-export function documentCompanionPath(documentPath: string): string {
-  const rooted = documentPath.replace(/\\/g, '/').startsWith('/');
-  const clean = parseWorkspacePath(documentPath);
-  if (!clean) throw new Error('The workspace root has no document companion path.');
-  const parent = dirname(clean);
-  const name = basename(clean).replace(/\.[^.]+$/, '');
-  if (parent) return `${parent}/${name}_files`;
-  return rooted ? `/${name}_files` : `${name}_files`;
-}
-
-function hasDocumentCompanion(path: string): boolean {
-  return /\.(?:md|html?|docx|pdf|pptx|xlsx|csv)$/i.test(basename(path));
-}
+export { documentCompanionPath };
 
 /**
  * Move an explorer entry without overwriting an existing entry. Markdown and
  * outside-in rendered documents carry their hidden `<basename>_files`
- * companion directory with them.
+ * companion directory with them, and edited images their
+ * `<name.ext>_files` layers.
  */
 export async function moveFileSystemEntry(
   provider: FileSystemProvider,
@@ -83,11 +67,12 @@ export async function moveFileSystemEntry(
 
   let oldCompanion: string | null = null;
   let newCompanion: string | null = null;
-  if (kind === 'file' && hasDocumentCompanion(oldPath)) {
-    const candidate = documentCompanionPath(oldPath);
+  const companionPath = kind === 'file' ? companionPathFor(oldPath) : null;
+  if (companionPath) {
+    const candidate = companionPath(oldPath);
     if (await exists(candidate)) {
       oldCompanion = candidate;
-      newCompanion = documentCompanionPath(newPath);
+      newCompanion = companionPath(newPath);
       if (
         normalisePath(oldCompanion) !== normalisePath(newCompanion) &&
         (await exists(newCompanion))

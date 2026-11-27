@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from './helpers/test.js';
-import { openAttachments, showWriteView } from './helpers/toolbar.js';
+import { openAttachments, selectUseMode, showWriteView } from './helpers/toolbar.js';
 
 /**
  * The phone shell sets `position: static` on toolbar buttons so their menus
@@ -43,8 +43,7 @@ test('the attachment count stays on the Attachments toggle on phones', async ({ 
 
   // Write's formatting row pushes the toggle into More actions on a phone;
   // Page keeps it inline, which is where the stray count was seen.
-  await page.getByRole('button', { name: 'Choose Use mode' }).click();
-  await page.getByRole('menuitemradio', { name: 'Page', exact: true }).click();
+  await selectUseMode(page, 'Page');
 
   const toggle = page.locator('.squisq-toolbar .squisq-toolbar-files-toggle');
   const badge = toggle.locator('.squisq-toolbar-files-badge');

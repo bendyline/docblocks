@@ -1,6 +1,17 @@
 import type { GezelApp, ChatMessage } from '@bendyline/gezel-app-sdk';
-import { AI_WIRE_LIMITS, knowledgeChatEvent } from '@bendyline/docblocks/host';
-import type { AiChatKnowledge, AiChatMessage, AiKnowledgeAction } from '@bendyline/docblocks/host';
+import {
+  AI_WIRE_LIMITS,
+  WORKSPACE_KNOWLEDGE_CATALOG_ID,
+  WORKSPACE_KNOWLEDGE_NAME,
+  knowledgeChatEvent,
+  withWorkspaceCatalogId,
+} from '@bendyline/docblocks/host';
+import type {
+  AiChatKnowledge,
+  AiChatMessage,
+  AiKnowledgeAction,
+  AiWorkspacePassage,
+} from '@bendyline/docblocks/host';
 
 interface CatalogSnapshot {
   readonly at: number;
@@ -126,6 +137,14 @@ export interface GezelKnowledgeOptions {
   readonly query?: string;
   /** Number the passages and ask for `[n]` citations of them. */
   readonly citations?: boolean;
+  /** Search Gezel's knowledge catalogs (default true); false offers only workspace passages. */
+  readonly catalogs?: boolean;
+  /**
+   * Passages from the person's workspace, which Gezel ranks with the
+   * catalogs' passages (its relevance model judges both against one bar).
+   * They still ground the request when catalog retrieval fails or is off.
+   */
+  readonly workspacePassages?: readonly AiWorkspacePassage[];
 }
 
 const warned = new Set<string>();
@@ -136,8 +155,10 @@ export async function withGezelKnowledge(
   options: GezelKnowledgeOptions = {},
 ): Promise<GezelKnowledgeContext> {
   const { knowledgeContext } = await import('@bendyline/gezel-app-sdk');
-  const knowledge = app.knowledge as GezelApp['knowledge'] | undefined;
-  const context = await knowledgeContext(knowledge, messages, {
+  const catalogs =
+    options.catalogs === false ? undefined : (app.knowledge as GezelApp['knowledge'] | undefined);
+  const workspace = options.workspacePassages?.length ? options.workspacePassages : undefined;
+  const context = await knowledgeContext(catalogs ?? null, messages, {
     signal,
     contextWindow: options.contextWindow,
     maxOutputTokens: options.maxTokens,
@@ -147,27 +168,32 @@ export async function withGezelKnowledge(
     // passage it rests on, and is checked against exactly that passage.
     ...(options.citations ? { citations: 'numbered' as const } : {}),
     ...(options.query?.trim() ? { query: options.query } : {}),
+    ...(workspace ? { candidates: workspace } : {}),
     onUnavailable(reason) {
       if (warned.has(reason)) return;
       warned.add(reason);
       console.warn(`[ai] sending AI requests without knowledge passages: ${reason}`);
     },
   });
-  const cited = context.passages;
-  const snapshot = knowledge
+  const cited = withWorkspaceCatalogId(context.passages);
+  const snapshot = catalogs
     ? await catalogSnapshot(
         app,
         signal,
-        cited.map((passage) => passage.catalogId),
+        cited
+          .map((passage) => passage.catalogId)
+          .filter((id) => id !== WORKSPACE_KNOWLEDGE_CATALOG_ID),
       )
     : null;
+  const names = new Map(snapshot?.names ?? []);
+  if (workspace) names.set(WORKSPACE_KNOWLEDGE_CATALOG_ID, WORKSPACE_KNOWLEDGE_NAME);
   return {
     messages: context.messages,
     knowledge: knowledgeChatEvent(
       context.status,
       cited,
-      snapshot?.names,
-      context.status === 'used' || snapshot?.enabled === true,
+      names,
+      context.status === 'used' || snapshot?.enabled === true || workspace !== undefined,
     ),
   };
 }

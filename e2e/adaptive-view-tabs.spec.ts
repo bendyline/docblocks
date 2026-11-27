@@ -1,13 +1,19 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './helpers/test.js';
+import { selectUseMode, showSourceView, showWriteView, viewButton } from './helpers/toolbar.js';
 
 /**
- * The Write / Source / Slideshow tabs share a phone's top row with the files
- * button. At 360px, or with Android's larger system text, the full labels and
- * their ▾ buttons ran off the right edge. On a phone-width toolbar Source
- * becomes its </> icon and Slideshow reads "Slides"; a tablet keeps the full
- * labels. Every tab keeps its full name for assistive technology.
+ * The view button shares a phone's top row with the files button and the
+ * document name. It shows only the view on screen (Write, Source, Slideshow,
+ * …) and opens the View menu. At 360px, or with Android's larger system text,
+ * the row's view controls used to run off the right edge. On a phone-width
+ * toolbar a Use mode shows its short name (Slideshow reads "Slides"); a
+ * tablet keeps the full one. The button keeps the full name for assistive
+ * technology whatever it shows.
  */
+
+const VIEWS = ['Write', 'Source', 'Slideshow'] as const;
+type View = (typeof VIEWS)[number];
 
 async function openWelcomeDocument(page: Page): Promise<void> {
   await page.goto('/');
@@ -23,63 +29,103 @@ async function openWelcomeDocument(page: Page): Promise<void> {
   }
 }
 
-/** Tabs and ▾ buttons that reach past the viewport's right edge. */
-async function overflowingTabControls(page: Page): Promise<string[]> {
-  return page.locator('.squisq-toolbar-view-tabs').evaluate((tabs) => {
+async function show(page: Page, view: View): Promise<void> {
+  if (view === 'Write') await showWriteView(page);
+  else if (view === 'Source') await showSourceView(page);
+  else await selectUseMode(page, view);
+}
+
+/**
+ * The top row's controls that reach past the viewport's right edge, or whose
+ * visible view name is cut short.
+ */
+async function overflowingViewControls(page: Page): Promise<string[]> {
+  return page.locator('.squisq-toolbar').evaluate((toolbar) => {
     const right = document.documentElement.clientWidth;
-    return [...tabs.querySelectorAll<HTMLElement>('[role="tab"], .squisq-view-mode-trigger')]
+    const controls = toolbar.querySelectorAll<HTMLElement>(
+      '.db-document-title, .squisq-toolbar-view-tabs, .squisq-toolbar-view-button',
+    );
+    const past = [...controls]
       .filter((control) => control.getBoundingClientRect().right > right + 0.5)
-      .map((control) => control.getAttribute('aria-label') ?? control.textContent ?? '');
+      .map((control) => control.getAttribute('aria-label') ?? control.className);
+    const clipped = [...toolbar.querySelectorAll<HTMLElement>('.squisq-toolbar-view-button-label')]
+      .filter((label) => label.offsetWidth > 0 && label.scrollWidth > label.clientWidth)
+      .map((label) => `${label.textContent ?? ''} (cut short)`);
+    return [...past, ...clipped];
   });
 }
 
-test.describe('Editor view tabs on touch devices', () => {
+/**
+ * Android scales every font to the system text size and leaves padding alone;
+ * scaling the row's font sizes from their own base reproduces that here.
+ */
+async function scaleRowText(page: Page, factor: number): Promise<void> {
+  await page.locator('.squisq-toolbar').evaluate((toolbar, scale) => {
+    for (const node of toolbar.querySelectorAll<HTMLElement>(
+      '.squisq-toolbar-view-button, .db-document-title-input',
+    )) {
+      node.dataset.baseFontSize ??= getComputedStyle(node).fontSize;
+      node.style.fontSize = `${parseFloat(node.dataset.baseFontSize) * scale}px`;
+    }
+  }, factor);
+}
+
+test.describe('Editor view button on touch devices', () => {
   test.skip(({ isMobile }) => isMobile !== true, 'touch-emulating projects only');
 
-  test('keep their full names whatever they show', async ({ page }) => {
+  test('keeps its full name whatever it shows', async ({ page }) => {
     await openWelcomeDocument(page);
-    for (const name of ['Write', 'Source', 'Slideshow']) {
-      await expect(page.getByRole('tab', { name, exact: true })).toBeVisible();
+    const button = viewButton(page);
+    for (const view of VIEWS) {
+      await show(page, view);
+      await expect(button).toHaveAccessibleName(`View: ${view}`);
+      await expect(button).toBeVisible();
     }
   });
 
-  test('fit a phone row at any width and text size', async ({ page }, testInfo) => {
+  test('fits a phone row at any width and text size', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
     await openWelcomeDocument(page);
-    const source = page.getByRole('tab', { name: 'Source', exact: true });
-    const slideshow = page.getByRole('tab', { name: 'Slideshow', exact: true });
+    const button = viewButton(page);
+    const long = button.locator('.squisq-toolbar-view-button-label--long');
+    const short = button.locator('.squisq-toolbar-view-button-label--short');
 
     const device = page.viewportSize()!;
-    for (const width of [device.width, 360]) {
-      await page.setViewportSize({ width, height: device.height });
-      await expect(source.locator('.squisq-toolbar-view-tab-icon')).toBeVisible();
-      await expect(source.locator('.squisq-toolbar-view-tab-label--long')).toBeHidden();
-      await expect(slideshow.locator('.squisq-toolbar-view-tab-label--short')).toHaveText('Slides');
-      await expect(slideshow.locator('.squisq-toolbar-view-tab-label--short')).toBeVisible();
-      await expect(slideshow.locator('.squisq-toolbar-view-tab-label--long')).toBeHidden();
-      // Android scales every font to the system text size and leaves padding
-      // alone; scaling the tabs' font sizes reproduces that here.
-      for (const scale of [1, 1.15, 1.3]) {
-        await page.locator('.db-shell').evaluate((shell, factor) => {
-          for (const node of shell.querySelectorAll<HTMLElement>(
-            '.squisq-toolbar-view-tab, .squisq-view-mode-trigger',
-          )) {
-            node.style.fontSize = `${13 * factor}px`;
-          }
-        }, scale);
-        expect(await overflowingTabControls(page), `${width}px at ${scale}x text`).toEqual([]);
+    for (const view of VIEWS) {
+      await page.setViewportSize(device);
+      await show(page, view);
+      for (const width of [device.width, 360]) {
+        await page.setViewportSize({ width, height: device.height });
+        if (view === 'Slideshow') {
+          await expect(short).toHaveText('Slides');
+          await expect(short).toBeVisible();
+          await expect(long).toBeHidden();
+        } else {
+          await expect(long).toHaveText(view);
+          await expect(long).toBeVisible();
+        }
+        for (const scale of [1, 1.15, 1.3]) {
+          await scaleRowText(page, scale);
+          expect(
+            await overflowingViewControls(page),
+            `${view} at ${width}px and ${scale}x text`,
+          ).toEqual([]);
+        }
+        await scaleRowText(page, 1);
       }
     }
   });
 
-  test('keep the full labels on a tablet', async ({ page }, testInfo) => {
+  test('keeps the full labels on a tablet', async ({ page }, testInfo) => {
     test.skip(!testInfo.project.name.startsWith('ipad'), 'tablet projects only');
     await openWelcomeDocument(page);
-    const source = page.getByRole('tab', { name: 'Source', exact: true });
-    await expect(source.locator('.squisq-toolbar-view-tab-label--long')).toBeVisible();
-    await expect(source.locator('.squisq-toolbar-view-tab-icon')).toBeHidden();
-    const slideshow = page.getByRole('tab', { name: 'Slideshow', exact: true });
-    await expect(slideshow.locator('.squisq-toolbar-view-tab-label--long')).toBeVisible();
-    await expect(slideshow.locator('.squisq-toolbar-view-tab-label--short')).toBeHidden();
+    const button = viewButton(page);
+    await showSourceView(page);
+    await expect(button.locator('.squisq-toolbar-view-button-label--long')).toHaveText('Source');
+    await expect(button.locator('.squisq-toolbar-view-button-label--long')).toBeVisible();
+    await selectUseMode(page, 'Slideshow');
+    await expect(button.locator('.squisq-toolbar-view-button-label--long')).toBeVisible();
+    await expect(button.locator('.squisq-toolbar-view-button-label--short')).toBeHidden();
+    expect(await overflowingViewControls(page)).toEqual([]);
   });
 });

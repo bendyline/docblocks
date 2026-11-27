@@ -234,15 +234,40 @@ export interface AiChatRequest {
   readonly responseFormat?: AiResponseFormat;
   /**
    * What to search knowledge catalogs for. Without it a provider searches with
-   * the last user message, which for a templated prompt is mostly document.
+   * the last user message, which for a templated prompt is mostly document,
+   * unless {@link searchKnowledge} is false.
    */
   readonly knowledgeQuery?: string;
+  /**
+   * False sends the request without reference passages: the host searches no
+   * knowledge catalog for it. For a task whose prompt forbids adding
+   * information, such as tidying a transcript, where any passage can only
+   * mislead. Omitted means search. A request that searches nothing names no
+   * {@link knowledgeQuery}, citations or {@link workspacePassages}.
+   */
+  readonly searchKnowledge?: boolean;
   /**
    * Number knowledge passages and ask the model to cite them as `[n]`. Only a
    * caller that checks and renders citations should: the markers otherwise
    * end up in its output.
    */
   readonly knowledgeCitations?: boolean;
+  /**
+   * Passages from the person's own workspace, found by meaning for this
+   * request. The host offers them with its knowledge catalogs' passages,
+   * under the same budget and citation numbering; a provider that judges
+   * relevance (Gezel's relevance model) may leave some or all of them out.
+   */
+  readonly workspacePassages?: readonly AiWorkspacePassage[];
+}
+
+/** One workspace passage offered as evidence; see {@link AiChatRequest.workspacePassages}. */
+export interface AiWorkspacePassage {
+  /** `knowledge://local/<catalog>/<path>#line=a-b`, the citation grammar. */
+  readonly uri: string;
+  /** The note's title, with the headings above the passage. */
+  readonly title: string;
+  readonly text: string;
 }
 
 export interface AiChatCompletion {
@@ -267,6 +292,11 @@ export interface AiChatEvidence {
   readonly title: string;
   readonly catalogId: string;
   readonly text: string;
+  /**
+   * The passage's `knowledge://` citation, when the provider reported it. A
+   * workspace passage's (`knowledge://local/…`) names its note and lines.
+   */
+  readonly uri?: string;
 }
 
 /** One knowledge catalog that contributed reference passages to a request. */
@@ -441,6 +471,11 @@ export interface DocBlocksHostAiAPI {
   /** Catalog models this host can download. Optional for older providers. */
   availableModels?(): Promise<AiResult<readonly AiModelDownloadInfo[]>>;
   /**
+   * Whether this device is worth suggesting AI on (see `ai-device.ts`). Cheap,
+   * and never starts a provider, so it may be asked while AI is off.
+   */
+  deviceFit?(): Promise<import('./ai-device.js').AiDeviceFit>;
+  /**
    * Find sentences whose names, dates, numbers or quotations appear in none of
    * the evidence or the person's own text. Mechanical: no model call.
    */
@@ -455,10 +490,15 @@ export interface DocBlocksHostAiAPI {
    */
   chat(request: AiChatRequest, onEvent: (event: AiChatEvent) => void): AiChatHandle;
 
+  /**
+   * @deprecated The renderer's workspace index finds passages itself and sends
+   * them as {@link AiChatRequest.workspacePassages}; no host implements this.
+   */
   ensureWorkspace?(
     workspaceId: string,
     onProgress?: (progress: AiProgress) => void,
   ): AiEnsureWorkspaceHandle;
+  /** @deprecated See {@link DocBlocksHostAiAPI.ensureWorkspace}; no host implements this. */
   search?(workspaceId: string, query: AiSearchQuery): Promise<AiResult<AiSearchResult>>;
   /** @deprecated Speech lives on `DocBlocksHostAPI.speech`; no host implements this. */
   transcribe?(request: AiTranscribeRequest): Promise<AiResult<AiTranscript>>;

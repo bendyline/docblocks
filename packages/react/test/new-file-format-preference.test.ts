@@ -15,7 +15,10 @@ import {
   loadLastNewFileFormat,
   saveLastNewFileFormat,
 } from '../src/preferences/new-file-format.js';
-import { NewDocumentDialog } from '../src/components/NewDocumentDialog.js';
+import {
+  NewDocumentGallery,
+  type NewDocumentGalleryChoice,
+} from '../src/components/NewDocumentGallery.js';
 import { FileExplorer, type NewFileFormat } from '../src/FileExplorer/FileExplorer.js';
 
 (globalThis as typeof globalThis & { React: typeof React }).React = React;
@@ -82,23 +85,25 @@ describe('new-document defaults', () => {
     container.remove();
   });
 
-  it('preselects the workspace default in the New document dialog', async () => {
-    const settled: unknown[] = [];
+  it('preselects the workspace default in the New document gallery', async () => {
+    const settled: Array<NewDocumentGalleryChoice | null> = [];
     await act(async () => {
       root.render(
-        createElement(NewDocumentDialog, {
+        createElement(NewDocumentGallery, {
           initialFormat: 'web-static',
           onSettle: (choice) => settled.push(choice),
         }),
       );
     });
-    const select = document.querySelector<HTMLSelectElement>('.db-dialog select');
-    expect(select?.value).to.equal('web-static');
-    const create = [...document.querySelectorAll<HTMLButtonElement>('.db-dialog button')].find(
-      (button) => button.textContent === 'Create',
+    const checked = document.querySelector<HTMLButtonElement>(
+      '.db-dialog [role="radio"][aria-checked="true"]',
     );
-    await act(async () => create?.click());
-    expect(settled).to.deep.equal([{ filename: 'Untitled.html', format: 'web-static' }]);
+    expect(checked?.textContent).to.equal('Static web page');
+    const blank = document.querySelector<HTMLButtonElement>('.db-dialog [aria-label="Blank"]');
+    await act(async () => blank?.click());
+    expect(settled.map((choice) => choice && [choice.template.id, choice.format])).to.deep.equal([
+      ['blank', 'web-static'],
+    ]);
   });
 
   it('preselects the default in the explorer form and reports the type it used', async function () {

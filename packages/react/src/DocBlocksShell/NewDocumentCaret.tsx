@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useEditorContext } from '@bendyline/squisq-editor-react';
-import { placeNewDocumentCaret } from './placeNewDocumentCaret.js';
+import { placeNewDocumentCaret, retitleNewDocument } from './placeNewDocumentCaret.js';
 
 export interface NewDocumentCaretProps {
   /** Called once the caret is placed, or when there is nowhere to place it. */
@@ -11,6 +11,13 @@ export interface NewDocumentCaretProps {
    * placed; the text is then typed into the document.
    */
   takeTypedText?: () => string;
+  /**
+   * The document was just named: its `# Heading` still reading `from`
+   * becomes `to`.
+   */
+  retitle?: { from: string; to: string } | null;
+  /** `sample` selects a template's first line of sample text instead. */
+  at?: 'end' | 'sample';
 }
 
 /**
@@ -23,7 +30,12 @@ export interface NewDocumentCaretProps {
  * Renders nothing. It sits in the editor's toolbar slot only to reach the
  * editor context.
  */
-export function NewDocumentCaret({ onPlaced, takeTypedText }: NewDocumentCaretProps) {
+export function NewDocumentCaret({
+  onPlaced,
+  takeTypedText,
+  retitle = null,
+  at = 'end',
+}: NewDocumentCaretProps) {
   const { activeView, tiptapEditor } = useEditorContext();
 
   useEffect(() => {
@@ -38,14 +50,17 @@ export function NewDocumentCaret({ onPlaced, takeTypedText }: NewDocumentCaretPr
     // under the welcome screen's `inert` wrapper cannot take focus.
     const frame = requestAnimationFrame(() => {
       if (!tiptapEditor.isDestroyed && tiptapEditor.isEditable) {
-        placeNewDocumentCaret(tiptapEditor, () => takeTypedText?.() ?? '');
+        if (retitle) retitleNewDocument(tiptapEditor, retitle.from, retitle.to);
+        placeNewDocumentCaret(tiptapEditor, () => takeTypedText?.() ?? '', { at });
       } else {
         takeTypedText?.();
       }
       onPlaced();
     });
     return () => cancelAnimationFrame(frame);
-  }, [activeView, tiptapEditor, onPlaced, takeTypedText]);
+    // `retitle` is read once, as the caret is placed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, tiptapEditor, onPlaced, takeTypedText, at]);
 
   return null;
 }

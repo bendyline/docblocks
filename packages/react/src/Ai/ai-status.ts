@@ -68,3 +68,34 @@ export function unavailableSentence(status: AiStatus | null): string {
   }
   return '';
 }
+
+/**
+ * Whether AI features are offered: AI is on (any status but unavailable for
+ * opt-out — hosts report that exactly while AI is off), or it
+ * is off and this device is being invited to turn it on. False while the
+ * status is unknown, so nothing appears and then disappears.
+ */
+export function useAiOffered(ai: DocBlocksHostAiAPI | undefined, invite: boolean): boolean {
+  const [status, setStatus] = useState<AiStatus | null>(null);
+  useEffect(() => {
+    setStatus(null);
+    if (!ai) return;
+    let live = true;
+    void ai.status().then(
+      (next) => {
+        if (live) setStatus(next);
+      },
+      () => undefined,
+    );
+    const unsubscribe = ai.onStatus((next) => {
+      if (live) setStatus(next);
+    });
+    return () => {
+      live = false;
+      unsubscribe();
+    };
+  }, [ai]);
+  if (!ai) return false;
+  const optedOut = status?.kind === 'unavailable' && status.reason === 'opt-out';
+  return invite || (status !== null && !optedOut);
+}

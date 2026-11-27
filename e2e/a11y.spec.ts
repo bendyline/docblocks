@@ -1,10 +1,11 @@
-import type { Page, TestInfo } from '@playwright/test';
+import type { Locator, Page, TestInfo } from '@playwright/test';
 import { expect, test } from './helpers/test.js';
 import AxeBuilder from '@axe-core/playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { openInitializedSite } from './helpers/site.js';
-import { showWriteView } from './helpers/toolbar.js';
+import { closeViewMenu, openViewMenu, showWriteView } from './helpers/toolbar.js';
+import { createDocument, newDocumentGallery } from './helpers/new-document.js';
 
 /**
  * Accessibility audits using axe-core against the DocBlocks site shell.
@@ -52,6 +53,9 @@ for (const theme of ['Light', 'Dark']) {
       await expect(accentRadio).toBeChecked();
       await dialog.getByRole('button', { name: 'Close', exact: true }).click();
       await page.mouse.move(0, 0);
+      // Squisq's toolbar buttons fade their colors over 120ms, and the steps
+      // above fit inside that after a theme switch: measure where they land.
+      await settleAnimations(page.locator('.squisq-toolbar'), page.locator('.squisq-status-bar'));
       // Squisq owns the markup, but DocBlocks supplies these foreground and
       // background colors; excluding the editor would hide host palette bugs.
       const { violations } = await new AxeBuilder({ page })
@@ -62,9 +66,7 @@ for (const theme of ['Light', 'Dark']) {
       expect(violations, `${theme} / ${accent}: ${formatViolations(violations)}`).toEqual([]);
       // Active text and its hover state both need readable ink on the tint.
       await heading.hover();
-      await heading.evaluate(async (element) => {
-        await Promise.all(element.getAnimations({ subtree: true }).map((entry) => entry.finished));
-      });
+      await settleAnimations(heading);
       const hovered = await new AxeBuilder({ page })
         .include('.squisq-toolbar-button--active')
         .withRules(['color-contrast'])
@@ -73,27 +75,44 @@ for (const theme of ['Light', 'Dark']) {
         hovered.violations,
         `${theme} / ${accent} active hover: ${formatViolations(hovered.violations)}`,
       ).toEqual([]);
-      for (const menu of ['Write mode', 'Use mode']) {
-        await page.getByRole('button', { name: `Choose ${menu}`, exact: true }).click();
-        // Measure the settled menu, not the partially transparent entrance frame.
-        await page.locator('.squisq-view-mode-menu').evaluate(async (element) => {
-          await Promise.all(
-            element.getAnimations({ subtree: true }).map((entry) => entry.finished),
-          );
-        });
-        const menuScan = await new AxeBuilder({ page })
-          .include('.squisq-view-mode-menu')
-          .withRules(['color-contrast'])
-          .analyze();
-        expect(
-          menuScan.violations,
-          `${theme} / ${accent} ${menu} menu: ${formatViolations(menuScan.violations)}`,
-        ).toEqual([]);
-        await page.keyboard.press('Escape');
-        await expect(page.locator('.squisq-view-mode-menu')).toHaveCount(0);
-      }
+      const viewMenu = await openViewMenu(page);
+      // Measure the settled menu, not the partially transparent entrance frame.
+      await settleAnimations(viewMenu);
+      const menuScan = await new AxeBuilder({ page })
+        .include('.squisq-view-mode-menu')
+        .withRules(['color-contrast'])
+        .analyze();
+      expect(
+        menuScan.violations,
+        `${theme} / ${accent} View menu: ${formatViolations(menuScan.violations)}`,
+      ).toEqual([]);
+      await closeViewMenu(page);
     }
   });
+}
+
+/**
+ * Wait until no finite animation runs in or under `targets`, so axe measures
+ * settled colors rather than a frame of a transition. An interrupted
+ * transition is cancelled (its promise rejects) and replaced, so this checks
+ * again until nothing is left.
+ */
+async function settleAnimations(...targets: Locator[]) {
+  for (const target of targets) {
+    await target.evaluateAll(async (elements) => {
+      for (;;) {
+        const running = elements
+          .flatMap((element) => element.getAnimations({ subtree: true }))
+          .filter(
+            (animation) =>
+              animation.playState === 'running' &&
+              animation.effect?.getComputedTiming().endTime !== Infinity,
+          );
+        if (running.length === 0) return;
+        await Promise.allSettled(running.map((animation) => animation.finished));
+      }
+    });
+  }
 }
 
 function buildScan(page: Page) {
@@ -323,16 +342,16 @@ test.describe('a11y — workspace picker open', () => {
   });
 });
 
-test.describe('a11y — new file input visible', () => {
-  test('no WCAG A/AA violations with new-file input visible', async ({ page }, info) => {
+test.describe('a11y — New document gallery open', () => {
+  test('no WCAG A/AA violations with the New document gallery open', async ({ page }, info) => {
     await waitForShell(page);
     await page.getByRole('button', { name: 'New File' }).click();
-    await expect(page.locator('.db-new-item-input')).toBeVisible();
+    await expect(newDocumentGallery(page)).toBeVisible();
 
-    const violations = await scanAndReport(page, info, 'new-file-input');
+    const violations = await scanAndReport(page, info, 'new-document-gallery');
     expect(
       violations.length,
-      `${violations.length} violation(s) with new-file input visible:\n${formatViolations(
+      `${violations.length} violation(s) with the New document gallery open:\n${formatViolations(
         violations,
       )}`,
     ).toBe(0);
@@ -345,15 +364,8 @@ test.describe('a11y — editor open with a file', () => {
   }, info) => {
     await waitForShell(page);
 
-    // Create a file, then open it so the editor mounts.
-    await page.getByRole('button', { name: 'New File' }).click();
-    const input = page.locator('.db-new-item-input');
-    await input.fill('a11y-test-doc');
-    await page.locator('.db-new-item-add').click();
-
-    const treeRow = page.locator('.db-tree-row', { hasText: 'a11y-test-doc' });
-    await expect(treeRow).toBeVisible({ timeout: 5_000 });
-    await treeRow.click();
+    // Create a file; it opens in the editor.
+    await createDocument(page, 'a11y-test-doc');
 
     // Editor mounted = empty state gone.
     await expect(page.locator('.db-shell-empty')).not.toBeVisible({ timeout: 5_000 });

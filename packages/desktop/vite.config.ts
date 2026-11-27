@@ -5,6 +5,8 @@ import { harperWasmPlugin } from '../../scripts/vite-harper-wasm.js';
 import { ironCalcWasmPlugin } from '../../scripts/vite-ironcalc-wasm.js';
 import { squisqAwareViteCacheDir } from '../../scripts/vite-squisq-dep-cache.js';
 import { thirdPartyComponentManifestPlugin } from '../../scripts/vite-third-party-manifest.js';
+import { workerSafeBuilds } from '../../scripts/vite-worker-builds.js';
+import { DESKTOP_DEV_SERVER_PORT, desktopRendererMarker } from './scripts/dev-renderer-marker.js';
 
 // Mirror of the same helper in packages/site/vite.config.ts — see there for
 // the rationale.
@@ -61,6 +63,8 @@ export default defineConfig({
     harperWasmPlugin(),
     ironCalcWasmPlugin(),
     thirdPartyComponentManifestPlugin(),
+    // Lets `dev:electron` wait for this server rather than whatever holds the port.
+    desktopRendererMarker(),
     react(),
   ],
   resolve: {
@@ -79,6 +83,10 @@ export default defineConfig({
       {
         find: '@bendyline/docblocks-react/styles',
         replacement: path.resolve(__dirname, '../react/src/styles/docblocks.css'),
+      },
+      {
+        find: '@bendyline/docblocks-react/workspace-index-worker',
+        replacement: path.resolve(__dirname, '../react/src/WorkspaceIndex/worker.ts'),
       },
       {
         find: /^@bendyline\/docblocks-react$/,
@@ -119,6 +127,23 @@ export default defineConfig({
         find: '@bendyline/docblocks/workspace',
         replacement: path.resolve(__dirname, '../core/src/workspace/index.ts'),
       },
+      // The string alias above matches only '/workspace' and '/workspace/...'.
+      {
+        find: /^@bendyline\/docblocks\/workspace-index$/,
+        replacement: path.resolve(__dirname, '../core/src/workspace-index/index.ts'),
+      },
+      {
+        find: /^@bendyline\/docblocks\/workspace-settings$/,
+        replacement: path.resolve(__dirname, '../core/src/workspace-settings/index.ts'),
+      },
+      {
+        find: /^@bendyline\/docblocks\/properties$/,
+        replacement: path.resolve(__dirname, '../core/src/properties/index.ts'),
+      },
+      {
+        find: /^@bendyline\/docblocks\/folders$/,
+        replacement: path.resolve(__dirname, '../core/src/folders/index.ts'),
+      },
       {
         find: '@bendyline/docblocks/host',
         replacement: path.resolve(__dirname, '../core/src/host/index.ts'),
@@ -149,16 +174,22 @@ export default defineConfig({
   },
   worker: {
     format: 'es',
+    plugins: () => [workerSafeBuilds()],
   },
   server: {
-    port: 5221,
+    port: DESKTOP_DEV_SERVER_PORT,
     strictPort: true,
     open: false,
     fs: {
       // Local Squisq development uses package symlinks into ../squisq.
       // Its editor CSS imports Font Awesome, whose relative webfont URLs
       // resolve through that real path and must be served by Vite.
-      allow: [path.resolve(__dirname, '../..'), path.resolve(__dirname, '../../../squisq')],
+      // The workspace index's retrieval package is linked from ../gezel until it is published.
+      allow: [
+        path.resolve(__dirname, '../..'),
+        path.resolve(__dirname, '../../../squisq'),
+        path.resolve(__dirname, '../../../gezel'),
+      ],
     },
   },
   optimizeDeps: {
@@ -236,6 +267,8 @@ export default defineConfig({
       'util-deprecate',
     ],
     exclude: [
+      // sqlite-wasm finds its .wasm beside its module; pre-bundling would move one but not the other.
+      '@sqlite.org/sqlite-wasm',
       '@bendyline/squisq',
       '@bendyline/squisq-react',
       '@bendyline/squisq-editor-react',

@@ -22,6 +22,8 @@ import {
 } from '../preferences/write-canvas.js';
 import { DEFAULT_PROOFING_PREFERENCES, type ProofingPreferences } from '../preferences/proofing.js';
 import { AppSettingsDialog, type AppSettingsSection } from '../Settings/AppSettingsDialog.js';
+import type { SemanticSearchSettingsControlsProps } from '../Settings/SemanticSearchSettings.js';
+import type { SearchIndexSettingsControlsProps } from '../Settings/SearchIndexSettings.js';
 import { Dialog } from '../components/Dialog.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
 import { displayBuildDate } from '../local-date.js';
@@ -56,12 +58,18 @@ export interface AppMenuProps {
   proofingPreferences?: ProofingPreferences;
   /** Called when the user toggles inline spelling or grammar checking. */
   onProofingPreferencesChange?: (settings: ProofingPreferences) => void;
+  /** Whether Quick Jot shows in the left pane, and how to change it. Omitted hides the switch. */
+  quickJot?: { readonly visible: boolean; readonly onChange: (visible: boolean) => void };
   /** Current global versioning preference. */
   versioningPreference?: VersioningPreference;
   /** Called when the user changes the global versioning preference. */
   onVersioningPreferenceChange?: (pref: VersioningPreference) => void;
   /** Opens the active workspace's own settings (`.docblocks/workspace.json`). */
   onOpenWorkspaceSettings?: () => void;
+  /** Semantic search's switch and coverage, on a host with an embedding model. */
+  semanticSearch?: SemanticSearchSettingsControlsProps;
+  /** Keeping and clearing the open workspace's stored index, where it is stored. */
+  searchIndex?: SearchIndexSettingsControlsProps;
   /**
    * Called when the user clicks "Back up all workspaces". When omitted,
    * the menu item is hidden.
@@ -143,9 +151,12 @@ export function AppMenu({
   onWriteCanvasSettingsChange,
   proofingPreferences = DEFAULT_PROOFING_PREFERENCES,
   onProofingPreferencesChange,
+  quickJot,
   versioningPreference = 'browser-only',
   onVersioningPreferenceChange,
   onOpenWorkspaceSettings,
+  semanticSearch,
+  searchIndex,
   onDownloadAllWorkspaces,
   onRestoreBackup,
   onShowKeyboardShortcuts,
@@ -381,6 +392,7 @@ export function AppMenu({
           onWriteCanvasSettingsChange={onWriteCanvasSettingsChange}
           proofingPreferences={proofingPreferences}
           onProofingPreferencesChange={onProofingPreferencesChange}
+          quickJot={quickJot}
           ai={ai}
           speech={speech}
           tray={tray}
@@ -392,6 +404,8 @@ export function AppMenu({
           requestingPersistentStorage={requestingPersistentStorage}
           versioningPreference={versioningPreference}
           onVersioningPreferenceChange={onVersioningPreferenceChange}
+          semanticSearch={semanticSearch}
+          searchIndex={searchIndex}
           onOpenWorkspaceSettings={
             onOpenWorkspaceSettings
               ? () => {

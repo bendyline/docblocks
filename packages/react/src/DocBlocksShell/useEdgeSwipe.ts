@@ -9,6 +9,13 @@ const COMMIT_FRACTION = 0.4;
 /** px per ms — a fast flick commits regardless of distance. */
 const COMMIT_VELOCITY = 0.5;
 
+function isTextEntry(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest('textarea, input, [contenteditable]:not([contenteditable="false"])') !== null
+  );
+}
+
 export interface EdgeSwipeOptions {
   /** The element the gesture is measured against (the pane container). */
   readonly surfaceRef: RefObject<HTMLElement | null>;
@@ -84,6 +91,8 @@ export function useEdgeSwipe({
       // While open, only a drag that starts on the drawer should close it;
       // a tap on the scrim is handled separately.
       if (open && !drawer()?.contains(event.target as Node)) return;
+      // A drag that starts in a text field selects text or moves the caret.
+      if (open && isTextEntry(event.target)) return;
 
       pointerId = event.pointerId;
       startX = event.clientX;

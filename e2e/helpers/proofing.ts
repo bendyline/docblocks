@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect } from './test.js';
 import { openInitializedSite } from './site.js';
+import { showSourceView, showWriteView } from './toolbar.js';
 
 /**
  * Exercise the shipped welcome fixture through the real worker. A green status
@@ -14,7 +15,7 @@ export async function openProofedWelcome(
   acceptedWord?: string,
 ): Promise<void> {
   await openInitializedSite(page);
-  await page.getByRole('tab', { name: view, exact: true }).click();
+  await (view === 'Write' ? showWriteView(page) : showSourceView(page));
   const editor =
     view === 'Write'
       ? page.locator('.tiptap[contenteditable="true"]')

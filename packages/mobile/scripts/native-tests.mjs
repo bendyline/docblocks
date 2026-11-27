@@ -89,4 +89,12 @@ if (
     path.join(mobile, 'native/android/StorageHarness.java'),
   ]);
   conformance([java, '-cp', `${classes}${path.delimiter}${classpath}`, 'StorageHarness']);
+  // How shared text and files are named and written (plain Java, no device).
+  run(javac, [
+    '-d',
+    classes,
+    path.join(mobile, 'android/app/src/main/java/com/bendyline/docblocks/mobile/SharedNotes.java'),
+    path.join(mobile, 'native/android/SharedNotesHarness.java'),
+  ]);
+  run(java, ['-cp', classes, 'SharedNotesHarness']);
 }

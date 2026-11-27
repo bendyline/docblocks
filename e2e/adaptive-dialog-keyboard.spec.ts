@@ -19,18 +19,21 @@ test.describe('Text-entry dialogs on touch devices', () => {
   test.skip(({ isMobile }) => isMobile !== true, 'touch-emulating projects only');
 
   test('open high and keep the field and actions above the keyboard', async ({ page }) => {
-    // The installed-app "New document" shortcut opens the dialog on launch.
-    await page.goto('/?action=new');
-    const dialog = page.getByRole('dialog', { name: 'New document' });
-    await expect(dialog).toBeVisible({ timeout: 30_000 });
-    const name = dialog.getByLabel('Document name');
-    const create = dialog.getByRole('button', { name: 'Create' });
+    // The first-run choice to paste something opens a dialog that takes typing.
+    await page.goto('/');
+    await page
+      .getByRole('button', { name: /^Paste or (?:drop something|choose a file)$/ })
+      .click({ timeout: 30_000 });
+    const dialog = page.getByRole('dialog', { name: 'Start from something you have' });
+    await expect(dialog).toBeVisible();
+    const field = dialog.getByRole('textbox', { name: 'Text for the new document' });
+    const create = dialog.getByRole('button', { name: 'Create document' });
 
     const viewportHeight = await page.evaluate(() => window.innerHeight);
     const panel = await boxOf(dialog);
     // Anchored in the upper part, not centered on the full layout viewport.
+    // (A phone shows it as a sheet from the top edge down.)
     expect(panel.y).toBeLessThan(viewportHeight * 0.2);
-    expect(panel.y + panel.height).toBeLessThan(viewportHeight * 0.6);
 
     // Raise a keyboard over the bottom half, as iOS does.
     const keyboardTop = Math.round(viewportHeight / 2);
@@ -38,7 +41,7 @@ test.describe('Text-entry dialogs on touch devices', () => {
       document.documentElement.style.setProperty('--db-keyboard-inset', `${inset}px`);
     }, viewportHeight - keyboardTop);
 
-    for (const control of [name, create]) {
+    for (const control of [field, create]) {
       const box = await boxOf(control);
       expect(box.y + box.height).toBeLessThanOrEqual(keyboardTop);
     }

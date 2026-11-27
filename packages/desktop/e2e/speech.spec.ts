@@ -147,6 +147,53 @@ test('dictation inserts transcribed phrases at the caret, one undo each', async 
   await expect.poll(onDisk).toBe(before - 1);
 });
 
+test('Quick Jot dictation shows a level meter, then dots until each phrase is text', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  test.setTimeout(120_000);
+  const env = installFakeSpeechModels(userDataDir);
+  const microphone = writeFakeMicrophoneWav(path.join(userDataDir, 'microphone.wav'));
+  const { window } = await launchApp(
+    ['--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${microphone}`],
+    // A slow model, so a phrase is heard well before its text comes back.
+    { ...env, FAKE_WHISPER_TEXT: 'Jotted by voice.', FAKE_WHISPER_INFERENCE_DELAY_MS: '2500' },
+  );
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+  expect(await speechStatus(window)).toMatchObject({ stt: { state: 'ready' } });
+
+  const jot = window.getByRole('region', { name: 'Quick Jot' });
+  const field = jot.getByLabel('Jot something down');
+  const dots = jot.getByTestId('quick-jot-converting');
+  await jot.getByRole('button', { name: 'Dictate' }).click();
+
+  const stop = jot.getByRole('button', { name: 'Stop dictating' });
+  await expect(stop.locator('.db-quick-jot-meter-bar')).toHaveCount(12, { timeout: 15_000 });
+  // The tone opens the voice gate: some bar rises above the 2px floor.
+  await expect
+    .poll(() =>
+      stop
+        .locator('.db-quick-jot-meter-bar')
+        .evaluateAll((bars) => Math.max(...bars.map((bar) => bar.getBoundingClientRect().height))),
+    )
+    .toBeGreaterThan(4);
+
+  // The first phrase ends, and the dots show inside the box before its text arrives.
+  await expect(dots).toBeVisible({ timeout: 15_000 });
+  await expect(field).toHaveValue('');
+  const box = await field.boundingBox();
+  const dotsBox = await dots.boundingBox();
+  if (!box || !dotsBox) throw new Error('Quick Jot not laid out');
+  expect(dotsBox.x).toBeGreaterThanOrEqual(box.x);
+  expect(dotsBox.y + dotsBox.height).toBeLessThanOrEqual(box.y + box.height);
+
+  await expect(field).toHaveValue(/Jotted by voice\./u, { timeout: 15_000 });
+  await stop.click();
+  await expect(jot.getByRole('button', { name: 'Dictate' })).toBeVisible({ timeout: 20_000 });
+  await expect(dots).toBeHidden();
+  await expect(jot.locator('.db-quick-jot-meter')).toHaveCount(0);
+});
+
 test('reads the document aloud through the narration utility', async ({
   launchApp,
   userDataDir,

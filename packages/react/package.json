@@ -72,6 +72,11 @@
       "import": "./dist/editor.js",
       "default": "./dist/editor.js"
     },
+    "./workspace-index-worker": {
+      "types": "./dist/workspace-index-worker/index.d.ts",
+      "import": "./dist/workspace-index-worker/index.js",
+      "default": "./dist/workspace-index-worker/index.js"
+    },
     "./styles": "./src/styles/docblocks.css",
     "./package.json": "./package.json"
   },
@@ -91,13 +96,16 @@
   },
   "dependencies": {
     "@bendyline/docblocks": "2.8.5",
-    "@bendyline/squisq": "2.13.20",
+    "@bendyline/gezel-retrieval": "1.0.1",
+    "@bendyline/squisq": "2.14.3",
     "@bendyline/squisq-calc": "2.11.2",
-    "@bendyline/squisq-editor-react": "2.13.31",
-    "@bendyline/squisq-formats": "2.8.22",
-    "@bendyline/squisq-react": "2.12.33",
-    "@bendyline/squisq-video": "2.4.26",
-    "@bendyline/squisq-video-react": "2.5.36",
+    "@bendyline/squisq-editor-react": "2.14.3",
+    "@bendyline/squisq-formats": "2.8.26",
+    "@bendyline/squisq-react": "2.12.37",
+    "@bendyline/squisq-video": "2.4.30",
+    "@bendyline/squisq-video-react": "2.5.40",
+    "@huggingface/tokenizers": "0.2.0",
+    "@sqlite.org/sqlite-wasm": "3.53.4-build2",
     "lucide-react": "1.52.0",
     "qrcode": "1.5.4"
   },

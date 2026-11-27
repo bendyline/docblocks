@@ -180,6 +180,11 @@ export function registerTray(host: TrayWindowHost, enabled: boolean): void {
   if (enabled) showTray();
 }
 
+/** True while the tray / menu bar icon is showing. */
+export function trayVisible(): boolean {
+  return tray !== null;
+}
+
 export function destroyTray(): void {
   ipcMain.removeAllListeners('menu:setPinnedDocuments');
   ipcMain.removeHandler('tray:getEnabled');

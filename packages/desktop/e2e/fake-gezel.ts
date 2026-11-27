@@ -40,6 +40,8 @@ export interface RecordedChat {
   readonly maxTokens: unknown;
   readonly streamOptions: unknown;
   readonly messages: readonly ChatMessage[];
+  /** The reply format asked for (its JSON schema's name), when one was. */
+  readonly responseFormat?: string;
 }
 
 export interface FakeGezel {
@@ -159,6 +161,13 @@ function scriptedPlan(messages: readonly ChatMessage[]): string {
   );
 }
 
+/** Auto's kind, chosen as the planner chooses: a timeline for several years, else a flowchart. */
+function scriptedKind(messages: readonly ChatMessage[]): string {
+  const user = messages.find((message) => message.role === 'user')?.content ?? '';
+  const passage = /<passage>\n([\s\S]*?)\n<\/passage>/u.exec(user)?.[1] ?? '';
+  return JSON.stringify({ kind: (passage.match(YEAR) ?? []).length >= 2 ? 'timeline' : 'flow' });
+}
+
 /** A diagram spec built only from the passage's own words, so it is grounded. */
 function scriptedDiagram(messages: readonly ChatMessage[]): string {
   const system = messages.find((message) => message.role === 'system')?.content ?? '';
@@ -196,32 +205,30 @@ function passageSentences(messages: readonly ChatMessage[]): string[] {
     .filter((sentence) => sentence.trim().length > 20);
 }
 
-/** Questions answered by the passage's own words, so every answer is grounded. */
-function scriptedQuiz(messages: readonly ChatMessage[]): string {
-  return JSON.stringify(
-    passageSentences(messages)
-      .slice(0, 3)
-      .map((sentence, index) => ({
-        question: `Which statement does the document make, number ${String(index + 1)}?`,
-        correct: words(sentence, 6),
-        wrong: ['A printed manual', 'A video tutorial', 'A spreadsheet export'],
-        why: sentence,
-      })),
-  );
+/**
+ * Study cards for one section (Squisq's protocol, named by its reply
+ * format), worded from the section's own sentences so they pass its checks:
+ * an answer the section states, never a question about "the document".
+ */
+function scriptedStudyCards(messages: readonly ChatMessage[], kind: 'flashcard' | 'quiz'): string {
+  const sentences = passageSentences(messages).slice(0, 2);
+  return JSON.stringify({
+    cards: sentences.map((sentence) =>
+      kind === 'quiz'
+        ? {
+            question: `${words(sentence, 4)}: which is right?`,
+            correct: words(sentence, 6),
+            wrong: ['A printed manual', 'A video tutorial', 'A spreadsheet export'],
+            why: sentence,
+          }
+        : { question: `${words(sentence, 4)}, how so?`, answer: sentence },
+    ),
+  });
 }
 
-function scriptedFlashcards(messages: readonly ChatMessage[]): string {
-  return JSON.stringify(
-    passageSentences(messages)
-      .slice(0, 4)
-      .map((sentence) => ({
-        front: `What does the document say about ${words(sentence, 2)}?`,
-        back: sentence,
-      })),
-  );
-}
-
-function scriptedAnswer(messages: readonly ChatMessage[]): string {
+function scriptedAnswer(messages: readonly ChatMessage[], format?: string): string {
+  if (format === 'study_flashcards') return scriptedStudyCards(messages, 'flashcard');
+  if (format === 'study_quiz') return scriptedStudyCards(messages, 'quiz');
   const system = messages.find((message) => message.role === 'system')?.content ?? '';
   if (system.includes('You summarize documents')) {
     return `${FAKE_SUMMARY_OVERVIEW}\n\n- It compares wiki tools.\n- It favours plain Markdown files.`;
@@ -229,8 +236,6 @@ function scriptedAnswer(messages: readonly ChatMessage[]): string {
   if (system.includes('You take notes') || system.includes('You condense notes')) {
     return '- A note from the fake Gezel.';
   }
-  if (system.includes('multiple-choice quiz questions')) return scriptedQuiz(messages);
-  if (system.includes('study flashcards')) return scriptedFlashcards(messages);
   if (system.includes('You edit a narrated presentation')) {
     const input = JSON.parse(messages.at(-1)?.content ?? '{}') as {
       position: string;
@@ -248,6 +253,7 @@ function scriptedAnswer(messages: readonly ChatMessage[]): string {
     });
   }
   if (system.includes('You plan illustrations')) return scriptedPlan(messages);
+  if (system.includes('You choose the kind of diagram')) return scriptedKind(messages);
   if (system.includes('You turn one passage into')) return scriptedDiagram(messages);
   if (system.includes('document reviewer')) return scriptedReview(documentFrom(messages));
   if (system.includes('Rewrite only the supplied selection')) return FAKE_REWRITE_TEXT;
@@ -467,7 +473,35 @@ export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGez
             catalogId: knowledge!.catalog.id,
             version: '1',
           }));
-          sendJson(response, 200, { reranked: true, passages });
+          // The app's own passages (Gezel 1.3.5+), as Gezel treats them without
+          // its relevance model: taking turns with catalog passages, a catalog
+          // passage first, within the request's budget.
+          const own = (Array.isArray(query.candidates) ? query.candidates : []).map(
+            (candidate: { uri: string; title: string; text: string }) => ({
+              uri: candidate.uri,
+              title: candidate.title,
+              text: candidate.text,
+              catalogId: candidate.uri.slice('knowledge://local/'.length).split('/')[0],
+              version: 'local',
+            }),
+          );
+          if (!own.length) {
+            sendJson(response, 200, { reranked: true, passages });
+          } else {
+            const fitted: typeof passages = [];
+            let remaining = Number(query.maxCharacters);
+            for (let index = 0; index < Math.max(passages.length, own.length); index += 1) {
+              for (const passage of [passages[index], own[index]]) {
+                if (!passage || remaining <= 0 || fitted.length >= Number(query.maxResults)) {
+                  continue;
+                }
+                const text = passage.text.slice(0, remaining);
+                fitted.push({ ...passage, text });
+                remaining -= text.length;
+              }
+            }
+            sendJson(response, 200, { reranked: false, passages: fitted });
+          }
         }
       } else if (request.method === 'GET' && url.pathname === '/v1/models') {
         sendJson(response, 200, {
@@ -494,12 +528,14 @@ export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGez
           maxTokens: body.max_tokens,
           streamOptions: body.stream_options,
           messages,
+          responseFormat: responseFormatName(body.response_format),
         });
         if (options.upstream) await streamUpstream(response, body, options.upstream);
         else if (
           !(await streamScripted(
             response,
-            options.replies?.[chats.length - 1]?.text ?? scriptedAnswer(messages),
+            options.replies?.[chats.length - 1]?.text ??
+              scriptedAnswer(messages, responseFormatName(body.response_format)),
             options.chunkDelayMs ?? 0,
             options.chatProgress,
             options.replies?.[chats.length - 1]?.finishReason,
@@ -545,4 +581,11 @@ export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGez
         server.close(() => resolve());
       }),
   };
+}
+
+/** The name of the reply format a request asks for, when it asks for one. */
+function responseFormatName(format: unknown): string | undefined {
+  if (!format || typeof format !== 'object') return undefined;
+  const schema = (format as { json_schema?: { name?: unknown } }).json_schema;
+  return typeof schema?.name === 'string' ? schema.name : undefined;
 }

@@ -41,6 +41,7 @@ import {
   type PendingInsertion,
 } from './illustrate-passages.js';
 import {
+  chooseKind,
   drawDiagram,
   findIdeas,
   realizeDiagram,
@@ -53,6 +54,7 @@ import { saveGeneratedImage } from './insert-generated-image.js';
 import {
   AI_DIAGRAM_DESCRIPTION_CHARACTERS,
   inferKind,
+  namedKind,
   promptBudget,
 } from './illustrate-prompts.js';
 
@@ -167,10 +169,10 @@ export function AiDiagramDialog({
     [],
   );
 
-  const autoKind = inferKind(description, material);
+  // Auto draws the kind the person's words name, else asks the model.
+  const named = namedKind(description);
   // A model switched to a smaller one in settings can no longer draw.
   const choice = kindChoice === 'illustration' && !drawsIllustrations ? 'auto' : kindChoice;
-  const kind: PictureKind = choice === 'auto' ? autoKind : choice;
   const ready = outcome?.status === 'ready' ? outcome : null;
 
   const generate = useCallback(async () => {
@@ -192,6 +194,23 @@ export function AiDiagramDialog({
     // With selected text, the picture must stick to it. Without, the person
     // asked the model to supply the content.
     const ground = material.length > 0;
+    let kind: PictureKind;
+    if (choice === 'auto') {
+      const picked = await chooseKind({
+        ai,
+        description: request,
+        material,
+        signal: controller.signal,
+      });
+      if (requestRef.current !== requestId) return;
+      if (picked.status === 'cancelled') {
+        setRunning(false);
+        return;
+      }
+      kind = picked.kind;
+    } else {
+      kind = choice;
+    }
     const result =
       kind === 'illustration' && contextWindow !== null
         ? await realizeIllustration({
@@ -206,7 +225,8 @@ export function AiDiagramDialog({
           })
         : await realizeDiagram({
             ai: knowledgeAi,
-            kind: kind === 'illustration' || kind === 'design' ? autoKind : kind,
+            kind:
+              kind === 'illustration' || kind === 'design' ? inferKind(request, material) : kind,
             material: material || request,
             heading: '',
             title,
@@ -225,7 +245,7 @@ export function AiDiagramDialog({
       return;
     }
     setOutcome(result);
-  }, [autoKind, contextWindow, description, kind, knowledgeAi, material, ready, resetKnowledge]);
+  }, [ai, choice, contextWindow, description, knowledgeAi, material, ready, resetKnowledge]);
 
   const stop = useCallback(() => controllerRef.current?.abort(), []);
 
@@ -319,7 +339,7 @@ export function AiDiagramDialog({
           value={choice}
           onChange={(event) => setKindChoice(event.currentTarget.value as 'auto' | PictureKind)}
         >
-          <option value="auto">Auto ({DIAGRAM_KIND_LABELS[autoKind]})</option>
+          <option value="auto">Auto ({named ? DIAGRAM_KIND_LABELS[named] : 'AI picks'})</option>
           {DIAGRAM_KINDS.map((option) => (
             <option key={option} value={option}>
               {DIAGRAM_KIND_LABELS[option]}
@@ -351,6 +371,9 @@ export function AiDiagramDialog({
       {ready && !running && (
         <div className="db-ai-diagram-result">
           <DiagramPreview compiled={ready.compiled} />
+          {choice === 'auto' && (
+            <p className="db-ai-note">Auto picked {kindLabel(ready.compiled.kind)}.</p>
+          )}
           {ready.notes.map((note) => (
             <p key={note} className="db-ai-note">
               {note}
@@ -437,8 +460,18 @@ type IdeaEdit = Partial<Pick<Idea, 'passage' | 'kind' | 'title' | 'prompt'>>;
 
 type IllustrateStep = 'ideas' | 'pictures';
 
-function resolvedKind(idea: Pick<Idea, 'kind' | 'prompt' | 'passage'>): PictureKind {
-  return idea.kind === 'auto' ? inferKind(idea.prompt, idea.passage.plain) : idea.kind;
+/**
+ * The kind an idea draws as without a model call: its own, or the one its
+ * prompt names. Null when Auto leaves the choice to the model at draw time.
+ */
+function settledKind(idea: Pick<Idea, 'kind' | 'prompt'>): PictureKind | null {
+  return idea.kind === 'auto' ? namedKind(idea.prompt) : idea.kind;
+}
+
+/** Auto's label: the kind the prompt names, the kind it drew, or the pick to come. */
+function autoLabel(idea: Idea): string {
+  const kind = namedKind(idea.prompt) ?? freshPicture(idea)?.kind;
+  return kind ? kindLabel(kind) : 'AI picks';
 }
 
 function kindLabel(kind: PictureKind): string {
@@ -449,7 +482,7 @@ function kindLabel(kind: PictureKind): string {
 
 /** What a picture is drawn from; where it goes can change without a redraw. */
 function ideaSignature(idea: Idea): string {
-  return JSON.stringify([resolvedKind(idea), idea.title.trim(), idea.prompt.trim()]);
+  return JSON.stringify([idea.kind, idea.title.trim(), idea.prompt.trim()]);
 }
 
 /** The idea's picture, when it is ready and the idea has not changed since. */
@@ -558,9 +591,7 @@ function IdeaCard({
             disabled={locked}
             onChange={(event) => onEdit({ kind: event.currentTarget.value as IdeaKind })}
           >
-            <option value="auto">
-              Auto ({kindLabel(inferKind(idea.prompt, idea.passage.plain))})
-            </option>
+            <option value="auto">Auto ({autoLabel(idea)})</option>
             {DIAGRAM_KINDS.map((option) => (
               <option key={option} value={option}>
                 {DIAGRAM_KIND_LABELS[option]}
@@ -654,17 +685,18 @@ function PictureCard({
   onDraw,
   onInsert,
 }: PictureCardProps) {
-  const kind = resolvedKind(idea);
   const compiled = freshPicture(idea);
+  const kind = settledKind(idea) ?? compiled?.kind ?? null;
+  const label = kind ? kindLabel(kind) : 'Auto';
   const outcome = idea.picture?.outcome ?? null;
   const prompt = idea.prompt.trim();
   return (
     <li className="db-ai-review-finding db-ai-illustrate-card">
       <div className="db-ai-review-finding-meta">
-        <span className="db-ai-review-severity db-ai-illustrate-kind">{kindLabel(kind)}</span>
+        <span className="db-ai-review-severity db-ai-illustrate-kind">{label}</span>
         {idea.passage.heading && <span>{clip(idea.passage.heading, 48)}</span>}
       </div>
-      <h3>{compiled?.title || idea.title.trim() || kindLabel(kind)}</h3>
+      <h3>{compiled?.title || idea.title.trim() || label}</h3>
       {prompt && <p>{prompt}</p>}
       <div className="db-ai-review-excerpt">
         <span>After</span>
@@ -922,17 +954,28 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
   }, [findAi, resetFindKnowledge, contextWindow, markdownSource, newKey, drawsDesign]);
 
   const drawOne = useCallback(
-    (idea: Idea, avoid: string | undefined, signal: AbortSignal): Promise<PictureOutcome> => {
-      const kind = resolvedKind(idea);
+    async (idea: Idea, avoid: string | undefined, signal: AbortSignal): Promise<PictureOutcome> => {
       const title = idea.title.trim();
       const prompt = idea.prompt.trim();
+      // A redraw keeps the kind Auto chose, so only the picture changes.
+      let kind = settledKind(idea) ?? freshPicture(idea)?.kind ?? null;
+      if (kind === null) {
+        const picked = await chooseKind({
+          ai,
+          description: prompt,
+          material: idea.passage.plain,
+          signal,
+        });
+        if (picked.status === 'cancelled') return { status: 'cancelled' };
+        kind = picked.kind;
+      }
       if (kind === 'design') {
         if (!images || typeof designModel !== 'string') {
-          return Promise.resolve({
+          return {
             status: 'failed',
             message:
               'Choose a model for design graphics under Settings, AI assistance, to draw this.',
-          });
+          };
         }
         setDesignProgress(null);
         return realizeDesign({
@@ -950,10 +993,10 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
       }
       if (kind === 'illustration') {
         if (contextWindow === null || !canDrawIllustrations(contextWindow)) {
-          return Promise.resolve({
+          return {
             status: 'failed',
             message: 'This model cannot draw illustrations. Choose a diagram kind instead.',
-          });
+          };
         }
         return realizeIllustration({
           ai: drawAi,
@@ -979,7 +1022,7 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
         },
       );
     },
-    [drawAi, contextWindow, images, designModel],
+    [ai, drawAi, contextWindow, images, designModel],
   );
 
   /** Phase two: draw `keys` one at a time, showing each picture as it lands. */
@@ -1176,7 +1219,7 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
     setStep('pictures');
     // Design graphics take longest to render, so diagrams land first.
     const isDesign = (key: string) =>
-      ideasRef.current.some((idea) => idea.key === key && resolvedKind(idea) === 'design');
+      ideasRef.current.some((idea) => idea.key === key && settledKind(idea) === 'design');
     void draw([...keys.filter((key) => !isDesign(key)), ...keys.filter(isDesign)]);
   };
 

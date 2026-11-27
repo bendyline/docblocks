@@ -20,9 +20,12 @@
 import { useCallback, useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type { FileSystemEntry } from '@bendyline/docblocks/filesystem';
-import { MoreIcon } from '../icons.js';
+import type { FolderKind } from '@bendyline/docblocks/folders';
+import { DisclosureIcon, MoreIcon } from '../icons.js';
+import { treeEntryGlyph } from './entry-glyph.js';
 import { displayFileName, renameDraft, renamedFileName } from './file-names.js';
 import { LastModifiedTime } from './LastModifiedTime.js';
+import { TreeEntryIcon } from './TreeEntryIcon.js';
 import { useLongPress } from './useLongPress.js';
 
 /** Git decoration for a row — precomputed by FileExplorer so this node stays context-free. */
@@ -62,7 +65,17 @@ export interface FileTreeNodeProps {
   depth: number;
   expanded: boolean;
   selected: boolean;
+  /** What this folder is for, when it is a kind folder: it wears that kind's glyph. */
+  folderKind?: FolderKind | null;
+  /**
+   * A folder known to hold nothing the tree shows: no disclosure chevron and
+   * no expanded state to announce. Clicking it still lists it, so a folder
+   * that turns out to have contents gets its chevron back.
+   */
+  empty?: boolean;
   badge?: FileTreeNodeBadge;
+  /** Added to the delete confirmation: what else goes with this entry. */
+  deleteWarning?: string;
   gitActions?: FileTreeNodeGitActions;
   actions?: readonly FileTreeNodeAction[];
   children?: FileSystemEntry[];
@@ -111,7 +124,10 @@ export function FileTreeNode({
   depth,
   expanded,
   selected,
+  folderKind,
+  empty = false,
   badge,
+  deleteWarning,
   gitActions,
   actions = [],
   focusable = true,
@@ -170,8 +186,7 @@ export function FileTreeNode({
   const returnFocusAfterRenameRef = useRef(false);
 
   const isDir = entry.kind === 'directory';
-  const icon = expanded ? '\u25BE' : '\u25B8';
-  const nestedFileInset = !isDir && depth > 0 ? 8 : 0;
+  const expandable = isDir && !empty;
 
   const handleClick = useCallback(() => {
     if (isDir) {
@@ -331,8 +346,11 @@ export function FileTreeNode({
     closeMenu(false);
     setActionError(null);
     const description = entry.kind === 'directory' ? 'folder and everything inside it' : 'document';
+    const warning = deleteWarning ? ` ${deleteWarning}` : '';
     if (
-      !(await confirmDelete(`Delete the ${description} "${entry.name}"? This cannot be undone.`))
+      !(await confirmDelete(
+        `Delete the ${description} "${entry.name}"?${warning} This cannot be undone.`,
+      ))
     ) {
       return;
     }
@@ -343,7 +361,7 @@ export function FileTreeNode({
       // failures reject; without this the row silently keeps the entry.
       setActionError(caught instanceof Error ? caught.message : 'Unable to delete this entry.');
     }
-  }, [entry.name, entry.path, entry.kind, confirmDelete, onDelete, closeMenu]);
+  }, [entry.name, entry.path, entry.kind, confirmDelete, deleteWarning, onDelete, closeMenu]);
 
   const handleTogglePin = useCallback(async () => {
     closeMenu(false);
@@ -449,7 +467,7 @@ export function FileTreeNode({
       <div
         ref={rowRef}
         className={`db-tree-row ${selected ? 'db-tree-row--selected' : ''} ${dragging ? 'db-tree-row--dragging' : ''} ${dropTarget ? 'db-tree-row--drop-target' : ''}`}
-        style={{ paddingLeft: depth * 12 + 4 + nestedFileInset }}
+        style={{ paddingLeft: depth * 12 + 4 }}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
         {...longPress.handlers}
@@ -460,7 +478,7 @@ export function FileTreeNode({
         onDrop={(event) => onDropEntry?.(event, entry)}
         role="treeitem"
         data-path={entry.path}
-        aria-expanded={isDir ? expanded : undefined}
+        aria-expanded={expandable ? expanded : undefined}
         aria-selected={selected}
         aria-label={rowStatus.length > 0 ? `${entry.name}, ${rowStatus.join(', ')}` : undefined}
         // The intermediate .db-tree-node wrapper means nesting alone does
@@ -500,7 +518,10 @@ export function FileTreeNode({
           }
         }}
       >
-        {(isDir || depth === 0) && <span className="db-tree-icon">{isDir ? icon : null}</span>}
+        {/* Files keep the disclosure slot too, so every glyph at one depth
+            lines up with its folder siblings'. */}
+        <span className="db-tree-icon">{expandable ? <DisclosureIcon /> : null}</span>
+        <TreeEntryIcon glyph={treeEntryGlyph(entry, folderKind)} />
         {renaming ? (
           <input
             ref={inputRef}
@@ -676,7 +697,7 @@ export function FileTreeNode({
         )}
 
       {/* Render children if directory is expanded */}
-      {isDir && expanded && renderChildren && (
+      {expandable && expanded && renderChildren && (
         <div className="db-tree-children" role="group">
           {renderChildren(entry.path)}
         </div>

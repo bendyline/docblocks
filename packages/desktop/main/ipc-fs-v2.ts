@@ -200,6 +200,36 @@ export function registerFsV2Ipc(service = new FileSystemV2IpcService()): void {
       ),
   );
   registerTrustedIpcHandler(
+    'fs:v2:beginEnumerate',
+    2,
+    (event, instanceId: unknown, itemPath: unknown) =>
+      service.beginEnumerate(
+        owner(event.sender),
+        parseIdentifier(instanceId, 'provider instance'),
+        parsePath(itemPath),
+      ),
+  );
+  registerTrustedIpcHandler(
+    'fs:v2:continueEnumerate',
+    2,
+    (event, instanceId: unknown, cursor: unknown) =>
+      service.continueEnumerate(
+        owner(event.sender),
+        parseIdentifier(instanceId, 'provider instance'),
+        parseIdentifier(cursor, 'folder listing'),
+      ),
+  );
+  registerTrustedIpcHandler(
+    'fs:v2:closeEnumerate',
+    2,
+    (event, instanceId: unknown, cursor: unknown) =>
+      service.closeEnumerate(
+        owner(event.sender),
+        parseIdentifier(instanceId, 'provider instance'),
+        parseIdentifier(cursor, 'folder listing'),
+      ),
+  );
+  registerTrustedIpcHandler(
     'fs:v2:writeFile',
     [3, 4],
     (event, instanceId: unknown, itemPath: unknown, data: unknown, options?: unknown) => {

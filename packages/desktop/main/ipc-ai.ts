@@ -35,6 +35,8 @@ import { OwnerOnlyFileCredentialStore } from './ai/ai-credentials.js';
 import { createSettingsAiPreferenceStore } from './ai/ai-preferences.js';
 import { AiImageService } from './ai/ai-image-service.js';
 import { AiService } from './ai/ai-service.js';
+import { automationDeviceFit } from './ai/ai-device.js';
+import { automationRequested } from './automation-hooks.js';
 import { checkFacts } from './ai/fact-check.js';
 import { GezelConnector } from './ai/gezel-connector.js';
 import { resolveGezelNativeHost } from './ai/gezel-native-host.js';
@@ -69,6 +71,12 @@ export function createAiService(): AiService {
       }),
     }),
     preferences: createSettingsAiPreferenceStore({ read: readSettings, update: updateSettings }),
+    // An automated run answers for the device instead of measuring this one.
+    ...(automationRequested(process.env)
+      ? {
+          deviceFit: async () => automationDeviceFit(process.env.DOCBLOCKS_E2E_AI_DEVICE),
+        }
+      : {}),
   });
 }
 
@@ -164,6 +172,8 @@ export function registerAiIpc(service: AiService, images: AiImageService | null 
   registerTrustedIpcHandler('ai:disconnect', 0, () => service.disconnect());
   registerTrustedIpcHandler('ai:models', 0, () => service.listModels());
   registerTrustedIpcHandler('ai:availableModels', 0, () => service.listAvailableModels());
+  // Provider-free like the fact check: it is asked while AI is off.
+  registerTrustedIpcHandler('ai:deviceFit', 0, () => service.deviceFit());
   // Mechanical and provider-free: it works whatever the connection state.
   registerTrustedIpcHandler('ai:checkFacts', 1, (_event, value: unknown) => {
     const request = parseAiFactCheckRequest(value);

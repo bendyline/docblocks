@@ -4,8 +4,11 @@ import { MemoryFileSystemProviderV2 } from '../src/filesystem/memory-provider-v2
 import type { FileSystemEntrySnapshot } from '../src/filesystem/v2.js';
 import { parseWorkspacePath, type WorkspacePath } from '../src/filesystem/workspace-path.js';
 import {
+  createMemoryEngine,
   createWorkspaceIndex,
+  type StoredDocument,
   type WorkspaceIndex,
+  type WorkspaceIndexEngine,
   type WorkspaceIndexOptions,
   type WorkspaceIndexSource,
 } from '../src/workspace-index/index.js';
@@ -31,7 +34,7 @@ interface Spy {
 /** Records calls; optionally hides `watch` to model IndexedDB / native folders. */
 function spy(
   provider: MemoryFileSystemProviderV2,
-  options: { readonly watch?: boolean; readonly failList?: (path: string) => FsError | null } = {},
+  options: { readonly watch?: boolean; readonly failList?: (path: string) => Error | null } = {},
 ): Spy {
   const reads: string[] = [];
   const lists: string[] = [];
@@ -247,6 +250,32 @@ describe('workspace index', () => {
     index.dispose();
   });
 
+  it('recognizes a vanished folder reported by another copy of core', async () => {
+    // A bundle can resolve the provider from core's src and the index from its
+    // dist: same error shape, different FsError class.
+    class ForeignFsError extends Error {
+      public readonly code: string;
+      public constructor(code: string, message: string) {
+        super(message);
+        this.name = 'FsError';
+        this.code = code;
+      }
+    }
+    const provider = await seed({ 'open/a.md': '# A\n', 'gone/b.md': '# B\n' });
+    const probe = spy(provider, {
+      failList: (path) => (path === 'gone' ? new ForeignFsError('not-found', 'Gone.') : null),
+    });
+    const index = createIndex(probe.source);
+    index.start();
+    await waitFor(settled(index), 'ready');
+
+    // Vanished, not unreadable: no issue, and its contents are known absent.
+    expect(index.getStatus().issues).to.equal(0);
+    expect(index.has('open/a.md')).to.equal('present');
+    expect(index.has('gone/b.md')).to.equal('absent');
+    index.dispose();
+  });
+
   it('surfaces a root listing failure as an error', async () => {
     const provider = await seed({ 'a.md': '# A\n' });
     const probe = spy(provider, {
@@ -397,6 +426,349 @@ describe('workspace index', () => {
     index.prioritize(['/b.md']);
     await waitFor(settled(index), 'ready');
     expect(probe.reads[0]).to.equal('b.md');
+    index.dispose();
+  });
+});
+
+describe('workspace index engines', () => {
+  /** The memory engine, recording what the index asks of it and restoring `stored`. */
+  function recordingEngine(stored: ReadonlyMap<WorkspacePath, StoredDocument> = new Map()) {
+    const inner = createMemoryEngine();
+    const calls = { analyzed: [] as string[], forgotten: [] as string[], searches: 0, disposed: 0 };
+    const engine: WorkspaceIndexEngine = {
+      restore: () => Promise.resolve(stored),
+      analyze: (identity, version, data, options) => {
+        calls.analyzed.push(identity.path);
+        return inner.analyze(identity, version, data, options);
+      },
+      forget: (path) => {
+        calls.forgotten.push(path);
+        inner.forget(path);
+      },
+      search: (documents, query, options) => {
+        calls.searches += 1;
+        return inner.search(documents, query, options);
+      },
+      dispose: () => {
+        calls.disposed += 1;
+        inner.dispose();
+      },
+    };
+    return { engine, calls };
+  }
+
+  async function storedFrom(
+    provider: MemoryFileSystemProviderV2,
+    path: string,
+    title: string,
+  ): Promise<StoredDocument> {
+    const entry = await provider.stat(p(path));
+    if (!entry) throw new Error(`missing ${path}`);
+    return {
+      record: {
+        path: p(path),
+        sourcePath: p(path),
+        format: 'markdown',
+        lastModified: entry.lastModified,
+        title,
+        outline: [],
+        wordCount: 1,
+        content: 'full',
+      },
+      characters: 10,
+      version: entry.version,
+    };
+  }
+
+  it('skips reading documents an earlier session analyzed at the same version', async () => {
+    const provider = await seed({ 'kept.md': '# Kept\n', 'changed.md': '# Changed\n' });
+    const kept = await storedFrom(provider, 'kept.md', 'Kept (stored)');
+    const changed = {
+      ...(await storedFrom(provider, 'changed.md', 'Old')),
+      version: 'stale' as never,
+    };
+    const { engine, calls } = recordingEngine(
+      new Map([
+        [p('kept.md'), kept],
+        [p('changed.md'), changed],
+      ]),
+    );
+    const probe = spy(provider, { watch: false });
+    const index = createIndex(probe.source, { engine });
+    index.start();
+    await waitFor(settled(index), 'ready');
+
+    expect(probe.reads).to.deep.equal(['changed.md']);
+    expect(calls.analyzed).to.deep.equal(['changed.md']);
+    expect(index.getDocument('kept.md')?.title).to.equal('Kept (stored)');
+    expect(index.getDocument('changed.md')?.title).to.equal('Changed');
+    index.dispose();
+    expect(calls.disposed).to.equal(1);
+  });
+
+  it('forgets stored documents the workspace no longer has, and removed ones', async () => {
+    const provider = await seed({ 'a.md': '# A\n', 'b.md': '# B\n' });
+    const gone = await storedFrom(provider, 'a.md', 'Gone');
+    const { engine, calls } = recordingEngine(
+      new Map([
+        [
+          p('deleted-while-closed.md'),
+          { ...gone, record: { ...gone.record, path: p('deleted-while-closed.md') } },
+        ],
+      ]),
+    );
+    const index = createIndex(spy(provider).source, { engine });
+    index.start();
+    await waitFor(settled(index), 'ready');
+    expect(calls.forgotten).to.deep.equal(['deleted-while-closed.md']);
+
+    await provider.remove(p('b.md'));
+    await waitFor(() => index.getDocument('b.md') === null, 'remove');
+    expect(calls.forgotten).to.include('b.md');
+    index.dispose();
+  });
+
+  it('keeps text for documents re-listed when their folder changes', async () => {
+    const provider = await seed({ 'notes/a.md': '# A\n\nheron\n' });
+    const { engine, calls } = recordingEngine();
+    const probe = spy(provider);
+    const index = createIndex(probe.source, { engine });
+    index.start();
+    await waitFor(settled(index), 'ready');
+    await provider.writeFile(p('notes/b.md'), encode('# B\n'));
+    await waitFor(() => index.getDocument('notes/b.md')?.title === 'B', 'create');
+    const listed = probe.lists.filter((path) => path === 'notes').length;
+    index.invalidate('notes');
+    await waitFor(
+      () => probe.lists.filter((path) => path === 'notes').length > listed,
+      'folder re-listed',
+    );
+    await waitFor(settled(index), 'settled');
+    expect(calls.forgotten).to.not.include('notes/a.md');
+    const result = await index.search({ text: 'heron' });
+    expect(result.documents.map((document) => document.path)).to.deep.equal(['notes/a.md']);
+    expect(calls.searches).to.be.greaterThan(0);
+    index.dispose();
+  });
+
+  describe('find with a query embedder', () => {
+    function rankingEngine() {
+      const { engine } = recordingEngine();
+      const vectors: Array<ArrayLike<number> | undefined> = [];
+      const ranked: WorkspaceIndexEngine = {
+        ...engine,
+        find: async (_query, options) => {
+          vectors.push(options?.vector);
+          return [
+            {
+              path: 'a.md',
+              title: 'A',
+              headingPath: [],
+              lineStart: 1,
+              lineEnd: 1,
+              snippet: 'a',
+              ranges: [],
+              score: 1,
+            },
+            {
+              path: 'gone.md',
+              title: 'Gone',
+              headingPath: [],
+              lineStart: 1,
+              lineEnd: 1,
+              snippet: 'gone',
+              ranges: [],
+              score: 0.5,
+            },
+          ];
+        },
+      };
+      return { engine: ranked, vectors };
+    }
+
+    it('fuses the query embedding and drops documents no longer listed', async () => {
+      const provider = await seed({ 'a.md': '# A\n' });
+      const { engine, vectors } = rankingEngine();
+      const index = createIndex(spy(provider).source, {
+        engine,
+        embedQuery: async (query) => [query.length, 0],
+      });
+      index.start();
+      await waitFor(settled(index), 'ready');
+      const hits = (await index.find?.('heron')) ?? [];
+      expect(hits.map((hit) => hit.path)).to.deep.equal(['a.md']);
+      expect(vectors).to.deep.equal([[5, 0]]);
+      // An engine handed in directly, without reporting how it opened, still ranks.
+      expect(index.getStatus().ranked).to.equal(true);
+      index.dispose();
+    });
+
+    it('stays lexical when the embedder fails or never answers', async function () {
+      this.timeout(5_000);
+      const provider = await seed({ 'a.md': '# A\n' });
+      const failing = rankingEngine();
+      const index = createIndex(spy(provider).source, {
+        engine: failing.engine,
+        embedQuery: () => Promise.reject(new Error('model not loaded')),
+      });
+      index.start();
+      await waitFor(settled(index), 'ready');
+      await index.find?.('heron');
+      expect(failing.vectors).to.deep.equal([undefined]);
+      index.dispose();
+
+      // An embedder that ignores its abort signal still cannot hold search past the budget.
+      const hung = rankingEngine();
+      const stalled = createIndex(spy(provider).source, {
+        engine: hung.engine,
+        embedQuery: () => new Promise<never>(() => undefined),
+      });
+      stalled.start();
+      await waitFor(settled(stalled), 'ready');
+      const started = Date.now();
+      await stalled.find?.('heron');
+      expect(Date.now() - started).to.be.lessThan(3_000);
+      expect(hung.vectors).to.deep.equal([undefined]);
+      stalled.dispose();
+    });
+  });
+});
+
+describe('workspace index over a recursive listing', () => {
+  /**
+   * A source with `enumerate`, built over the memory provider. Its versions
+   * describe metadata, like the desktop host's: never equal to a read's
+   * content version, so tagging must follow the listing.
+   */
+  function enumerating(
+    provider: MemoryFileSystemProviderV2,
+    options: { readonly notSupported?: boolean; readonly unreadable?: string } = {},
+  ) {
+    const probe = spy(provider, { watch: false });
+    const counts = { enumerations: 0 };
+    const source: WorkspaceIndexSource = {
+      ...probe.source,
+      async *enumerate(root) {
+        counts.enumerations += 1;
+        if (options.notSupported) {
+          throw new FsError('not-supported', 'Older host.', { operation: 'list' });
+        }
+        const queue: WorkspacePath[] = [root];
+        while (queue.length > 0) {
+          const folder = queue.shift()!;
+          if (folder === options.unreadable) {
+            yield { entries: [], unreadable: [folder] };
+            continue;
+          }
+          const children = await provider.readDirectory(folder);
+          const entries = children
+            .filter((child) => !child.name.startsWith('.'))
+            .map((child) => ({ ...child, version: `meta:${child.version}` as never }));
+          for (const child of entries) {
+            if (child.kind === 'directory' && !child.name.endsWith('_files'))
+              queue.push(child.path);
+          }
+          yield { entries, unreadable: [] };
+        }
+      },
+    };
+    return { source, probe, counts };
+  }
+
+  it('lists without per-folder calls and re-reads only what changed', async () => {
+    const provider = await seed({
+      'a.md': '# Alpha\n',
+      'notes/b.md': '# Beta\n\nheron\n',
+      'notes/deep/c.md': '# Gamma\n',
+      'report.docx': 'binary',
+      'report_files/report.md': '# Quarterly Report\n\nRevenue grew.\n',
+    });
+    const { source, probe, counts } = enumerating(provider);
+    const index = createIndex(source);
+    index.start();
+    await waitFor(settled(index), 'ready');
+
+    // Only the outside-in document's companion folder is listed on its own.
+    expect(probe.lists).to.deep.equal(['report_files']);
+    expect(index.getDocument('notes/deep/c.md')?.title).to.equal('Gamma');
+    expect(index.getDocument('report.docx')?.title).to.equal('Quarterly Report');
+    expect(index.getDirectories()).to.include('notes/deep');
+    expect((await index.search({ text: 'heron' })).documents.map((d) => d.path)).to.deep.equal([
+      'notes/b.md',
+    ]);
+    const reads = probe.reads.length;
+
+    index.refresh({ force: true });
+    await waitFor(() => counts.enumerations === 2, 'second listing');
+    await waitFor(settled(index), 'settled');
+    expect(probe.reads.length).to.equal(reads);
+
+    await provider.writeFile(p('notes/b.md'), encode('# Beta again\n'));
+    index.refresh({ force: true });
+    await waitFor(() => index.getDocument('notes/b.md')?.title === 'Beta again', 'edit');
+    expect(probe.reads.slice(reads)).to.deep.equal(['notes/b.md']);
+    index.dispose();
+  });
+
+  it('reopens a persistent engine reading only what the listing says changed', async () => {
+    const provider = await seed({ 'a.md': '# Alpha\n', 'notes/b.md': '# Beta\n' });
+    // A store that outlives each launch, as a worker's SQLite file does.
+    const store = new Map<WorkspacePath, StoredDocument>();
+    const storeEngine = (): WorkspaceIndexEngine => {
+      const memory = createMemoryEngine();
+      return {
+        ...memory,
+        restore: () => Promise.resolve(new Map(store)),
+        async analyze(identity, version, data, options) {
+          const analysis = await memory.analyze(identity, version, data, options);
+          store.set(identity.path, { ...analysis, version });
+          return analysis;
+        },
+      };
+    };
+    const first = enumerating(provider);
+    const one = createIndex(first.source, { engine: storeEngine() });
+    one.start();
+    await waitFor(settled(one), 'first launch');
+    one.dispose();
+    expect([...first.probe.reads].sort()).to.deep.equal(['a.md', 'notes/b.md']);
+
+    await provider.writeFile(p('notes/b.md'), encode('# Beta again\n'));
+    const second = enumerating(provider);
+    const two = createIndex(second.source, { engine: storeEngine() });
+    two.start();
+    await waitFor(settled(two), 'relaunch');
+    expect(second.probe.reads).to.deep.equal(['notes/b.md']);
+    expect(two.getDocument('a.md')?.title).to.equal('Alpha');
+    expect(two.getDocument('notes/b.md')?.title).to.equal('Beta again');
+    two.dispose();
+  });
+
+  it('walks folders instead when the host cannot enumerate', async () => {
+    const provider = await seed({ 'a.md': '# Alpha\n', 'notes/b.md': '# Beta\n' });
+    const { source, probe, counts } = enumerating(provider, { notSupported: true });
+    const index = createIndex(source);
+    index.start();
+    await waitFor(settled(index), 'ready');
+    expect(probe.lists).to.include.members(['', 'notes']);
+    expect(index.getDocument('notes/b.md')?.title).to.equal('Beta');
+
+    index.refresh({ force: true });
+    await waitFor(() => probe.lists.filter((path) => path === '').length === 2, 'second walk');
+    expect(counts.enumerations).to.equal(1);
+    index.dispose();
+  });
+
+  it('treats a folder it could not read as unknown, not absent', async () => {
+    const provider = await seed({ 'open/a.md': '# A\n', 'locked/b.md': '# B\n' });
+    const { source } = enumerating(provider, { unreadable: 'locked' });
+    const index = createIndex(source);
+    index.start();
+    await waitFor(settled(index), 'ready');
+    expect(index.getStatus().issues).to.equal(1);
+    expect(index.has('open/a.md')).to.equal('present');
+    expect(index.has('locked/b.md')).to.equal('unknown');
+    expect(index.has('open/missing.md')).to.equal('absent');
     index.dispose();
   });
 });

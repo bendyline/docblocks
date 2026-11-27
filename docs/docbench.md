@@ -48,7 +48,7 @@ registers happy-dom before loading them (`packages/bench/src/dom.ts`).
 | Writing new content (25%)        | `write-compose` (from scratch), `write-append`, `write-insert` (a named place mid-document), `write-rewrite` (six kinds of selection rewrite)                                                                                              | Rubric: instructions, faithfulness, fit, quality; the desktop's own fact check as a check |
 | Diagrams and illustrations (20%) | `diagram-plan` (rules only), `diagram-draw`, `illustration-svg`, `design-brief`                                                                                                                                                            | Rubrics; vision on the rendered SVG                                                       |
 | Presentations (10%)              | `presentation-slides`                                                                                                                                                                                                                      | Rubric on the worded slides beside their passages                                         |
-| Study aids (15%)                 | `study-summary`, `study-quiz`, `study-flashcards`                                                                                                                                                                                          | Rubric with the facts a good aid covers                                                   |
+| Study aids (15%)                 | `study-summary`; `study-quiz` and `study-flashcards`, study cards made section by section through Squisq's protocol and written into the document (since 0.3.0)                                                                            | Rubric with the facts a good aid covers; cards judged against their own section           |
 | Narration cleanup (5%)           | `narration-cleanup`, including a transcript that quotes an instruction                                                                                                                                                                     | Rubric with a reference edit                                                              |
 
 **Review depth.** Seeded problems carry a `level`: _low_ is mechanical (a
@@ -142,6 +142,14 @@ shows it in the model picker and the Add-model list, with the family
 breakdown under the selected download. A score is served only while the
 catalog still ships the build that was measured, so a re-quantized model
 shows no score until it is measured again.
+
+Apple Intelligence is the one exception. Gezel publishes only into catalog
+manifests, and Apple's model is supplied by the operating system, so its
+`/v1/models` entry carries no `docbench` block. `providerModelDocbench` in
+[ai-provider-models.ts](../packages/core/src/host/ai-provider-models.ts) fills
+in DocBlocks' own measurement for it on desktop and mobile (54 on 0.2.2,
+measured on macOS 27.2). A result that Gezel sends takes precedence. Update
+the constant when docbench changes its scores or Apple ships a new model.
 
 ## Adding a task
 

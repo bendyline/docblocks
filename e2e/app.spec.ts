@@ -1,6 +1,13 @@
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
-import { openBlockTypePicker, openInsertMenu } from './helpers/toolbar.js';
+import {
+  closeViewMenu,
+  openBlockTypePicker,
+  openInsertMenu,
+  openViewMenu,
+  selectUseMode,
+  viewButton,
+} from './helpers/toolbar.js';
 import {
   buildSharedDocumentUrl,
   createSharedDocumentArchive,
@@ -8,6 +15,7 @@ import {
 import { WELCOME_DOCUMENT_CONTENT } from '../packages/react/src/DocBlocksShell/welcome-document.js';
 import { parseMarkdown } from '@bendyline/squisq/markdown';
 import { markdownDocToXlsx } from '@bendyline/squisq-formats/xlsx';
+import { createDocument, documentTitleField, newDocumentGallery } from './helpers/new-document.js';
 
 test.describe('SEO bootstrap shell', () => {
   test('resembles the app chrome before React mounts', async ({ page }) => {
@@ -65,7 +73,7 @@ test.describe('Static product routes', () => {
 
     await expect(page).toHaveURL(/\/desktop\/\?source=e2e$/);
     await expect(page.getByRole('heading', { level: 1 })).toContainText(
-      'Your Markdown. Your folders.',
+      'DocBlocks for Mac, Windows, and Linux',
     );
   });
 });
@@ -134,8 +142,7 @@ test.describe('DocBlocks App', () => {
         'true',
         { timeout: 15_000 },
       );
-      await page.getByRole('button', { name: 'Choose Use mode' }).click();
-      await page.getByRole('menuitemradio', { name: preview.label }).click();
+      await selectUseMode(page, preview.label);
       const copyButton = preview.iframe
         ? page.frameLocator('iframe').getByRole('button', { name: 'Copy code to clipboard' })
         : page.getByRole('button', { name: 'Copy code to clipboard' });
@@ -381,12 +388,46 @@ test.describe('DocBlocks App', () => {
     expect(bytes.toString('utf8')).toBe(WELCOME_DOCUMENT_CONTENT);
   });
 
-  test('heads the file explorer with the workspace name only in a wide sidebar', async ({
+  test('leads the files toolbar with the workspace picker, folded short of a wide sidebar', async ({
     page,
   }) => {
-    const title = page.locator('.db-explorer-toolbar > .db-explorer-workspace-name');
-    // The default 320px sidebar leaves the name to the workspace picker.
-    await expect(title).toBeHidden();
+    const header = page.locator('.db-shell-sidebar-header');
+    const toolbar = page.locator('.db-file-explorer > .db-explorer-toolbar');
+    const picker = toolbar.getByRole('button', { name: /^Switch workspace, current:/ });
+    const settings = toolbar.getByRole('button', { name: 'Workspace settings', exact: true });
+    const label = toolbar.locator('.db-workspace-picker-label');
+
+    // Both left the header for the toolbar, ahead of the file actions; the
+    // places (Home, Tasks, ...) sit in the header above the toolbar.
+    await expect(header.locator('.db-workspace-picker, .db-ws-settings')).toHaveCount(0);
+    const order = await toolbar.evaluate((element) => {
+      const left = (selector: string) =>
+        element.querySelector(selector)!.getBoundingClientRect().left;
+      const nav = document.querySelector('.db-shell-nav');
+      return {
+        picker: left('.db-workspace-picker-btn'),
+        settings: left('.db-ws-settings-btn'),
+        actions: left('.db-explorer-actions'),
+        rows: new Set(
+          [...element.querySelectorAll('button')]
+            .filter((button) => button.getBoundingClientRect().width > 0)
+            .map((button) => Math.round(button.getBoundingClientRect().top)),
+        ).size,
+        navAbove: nav
+          ? nav.getBoundingClientRect().bottom <= element.getBoundingClientRect().top
+          : true,
+      };
+    });
+    expect(order.picker).toBeLessThan(order.settings);
+    expect(order.settings).toBeLessThan(order.actions);
+    expect(order.rows).toBe(1);
+    expect(order.navAbove).toBe(true);
+
+    // The default 320px sidebar shows the picker as its folder glyph.
+    await expect(picker).toHaveAccessibleName('Switch workspace, current: My Documents');
+    await expect(label).toBeHidden();
+    await expect(toolbar.locator('.db-workspace-picker-compact-icon')).toBeVisible();
+    await expect(settings).toBeVisible();
 
     const resizer = page.getByRole('separator', { name: 'Resize sidebar' });
     const box = await resizer.boundingBox();
@@ -396,8 +437,9 @@ test.describe('DocBlocks App', () => {
     await page.mouse.move(box.x + 240, box.y + box.height / 2);
     await page.mouse.up();
 
-    await expect(title).toBeVisible();
-    await expect(title).toHaveText('My Documents');
+    await expect(label).toBeVisible();
+    await expect(label).toHaveText('My Documents');
+    await expect(toolbar.locator('.db-explorer-workspace-name')).toHaveCount(0);
   });
 
   test('has toolbar with new file and new folder buttons', async ({ page }) => {
@@ -405,7 +447,8 @@ test.describe('DocBlocks App', () => {
     await expect(toolbar).toBeVisible();
 
     const buttons = toolbar.locator('.db-explorer-btn');
-    await expect(buttons).toHaveCount(6); // Two sort controls, Search, +F, +D and Import.
+    // Two sort controls, Search, +D, +F and Import. Clipboard capture is Quick Jot's.
+    await expect(buttons).toHaveCount(6);
     await expect(
       toolbar.getByRole('button', { name: 'Search workspace' }).locator('svg.lucide-search'),
     ).toBeVisible();
@@ -420,6 +463,9 @@ test.describe('DocBlocks App', () => {
     await expect(newFileIcon).toBeVisible();
     await expect(newFileIcon).toHaveAttribute('stroke-width', '1.75');
     await expect(newFolderButton.locator('svg.lucide-folder-sparkle')).toBeVisible();
+    await expect(toolbar.getByRole('button', { name: 'New document from clipboard' })).toHaveCount(
+      0,
+    );
 
     await expect(page.locator('.db-ws-settings-btn svg.lucide-settings-2')).toBeVisible();
   });
@@ -478,36 +524,37 @@ test.describe('File operations', () => {
   });
 
   test('can create a new file', async ({ page }) => {
-    const newFileBtn = page.getByRole('button', { name: 'New File' });
-    await newFileBtn.click();
-
-    const input = page.locator('.db-new-item-input');
-    await expect(input).toBeVisible();
-    await input.fill('test-doc');
-
-    await page.locator('.db-new-item-add').click();
+    await createDocument(page, 'test-doc');
 
     // File should appear in tree
     const treeRow = page.locator('.db-tree-row', { hasText: 'test-doc' });
     await expect(treeRow).toBeVisible({ timeout: 5_000 });
   });
 
-  test('can create a file and see editor', async ({ page }) => {
-    const newFileBtn = page.getByRole('button', { name: 'New File' });
-    await newFileBtn.click();
+  test('New File starts from the gallery and names the document in its title field', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'New File', exact: true }).click();
+    const gallery = newDocumentGallery(page);
+    await expect(gallery.getByRole('button', { name: 'Blank', exact: true })).toBeFocused();
+    await gallery.getByRole('button', { name: 'Report', exact: true }).click();
 
-    const input = page.locator('.db-new-item-input');
-    await input.fill('edit-me');
-    await page.locator('.db-new-item-add').click();
+    // It opens at once under its starting name, selected so typing replaces it.
+    const title = documentTitleField(page);
+    await expect(title).toBeFocused({ timeout: 15_000 });
+    await expect(title).toHaveValue('Report');
+    await expect(page.locator('.db-tree-row', { hasText: 'Report' })).toBeVisible();
+    await page.keyboard.type('Quarterly results');
+    await page.keyboard.press('Enter');
 
-    // Click the file to open it
-    const treeRow = page.locator('.db-tree-row', { hasText: 'edit-me' });
-    await expect(treeRow).toBeVisible({ timeout: 5_000 });
-    await treeRow.click();
-
-    // Editor should appear (empty state should be gone)
-    await expect(page.locator('.db-shell-empty')).not.toBeVisible();
-    await expect(page).toHaveTitle('edit-me - DocBlocks');
+    // The file and its title follow the name; the caret goes to the sample line.
+    const editor = page.getByRole('textbox', { name: 'Edit /Quarterly results.md', exact: true });
+    await expect(editor).toBeFocused({ timeout: 15_000 });
+    await expect(page).toHaveTitle('Quarterly results - DocBlocks');
+    await expect(editor.getByRole('heading', { level: 1 })).toHaveText('Quarterly results');
+    await page.keyboard.type('Revenue grew every quarter.');
+    await expect(editor.locator('p').first()).toHaveText('Revenue grew every quarter.');
+    await expect(editor.getByRole('heading', { name: 'Key figures' })).toBeVisible();
   });
 
   test('can create a folder', async ({ page }) => {
@@ -591,15 +638,10 @@ test.describe('File operations', () => {
   });
 
   test('can drag a file into a folder and back to the workspace root', async ({ page }) => {
-    await page.getByRole('button', { name: 'New File' }).click();
-    await page.locator('.db-new-item-input').fill('drag-me');
-    await page.locator('.db-new-item-add').click();
-    // New File opens the document with the caret ready. Until it has, the
+    // Resolves once the named document has the caret. Until it has, the
     // file list is still settling: the form a New Folder click opens can
     // close under the test as the creation finishes.
-    await expect(page.getByRole('textbox', { name: 'Edit drag-me.md', exact: true })).toBeFocused({
-      timeout: 30_000,
-    });
+    await createDocument(page, 'drag-me');
 
     await page.getByRole('button', { name: 'New Folder' }).click();
     await page.locator('.db-new-item-input').fill('drop-here');
@@ -705,10 +747,8 @@ test.describe('Welcome gateway', () => {
     // The same document is now editable, and the tour put the caret in it.
     const editor = page.locator('[contenteditable="true"]').first();
     await expect(editor).toBeFocused({ timeout: 10_000 });
-    await expect(page.getByRole('tab', { name: 'Write', exact: true })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    );
+    await expect(viewButton(page)).toHaveAttribute('data-active-view', 'wysiwyg');
+    await expect(viewButton(page)).toHaveAccessibleName('View: Write');
     await expect(editor).toContainText('Welcome to DocBlocks');
   });
 
@@ -726,8 +766,7 @@ test.describe('Welcome gateway', () => {
     await expect(gateway).toBeVisible();
 
     await gateway.getByRole('button', { name: 'Create a document' }).click();
-    await dialog.getByRole('textbox', { name: 'Document name' }).fill('first-draft');
-    await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+    await createDocument(page, 'first-draft', { openGallery: true });
     await expect(gateway).not.toBeVisible();
     await expect(page.locator('.db-tree-row', { hasText: 'first-draft' })).toHaveAttribute(
       'aria-selected',
@@ -885,7 +924,7 @@ test.describe('Squisq overflow menu theming', () => {
   });
 });
 
-test.describe('Squisq Write and Use mode menu theming', () => {
+test.describe('Squisq View menu theming', () => {
   test('uses the active DocBlocks palette when portaled outside the shell', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('docblocks:themePreference', 'dark');
@@ -900,93 +939,88 @@ test.describe('Squisq Write and Use mode menu theming', () => {
       timeout: 10_000,
     });
 
-    // Both ▾ menus share Squisq's markup; check each against the palette.
-    for (const { label, unselected } of [
-      { label: 'Write mode', unselected: 'Blocks' },
-      { label: 'Use mode', unselected: 'Video' },
-    ]) {
-      await page.getByRole('button', { name: `Choose ${label}` }).click();
-      const menu = page.getByRole('menu', { name: label });
-      await expect(menu).toBeVisible();
+    // The View menu: its view rows, pane toggles and headings against the palette.
+    const menu = await openViewMenu(page);
+    const label = 'View menu';
 
-      const colors = await menu.evaluate((element) => {
-        const probe = document.createElement('div');
-        probe.style.cssText = [
-          'position:absolute',
-          'visibility:hidden',
-          'background:var(--db-bg-raised)',
-          'border:1px solid var(--db-border)',
-          'color:var(--db-text-secondary)',
-        ].join(';');
-        const hoverProbe = document.createElement('span');
-        hoverProbe.style.background = 'var(--db-bg-hover)';
-        const selectedProbe = document.createElement('span');
-        selectedProbe.style.cssText = [
-          'background:var(--db-accent-tint-strong)',
-          'color:var(--db-accent-deep)',
-        ].join(';');
-        const accentProbe = document.createElement('span');
-        accentProbe.style.color = 'var(--db-accent-hover)';
-        const selectedIconProbe = document.createElement('span');
-        selectedIconProbe.style.background = 'var(--db-accent-soft-25)';
-        probe.append(hoverProbe, selectedProbe, accentProbe, selectedIconProbe);
-        document.body.appendChild(probe);
+    const colors = await menu.evaluate((element) => {
+      const probe = document.createElement('div');
+      probe.style.cssText = [
+        'position:absolute',
+        'visibility:hidden',
+        'background:var(--db-bg-raised)',
+        'border:1px solid var(--db-border)',
+        'color:var(--db-text-secondary)',
+      ].join(';');
+      const hoverProbe = document.createElement('span');
+      hoverProbe.style.background = 'var(--db-bg-hover)';
+      const selectedProbe = document.createElement('span');
+      selectedProbe.style.cssText = [
+        'background:var(--db-accent-tint-strong)',
+        'color:var(--db-accent-deep)',
+      ].join(';');
+      const accentProbe = document.createElement('span');
+      accentProbe.style.color = 'var(--db-accent-hover)';
+      const selectedIconProbe = document.createElement('span');
+      selectedIconProbe.style.background = 'var(--db-accent-soft-25)';
+      const mutedProbe = document.createElement('span');
+      mutedProbe.style.color = 'var(--db-text-muted)';
+      probe.append(hoverProbe, selectedProbe, accentProbe, selectedIconProbe, mutedProbe);
+      document.body.appendChild(probe);
 
-        const menuStyle = getComputedStyle(element);
-        const normalItem = element.querySelector<HTMLElement>(
-          '.squisq-view-mode-menu-item:not(.squisq-view-mode-menu-item--selected)',
-        );
-        const selectedItem = element.querySelector<HTMLElement>(
-          '.squisq-view-mode-menu-item--selected',
-        );
-        const selectedIcon = selectedItem?.querySelector<HTMLElement>(
-          '.squisq-view-mode-menu-icon',
-        );
-        const summary = normalItem?.querySelector<HTMLElement>('.squisq-view-mode-menu-summary');
-        const check = selectedItem?.querySelector<HTMLElement>('.squisq-view-mode-menu-check');
-        const probeStyle = getComputedStyle(probe);
-        const result = {
-          menuBackground: menuStyle.backgroundColor,
-          menuBorder: menuStyle.borderTopColor,
-          normalText: normalItem ? getComputedStyle(normalItem).color : '',
-          selectedBackground: selectedItem ? getComputedStyle(selectedItem).backgroundColor : '',
-          selectedText: selectedItem ? getComputedStyle(selectedItem).color : '',
-          selectedIconBackground: selectedIcon
-            ? getComputedStyle(selectedIcon).backgroundColor
-            : '',
-          selectedIconText: selectedIcon ? getComputedStyle(selectedIcon).color : '',
-          summaryText: summary ? getComputedStyle(summary).color : '',
-          checkText: check ? getComputedStyle(check).color : '',
-          expectedBackground: probeStyle.backgroundColor,
-          expectedBorder: probeStyle.borderTopColor,
-          expectedNormalText: probeStyle.color,
-          expectedHover: getComputedStyle(hoverProbe).backgroundColor,
-          expectedSelectedBackground: getComputedStyle(selectedProbe).backgroundColor,
-          expectedSelectedText: getComputedStyle(selectedProbe).color,
-          expectedAccent: getComputedStyle(accentProbe).color,
-          expectedSelectedIconBackground: getComputedStyle(selectedIconProbe).backgroundColor,
-        };
-        probe.remove();
-        return result;
-      });
+      const menuStyle = getComputedStyle(element);
+      const normalItem = element.querySelector<HTMLElement>(
+        '.squisq-view-mode-menu-item:not(.squisq-view-mode-menu-item--selected)',
+      );
+      const selectedItem = element.querySelector<HTMLElement>(
+        '.squisq-view-mode-menu-item--selected',
+      );
+      const selectedIcon = selectedItem?.querySelector<HTMLElement>('.squisq-view-mode-menu-icon');
+      const check = selectedItem?.querySelector<HTMLElement>('.squisq-view-mode-menu-check');
+      const toggle = element.querySelector<HTMLElement>('.squisq-view-menu-row');
+      const heading = element.querySelector<HTMLElement>('.squisq-view-menu-heading');
+      const probeStyle = getComputedStyle(probe);
+      const result = {
+        menuBackground: menuStyle.backgroundColor,
+        menuBorder: menuStyle.borderTopColor,
+        normalText: normalItem ? getComputedStyle(normalItem).color : '',
+        selectedBackground: selectedItem ? getComputedStyle(selectedItem).backgroundColor : '',
+        selectedText: selectedItem ? getComputedStyle(selectedItem).color : '',
+        selectedIconBackground: selectedIcon ? getComputedStyle(selectedIcon).backgroundColor : '',
+        selectedIconText: selectedIcon ? getComputedStyle(selectedIcon).color : '',
+        checkText: check ? getComputedStyle(check).color : '',
+        toggleText: toggle ? getComputedStyle(toggle).color : '',
+        headingText: heading ? getComputedStyle(heading).color : '',
+        expectedBackground: probeStyle.backgroundColor,
+        expectedBorder: probeStyle.borderTopColor,
+        expectedNormalText: probeStyle.color,
+        expectedHover: getComputedStyle(hoverProbe).backgroundColor,
+        expectedSelectedBackground: getComputedStyle(selectedProbe).backgroundColor,
+        expectedSelectedText: getComputedStyle(selectedProbe).color,
+        expectedAccent: getComputedStyle(accentProbe).color,
+        expectedSelectedIconBackground: getComputedStyle(selectedIconProbe).backgroundColor,
+        expectedMuted: getComputedStyle(mutedProbe).color,
+      };
+      probe.remove();
+      return result;
+    });
 
-      expect(colors.menuBackground, label).toBe(colors.expectedBackground);
-      expect(colors.menuBorder, label).toBe(colors.expectedBorder);
-      expect(colors.normalText, label).toBe(colors.expectedNormalText);
-      expect(colors.selectedBackground, label).toBe(colors.expectedSelectedBackground);
-      expect(colors.selectedText, label).toBe(colors.expectedSelectedText);
-      expect(colors.selectedIconBackground, label).toBe(colors.expectedSelectedIconBackground);
-      expect(colors.selectedIconText, label).toBe(colors.expectedAccent);
-      expect(colors.summaryText, label).toBe(colors.expectedNormalText);
-      expect(colors.checkText, label).toBe(colors.expectedAccent);
+    expect(colors.menuBackground, label).toBe(colors.expectedBackground);
+    expect(colors.menuBorder, label).toBe(colors.expectedBorder);
+    expect(colors.normalText, label).toBe(colors.expectedNormalText);
+    expect(colors.selectedBackground, label).toBe(colors.expectedSelectedBackground);
+    expect(colors.selectedText, label).toBe(colors.expectedSelectedText);
+    expect(colors.selectedIconBackground, label).toBe(colors.expectedSelectedIconBackground);
+    expect(colors.selectedIconText, label).toBe(colors.expectedAccent);
+    expect(colors.checkText, label).toBe(colors.expectedAccent);
+    expect(colors.toggleText, label).toBe(colors.expectedNormalText);
+    expect(colors.headingText, label).toBe(colors.expectedMuted);
 
-      // By exact name: Timeline's summary mentions blocks too.
-      const normalItem = menu.getByRole('menuitemradio', { name: unselected, exact: true });
-      await normalItem.hover();
-      await expect(normalItem).toHaveCSS('background-color', colors.expectedHover);
-      await page.keyboard.press('Escape');
-      await expect(menu).toBeHidden();
-    }
+    // By exact name: Timeline's description mentions blocks too.
+    const normalItem = menu.getByRole('menuitemradio', { name: 'Blocks', exact: true });
+    await normalItem.hover();
+    await expect(normalItem).toHaveCSS('background-color', colors.expectedHover);
+    await closeViewMenu(page);
   });
 });
 

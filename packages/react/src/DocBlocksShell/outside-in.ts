@@ -1062,13 +1062,16 @@ export async function rerenderPagesUsingTemplate(
 /**
  * Create a rendered outside-in document from a fresh Markdown source. New
  * documents opt into regeneration immediately because there is no imported
- * original to preserve or ask permission to replace.
+ * original to preserve or ask permission to replace. `markdown` is the
+ * source to start from (a starter template); without it the document is
+ * just its name as a heading.
  */
 export async function createNewOutsideInDocument(
   provider: FileSystemProvider,
   targetPath: string,
   htmlOutput?: OutsideInHtmlOutput,
   render?: OutsideInRenderOptions,
+  markdown?: string,
 ): Promise<EditableOutsideInDocument> {
   const layout = resolveOutsideInLayout(targetPath);
   if (!layout) throw new Error(`Outside-in editing does not support "${targetPath}".`);
@@ -1089,7 +1092,7 @@ export async function createNewOutsideInDocument(
     );
   }
 
-  let content = await withOutsideInMarkdownEditing(`# ${layout.stem}\n`, layout);
+  let content = await withOutsideInMarkdownEditing(markdown ?? `# ${layout.stem}\n`, layout);
   if (layout.format === 'html') {
     content = await withOutsideInHtmlOutput(content, htmlOutput ?? 'interactive');
   }
@@ -1128,8 +1131,11 @@ export function createOutsideInDocumentTarget(
 ): DocumentCommitTarget {
   const sourceTarget = createFileSystemDocumentTarget(provider, layout.markdownPath);
   let partialSource: { baseline: string | null; content: string } | undefined;
+  const park = sourceTarget.park;
   return {
     key: `${provider.id}:outside-in:${parseWorkspacePath(layout.targetPath)}`,
+    // Text set aside is a copy of the Markdown source, kept in this page's sidecar.
+    ...(park ? { park: (request) => park(request) } : {}),
     async commit(request) {
       if (!(await isOutsideInMarkdownEditingEnabled(request.content))) {
         throw new Error(

@@ -47,8 +47,8 @@
         </picture>
       </a>
       <nav class="site-nav" aria-label="Primary navigation">
+        <a href="/apps/">Apps</a>
         <a href="/web/" aria-current="page">Web</a>
-        <a href="/desktop/">Desktop</a>
         <a href="/vscode/">VS Code</a>
         <a href="/cli/">CLI &amp; MCP</a>
         <a href="/formats/">Formats</a>
@@ -60,25 +60,22 @@
     <main class="page-main" id="content" tabindex="-1">
       <section class="hero">
         <div>
-          <p class="eyebrow">DocBlocks Web</p>
-          <h1>A full document editor, one click away.</h1>
+          <h1>DocBlocks in your browser</h1>
           <p class="lede">
-            Open DocBlocks and start writing&mdash;no account, installer, or cloud workspace.
-            Documents stay in browser storage or folders you explicitly grant, while visual editing,
-            Markdown source, previews, and export remain close at hand.
+            Open docblocks.com and start writing. There is no account and nothing to install. Your
+            documents stay in this browser, or in a folder on your computer that you choose.
           </p>
           <div class="hero-actions">
             <a class="button" href="/">Open the web editor</a>
-            <a class="button button--secondary" href="/docs/#apps">Compare the apps</a>
+            <a class="button button--secondary" href="/apps/">See all the apps</a>
           </div>
         </div>
         <aside class="hero-aside" aria-label="Web editor highlights">
-          <h2><span class="nowrap">Local-first</span> in a browser</h2>
           <ul>
             <li>No account, installer, or server upload</li>
-            <li>Browser-local workspaces and explicitly granted folders</li>
+            <li>Documents in this browser or in a folder you choose</li>
             <li>Visual writing, Markdown source, previews, and export</li>
-            <li>Installable and available offline after the first visit</li>
+            <li>Can be installed, and works offline after the first visit</li>
           </ul>
         </aside>
       </section>
@@ -92,47 +89,43 @@
             height="720"
             loading="eager"
           />
-          <figcaption>
-            The web app is the complete DocBlocks shell, ready without an account or installation.
-          </figcaption>
+          <figcaption>The web app is the full editor.</figcaption>
         </figure>
       </section>
 
       <section class="section" aria-labelledby="web-value">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">No setup required</p>
-            <h2 id="web-value">The fastest way into DocBlocks.</h2>
+            <h2 id="web-value">What the web app does</h2>
           </div>
           <p class="section-copy">
-            The web and desktop apps share the same focused editor shell. The browser version keeps
-            authority narrow: documents stay on your device, and local folders are visible only
-            after you choose and grant them.
+            The web app is the same editor as the desktop app. Your documents stay on your device,
+            and DocBlocks can see a folder only after you choose it.
           </p>
         </div>
         <div class="card-grid">
           <article class="card">
-            <h3>Start immediately</h3>
+            <h3>Start right away</h3>
             <p>
-              Create a document at docblocks.com and move between visual writing, raw Markdown,
-              previews, media, and export without registering an account.
+              Create a document at docblocks.com. Write visually or in Markdown, preview it, add
+              pictures, and export, all without an account.
             </p>
           </article>
           <article class="card">
             <h3>Keep ordinary files</h3>
             <p>
-              Use a browser-local workspace for convenience or, in supported browsers, open a folder
-              you control. Your source remains plain, portable Markdown.
+              Keep documents in this browser or, in supported browsers, open a folder on your
+              computer. Either way they are plain Markdown files.
             </p>
           </article>
           <article class="card">
-            <h3>Pin it like an app</h3>
+            <h3>Install it as an app</h3>
             <p>
               Open the app menu from the DocBlocks logo and choose
               <strong>Install DocBlocks&hellip;</strong>
-              when your browser offers it. Launch or pin the installed web app from your desktop,
-              dock, or taskbar. It uses the same browser profile and workspaces; the separate
-              desktop app opens files directly in your own folders.
+              when your browser offers it. You can then start it from your desktop, dock, or
+              taskbar. It uses the same browser profile and documents. The separate desktop app
+              opens files directly in your own folders.
             </p>
           </article>
         </div>
@@ -141,39 +134,34 @@
       <section class="section" aria-labelledby="web-boundaries">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">An honest sandbox</p>
-            <h2 id="web-boundaries">
-              The browser protects your <span class="nowrap">device&mdash;and</span> sets
-              boundaries.
-            </h2>
+            <h2 id="web-boundaries">Limits of a browser</h2>
           </div>
           <p class="section-copy">
-            Local-first does not make browser storage indestructible or grant the site unrestricted
-            filesystem access. DocBlocks makes those limits visible so you can choose the right
-            surface and keep durable copies of important work.
+            A browser keeps websites away from the rest of your computer. That limits what the web
+            app can do, so keep copies of important work.
           </p>
         </div>
         <div class="card-grid">
           <article class="card">
             <h3>Browser storage is not a backup</h3>
             <p>
-              A browser may clear site data under storage pressure or when you clear its profile.
-              Choose <strong>Protect data from browser cleanup</strong> in Settings when your
-              browser offers it, and download backups regularly.
+              A browser can delete a site&rsquo;s data when storage runs low or when you clear its
+              profile. Choose <strong>Protect data from browser cleanup</strong> in Settings when
+              your browser offers it, and download backups regularly.
             </p>
           </article>
           <article class="card">
             <h3>Folder support varies</h3>
             <p>
-              Direct local-folder access depends on browser support and explicit permission. You may
-              need to grant access again after restarting or when browser permissions change.
+              Opening a folder on your computer depends on the browser and needs your permission.
+              You may have to give permission again after a restart.
             </p>
           </article>
           <article class="card">
-            <h3>Native reach stays limited</h3>
+            <h3>No access to the rest of your computer</h3>
             <p>
-              The sandbox does not provide unrestricted operating-system, shell, or repository
-              access. Choose Desktop when native folders and OS integration are central to the job.
+              The web app cannot use your operating system, a shell, or Git repositories. Use the
+              desktop app when you need those.
             </p>
           </article>
         </div>
@@ -182,25 +170,26 @@
       <section class="section">
         <div class="callout">
           <div>
-            <h2>Continue in the desktop app.</h2>
+            <h2>Other DocBlocks apps</h2>
             <p>
-              Download DocBlocks for macOS (Apple silicon), Windows, or Linux for native folders,
-              menus, and optional AI and speech tools. Export your browser documents as Markdown
-              with media or a DBK bundle to bring them with you; workspaces do not sync
-              automatically.
+              The apps add what a browser cannot: an AI review of your draft that stays on your
+              device, your own folders, dictation, and read aloud. They run on Mac, Windows, Linux,
+              iPhone, iPad, and Android. To move documents, export them as Markdown with media or as
+              a DBK bundle. Workspaces do not sync automatically.
             </p>
           </div>
-          <a class="button" href="/desktop/">Explore Desktop</a>
+          <a class="button" href="/apps/">See all the apps</a>
         </div>
       </section>
     </main>
 
     <footer class="site-footer">
       <p>
-        DocBlocks is free open-source software by
-        <a href="https://bendyline.com">Bendyline</a>.
+        DocBlocks is open-source software by
+        <a href="https://bendyline.com">Bendyline</a>, free on the web and desktop.
       </p>
       <nav class="footer-nav" aria-label="Footer navigation">
+        <a href="/desktop/">Desktop downloads</a>
         <a href="/privacy/">Privacy</a>
         <a href="/terms/">Terms</a>
         <a href="/docs/">Documentation</a>

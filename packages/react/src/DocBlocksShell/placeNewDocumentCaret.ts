@@ -23,9 +23,48 @@ function typeIntoDocument(editor: NewDocumentEditor, text: string): void {
 }
 
 /**
+ * Rename a new document's `# Heading` from `from` to `to`, when it still
+ * reads `from`: the person named the document, and its title slide and
+ * exported title should say the same. A heading they have already changed
+ * is theirs and stays.
+ */
+export function retitleNewDocument(editor: NewDocumentEditor, from: string, to: string): void {
+  const title = editor.state.doc.firstChild;
+  if (!title || title.type.name !== 'heading' || title.attrs.level !== 1) return;
+  if (from === to || title.textContent !== from) return;
+  editor
+    .chain()
+    .command(({ tr }) => {
+      // Inside the heading: its content starts one past the document start.
+      tr.insertText(to, 1, 1 + title.content.size);
+      return true;
+    })
+    .run();
+}
+
+/**
+ * Where a template's caret goes: across the first line of sample text under
+ * its title, so typing replaces it. Null when there is none.
+ */
+function firstSampleLine(editor: NewDocumentEditor): { from: number; to: number } | null {
+  const { doc } = editor.state;
+  let position = doc.firstChild?.nodeSize ?? 0;
+  for (let index = 1; index < doc.childCount; index += 1) {
+    const node = doc.child(index);
+    if (node.type.name === 'paragraph' && node.content.size > 0) {
+      return { from: position + 1, to: position + 1 + node.content.size };
+    }
+    position += node.nodeSize;
+  }
+  return null;
+}
+
+/**
  * Put the caret on an empty line beneath a new document's title, give the
  * editor focus, then type what was held while it opened (`takeTypedText` is
  * called only once focus is in place, so no key falls between the two).
+ * A document started from a template has its first line of sample text
+ * selected instead (`at: 'sample'`), so typing replaces it.
  *
  * Focus stays where it is when the person has moved on to a form field
  * outside the editor (they opened New Folder, or search) while the document
@@ -36,24 +75,30 @@ function typeIntoDocument(editor: NewDocumentEditor, text: string): void {
 export function placeNewDocumentCaret(
   editor: NewDocumentEditor,
   takeTypedText: () => string,
+  { at = 'end' }: { at?: 'end' | 'sample' } = {},
 ): void {
   const active = editor.view.dom.ownerDocument.activeElement;
   const movedOn = isFormField(active) && !editor.view.dom.contains(active);
-  editor
-    .chain()
-    .command(({ tr, state, commands }) => {
-      if (state.doc.lastChild?.type.name !== 'paragraph') {
-        tr.insert(state.doc.content.size, state.schema.nodes.paragraph.create());
-      }
-      // The empty line is where the caret starts, not an edit: nothing to
-      // undo, and nothing saved until the author types. Saved, it was a
-      // blank line that later edits in Source kept as an empty paragraph.
-      tr.setMeta('addToHistory', false).setMeta('preventUpdate', true);
-      // The document's end clamps to its last line. Not `focus('end')`: that
-      // moves DOM focus a frame later, by when the person may be elsewhere.
-      return commands.setTextSelection(tr.doc.content.size);
-    })
-    .run();
+  const sample = at === 'sample' ? firstSampleLine(editor) : null;
+  if (sample) {
+    editor.commands.setTextSelection(sample);
+  } else {
+    editor
+      .chain()
+      .command(({ tr, state, commands }) => {
+        if (state.doc.lastChild?.type.name !== 'paragraph') {
+          tr.insert(state.doc.content.size, state.schema.nodes.paragraph.create());
+        }
+        // The empty line is where the caret starts, not an edit: nothing to
+        // undo, and nothing saved until the author types. Saved, it was a
+        // blank line that later edits in Source kept as an empty paragraph.
+        tr.setMeta('addToHistory', false).setMeta('preventUpdate', true);
+        // The document's end clamps to its last line. Not `focus('end')`: that
+        // moves DOM focus a frame later, by when the person may be elsewhere.
+        return commands.setTextSelection(tr.doc.content.size);
+      })
+      .run();
+  }
   // Take focus now rather than a frame later: taking the typed text stops
   // holding keys, and a key pressed in that frame landed on the page and was
   // lost ("Fat first words").

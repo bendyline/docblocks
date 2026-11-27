@@ -13,13 +13,30 @@ export {
   DocumentRecoveryJournal,
   getDefaultDocumentRecoveryStorage,
 } from './recovery-journal.js';
+export {
+  DOCUMENT_LINEAGE_STORAGE_KEY,
+  DocumentLineageStore,
+  type DocumentLineageStoreOptions,
+} from './lineage-store.js';
+export type { DocumentLineageRecord } from './lineage.js';
+export { mergeText, type ThreeWayMergeResult } from './three-way-merge.js';
 export type {
+  DocumentAbsorbResult,
+  DocumentAutoSavePacing,
   DocumentCommitRequest,
   DocumentCommitResult,
   DocumentCommitTarget,
+  DocumentConflictResolution,
+  DocumentConcurrentVersion,
   DocumentConflictStrategy,
   DocumentExternalChangeResult,
+  DocumentExternalOrigin,
   DocumentExternalSnapshot,
+  DocumentLineageStorage,
+  DocumentParkOrigin,
+  DocumentParkRequest,
+  DocumentSessionEvent,
+  DocumentSessionEventListener,
   DocumentExternalVersion,
   DocumentSaveReason,
   DocumentSessionConflict,

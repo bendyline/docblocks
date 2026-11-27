@@ -100,6 +100,24 @@ export default defineConfig({
         find: '@bendyline/docblocks/workspace',
         replacement: path.resolve(__dirname, '../../core/src/workspace/index.ts'),
       },
+      // The string alias above matches only '/workspace' and '/workspace/...';
+      // unaliased, these load core's dist, whose FsError fails `instanceof`.
+      {
+        find: /^@bendyline\/docblocks\/workspace-index$/,
+        replacement: path.resolve(__dirname, '../../core/src/workspace-index/index.ts'),
+      },
+      {
+        find: /^@bendyline\/docblocks\/workspace-settings$/,
+        replacement: path.resolve(__dirname, '../../core/src/workspace-settings/index.ts'),
+      },
+      {
+        find: /^@bendyline\/docblocks\/properties$/,
+        replacement: path.resolve(__dirname, '../../core/src/properties/index.ts'),
+      },
+      {
+        find: /^@bendyline\/docblocks\/folders$/,
+        replacement: path.resolve(__dirname, '../../core/src/folders/index.ts'),
+      },
       {
         find: '@bendyline/docblocks/host',
         replacement: path.resolve(__dirname, '../../core/src/host/index.ts'),

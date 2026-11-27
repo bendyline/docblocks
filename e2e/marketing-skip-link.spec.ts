@@ -5,6 +5,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
   test(`marketing skip links work with readable ${colorScheme} focus`, async ({ page }, info) => {
     await page.emulateMedia({ colorScheme });
     for (const route of [
+      'apps',
       'web',
       'desktop',
       'vscode',

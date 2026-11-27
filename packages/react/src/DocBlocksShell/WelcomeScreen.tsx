@@ -1,4 +1,6 @@
+import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { CloseIcon } from '../icons.js';
+import { contentFromDataTransfer, type PastedContent } from './pasted-document.js';
 
 /**
  * The one-line promise every first-run surface leads with. The pre-React
@@ -26,6 +28,24 @@ export const WELCOME_PRIVACY_NOTE = 'No account, and your documents stay on this
  */
 const DOCBLOCKS_APPS_URL = 'https://docblocks.com/docs/#apps';
 
+/** The third first-run choice: start from something the visitor already has. */
+export const WELCOME_BRING_CONTENT_LABEL = 'Paste or drop something';
+/** The same choice where nothing can be dragged onto the screen. */
+export const COMPACT_WELCOME_BRING_CONTENT_LABEL = 'Paste or choose a file';
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return (
+    target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]') !==
+    null
+  );
+}
+
+function carriesSomething(event: DragEvent): boolean {
+  const types = Array.from(event.dataTransfer?.types ?? []);
+  return types.includes('Files') || types.includes('text/plain') || types.includes('text/html');
+}
+
 export interface WelcomeScreenProps {
   /** Opens the New Document dialog. */
   onCreateDocument: () => void;
@@ -33,6 +53,15 @@ export interface WelcomeScreenProps {
   onTour: () => void;
   /** Closes the screen for good without choosing either. */
   onDismiss: () => void;
+  /**
+   * Opens the paste-or-drop dialog. The choice is left out without it, as are
+   * pasting and dropping straight onto the screen.
+   */
+  onBringContent?: () => void;
+  /** Text pasted while the screen is up, or dragged onto it. */
+  onPasteContent?: (content: PastedContent) => void;
+  /** Files dropped onto the screen. */
+  onDropFiles?: (files: File[]) => void;
   /**
    * Adds a link to the native apps. Only the browser build sets it: a visitor
    * already running a native app has nothing to go and get.
@@ -44,9 +73,11 @@ export interface WelcomeScreenProps {
 
 /**
  * First-run screen over the editor area. A new visitor sees what DocBlocks is
- * and two choices -- start their own document, or read the welcome one --
- * instead of the full editor chrome. The welcome document's editor mounts
- * underneath (inert), so taking the tour is instant.
+ * and its choices -- start their own document, bring something they already
+ * have, or read the welcome one -- instead of the full editor chrome. The
+ * welcome document's editor mounts underneath (inert), so taking the tour is
+ * instant. Bringing something is also a paste with nothing focused, or a drop
+ * anywhere on the screen: the quickest way to see one's own words as slides.
  *
  * The class names predate this screen (it replaced a toast) and are what the
  * suites and the shell's other entry points look for.
@@ -55,11 +86,74 @@ export function WelcomeScreen({
   onCreateDocument,
   onTour,
   onDismiss,
+  onBringContent,
+  onPasteContent,
+  onDropFiles,
   offerApps = false,
   greeting = WELCOME_GREETING,
 }: WelcomeScreenProps) {
+  const [dragging, setDragging] = useState(false);
+  // Nested children fire dragleave as the pointer crosses them.
+  const dragDepth = useRef(0);
+  const acceptsContent = onBringContent !== undefined;
+
+  // The editor beneath is inert, so a paste with nothing focused would go
+  // nowhere. While this screen is up it starts a document instead. A field
+  // (or the paste dialog) that handles its own paste is left alone.
+  const pasteRef = useRef(onPasteContent);
+  pasteRef.current = onPasteContent;
+  useEffect(() => {
+    if (!acceptsContent) return;
+    const onPaste = (event: ClipboardEvent) => {
+      if (event.defaultPrevented || isEditableTarget(event.target)) return;
+      const content = contentFromDataTransfer(event.clipboardData);
+      if (!content || !pasteRef.current) return;
+      event.preventDefault();
+      pasteRef.current(content);
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [acceptsContent]);
+
+  const dropHandlers = acceptsContent
+    ? {
+        onDragEnter: (event: DragEvent) => {
+          if (!carriesSomething(event)) return;
+          event.preventDefault();
+          dragDepth.current += 1;
+          setDragging(true);
+        },
+        onDragOver: (event: DragEvent) => {
+          if (!carriesSomething(event)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+        },
+        onDragLeave: () => {
+          dragDepth.current = Math.max(0, dragDepth.current - 1);
+          if (dragDepth.current === 0) setDragging(false);
+        },
+        onDrop: (event: DragEvent) => {
+          dragDepth.current = 0;
+          setDragging(false);
+          if (!carriesSomething(event)) return;
+          event.preventDefault();
+          const files = Array.from(event.dataTransfer.files);
+          if (files.length > 0) {
+            onDropFiles?.(files);
+            return;
+          }
+          const content = contentFromDataTransfer(event.dataTransfer);
+          if (content) onPasteContent?.(content);
+        },
+      }
+    : {};
+
   return (
-    <section className="db-welcome-gateway" aria-labelledby="db-welcome-gateway-title">
+    <section
+      className={`db-welcome-gateway${dragging ? ' db-welcome-gateway--dragging' : ''}`}
+      aria-labelledby="db-welcome-gateway-title"
+      {...dropHandlers}
+    >
       <button
         type="button"
         className="db-close-button db-welcome-gateway-dismiss"
@@ -79,6 +173,11 @@ export function WelcomeScreen({
             <button type="button" className="db-welcome-gateway-primary" onClick={onCreateDocument}>
               Create a document
             </button>
+            {onBringContent && (
+              <button type="button" className="db-welcome-gateway-bring" onClick={onBringContent}>
+                {WELCOME_BRING_CONTENT_LABEL}
+              </button>
+            )}
             <button type="button" className="db-welcome-gateway-cta" onClick={onTour}>
               Tour the welcome document
             </button>
@@ -109,6 +208,8 @@ export interface CompactWelcomeScreenProps {
   onTour: () => void;
   /** Closes the screen for good, leaving the file pane beneath. */
   onDismiss: () => void;
+  /** Opens the paste-or-choose dialog; the choice is left out without it. */
+  onBringContent?: () => void;
   /** The heading. */
   greeting?: string;
 }
@@ -123,6 +224,7 @@ export function CompactWelcomeScreen({
   onCreateDocument,
   onTour,
   onDismiss,
+  onBringContent,
   greeting = WELCOME_GREETING,
 }: CompactWelcomeScreenProps) {
   return (
@@ -145,6 +247,15 @@ export function CompactWelcomeScreen({
           <button type="button" onClick={onCreateDocument}>
             Create a document
           </button>
+          {onBringContent && (
+            <button
+              type="button"
+              className="db-mobile-first-run-secondary"
+              onClick={onBringContent}
+            >
+              {COMPACT_WELCOME_BRING_CONTENT_LABEL}
+            </button>
+          )}
           <button type="button" className="db-mobile-first-run-secondary" onClick={onTour}>
             Tour the welcome document
           </button>

@@ -58,6 +58,10 @@ extraResources:
     to: THIRD_PARTY_NOTICES.txt
   - from: dist/gezel-native/${os}-${arch}
     to: gezel-native
+  # Semantic search's embedding model (embedding-model.json), staged and
+  # digest-checked by beforePack. Read-only data; never downloaded at runtime.
+  - from: dist/embedding-model
+    to: embedding-model
 
 # Stage the target architecture from the installed Gezel inference package's release
 # pins before copying resources. No executable download happens in the app.
@@ -206,6 +210,13 @@ mac:
       to: resources/trayTemplate.png
     - from: resources/trayTemplate@2x.png
       to: resources/trayTemplate@2x.png
+  # The iCloud helper (scripts/stage-cloud-helper.cjs, built by beforePack),
+  # placed in Contents/Helpers where macOS expects nested programs. It is not
+  # in any signIgnore list: this build signs it as a child of the app, which
+  # in the Mac App Store variant gives it the inherited sandbox it must have.
+  extraFiles:
+    - from: dist/cloud-helper
+      to: Helpers
   category: public.app-category.productivity
   # Release builds keep the hardened runtime. The unpacked `dist:dir` smoke
   # build overrides this to false: ad-hoc signatures have no shared Team ID,

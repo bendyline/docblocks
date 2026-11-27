@@ -6,6 +6,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import {
   parseAiChatEvent,
+  parseAiDeviceFit,
   parseAiFactCheck,
   parseAiFactCheckRequest,
   parseAiKnowledgeState,
@@ -55,8 +56,11 @@ import {
   parseAiImagesAvailabilityArgument,
   parseHostEnvironmentArguments,
   parseSpeechAvailabilityArgument,
+  parseEmbeddingsAvailabilityArgument,
 } from '../shared/host-environment.js';
 import { createAiImagesApi } from './ai-images-bridge.js';
+import { createEmbeddingsApi } from './embeddings-bridge.js';
+import { createNotificationsApi } from './notifications-bridge.js';
 import { createSpeechApi } from './speech-bridge.js';
 
 // The main process can dispatch launch argv as soon as the BrowserWindow is
@@ -137,6 +141,11 @@ const fsV2Api: DocBlocksHostFsV2API = {
   stat: (instanceId, p) => ipcRenderer.invoke('fs:v2:stat', instanceId, p),
   readFile: (instanceId, p) => ipcRenderer.invoke('fs:v2:readFile', instanceId, p),
   readDirectory: (instanceId, p) => ipcRenderer.invoke('fs:v2:readDirectory', instanceId, p),
+  beginEnumerate: (instanceId, p) => ipcRenderer.invoke('fs:v2:beginEnumerate', instanceId, p),
+  continueEnumerate: (instanceId, cursor) =>
+    ipcRenderer.invoke('fs:v2:continueEnumerate', instanceId, cursor),
+  closeEnumerate: (instanceId, cursor) =>
+    ipcRenderer.invoke('fs:v2:closeEnumerate', instanceId, cursor),
   writeFile: (instanceId, p, data, options) =>
     ipcRenderer.invoke('fs:v2:writeFile', instanceId, p, data, options),
   createDirectory: (instanceId, p, options) =>
@@ -416,6 +425,11 @@ const aiApi: DocBlocksHostAiAPI = {
   async availableModels() {
     return parseAvailableModelsResult(await ipcRenderer.invoke('ai:availableModels'));
   },
+  async deviceFit() {
+    const fit = parseAiDeviceFit(await ipcRenderer.invoke('ai:deviceFit'));
+    if (!fit) throw new Error('Invalid AI device fit');
+    return fit;
+  },
   installModel(modelId, onProgress) {
     const requestId = mintId('ai-model');
     let finished = false;
@@ -524,6 +538,12 @@ let prepareCloseListener:
   | ((request: HostPrepareCloseRequest) => Promise<HostPrepareCloseResult>)
   | null = null;
 const cancelCloseListeners = new Set<(requestId: string) => void>();
+const resumeListeners = new Set<() => void>();
+
+// The computer woke or was unlocked: whatever a sync client did meanwhile was not watched.
+ipcRenderer.on('lifecycle:resume', () => {
+  for (const listener of [...resumeListeners]) listener();
+});
 
 ipcRenderer.on(
   'lifecycle:prepare-close',
@@ -570,6 +590,12 @@ const lifecycleApi: DocBlocksHostLifecycleAPI = {
   onCancelClose(listener) {
     cancelCloseListeners.add(listener);
     return () => cancelCloseListeners.delete(listener);
+  },
+  onResume(listener) {
+    resumeListeners.add(listener);
+    return () => {
+      resumeListeners.delete(listener);
+    };
   },
 };
 
@@ -637,6 +663,11 @@ const host: DocBlocksHostAPI = {
   // Likewise per engine: `transcribe` / `synthesize` exist only when main found
   // the engine, and the namespace only when it found at least one.
   ...speechNamespace(),
+  // Only on a build that found its bundled embedding model.
+  ...(parseEmbeddingsAvailabilityArgument(process.argv)
+    ? { embeddings: createEmbeddingsApi(ipcRenderer) }
+    : {}),
+  notifications: createNotificationsApi(ipcRenderer),
   onMenuCommand,
   onOpenRequest,
 };

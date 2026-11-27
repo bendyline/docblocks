@@ -1,6 +1,6 @@
 /**
- * The app Settings dialog, in sections: Appearance, AI, Dictation, Narration
- * and Device integration. A section appears only when the host offers what it
+ * The app Settings dialog, in sections: Appearance, Search, AI, Dictation,
+ * Narration and Device integration. A section appears only when the host offers what it
  * configures, so the browser build shows fewer than the desktop app.
  */
 
@@ -22,6 +22,7 @@ import type { ProofingPreferences } from '../preferences/proofing.js';
 import {
   AccentColorSettings,
   InterfaceFontSettings,
+  LeftPaneSettingsControls,
   ProofingSettingsControls,
   SettingsDialog,
   ThemeSettings,
@@ -31,9 +32,23 @@ import {
 import { AiSettingsControls } from './AiSettings.js';
 import { DictationSettingsControls, NarrationSettingsControls } from './SpeechSettings.js';
 import { TraySettingsControls } from './TraySettings.js';
+import {
+  SemanticSearchSettingsControls,
+  type SemanticSearchSettingsControlsProps,
+} from './SemanticSearchSettings.js';
+import {
+  SearchIndexSettingsControls,
+  type SearchIndexSettingsControlsProps,
+} from './SearchIndexSettings.js';
 import { useSpeechSettings } from './useSpeechSettings.js';
 
-export type AppSettingsSection = 'appearance' | 'ai' | 'dictation' | 'narration' | 'device';
+export type AppSettingsSection =
+  | 'appearance'
+  | 'search'
+  | 'ai'
+  | 'dictation'
+  | 'narration'
+  | 'device';
 
 export interface AppSettingsDialogProps {
   onClose: () => void;
@@ -50,6 +65,8 @@ export interface AppSettingsDialogProps {
   onWriteCanvasSettingsChange?: (settings: WriteCanvasPreferences) => void;
   proofingPreferences: ProofingPreferences;
   onProofingPreferencesChange?: (settings: ProofingPreferences) => void;
+  /** Whether Quick Jot shows in the left pane; omitted where there is no left pane. */
+  quickJot?: { readonly visible: boolean; readonly onChange: (visible: boolean) => void };
   ai?: DocBlocksHostAiAPI;
   speech?: DocBlocksHostSpeechAPI;
   tray?: DocBlocksHostMenuAPI;
@@ -63,6 +80,10 @@ export interface AppSettingsDialogProps {
   onVersioningPreferenceChange?: (pref: VersioningPreference) => void;
   /** Opens the active workspace's own settings. The caller closes Settings first. */
   onOpenWorkspaceSettings?: () => void;
+  /** Present on a host with an embedding model; omitted hides Search. */
+  semanticSearch?: SemanticSearchSettingsControlsProps;
+  /** Where the open workspace's index is kept; present where it can be kept. */
+  searchIndex?: SearchIndexSettingsControlsProps;
 }
 
 function formatBytes(bytes: number): string {
@@ -91,6 +112,7 @@ export function AppSettingsDialog({
   onWriteCanvasSettingsChange,
   proofingPreferences,
   onProofingPreferencesChange,
+  quickJot,
   ai,
   speech,
   tray,
@@ -101,6 +123,8 @@ export function AppSettingsDialog({
   versioningPreference,
   onVersioningPreferenceChange,
   onOpenWorkspaceSettings,
+  semanticSearch,
+  searchIndex,
 }: AppSettingsDialogProps) {
   // One session for both speech sections, alive as long as the dialog is.
   const speechSession = useSpeechSettings(speech);
@@ -151,11 +175,29 @@ export function AppSettingsDialog({
             value={proofingPreferences}
             onChange={(settings) => onProofingPreferencesChange?.(settings)}
           />
+          {quickJot && (
+            <LeftPaneSettingsControls
+              quickJot={quickJot.visible}
+              onQuickJotChange={quickJot.onChange}
+            />
+          )}
         </>
       ),
     },
   ];
 
+  if (semanticSearch || searchIndex) {
+    sections.push({
+      id: 'search',
+      label: 'Search',
+      content: (
+        <>
+          {semanticSearch && <SemanticSearchSettingsControls {...semanticSearch} />}
+          {searchIndex && <SearchIndexSettingsControls {...searchIndex} />}
+        </>
+      ),
+    });
+  }
   if (ai) {
     sections.push({ id: 'ai', label: 'AI', content: <AiSettingsControls ai={ai} /> });
   }

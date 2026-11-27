@@ -2,8 +2,11 @@
 // re-exports filesystem-v2.ts, which depends back on this package.
 import { maybeGetDocBlocksHost } from '../host/index.js';
 import {
+  FILE_SYSTEM_DIRECTORY_LIMITS,
+  FILE_SYSTEM_ENUMERATION_LIMITS as ENUMERATION_LIMITS,
   FILE_SYSTEM_TRANSFER_LIMITS as TRANSFER_LIMITS,
   type DocBlocksHostFsV2API,
+  type HostFileSystemEnumerationStep,
   type HostFileSystemV2Result,
   type HostFileSystemV2WatchMessage,
 } from '../host/filesystem-v2.js';
@@ -33,6 +36,8 @@ import {
   type FileSystemDirectorySnapshot,
   type FileSystemEntryReadIssue,
   type FileSystemEntrySnapshot,
+  type FileSystemEnumerateOptions,
+  type FileSystemEnumerationPage,
   type FileSystemFileRead,
   type FileSystemFileSnapshot,
   type FileSystemMoveOptions,
@@ -161,6 +166,47 @@ export class HostFileSystemProviderV2 implements FileSystemProviderV2 {
       () => this.getTransport('list').readDirectory(this.instanceId, canonical),
       (value) => normalizeDirectoryListing(value, canonical),
     );
+  }
+
+  /** Recursive metadata listing in pages; `not-supported` from an older preload. */
+  public async *enumerate(
+    path: WorkspacePath,
+    options: FileSystemEnumerateOptions = {},
+  ): AsyncGenerator<FileSystemEnumerationPage> {
+    const canonical = parseWorkspacePath(String(path));
+    const host = this.getTransport('list');
+    const { beginEnumerate, continueEnumerate, closeEnumerate } = host;
+    if (!beginEnumerate || !continueEnumerate || !closeEnumerate) {
+      throw new FsError('not-supported', 'This host cannot list a folder recursively.', {
+        operation: 'list',
+        path: canonical,
+      });
+    }
+    const seen: EnumerationSeen = { directories: new Set([canonical]), paths: new Set() };
+    options.signal?.throwIfAborted();
+    let step = await this.request(
+      'list',
+      () => beginEnumerate.call(host, this.instanceId, canonical),
+      (value) => normalizeEnumerationStep(value, canonical, seen),
+    );
+    try {
+      for (;;) {
+        yield step.page;
+        const cursor = step.cursor;
+        if (cursor === null) return;
+        options.signal?.throwIfAborted();
+        step = await this.request(
+          'list',
+          () => continueEnumerate.call(host, this.instanceId, cursor),
+          (value) => normalizeEnumerationStep(value, canonical, seen),
+        );
+      }
+    } finally {
+      // Stopped early (a consumer's limit, an abort, a bad page): release the host's walk.
+      if (step.cursor !== null) {
+        void closeEnumerate.call(host, this.instanceId, step.cursor).catch(() => undefined);
+      }
+    }
   }
 
   public async writeFile(
@@ -581,7 +627,9 @@ function normalizeDirectoryListing(
   value: readonly FileSystemEntrySnapshot[],
   parent: WorkspacePath,
 ): readonly FileSystemEntrySnapshot[] {
-  if (!Array.isArray(value)) throw new TypeError('Expected a filesystem directory listing.');
+  if (!Array.isArray(value) || value.length > FILE_SYSTEM_DIRECTORY_LIMITS.entries) {
+    throw new TypeError('Expected a bounded filesystem directory listing.');
+  }
   const entries = value.map(normalizeEntry);
   const seen = new Set<WorkspacePath>();
   for (const entry of entries) {
@@ -596,6 +644,73 @@ function normalizeDirectoryListing(
     throw new TypeError('Filesystem listing was not in canonical deterministic order.');
   }
   return Object.freeze(entries);
+}
+
+/** What an enumeration has reported so far, so each page can be checked against it. */
+interface EnumerationSeen {
+  readonly directories: Set<WorkspacePath>;
+  readonly paths: Set<WorkspacePath>;
+}
+
+/**
+ * One enumeration step: every entry strictly inside `root`, never repeated,
+ * its parent folder already reported (or `root`), unreadable folders among
+ * those reported, the page within the bridge's size.
+ */
+function normalizeEnumerationStep(
+  value: HostFileSystemEnumerationStep,
+  root: WorkspacePath,
+  seen: EnumerationSeen,
+): HostFileSystemEnumerationStep {
+  if (!isRecord(value) || !hasExactKeys(value, ['cursor', 'page'])) {
+    throw new TypeError('Expected a filesystem enumeration step.');
+  }
+  const { cursor, page } = value;
+  if (cursor !== null && !isBoundedString(cursor, HOST_WIRE_LIMITS.identifierCharacters, 1)) {
+    throw new TypeError('Filesystem enumeration returned an invalid cursor.');
+  }
+  if (!isRecord(page) || !hasExactKeys(page, ['entries', 'unreadable'])) {
+    throw new TypeError('Expected a filesystem enumeration page.');
+  }
+  const { entries, unreadable } = page as { entries: unknown; unreadable: unknown };
+  if (
+    !Array.isArray(entries) ||
+    !Array.isArray(unreadable) ||
+    entries.length + unreadable.length > ENUMERATION_LIMITS.pageEntries
+  ) {
+    throw new TypeError('Filesystem enumeration page was malformed or too large.');
+  }
+  const normalized = (entries as FileSystemEntrySnapshot[]).map((entry) => {
+    const checked = normalizeEntry(entry);
+    if (!seen.directories.has(workspacePathDirname(checked.path)) || checked.path === root) {
+      throw new TypeError('Filesystem enumeration reported an entry outside its folders.');
+    }
+    if (seen.paths.has(checked.path)) {
+      throw new TypeError('Filesystem enumeration reported a path twice.');
+    }
+    seen.paths.add(checked.path);
+    if (checked.kind === 'directory') seen.directories.add(checked.path);
+    return checked;
+  });
+  const folders = (unreadable as unknown[]).map((folder) => {
+    const path = parseWorkspacePath(typeof folder === 'string' ? folder : '\0');
+    if (!seen.directories.has(path) || path === root) {
+      throw new TypeError('Filesystem enumeration marked an unknown folder unreadable.');
+    }
+    return path;
+  });
+  return Object.freeze({
+    cursor,
+    page: Object.freeze({ entries: Object.freeze(normalized), unreadable: Object.freeze(folders) }),
+  });
+}
+
+function hasExactKeys(record: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(record);
+  return (
+    actual.length === keys.length &&
+    keys.every((key) => Object.prototype.hasOwnProperty.call(record, key))
+  );
 }
 
 function normalizeFile(entry: FileSystemFileSnapshot): FileSystemFileSnapshot {

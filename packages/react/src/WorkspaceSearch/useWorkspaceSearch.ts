@@ -4,6 +4,11 @@ import type {
   WorkspaceSearchQuery,
   WorkspaceSearchResult,
 } from '@bendyline/docblocks/workspace-index';
+import {
+  RANKED_PASSAGE_LIMIT,
+  RANKED_PASSAGES_PER_DOCUMENT,
+  rankedSearchResult,
+} from './ranked-results.js';
 
 export interface WorkspaceSearchState {
   readonly result: WorkspaceSearchResult | null;
@@ -16,6 +21,9 @@ const QUERY_DEBOUNCE_MS = 200;
 /** Throttle, not debounce: the index publishes every 250 ms while analyzing. */
 const INDEX_REFRESH_MS = 750;
 
+/** `literal` finds the exact text; `ranked` finds the best passages for the words. */
+export type WorkspaceSearchMode = 'literal' | 'ranked';
+
 /**
  * Run a workspace search for `query`, debounced while typing, and re-run it
  * as the index fills in or changes so open results stay current.
@@ -24,6 +32,7 @@ export function useWorkspaceSearch(
   index: WorkspaceIndex | null,
   generation: number,
   query: WorkspaceSearchQuery,
+  mode: WorkspaceSearchMode = 'literal',
 ): WorkspaceSearchState {
   const [state, setState] = useState<WorkspaceSearchState>(EMPTY);
   const controllerRef = useRef<AbortController | null>(null);
@@ -49,7 +58,17 @@ export function useWorkspaceSearch(
       controllerRef.current?.abort();
       const controller = new AbortController();
       controllerRef.current = controller;
-      index.search({ text, matchCase, wholeWord }, { signal: controller.signal }).then(
+      const search: Promise<WorkspaceSearchResult> =
+        mode === 'ranked' && index.find
+          ? index
+              .find(text, {
+                limit: RANKED_PASSAGE_LIMIT,
+                perDocument: RANKED_PASSAGES_PER_DOCUMENT,
+                prefix: true,
+              })
+              .then((hits) => rankedSearchResult(hits, (path) => index.getDocument(path)))
+          : index.search({ text, matchCase, wholeWord }, { signal: controller.signal });
+      search.then(
         (result) => {
           if (controllerRef.current === controller) setState({ result, searching: false });
         },
@@ -66,7 +85,7 @@ export function useWorkspaceSearch(
     setState({ result: null, searching: true });
     const timer = setTimeout(run, QUERY_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [index, text, matchCase, wholeWord]);
+  }, [index, text, matchCase, wholeWord, mode]);
 
   useEffect(() => {
     if (!runRef.current || refreshTimerRef.current !== null) return;

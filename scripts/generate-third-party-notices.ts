@@ -127,7 +127,7 @@ const surfaces: readonly Surface[] = [
     id: 'mobile',
     title: 'DocBlocks Capacitor distribution',
     description:
-      'Packages in the mobile renderer output graph, its copied WASM engines, the third-party code compiled into @bendyline/gezel-capacitor, and the Capacitor native runtime. Android framework dependencies have their native notice alongside this notice.',
+      'Packages in the mobile renderer output graph, its copied WASM engines, the third-party code compiled into @bendyline/gezel-capacitor, the Capacitor native runtime, and the Capacitor local notifications plugin that schedules reminders. Android framework dependencies have their native notice alongside this notice.',
     artifactManifest: 'packages/mobile/dist/THIRD_PARTY_COMPONENTS.json',
     bundledLicenseManifests: [
       'node_modules/@bendyline/gezel-capacitor/dist/licenses/npm/manifest.json',
@@ -136,6 +136,8 @@ const surfaces: readonly Surface[] = [
       '@capacitor/core',
       '@capacitor/ios',
       '@capacitor/android',
+      // Native code only: the renderer reaches it by name (packages/mobile/src/notifications.ts).
+      '@capacitor/local-notifications',
       '@ironcalc/wasm',
       'harper.js',
     ],
@@ -562,7 +564,8 @@ function surfaceAssetNotes(surface: Surface): readonly string[] {
       'Fonts and their license texts ship under fonts/. The native app bundles this notice and all WASM licenses for offline access.',
       "The narration frontend compiled in from `@bendyline/gezel` embeds Kokoro's phoneme vocabulary (https://github.com/hexgrad/kokoro) and pronunciation readings generated from misaki's dictionaries (https://github.com/hexgrad/misaki), both Apache-2.0; the Apache License 2.0 text is reproduced below. The pronunciation dictionaries ship gzipped as `assets/lexicon-*-en-*.bin`, from `@bendyline/gezel-capacitor/kokoro-lexicon/`, which carries their license.",
       'The knowledge catalog reader (`knowledge-worker.js` with SQLite in `sqlite3.wasm`) and the question tokenizer are compiled into `@bendyline/gezel-capacitor`; their packages are listed above from the license manifest that package carries.',
-      'AI models, speech models, and voices are not part of this distribution. They are downloaded only when you choose them, and each remains under the license published by its provider.',
+      "Semantic search bundles the bge-small-en-v1.5 embedding model (BAAI, https://huggingface.co/BAAI/bge-small-en-v1.5; MIT License, Copyright (c) 2022 staoxiao) as its ONNX conversion (https://huggingface.co/Xenova/bge-small-en-v1.5). It ships with its license at `embedding-model/LICENSE` among the app's web assets.",
+      'Other AI models, speech models, and voices are not part of this distribution. They are downloaded only when you choose them, and each remains under the license published by its provider.',
     ];
   if (surface.id === 'site') {
     return [
@@ -577,7 +580,8 @@ function surfaceAssetNotes(surface: Surface): readonly string[] {
       "Electron's own license and Chromium third-party notices are copied as `licenses/ELECTRON_LICENSE.txt` and `licenses/ELECTRON_THIRD_PARTY_NOTICES.html` in the application resources directory.",
       'The bundled native AI and speech engines (llama.cpp, whisper.cpp, stable-diffusion.cpp, uv, and the components compiled into them) ship their verbatim license texts and a manifest under `gezel-native/<platform>/THIRD_PARTY_LICENSES/` in the application resources directory.',
       "The narration frontend compiled in from `@bendyline/gezel` embeds Kokoro's phoneme vocabulary (https://github.com/hexgrad/kokoro) and pronunciation readings generated from misaki's dictionaries (https://github.com/hexgrad/misaki), both Apache-2.0; the Apache License 2.0 text is reproduced below. The pronunciation dictionaries ship with their license at `node_modules/@bendyline/gezel-inference/dist/kokoro-lexicon/LICENSE` in `app.asar`.",
-      'AI models, speech models, and voices are not part of this distribution. They are downloaded only when you choose them, and each remains under the license published by its provider.',
+      'Semantic search bundles the bge-small-en-v1.5 embedding model (BAAI, https://huggingface.co/BAAI/bge-small-en-v1.5; MIT License, Copyright (c) 2022 staoxiao) as its ONNX conversion (https://huggingface.co/Xenova/bge-small-en-v1.5). It ships with its license at `embedding-model/LICENSE` in the application resources directory.',
+      'Other AI models, speech models, and voices are not part of this distribution. They are downloaded only when you choose them, and each remains under the license published by its provider.',
     ];
   }
   if (surface.id === 'vscode') {

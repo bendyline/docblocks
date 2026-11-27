@@ -24,11 +24,14 @@ if platform == 'ios':
     privacy = plistlib.loads((app / 'PrivacyInfo.xcprivacy').read_bytes())
     assert {'NSPrivacyAccessedAPICategoryDiskSpace', 'NSPrivacyAccessedAPICategorySystemBootTime'} <= {item['NSPrivacyAccessedAPIType'] for item in privacy['NSPrivacyAccessedAPITypes']}
     actual = {str(p.relative_to(app / 'public')): hashlib.sha256(p.read_bytes()).hexdigest() for p in (app / 'public').rglob('*') if p.is_file()}
+    model_manifest = (app / 'public/embedding-model/manifest.json').read_bytes() if (app / 'public/embedding-model/manifest.json').is_file() else None
     config = json.loads((app / 'capacitor.config.json').read_text())
     assert 'GezelRuntimePlugin' in config['packageClassList'], 'Missing native AI plugin'
     assert b'llama_model_load_from_file_impl' in (app / 'App').read_bytes(), 'Missing linked inference engine'
     # The plugin compiles speech in only when SwiftPM saw the runtime, so a stale package resolve drops it silently.
     assert 'GezelOfflineSpeechPlugin' in config['packageClassList'], 'Missing offline speech plugin'
+    # Without it the app runs, but quietly offers no reminders (src/notifications.ts).
+    assert 'LocalNotificationsPlugin' in config['packageClassList'], 'Missing local notifications plugin for reminders'
     speech = app / 'Frameworks/GezelSpeech.framework'
     assert (speech / 'GezelSpeech').is_file() and (speech / 'PrivacyInfo.xcprivacy').is_file(), 'Missing embedded speech runtime'
     assert info.get('NSMicrophoneUsageDescription'), 'Missing microphone purpose for dictation and recording'
@@ -38,12 +41,15 @@ else:
     with zipfile.ZipFile(artifact) as archive:
         prefix = 'base/assets/' if artifact.endswith('.aab') else 'assets/'
         actual = {name.removeprefix(prefix + 'public/'): hashlib.sha256(archive.read(name)).hexdigest() for name in archive.namelist() if name.startswith(prefix + 'public/') and not name.endswith('/')}
+        model_manifest = archive.read(prefix + 'public/embedding-model/manifest.json') if prefix + 'public/embedding-model/manifest.json' in archive.namelist() else None
         config = json.loads(archive.read(prefix + 'capacitor.config.json'))
         for name in archive.namelist():
             if name.endswith('.dex'):
                 assert b'ContractDocumentsProvider' not in archive.read(name), 'Test provider shipped in release'
         plugins = json.loads(archive.read(prefix + 'capacitor.plugins.json'))
         assert any(p['pkg'] == '@bendyline/gezel-capacitor' for p in plugins)
+        # Without it the app runs, but quietly offers no reminders (src/notifications.ts).
+        assert any(p['pkg'] == '@capacitor/local-notifications' for p in plugins), 'Missing local notifications plugin for reminders'
         assert not any(name.endswith('mobile-ai-fixture.gguf') for name in archive.namelist())
         native_prefix = 'base/lib/arm64-v8a/' if artifact.endswith('.aab') else 'lib/arm64-v8a/'
         for library in ['libgezel-llama.so', 'libgezel_llama_jni.so', 'libllama.so']:
@@ -53,6 +59,8 @@ else:
         manifest = archive.read('base/manifest/AndroidManifest.xml' if artifact.endswith('.aab') else 'AndroidManifest.xml')
         for permission in ['RECORD_AUDIO', 'android.permission.CAMERA']:
             assert permission.encode() in manifest or permission.encode('utf-16le') in manifest, 'Missing ' + permission + ' for dictation and recording'
+        # Android 13 and later show no notification without it; the plugin's manifest supplies it.
+        assert b'POST_NOTIFICATIONS' in manifest or 'POST_NOTIFICATIONS'.encode('utf-16le') in manifest, 'Missing POST_NOTIFICATIONS for reminders'
         # AAPT binary XML and bundle protobuf retain string values in UTF-8 or UTF-16.
         for forbidden in ['MANAGE_EXTERNAL_STORAGE', 'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE', 'com.bendyline.docblocks.mobile.tests']:
             assert forbidden.encode() not in manifest and forbidden.encode('utf-16le') not in manifest, forbidden
@@ -60,5 +68,9 @@ assert config['appId'] == 'com.bendyline.docblocks'
 assert 'url' not in config.get('server', {}) and not config.get('server', {}).get('allowNavigation')
 assert all(actual.get(name) == digest for name, digest in expected.items()), 'Native web payload is stale or incomplete'
 assert not any('ffmpeg-core' in name for name in actual)
+# Search by meaning ships its model (scripts/stage-embedding-model.mjs); the app installs it at launch.
+assert model_manifest is not None, 'Missing bundled embedding model'
+model = json.loads(model_manifest)
+assert model['files'] and all(actual.get('embedding-model/' + f['name']) == f['sha256'] for f in model['files']), 'Bundled embedding model is incomplete'
 assert not any(name.endswith(('ai-smoke.js', 'mobile-ai-fixture.gguf')) for name in actual), 'AI test assets shipped in release'
 print(json.dumps({'platform': platform, 'webFilesVerified': len(expected), 'artifact': artifact}))

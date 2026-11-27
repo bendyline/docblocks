@@ -4,7 +4,46 @@
  * inserted text either names each source in a footnote or drops the markers.
  */
 
-import type { AiChatEvidence } from '@bendyline/docblocks/host';
+import {
+  WORKSPACE_KNOWLEDGE_CATALOG_ID,
+  parseWorkspacePassageUri,
+  type AiChatEvidence,
+} from '@bendyline/docblocks/host';
+
+/** A passage from one of the person's own notes rather than a catalog. */
+export function isWorkspaceEvidence(passage: AiChatEvidence): boolean {
+  return (
+    passage.catalogId === WORKSPACE_KNOWLEDGE_CATALOG_ID ||
+    (passage.uri !== undefined && parseWorkspacePassageUri(passage.uri) !== null)
+  );
+}
+
+/** `to` relative to the folder holding `from`; both are workspace paths. */
+function relativeTo(from: string, to: string): string {
+  const source = from.replace(/^\/+/u, '').split('/').slice(0, -1);
+  const target = to.replace(/^\/+/u, '').split('/');
+  let shared = 0;
+  while (
+    shared < source.length &&
+    shared < target.length - 1 &&
+    source[shared] === target[shared]
+  ) {
+    shared += 1;
+  }
+  return [...source.slice(shared).map(() => '..'), ...target.slice(shared)].join('/');
+}
+
+/** A Markdown link to the cited note, or the plain title without one. */
+function noteReference(passage: AiChatEvidence, documentPath: string | null): string {
+  const title = passage.title || 'Untitled note';
+  const reference = passage.uri ? parseWorkspacePassageUri(passage.uri) : null;
+  if (!reference || !documentPath) return title;
+  const href = relativeTo(documentPath.normalize('NFC'), reference.path)
+    .split('/')
+    .map((segment) => (segment === '..' ? segment : encodeURIComponent(segment)))
+    .join('/');
+  return `[${title.replace(/[[\]\\]/gu, '\\$&')}](${href})`;
+}
 
 /**
  * `[3]`, `[1, 4]`, `[2-5]` with any space before it; not a link `[1](…)` or
@@ -48,6 +87,21 @@ function mapProse(markdown: string, transform: (line: string) => string): string
     .join('\n');
 }
 
+/** `text` split at its citation markers: plain runs, and each marker's numbers. */
+export function citationParts(text: string): Array<string | number[]> {
+  const parts: Array<string | number[]> = [];
+  let last = 0;
+  for (const match of text.matchAll(MARKER)) {
+    const numbers = citationNumbers(match[1] ?? '');
+    if (!numbers.length) continue;
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    parts.push(numbers);
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
 /** The draft without citation markers, as text replacing a selection carries it. */
 export function stripCitationMarkers(markdown: string): string {
   return mapProse(markdown, (line) => line.replace(MARKER, ''));
@@ -65,6 +119,8 @@ export function citationsToFootnotes(
   evidence: readonly AiChatEvidence[],
   catalogNames: ReadonlyMap<string, string>,
   document: string,
+  /** The open document's workspace path; a cited note is linked relative to it. */
+  documentPath: string | null = null,
 ): string {
   const taken = new Set([...document.matchAll(/\[\^([^\]\s]+)\]/gu)].map((match) => match[1]));
   /** Footnote label → the passage that names it, by article. */
@@ -95,6 +151,9 @@ export function citationsToFootnotes(
   );
   if (labels.size === 0) return body;
   const notes = [...labels.values()].map(({ label, passage }) => {
+    if (isWorkspaceEvidence(passage)) {
+      return `[^${label}]: ${noteReference(passage, documentPath)}, a note in this workspace.`;
+    }
     const catalog = catalogNames.get(passage.catalogId) ?? passage.catalogId;
     return `[^${label}]: ${passage.title || 'Untitled article'}, from the ${catalog} knowledge catalog.`;
   });

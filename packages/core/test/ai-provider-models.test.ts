@@ -32,6 +32,28 @@ describe('reading Gezel model ratings', () => {
     expect(providerModelDocbench({})).to.equal(undefined);
   });
 
+  it("rates Apple's model as DocBlocks measured it until Gezel sends a result", () => {
+    const id = 'apple-foundation-models:apple-foundation-models';
+    const measured = providerModelDocbench({ id });
+    expect(measured?.version).to.equal('0.2.2');
+    expect(Math.round(measured?.score ?? 0)).to.equal(54);
+    expect(Object.keys(measured?.families ?? {})).to.have.members([
+      'review',
+      'writing',
+      'visuals',
+      'presentations',
+      'study',
+      'narration',
+    ]);
+    // It crosses the host boundary like any provider result.
+    expect(providerModelDocbench({ docbench: measured })).to.deep.equal(measured);
+
+    const fromGezel = { score: 61, band: 4, version: '0.3.0', families: { review: 40 } };
+    expect(providerModelDocbench({ id, docbench: fromGezel })).to.deep.equal(fromGezel);
+    // Only Apple's model: other system models, such as Android's, stay unrated.
+    expect(providerModelDocbench({ id: 'android-mlkit:android-mlkit' })).to.equal(undefined);
+  });
+
   it('reads a system preparation as an operating-system model', () => {
     expect(providerModelIsSystem({ preparation: 'system-settings' })).to.equal(true);
     expect(providerModelIsSystem({ preparation: 'system-download' })).to.equal(true);

@@ -6,10 +6,12 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   FsError,
+  conflictCopyScope,
   fsErrorFromUnknown,
   getFileSystemProviderV2,
   moveFileSystemEntry,
   parseWorkspacePath,
+  subscribeFileSystemChangeHints,
   workspacePathDirname,
   type FileSystemProvider,
   type FileSystemEntry,
@@ -24,6 +26,15 @@ const DIRECTORY_NOT_FOUND_RETRY_DELAYS_MS = Object.freeze([40, 120] as const);
  * Manual Retry stays available once these are spent.
  */
 const AUTO_RETRY_DELAYS_MS = Object.freeze([1_000, 4_000, 15_000] as const);
+/** How long reports that storage changed are left to settle before listing again. */
+const CHANGE_HINT_SETTLE_MS = 400;
+/**
+ * The least time between two listings caused by such reports. A sync service
+ * reports in bursts while it moves files, and on a phone every listing reads
+ * the folder's files to version them; listing on each report would crowd out
+ * the reads and saves the user is waiting for.
+ */
+const CHANGE_HINT_MIN_INTERVAL_MS = 5_000;
 
 function normalisePath(path: string): string {
   return parseWorkspacePath(path);
@@ -564,9 +575,30 @@ export function useFileTree(
     };
     window.addEventListener('focus', refreshOnFocus);
     document.addEventListener('visibilitychange', refreshOnVisibility);
+    // Another tab, or a phone's native layer, reported that this storage
+    // changed. Reports come in bursts, so list once they settle.
+    let settle: ReturnType<typeof setTimeout> | null = null;
+    let listedAt = Number.NEGATIVE_INFINITY;
+    const stopHints = subscribeFileSystemChangeHints((hint) => {
+      if (hint.providerId !== null && hint.providerId !== provider.id) return;
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      // One listing is already on its way; it will see whatever this report is about.
+      if (settle) return;
+      const wait = Math.max(
+        CHANGE_HINT_SETTLE_MS,
+        listedAt + CHANGE_HINT_MIN_INTERVAL_MS - Date.now(),
+      );
+      settle = setTimeout(() => {
+        settle = null;
+        listedAt = Date.now();
+        refreshOnFocus();
+      }, wait);
+    });
     return () => {
       window.removeEventListener('focus', refreshOnFocus);
       document.removeEventListener('visibilitychange', refreshOnVisibility);
+      stopHints();
+      if (settle) clearTimeout(settle);
     };
   }, [provider, reportRootIssue]);
 
@@ -629,6 +661,18 @@ export function useFileTree(
         }
       } else {
         await providerRef.current.delete(path);
+      }
+      // Versions of the document that were waiting for review go with it. Left
+      // behind, they would be offered to the next document given this name.
+      const copies = conflictCopyScope(path);
+      if (copies) {
+        try {
+          if (await providerRef.current.exists(copies.directory)) {
+            await providerRef.current.delete(copies.directory);
+          }
+        } catch {
+          // The document is gone, which is what was asked; stray copies are harmless.
+        }
       }
       if (selectedPath === path) {
         setSelectedPath(null);

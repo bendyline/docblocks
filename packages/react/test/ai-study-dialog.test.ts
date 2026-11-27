@@ -1,8 +1,13 @@
 import { expect } from 'chai';
 import * as React from 'react';
-import { act, createElement } from 'react';
+import { act, createElement, Fragment } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { EditorContextMenuProvider, EditorProvider } from '@bendyline/squisq-editor-react';
+import {
+  EditorContextMenuProvider,
+  EditorProvider,
+  useEditorContext,
+  type EditorContextValue,
+} from '@bendyline/squisq-editor-react';
 import { MemoryContentContainer, type ContentContainer } from '@bendyline/squisq/storage';
 import type {
   AiChatCompletion,
@@ -28,21 +33,6 @@ const DOCUMENT = [
 ].join('\n');
 
 const SUMMARY_REPLY = 'Plants turn light into food.\n\n- They take in carbon dioxide.';
-
-const QUIZ_REPLY = JSON.stringify([
-  {
-    question: 'Which gas do plants take in?',
-    correct: 'Carbon dioxide',
-    wrong: ['Helium', 'Neon'],
-    why: 'The passage says plants take in carbon dioxide.',
-  },
-  {
-    question: 'Where does photosynthesis happen?',
-    correct: 'In the leaves',
-    wrong: ['In the roots', 'In the soil'],
-    why: '',
-  },
-]);
 
 type Reply = string | { readonly error: string } | { readonly hang: true };
 
@@ -122,9 +112,9 @@ async function readText(container: ContentContainer, path: string): Promise<stri
   return data === null ? null : new TextDecoder().decode(data);
 }
 
-async function savedFor(kind: 'summary' | 'quiz', source: string, body: string) {
+async function savedFor(source: string, body: string) {
   return withStudyAidFrontmatter(body, 'Saved', {
-    kind,
+    kind: 'summary',
     source: 'plants.md',
     sourceSha256: await studySourceDigest(source),
     generatedAt: '2026-10-01T09:30:00.000Z',
@@ -135,7 +125,6 @@ async function savedFor(kind: 'summary' | 'quiz', source: string, body: string) 
 const mounted: { root: Root; host: HTMLElement }[] = [];
 
 async function renderDialog(options: {
-  kind: 'summary' | 'quiz' | 'flashcards';
   ai: DocBlocksHostAiAPI;
   container: ContentContainer;
   source?: string;
@@ -149,7 +138,7 @@ async function renderDialog(options: {
     root.render(
       createElement(AiStudyDialog, {
         ai: options.ai,
-        kind: options.kind,
+        kind: 'summary',
         documentSource: options.source ?? DOCUMENT,
         documentName: 'plants.md',
         container: options.container,
@@ -171,37 +160,14 @@ afterEach(async () => {
 });
 
 describe('AiStudyDialog', () => {
-  it('generates a quiz, saves it in the sidecar, and shows it as a study deck', async () => {
-    const ai = scriptedAi(() => QUIZ_REPLY);
-    const container = new MemoryContentContainer();
-    await renderDialog({ kind: 'quiz', ai: ai.api, container });
-    await waitFor(() => !dialog()?.textContent?.includes('Looking for a saved'), 'the lookup');
-    expect(dialog()?.textContent).to.contain('multiple-choice quiz');
-    expect(dialog()?.textContent).not.to.contain('Saved quiz');
-
-    await click('Generate quiz');
-    await waitFor(() => dialog()?.querySelector('[aria-label="Flashcards"]') !== null, 'the deck');
-    const saved = await readText(container, studyAidPath('quiz'));
-    expect(saved).to.contain('docblocks-generated: quiz');
-    expect(saved).to.contain('### Which gas do plants take in?');
-    expect(dialog()?.querySelector('[aria-label="Answer choices"]')).not.to.equal(null);
-    // The dialog is the deck's whole page, so it asks for the compact deck.
-    expect(dialog()?.querySelector('.squisq-flashcards--compact')).not.to.equal(null);
-    expect(dialog()?.textContent).to.contain('Report output');
-    expect(button('Regenerate quiz')).not.to.equal(undefined);
-    expect(ai.requests[0]?.purpose).to.equal('study');
-  });
-
   it('offers the saved summary, and shows it without calling the model', async () => {
     const ai = scriptedAi(() => SUMMARY_REPLY);
     const container = new MemoryContentContainer();
     await container.writeFile(
       studyAidPath('summary'),
-      new TextEncoder().encode(
-        await savedFor('summary', DOCUMENT, '# Summary\n\nAn earlier summary.'),
-      ),
+      new TextEncoder().encode(await savedFor(DOCUMENT, '# Summary\n\nAn earlier summary.')),
     );
-    await renderDialog({ kind: 'summary', ai: ai.api, container });
+    await renderDialog({ ai: ai.api, container });
     await waitFor(() => button('View summary') !== undefined, 'the saved summary');
     expect(dialog()?.textContent).to.contain('Saved summary');
     expect(dialog()?.textContent).to.contain('with Earlier Model');
@@ -220,9 +186,9 @@ describe('AiStudyDialog', () => {
     const container = new MemoryContentContainer();
     await container.writeFile(
       studyAidPath('summary'),
-      new TextEncoder().encode(await savedFor('summary', '# Plants\n\nOlder text.', 'Old.')),
+      new TextEncoder().encode(await savedFor('# Plants\n\nOlder text.', 'Old.')),
     );
-    await renderDialog({ kind: 'summary', ai: scriptedAi(() => '').api, container });
+    await renderDialog({ ai: scriptedAi(() => '').api, container });
     await waitFor(
       () => dialog()?.textContent?.includes('The document has changed since') === true,
       'the stale note',
@@ -232,9 +198,9 @@ describe('AiStudyDialog', () => {
   it('keeps the saved file and the viewer when a regenerate fails', async () => {
     const ai = scriptedAi(() => ({ error: 'The model stopped responding.' }));
     const container = new MemoryContentContainer();
-    const earlier = await savedFor('summary', DOCUMENT, 'An earlier summary.');
+    const earlier = await savedFor(DOCUMENT, 'An earlier summary.');
     await container.writeFile(studyAidPath('summary'), new TextEncoder().encode(earlier));
-    await renderDialog({ kind: 'summary', ai: ai.api, container });
+    await renderDialog({ ai: ai.api, container });
     await click('View summary');
     await click('Regenerate summary');
     await waitFor(
@@ -249,9 +215,9 @@ describe('AiStudyDialog', () => {
   it('keeps the saved file when a regenerate is stopped', async () => {
     const ai = scriptedAi(() => ({ hang: true }));
     const container = new MemoryContentContainer();
-    const earlier = await savedFor('summary', DOCUMENT, 'An earlier summary.');
+    const earlier = await savedFor(DOCUMENT, 'An earlier summary.');
     await container.writeFile(studyAidPath('summary'), new TextEncoder().encode(earlier));
-    await renderDialog({ kind: 'summary', ai: ai.api, container });
+    await renderDialog({ ai: ai.api, container });
     await click('Regenerate summary');
     await waitFor(
       () => dialog()?.textContent?.includes('Writing the summary') === true,
@@ -267,7 +233,7 @@ describe('AiStudyDialog', () => {
     const ai = scriptedAi(() => SUMMARY_REPLY);
     const container = new MemoryContentContainer();
     container.writeFile = () => Promise.reject(new Error('The disk is full.'));
-    await renderDialog({ kind: 'summary', ai: ai.api, container });
+    await renderDialog({ ai: ai.api, container });
     await click('Generate summary');
     await waitFor(() => dialog()?.querySelector('.db-ai-study-summary') !== null, 'the viewer');
     expect(dialog()?.querySelector('[role="alert"]')?.textContent).to.equal(
@@ -279,42 +245,60 @@ describe('AiStudyDialog', () => {
 });
 
 describe('AI actions menu study aids', () => {
+  type ViewState = Pick<EditorContextValue, 'layoutMode' | 'activeView'>;
+
   async function renderMenu(container: ContentContainer, ai: DocBlocksHostAiAPI) {
     const host = document.createElement('div');
     document.body.append(host);
     const root = createRoot(host);
     mounted.push({ root, host });
     const rootRef = { current: host };
+    // The editor's view as of its latest render, read from inside the provider.
+    let view: ViewState | null = null;
+    function ViewProbe() {
+      const { layoutMode, activeView } = useEditorContext();
+      view = { layoutMode, activeView };
+      return null;
+    }
     const tree = (workspaceContainer: ContentContainer) =>
       createElement(EditorProvider, {
         initialMarkdown: DOCUMENT,
         workspaceContainer,
         fileName: 'notes/plants.md',
-        children: createElement(EditorContextMenuProvider, {
-          rootRef,
-          children: createElement(AiToolbarControl, {
-            ai,
-            openPanel: null,
-            onOpenPanel: () => undefined,
+        children: createElement(
+          Fragment,
+          null,
+          createElement(ViewProbe),
+          createElement(EditorContextMenuProvider, {
+            rootRef,
+            children: createElement(AiToolbarControl, {
+              ai,
+              openPanel: null,
+              onOpenPanel: () => undefined,
+            }),
           }),
-        }),
+        ),
       });
     await act(async () => root.render(tree(container)));
-    return { rerender: (next: ContentContainer) => act(async () => root.render(tree(next))) };
+    return {
+      rerender: (next: ContentContainer) => act(async () => root.render(tree(next))),
+      view: () => view,
+    };
   }
 
-  it('opens each study dialog, and closes it when the document changes', async () => {
-    const ai = scriptedAi(() => SUMMARY_REPLY);
-    const first = new MemoryContentContainer();
-    const menu = await renderMenu(first, ai.api);
+  async function openMenu() {
     const trigger = () =>
       document.body.querySelector<HTMLButtonElement>('[aria-label="AI actions"]');
     await waitFor(() => trigger() !== null, 'the AI actions button');
     await act(async () => trigger()?.click());
-    for (const label of ['Summarize document…', 'Create quiz…', 'Create flashcards…']) {
-      await waitFor(() => button(label) !== undefined, label);
-      await waitFor(() => button(label)?.disabled === false, `${label} enabled`);
-    }
+  }
+
+  it('opens the summary dialog from Summarize document…, and closes it when the document changes', async () => {
+    const ai = scriptedAi(() => SUMMARY_REPLY);
+    const first = new MemoryContentContainer();
+    const menu = await renderMenu(first, ai.api);
+    await openMenu();
+    await waitFor(() => button('Summarize document…')?.disabled === false, 'Summarize enabled');
     await click('Summarize document…');
     await waitFor(() => dialog() !== null, 'the summary dialog');
     await click('Generate summary');
@@ -325,4 +309,21 @@ describe('AI actions menu study aids', () => {
     await menu.rerender(new MemoryContentContainer());
     await waitFor(() => dialog() === null, 'the dialog to close');
   });
+
+  for (const label of ['Create quiz…', 'Create flashcards…']) {
+    it(`switches the editor to the Study cards view from ${label}, without calling the model`, async () => {
+      const ai = scriptedAi(() => SUMMARY_REPLY);
+      const menu = await renderMenu(new MemoryContentContainer(), ai.api);
+      expect(menu.view()).to.deep.equal({ layoutMode: 'document', activeView: 'raw' });
+      await openMenu();
+      await waitFor(() => button(label)?.disabled === false, `${label} enabled`);
+      await click(label);
+      await waitFor(() => menu.view()?.layoutMode === 'study', 'the Study cards layout');
+      expect(menu.view()).to.deep.equal({ layoutMode: 'study', activeView: 'wysiwyg' });
+      // Give any stray run time to start: none should, and no dialog opens.
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+      expect(ai.requests).to.have.length(0);
+      expect(dialog()).to.equal(null);
+    });
+  }
 });

@@ -145,7 +145,14 @@ export const presentationTask: BenchTask<PresentationCase> = {
     const source = readFixture('ai-presentations', testCase.file);
     const layouts = new Set<string>(transform.PRESENTATION_LAYOUTS);
     const doc = markdownToDoc(parseMarkdown(source), { generateCoverBlock: false });
-    const plan = transform.createPresentationPlan(doc);
+    // Slides that follow the text, a few sentences each: the wording task every
+    // recorded round measured. Squisq's default is becoming a deck of key
+    // points (longer passages, a different request), which would change every
+    // model's score; moving the benchmark to it is a decision of its own.
+    const plan = transform.createPresentationPlan(doc, {
+      ...transform.defaultPresentationHints(),
+      density: 'balanced',
+    });
     const asked = transform.presentationSlidesToWord(plan);
     const observed = observeChat(context.ai);
     const problems: string[] = [];

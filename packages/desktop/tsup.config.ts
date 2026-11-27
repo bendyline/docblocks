@@ -13,7 +13,12 @@ export const desktopTsupOptions = [
   // Main process — Node runtime, no DOM globals.
   {
     // The narration engine runs ONNX Runtime in its own utility process.
-    entry: { main: 'main/main.ts', 'kokoro-utility': 'main/speech/kokoro-utility.ts' },
+    // So does semantic search's embedding model.
+    entry: {
+      main: 'main/main.ts',
+      'kokoro-utility': 'main/speech/kokoro-utility.ts',
+      'embedding-utility': 'main/embeddings/embedding-utility.ts',
+    },
     outDir: 'dist/main',
     format: ['cjs'],
     platform: 'node',
@@ -46,6 +51,8 @@ export const desktopTsupOptions = [
       'electron-window-state',
       '@bendyline/gezel-app-sdk',
       '@bendyline/gezel-inference',
+      // ESM only as well; the embedding utility reaches it with `import()`.
+      '@bendyline/gezel-knowledge',
       // A native addon: unpacked from app.asar by electron-builder and loaded
       // only by the narration utility process.
       'onnxruntime-node',

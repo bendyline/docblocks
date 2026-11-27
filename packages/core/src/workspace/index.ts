@@ -29,3 +29,10 @@ export {
   reconcileElectronWorkspaceDescriptors,
   type ElectronWorkspaceReconciliation,
 } from './reconcile-electron.js';
+export {
+  WORKSPACE_DIGEST_MAX_CHARACTERS,
+  deleteWorkspaceDigest,
+  readWorkspaceDigests,
+  setWorkspaceDigestStore,
+  writeWorkspaceDigest,
+} from './digest-store.js';

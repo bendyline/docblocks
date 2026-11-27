@@ -122,6 +122,74 @@ function requireLegalResources(): void {
 
 requireLegalResources();
 
+/**
+ * Semantic search ships its embedding model inside the app: staged and
+ * digest-checked by beforePack (stage-gezel-native.cjs calls
+ * stage-embedding-model.cjs), copied as read-only resources, and pinned to
+ * the very Gezel profile whose vectors the index stores.
+ */
+function requireBundledEmbeddingModel(): void {
+  if (
+    !isRecord(config) ||
+    !Array.isArray(config.extraResources) ||
+    !config.extraResources.some(
+      (entry) =>
+        isRecord(entry) && entry.from === 'dist/embedding-model' && entry.to === 'embedding-model',
+    )
+  ) {
+    failConfigPolicy(
+      'Desktop packaging must copy the semantic search model (dist/embedding-model) to resources/embedding-model.',
+    );
+  }
+  const stager = readFileSync(
+    path.join(repoRoot, 'packages/desktop/scripts/stage-gezel-native.cjs'),
+    'utf8',
+  );
+  if (!stager.includes("require('./stage-embedding-model.cjs')")) {
+    failConfigPolicy('beforePack must stage the semantic search model.');
+  }
+  const model = JSON.parse(
+    readFileSync(path.join(repoRoot, 'packages/desktop/embedding-model.json'), 'utf8'),
+  ) as {
+    profileId: string;
+    repo: string;
+    revision: string;
+    files: Array<{ path: string; sha256: string; unversioned?: boolean }>;
+  };
+  // The pins must be the Gezel profile's own: other bytes are another vector space.
+  // ESM only, so resolved as an import (its exports carry no `require` condition).
+  const profileSource = readFileSync(
+    fileURLToPath(import.meta.resolve('@bendyline/gezel-knowledge')),
+    'utf8',
+  );
+  const profileStart = profileSource.indexOf(`id: "${model.profileId}"`);
+  const profile =
+    profileStart === -1 ? '' : profileSource.slice(profileStart, profileStart + 1_000);
+  const onnx = model.files.find((file) => file.path.endsWith('.onnx'));
+  const tokenizer = model.files.find((file) => file.path === 'tokenizer.json');
+  if (
+    !profile.includes(`repo: "${model.repo}"`) ||
+    !profile.includes(`revision: "${model.revision}"`) ||
+    !onnx ||
+    !profile.includes(`sha256:${onnx.sha256}`) ||
+    !tokenizer ||
+    !profile.includes(`sha256:${tokenizer.sha256}`)
+  ) {
+    failConfigPolicy(
+      `packages/desktop/embedding-model.json no longer matches Gezel's ${model.profileId} profile.`,
+    );
+  }
+  if (existsSync(mainPath)) {
+    const utility = path.join(path.dirname(mainPath), 'embedding-utility.cjs');
+    if (!existsSync(utility)) {
+      failConfigPolicy(`The semantic search utility is missing from the main build: ${utility}.`);
+    }
+  }
+  process.stdout.write('electron-builder.yml: bundled embedding model configured OK\n');
+}
+
+requireBundledEmbeddingModel();
+
 function requireBundledGezelEngines(): void {
   if (!isRecord(config) || config.beforePack !== 'scripts/stage-gezel-native.cjs') {
     failConfigPolicy("Desktop packaging must stage the Gezel service's pinned native engines.");
@@ -192,6 +260,48 @@ function requireBundledGezelEngines(): void {
 }
 
 requireBundledGezelEngines();
+
+/**
+ * The Mac app collects the versions iCloud sets aside through a small native
+ * helper built from this repo. It must be staged before packaging, sit where
+ * macOS expects nested programs, and be signed by the app's own signing pass
+ * (never listed in signIgnore), which is what sandboxes it in the store build.
+ */
+function requireBundledCloudHelper(): void {
+  const stager = readFileSync(
+    path.join(repoRoot, 'packages/desktop/scripts/stage-gezel-native.cjs'),
+    'utf8',
+  );
+  if (!stager.includes("require('./stage-cloud-helper.cjs')")) {
+    failConfigPolicy('beforePack must build and stage the iCloud helper for macOS.');
+  }
+  if (
+    !isRecord(config) ||
+    !isRecord(config.mac) ||
+    !Array.isArray(config.mac.extraFiles) ||
+    !config.mac.extraFiles.some(
+      (entry) => isRecord(entry) && entry.from === 'dist/cloud-helper' && entry.to === 'Helpers',
+    )
+  ) {
+    failConfigPolicy('Mac packaging must copy the iCloud helper into Contents/Helpers.');
+  }
+  for (const target of ['mac', 'mas'] as const) {
+    const section = config[target];
+    const ignored =
+      isRecord(section) && Array.isArray(section.signIgnore) ? section.signIgnore : [];
+    for (const pattern of ignored) {
+      if (
+        typeof pattern === 'string' &&
+        new RegExp(pattern).test('/Contents/Helpers/docblocks-cloud-helper')
+      ) {
+        failConfigPolicy(`${target}.signIgnore must not exclude the iCloud helper from signing.`);
+      }
+    }
+  }
+  process.stdout.write('electron-builder.yml: iCloud helper configured OK\n');
+}
+
+requireBundledCloudHelper();
 
 function requireNativePlatformContract(): void {
   if (

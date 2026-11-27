@@ -178,6 +178,24 @@ public final class Storage {
         BasicFileAttributes identity = root.attributes();
         if (identity == null || !identity.isDirectory() || identity.isSymbolicLink() || !Objects.equals(identity.fileKey(), identities.get(workspace))) throw new Failure("permission-denied");
         switch (op) {
+        case "listMetadata": {
+            // One folder's children from metadata, for the workspace index's walk: no file is opened,
+            // and no size budget applies to what is only listed.
+            exact(r, "op", "instanceId", "path"); String path = string(r, "path", 4096); StorageNode folder = resolve(root, path);
+            BasicFileAttributes attrs = attributes(folder); if (attrs == null) throw new Failure("not-found"); if (!attrs.isDirectory()) throw new Failure("type-mismatch");
+            JSONArray entries = new JSONArray();
+            for (String name : names(folder)) {
+                BasicFileAttributes item;
+                try { item = attributes(folder.child(name)); } catch (Exception vanished) { continue; }
+                if (item == null || item.isSymbolicLink() || (!item.isRegularFile() && !item.isDirectory())) continue;
+                boolean file = item.isRegularFile(); long size = file ? item.size() : 0;
+                JSONObject entry = object("path", path.isEmpty() ? name : path + "/" + name, "name", name, "lastModified", item.lastModifiedTime().toInstant().toString(), "kind", file ? "file" : "directory");
+                entry.put("size", file ? (Object) size : JSONObject.NULL);
+                entry.put("version", "meta:" + (file ? "f" : "d") + ":" + item.fileKey() + ":" + size + ":" + item.lastModifiedTime().toMillis());
+                entries.put(entry);
+            }
+            return entries;
+        }
         case "stat": case "list": case "readBegin": {
             exact(r, "op", "instanceId", "path"); String path = string(r, "path", 4096); StorageNode url = resolve(root, path); JSONObject current = stat(root, path);
             if (op.equals("stat")) return current == null ? JSONObject.NULL : current;

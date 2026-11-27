@@ -1006,6 +1006,123 @@ describe('AiSettingsControls', () => {
     }
   });
 
+  describe('cautioning against a model under docbench 70', () => {
+    const WARNING =
+      'This model has a lower-end DocBench score, and may not give good review or content recommendations.';
+    const warnings = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('p')).filter((p) => p.textContent === WARNING);
+    const docbench = (score: number) => ({ score, band: 2, version: '0.2.1', families: {} });
+    const apple: AiModelInfo = {
+      id: 'apple-foundation-models:apple-foundation-models',
+      label: 'Apple Foundation Models',
+      local: true,
+      contextWindow: 4096,
+      isDefault: true,
+      system: true,
+      docbench: docbench(54.2),
+    };
+    const qwen: AiModelInfo = {
+      id: 'llama-cpp:qwen',
+      label: 'Qwen',
+      local: true,
+      contextWindow: 32_768,
+      isDefault: false,
+      docbench: docbench(80.7),
+    };
+
+    async function renderInstalled(preferences: AiPreferences, installed: readonly AiModelInfo[]) {
+      const fake = fakeAi({ ...READY, model: installed[0] ?? null }, preferences, false);
+      fake.api.models = async () => ({ ok: true, value: installed });
+      return render(fake.api);
+    }
+
+    it('cautions under the model picker while the default in use scores low', async () => {
+      const { container, cleanup } = await renderInstalled(OPTED_IN, [apple, qwen]);
+      try {
+        expect(warnings(container)).to.have.length(1);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('drops the caution once a well-scored model is the one in use', async () => {
+      const { container, cleanup } = await renderInstalled({ ...OPTED_IN, model: qwen.id }, [
+        apple,
+        qwen,
+      ]);
+      try {
+        expect(warnings(container)).to.have.length(0);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('never cautions about a model docbench has not measured, or one shown as 70', async () => {
+      for (const model of [
+        { ...apple, docbench: undefined },
+        { ...apple, docbench: docbench(69.5) },
+      ]) {
+        const { container, cleanup } = await renderInstalled(OPTED_IN, [model]);
+        try {
+          expect(warnings(container), JSON.stringify(model.docbench)).to.have.length(0);
+        } finally {
+          await cleanup();
+        }
+      }
+    });
+
+    it('cautions in the download picker for the model it names, and beside a low recommendation', async () => {
+      const low: AiModelDownloadInfo = {
+        id: 'llama-cpp:small',
+        label: 'Small',
+        contextWindow: 8192,
+        downloadBytes: 2 * 1024 ** 3,
+        state: 'download-required',
+        fit: null,
+        score: 100,
+        recommended: true,
+        docbench: docbench(62),
+      };
+      const high: AiModelDownloadInfo = {
+        ...low,
+        id: 'llama-cpp:large',
+        label: 'Large',
+        score: 50,
+        recommended: false,
+        docbench: docbench(79),
+      };
+      const fake = fakeAi({ ...READY, model: null }, OPTED_IN, false);
+      fake.api.models = async () => ({ ok: true, value: [] });
+      fake.api.availableModels = async () => ({ ok: true, value: [low, high] });
+      fake.api.installModel = () => ({
+        done: new Promise(() => undefined),
+        cancel: () => undefined,
+      });
+      const { container, cleanup } = await render(fake.api);
+      try {
+        await flush();
+        // The one-click recommendation is the low scorer.
+        expect(buttonLabels(container)).to.include(
+          'Add recommended model (Small, 2.0 GB, docbench 62)',
+        );
+        expect(warnings(container)).to.have.length(1);
+
+        await clickButton(container, 'Pick a model…');
+        const select = container.querySelectorAll<HTMLSelectElement>('select')[1];
+        expect(select?.value).to.equal(low.id);
+        expect(warnings(container)).to.have.length(1);
+
+        await act(async () => {
+          select!.value = high.id;
+          select!.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        expect(warnings(container)).to.have.length(0);
+      } finally {
+        await cleanup();
+      }
+    });
+  });
+
   it('shows system model names and readiness reasons without allowing an unavailable choice', async () => {
     const apple: AiModelInfo = {
       id: 'system:apple',

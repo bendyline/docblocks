@@ -167,7 +167,12 @@ export async function catalogEntryFromDocument(
   document: MarkdownDocument,
   hints: CatalogEntryHints = {},
 ): Promise<CatalogEntry> {
-  const { extractPlainText, inferDocumentTitle, readFrontmatterThemeId } = await loadMarkdown();
+  const {
+    extractPlainText,
+    inferDocumentTitle,
+    readFrontmatterThemeId,
+    withoutAccessorySectionNodes,
+  } = await loadMarkdown();
   const frontmatter = document.frontmatter;
   const title =
     metadataText(inferDocumentTitle(document), CATALOG_LIMITS.maxMetadataCharacters) ??
@@ -177,7 +182,9 @@ export async function catalogEntryFromDocument(
   const outline: CatalogOutlineEntry[] = [];
   let words = 0;
   let excerpt: string | undefined;
-  for (const block of document.children) {
+  // Slide summaries (`{[summary]}` accessory blocks) are side information
+  // about a section, not the document's words or outline.
+  for (const block of withoutAccessorySectionNodes(document.children)) {
     const text = extractPlainText(block);
     words += countWords(text);
     if (block.type === 'heading') {

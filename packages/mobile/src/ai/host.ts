@@ -1,12 +1,17 @@
 import {
   AI_WIRE_LIMITS,
+  aiDeviceFit,
   knowledgeChatEvent,
+  WORKSPACE_KNOWLEDGE_CATALOG_ID,
+  WORKSPACE_KNOWLEDGE_NAME,
+  withWorkspaceCatalogId,
   parseAiChatProgress,
   parseAiChatRequest,
   parseAiPreferences,
   parseAiPreferencesPatch,
   type AiChatCompletion,
   type AiChatEvent,
+  type AiDeviceFit,
   type AiModelInfo,
   type AiPreferences,
   type AiResult,
@@ -37,6 +42,7 @@ export interface MobileAiOptions {
   load(): Promise<EmbeddingConnection>;
   readPreferences(): unknown;
   writePreferences(preferences: AiPreferences): void;
+  /** Longest wait for the next delta or progress event before a chat times out. */
   requestTimeoutMs?: number;
   /** Waits before each retry of an interrupted download that saved no new bytes. */
   downloadRetryDelaysMs?: readonly number[];
@@ -44,6 +50,11 @@ export interface MobileAiOptions {
   busyRetryDelaysMs?: readonly number[];
   /** Waits before each new look at a chosen model native briefly refused on start. */
   heldRetryDelaysMs?: readonly number[];
+  /**
+   * The device's memory, read without starting a model, or null when the
+   * runtime does not report it. Decides whether to suggest AI while it is off.
+   */
+  deviceMemoryBytes?(): Promise<number | null>;
 }
 const defaults: AiPreferences = { enabled: false, model: null, reviewMode: 'explicit' };
 const provider = { name: 'Gezel', version: '0.1.0', mode: 'hosted' as const };
@@ -107,6 +118,8 @@ export function foldSystemMessages(messages: readonly ChatMessage[]): ChatMessag
 
 export function createMobileAi(options: MobileAiOptions) {
   let preferences = parseAiPreferences(options.readPreferences()) ?? defaults;
+  // Measured once: a phone's memory does not change while the app runs.
+  let deviceFit: Promise<AiDeviceFit> | undefined;
   let status: AiStatus = {
     kind: 'unavailable',
     reason: preferences.enabled ? 'disconnected' : 'opt-out',
@@ -278,6 +291,11 @@ export function createMobileAi(options: MobileAiOptions) {
       },
     },
     providerInstalled: async () => false,
+    deviceFit: () =>
+      (deviceFit ??= (options.deviceMemoryBytes?.() ?? Promise.resolve(null)).then(
+        (bytes) => aiDeviceFit('mobile', bytes),
+        () => aiDeviceFit('mobile', null),
+      )),
     status: async () => {
       if (preferences.enabled && !suspended) {
         if (embedding.state !== 'ready') await start();
@@ -467,10 +485,17 @@ export function createMobileAi(options: MobileAiOptions) {
               model?.unavailable_reason ??
                 'Choose an available on-device model in Settings → AI assistance.',
             );
-          timeout = setTimeout(() => {
-            timedOut = true;
-            controller.abort();
-          }, options.requestTimeoutMs ?? 180_000);
+          // A stall limit, not a total: a long reply on a phone or iPad streams
+          // for minutes, and a flat limit cut healthy drafts off mid-sentence.
+          // Each delta or progress event re-arms it, as desktop's watchdog does.
+          const arm = () => {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => {
+              timedOut = true;
+              controller.abort();
+            }, options.requestTimeoutMs ?? 180_000);
+          };
+          arm();
           const maxTokens = Math.min(
             request.maxTokens ??
               (request.purpose === 'write'
@@ -479,39 +504,61 @@ export function createMobileAi(options: MobileAiOptions) {
             model.max_output_tokens ?? 2048,
             Math.max(1, (model.context_window ?? 4096) - 1),
           );
-          // Reference passages from enabled catalogs; retrieval never fails the request.
-          const context = await knowledgeContext(embedding.knowledge, request.messages, {
-            signal: controller.signal,
-            contextWindow: model.context_window ?? null,
-            maxOutputTokens: maxTokens,
-            maxPromptCharacters: AI_WIRE_LIMITS.promptCharacters,
-            maxMessages: AI_WIRE_LIMITS.messageEntries,
-            ...(request.knowledgeCitations ? { citations: 'numbered' as const } : {}),
-            ...(request.knowledgeQuery?.trim() ? { query: request.knowledgeQuery } : {}),
-          });
+          // Reference passages from enabled catalogs and the person's workspace;
+          // retrieval never fails the request. A request may opt out, as a
+          // transcript tidy that must add nothing does: it is sent as written.
+          // Workspace passages go to Gezel as candidates, which take turns
+          // with catalog passages (phones have no relevance model) and still
+          // ground the request when no catalog is on or catalog search fails.
+          const workspace = request.workspacePassages?.length
+            ? request.workspacePassages
+            : undefined;
+          const context =
+            request.searchKnowledge === false
+              ? null
+              : await knowledgeContext(embedding.knowledge, request.messages, {
+                  signal: controller.signal,
+                  contextWindow: model.context_window ?? null,
+                  maxOutputTokens: maxTokens,
+                  maxPromptCharacters: AI_WIRE_LIMITS.promptCharacters,
+                  maxMessages: AI_WIRE_LIMITS.messageEntries,
+                  ...(request.knowledgeCitations ? { citations: 'numbered' as const } : {}),
+                  ...(request.knowledgeQuery?.trim() ? { query: request.knowledgeQuery } : {}),
+                  ...(workspace ? { candidates: workspace } : {}),
+                });
           checkCancelled(controller.signal);
-          // Names label the cited sources; whether any catalog is on labels the rest.
-          if (
-            !catalogs ||
-            Date.now() - catalogs.at > CATALOG_NAMES_MS ||
-            context.passages.some((passage) => !catalogs?.names.has(passage.catalogId))
-          )
-            await embedding.knowledge
-              .state({ signal: controller.signal })
-              .then(({ catalogs: list }) => rememberCatalogs(list))
-              .catch(() => undefined);
-          const knowledge = knowledgeChatEvent(
-            context.status,
-            context.passages,
-            catalogs?.names,
-            context.status === 'used' || catalogs?.enabled === true,
-          );
-          if (knowledge) emit({ kind: 'knowledge', knowledge });
+          if (context) {
+            const cited = withWorkspaceCatalogId(context.passages);
+            // Names label the cited sources; whether any catalog is on labels the rest.
+            if (
+              !catalogs ||
+              Date.now() - catalogs.at > CATALOG_NAMES_MS ||
+              cited.some(
+                (passage) =>
+                  passage.catalogId !== WORKSPACE_KNOWLEDGE_CATALOG_ID &&
+                  !catalogs?.names.has(passage.catalogId),
+              )
+            )
+              await embedding.knowledge
+                .state({ signal: controller.signal })
+                .then(({ catalogs: list }) => rememberCatalogs(list))
+                .catch(() => undefined);
+            const names = new Map(catalogs?.names ?? []);
+            if (workspace) names.set(WORKSPACE_KNOWLEDGE_CATALOG_ID, WORKSPACE_KNOWLEDGE_NAME);
+            const knowledge = knowledgeChatEvent(
+              context.status,
+              cited,
+              names,
+              context.status === 'used' || catalogs?.enabled === true || workspace !== undefined,
+            );
+            if (knowledge) emit({ kind: 'knowledge', knowledge });
+          }
+          const messages = context?.messages ?? request.messages;
           const stream = () =>
             embedding.streamText(
               {
                 model: model.id,
-                messages: foldSystemMessages(context.messages),
+                messages: foldSystemMessages(messages),
                 maxTokens,
                 // Sampling support comes from inventory, never a host/provider-name test.
                 ...(model.supported_options?.includes('temperature') &&
@@ -536,6 +583,11 @@ export function createMobileAi(options: MobileAiOptions) {
                     const progress = parseAiChatProgress(event.progress);
                     if (progress) emit({ kind: 'progress', progress });
                   }
+                  if (
+                    (event.type === 'delta' || event.type === 'progress') &&
+                    !controller.signal.aborted
+                  )
+                    arm();
                 },
               },
             );

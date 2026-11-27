@@ -24,6 +24,7 @@ export type {
   AiChatProgress,
   AiChatPurpose,
   AiChatRequest,
+  AiWorkspacePassage,
   AiConnectionStep,
   AiEnsureWorkspaceHandle,
   AiError,
@@ -62,6 +63,7 @@ export {
   parseAiChatKnowledge,
   parseAiChatProgress,
   parseAiChatRequest,
+  parseAiWorkspacePassages,
   parseAiError,
   parseAiFactCheck,
   parseAiFactCheckRequest,
@@ -130,6 +132,41 @@ export {
   parseSpeechVoiceInfo,
 } from './speech-wire-policy.js';
 
+export {
+  WORKSPACE_KNOWLEDGE_CATALOG_ID,
+  WORKSPACE_KNOWLEDGE_NAME,
+  parseWorkspacePassageUri,
+  withWorkspaceCatalogId,
+  workspacePassageUri,
+  type WorkspacePassageReference,
+} from './ai-workspace-knowledge.js';
+
+export type {
+  DocBlocksHostEmbeddingsAPI,
+  EmbeddingKind,
+  EmbeddingsRequest,
+  EmbeddingsStatus,
+  EmbeddingsTokenizer,
+} from './embeddings.js';
+export type {
+  DocBlocksHostNotificationsAPI,
+  HostReminder,
+  NotificationPermission,
+} from './notifications.js';
+export {
+  NOTIFICATION_LIMITS,
+  parseBadgeCount,
+  parseHostReminders,
+  parseNotificationPermission,
+} from './notifications.js';
+export {
+  EMBEDDINGS_WIRE_LIMITS,
+  parseEmbeddingsRequest,
+  parseEmbeddingsStatus,
+  parseEmbeddingsTokenizer,
+  parseEmbeddingsVectors,
+} from './embeddings.js';
+
 export type {
   DocBlocksHostAPI,
   DocBlocksHostFsAPI,
@@ -180,6 +217,9 @@ export type {
 export {
   ELECTRON_FILE_SYSTEM_V2_CAPABILITIES,
   FILE_SYSTEM_TRANSFER_LIMITS,
+  FILE_SYSTEM_DIRECTORY_LIMITS,
+  FILE_SYSTEM_ENUMERATION_LIMITS,
+  type HostFileSystemEnumerationStep,
   type HostFileSystemReadTransfer,
   type DocBlocksHostFsV2API,
   type HostFileSystemV2OpenRequest,
@@ -204,6 +244,14 @@ export {
 
 export * from './ai-knowledge.js';
 export * from './ai-images.js';
+export {
+  AI_SUGGESTION_MIN_BYTES,
+  aiDeviceFit,
+  parseAiDeviceFit,
+  suggestsLocalAi,
+  type AiDeviceFit,
+  type AiDeviceMemory,
+} from './ai-device.js';
 export {
   buildChatCompletionBody,
   isLocalEngineModel,

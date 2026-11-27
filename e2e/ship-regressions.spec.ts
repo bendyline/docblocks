@@ -13,15 +13,18 @@ import { MemoryContentContainer } from '@bendyline/squisq/storage';
 import { containerToZip, zipToContainer } from '@bendyline/squisq-formats/container';
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
-import { chooseDocumentAction, openInsertMenu, showWriteView } from './helpers/toolbar.js';
+import {
+  chooseDocumentAction,
+  openInsertMenu,
+  showSourceView,
+  showWriteView,
+} from './helpers/toolbar.js';
 import { collectRuntimeErrors, unexpectedRuntimeErrors } from './helpers/console-guard.js';
 import { readWorkspaceBackup } from '../packages/core/src/workspace/backup.js';
+import { createDocument, documentTitleField, newDocumentGallery } from './helpers/new-document.js';
 
 async function newDocument(page: Page, name: string): Promise<void> {
-  await page.getByRole('button', { name: 'New File', exact: true }).click();
-  const input = page.getByRole('textbox', { name: 'New file name' });
-  await input.fill(`${name}.md`);
-  await input.press('Enter');
+  await createDocument(page, `${name}.md`, { empty: true });
   await showWriteView(page);
   await expect(page.locator('.ProseMirror')).toHaveText('');
 }
@@ -207,9 +210,9 @@ test('task lists in table cells survive Source, Write, save, and reload', async 
   await page.getByRole('treeitem', { name: /^table-round-trip/ }).click();
   await expect(cell.locator('input[type="checkbox"]').first()).toBeChecked();
   for (let i = 0; i < 2; i++) {
-    await page.getByRole('tab', { name: 'Source', exact: true }).click();
+    await showSourceView(page);
     await expect(page.locator('.monaco-editor')).toBeVisible({ timeout: 45_000 });
-    await page.getByRole('tab', { name: 'Write', exact: true }).click();
+    await showWriteView(page);
     await expect(cell.locator('input[type="checkbox"]')).toHaveCount(3);
     await expect(cell.locator('input[type="checkbox"]').first()).toBeChecked();
   }
@@ -262,17 +265,18 @@ test('clicking the document that is already open leaves it open, undo history an
   await expect(editor).not.toHaveText('Typed before the click.');
 });
 
-test('New document keeps every key typed right after Create', async ({ page }) => {
+test('a new document keeps every key typed straight after choosing it', async ({ page }) => {
   await openInitializedSite(page);
   // Several in a row: the key that went missing fell in one frame, so a single
-  // document passed about half the time.
+  // document passed about half the time. Each name is typed, with Enter and
+  // the first words, before the document has opened: the keys go to its name
+  // in the title field, then into the document under its renamed heading.
   for (const name of ['at-once-1', 'at-once-2', 'at-once-3']) {
     await page.keyboard.press('ControlOrMeta+KeyN');
-    const dialog = page.getByRole('dialog', { name: 'New document' });
-    await dialog.getByLabel('Document name').fill(name);
-    await dialog.getByLabel('Type').selectOption('markdown');
-    await dialog.getByRole('button', { name: 'Create', exact: true }).click();
-    await page.keyboard.type('Fast first words.', { delay: 25 });
+    const gallery = newDocumentGallery(page);
+    await gallery.getByRole('radio', { name: 'Markdown', exact: true }).click();
+    await gallery.getByRole('button', { name: 'Blank', exact: true }).click();
+    await page.keyboard.type(`${name}\nFast first words.`, { delay: 25 });
 
     const editor = page.getByRole('textbox', { name: new RegExp(`^Edit /?${name}\\.md$`) });
     await expect(editor.locator('h1')).toHaveText(name, { timeout: 30_000 });
@@ -280,25 +284,26 @@ test('New document keeps every key typed right after Create', async ({ page }) =
   }
 });
 
-test('New File opens the new document ready for what is typed straight away', async ({ page }) => {
+test('New File names the document, then keeps typing in it', async ({ page }) => {
   await openInitializedSite(page);
   await page.getByRole('button', { name: 'New File', exact: true }).click();
-  const input = page.getByRole('textbox', { name: 'New file name' });
-  await input.fill('typed-at-once.md');
-  // Name it, press Enter, and keep typing, as a person does. The form used to
-  // leave nothing focused, so these keys went nowhere.
-  await input.press('Enter');
+  await newDocumentGallery(page).getByRole('button', { name: 'Blank', exact: true }).click();
+  const title = documentTitleField(page);
+  await expect(title).toBeFocused({ timeout: 30_000 });
+  // Name it, press Enter, and keep typing at once, as a person does. Renaming
+  // reopens the document, and these keys used to fall into that gap.
+  await page.keyboard.type('typed-at-once', { delay: 30 });
+  await page.keyboard.press('Enter');
   await page.keyboard.type('First words of a new file.', { delay: 30 });
   await page.keyboard.press('Enter');
   await page.keyboard.type('A second line.', { delay: 30 });
 
-  const editor = page.getByRole('textbox', { name: 'Edit typed-at-once.md', exact: true });
-  await expect(editor).toHaveText('First words of a new file.A second line.', {
+  const editor = page.getByRole('textbox', { name: 'Edit /typed-at-once.md', exact: true });
+  await expect(editor.locator('p')).toHaveText(['First words of a new file.', 'A second line.'], {
     timeout: 30_000,
   });
-  await expect(editor.locator('p')).toHaveText(['First words of a new file.', 'A second line.']);
-  // New File makes a plain file: no title line.
-  await expect(editor.locator('h1')).toHaveCount(0);
+  // Its title follows the name it was given.
+  await expect(editor.locator('h1')).toHaveText('typed-at-once');
 });
 
 test('table column alignment survives an edit and save', async ({ page }, testInfo) => {

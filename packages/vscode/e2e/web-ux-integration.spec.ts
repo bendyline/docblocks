@@ -1,5 +1,6 @@
 import type { FrameLocator, Page } from '@playwright/test';
 import { expect, test } from './test.js';
+import { showEdit, showSource, showUse, viewButton } from './view-tabs.js';
 
 const fixturePath = 'test-fixtures/test-doc.md';
 const exportFixturePath = 'test-fixtures/test-doc-export.md';
@@ -166,16 +167,28 @@ test.describe('VS Code web and UX integration', () => {
 
     const editor = await getLatestWebviewContent(page);
     await expect(editor.getByRole('toolbar', { name: /formatting toolbar/i })).toBeVisible();
-    const writeTab = editor.getByRole('tab', { name: /write/i });
-    await expect(writeTab).toBeVisible();
-    await expect(writeTab).toHaveAttribute('aria-selected', 'true');
+    const view = viewButton(editor);
+    await expect(view).toBeVisible();
+    await expect(view).toHaveAttribute('data-active-view', 'wysiwyg');
+    await expect(view).toHaveAccessibleName('View: Write');
     await expect(editor.locator('.squisq-wysiwyg-editor')).toBeVisible();
     await expect(editor.locator('.squisq-raw-editor-container')).toHaveCount(0);
     expect(optionalRuntimeRequests).toEqual([]);
-    await expect(editor.getByRole('tab', { name: /source/i })).toBeVisible();
-    const previewTab = editor.locator('[role="tab"][data-view="preview"]');
-    await expect(previewTab).toBeVisible();
-    await expect(previewTab).toHaveAccessibleName('Slideshow');
+    // The View menu offers Source among the Edit views and Slideshow in Use.
+    const viewMenu = editor.getByRole('menu', { name: 'View', exact: true });
+    await view.click();
+    await expect(
+      viewMenu
+        .getByRole('group', { name: 'Edit', exact: true })
+        .getByRole('menuitemradio', { name: 'Source', exact: true }),
+    ).toBeVisible();
+    await expect(
+      viewMenu
+        .getByRole('group', { name: 'Use', exact: true })
+        .getByRole('menuitemradio', { name: 'Slideshow', exact: true }),
+    ).toBeVisible();
+    await view.click();
+    await expect(viewMenu).toBeHidden();
     const exportButton = editor.getByRole('button', { name: /export document/i });
     await expect(exportButton).toBeVisible();
     await expect(editor.locator('body')).toContainText('Test Document');
@@ -197,7 +210,7 @@ test.describe('VS Code web and UX integration', () => {
     await expect(insertMenu.getByRole('menuitem', { name: 'Record media' })).toHaveCount(0);
     await editor.locator('body').press('Escape');
 
-    await editor.getByRole('tab', { name: /source/i }).click();
+    await showSource(editor);
     await expect(editor.locator('.monaco-editor')).toBeVisible({ timeout: 15_000 });
     await expect
       .poll(() => optionalRuntimeRequests.some((url) => /\/assets\/monaco-/u.test(url)))
@@ -208,7 +221,7 @@ test.describe('VS Code web and UX integration', () => {
     expect(optionalRuntimeRequests.some((url) => /monacoSuggestions-/u.test(url))).toBe(true);
     expect(optionalRuntimeRequests.some((url) => /ts\.worker-/u.test(url))).toBe(false);
 
-    await previewTab.click();
+    await showUse(editor);
     await expect(editor.locator('body')).toContainText('Test Document', { timeout: 15_000 });
   });
 
@@ -225,8 +238,7 @@ test.describe('VS Code web and UX integration', () => {
     await openDocBlocksEditor(page);
 
     const editor = await getLatestWebviewContent(page);
-    const previewTab = editor.locator('[role="tab"][data-view="preview"]');
-    await previewTab.click();
+    await showUse(editor);
 
     const player = editor.locator('.doc-player').first();
     await expect(player).toBeVisible({ timeout: 15_000 });
@@ -245,6 +257,16 @@ test.describe('VS Code web and UX integration', () => {
 
     expect(style.stylesLoaded).toBe('1');
     expect(style.maxHeight).not.toBe('none');
+  });
+
+  test('offers Squisq’s Study cards view without AI, as VS Code lends none', async ({ page }) => {
+    await bootVSCode(page);
+    await openDocBlocksEditor(page);
+    const editor = await getLatestWebviewContent(page);
+    await showEdit(editor, 'Study cards');
+    const view = editor.getByRole('region', { name: 'Study cards', exact: true });
+    await expect(view.getByRole('status').first()).toContainText('cards in', { timeout: 15_000 });
+    await expect(view.getByRole('button', { name: 'Generate for this section' })).toHaveCount(0);
   });
 
   test('exports Markdown after a validated filename edit within the approved folder', async ({
@@ -438,7 +460,7 @@ test.describe('VS Code web and UX integration', () => {
     await page.keyboard.press('ControlOrMeta+2');
 
     await expect(editor.locator('.ProseMirror h2')).toContainText('Format this text.');
-    await expect(editor.locator('[data-view="wysiwyg"]')).toHaveAttribute('aria-selected', 'true');
+    await expect(viewButton(editor)).toHaveAttribute('data-active-view', 'wysiwyg');
     await expect(
       page.locator('.statusbar-item').filter({ hasText: 'DocBlocks: Unsaved changes' }),
     ).toBeVisible({ timeout: 10_000 });

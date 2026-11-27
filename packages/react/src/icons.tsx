@@ -11,19 +11,42 @@ import {
   BookOpen,
   ChevronLeft,
   ChevronRight,
+  ClipboardPaste,
   CircleCheck,
   Clock,
   Download,
   createLucideIcon,
   Ellipsis,
+  File,
+  FileArchive,
+  FileBraces,
+  FileCode,
+  FileHeadphone,
+  FileImage,
+  FilePlay,
+  FileSpreadsheet,
+  FileText,
   Folder,
   FolderOpen,
+  FolderRoot,
   FileUp,
   FolderTree,
+  House,
+  Inbox,
+  ListChecks,
+  MessageCircleQuestionMark,
+  MessageSquarePlus,
+  MessagesSquare,
+  Mic,
+  NotebookPen,
   PanelLeft,
+  Paperclip,
+  Pencil,
   Pin,
+  Presentation,
   Search,
   Settings2,
+  Trash2,
   TriangleAlert,
   X,
   type LucideIcon,
@@ -86,6 +109,14 @@ export function NewFolderIcon() {
   return <ShellIcon icon={FolderSparkle} />;
 }
 
+/**
+ * The familiar Paste glyph rather than the "new" sparkle New File and New
+ * Folder wear: what it makes a document from is what sets it apart.
+ */
+export function NewFromClipboardIcon() {
+  return <ShellIcon icon={ClipboardPaste} />;
+}
+
 export function ImportFilesIcon() {
   return <ShellIcon icon={FileUp} />;
 }
@@ -104,6 +135,59 @@ export function SortByLastModifiedIcon() {
 
 export function FolderIcon() {
   return <ShellIcon icon={Folder} />;
+}
+
+/**
+ * The open/closed mark on a tree row: one right-pointing chevron that CSS
+ * turns down while its row is expanded. The ▸/▾ characters it replaced came
+ * from whichever font had them and sat lopsided. A step heavier than the
+ * shell's outlines, since it draws smaller than they do.
+ */
+export function DisclosureIcon() {
+  return <ShellIcon icon={ChevronRight} size="1em" strokeWidth={2.25} />;
+}
+
+/** File types, beside each file's name in the tree. */
+export function DocumentFileIcon() {
+  return <ShellIcon icon={FileText} />;
+}
+
+export function SpreadsheetFileIcon() {
+  return <ShellIcon icon={FileSpreadsheet} />;
+}
+
+export function PresentationFileIcon() {
+  return <ShellIcon icon={Presentation} />;
+}
+
+export function ImageFileIcon() {
+  return <ShellIcon icon={FileImage} />;
+}
+
+export function VideoFileIcon() {
+  return <ShellIcon icon={FilePlay} />;
+}
+
+export function AudioFileIcon() {
+  return <ShellIcon icon={FileHeadphone} />;
+}
+
+/** Source code. Web pages share its glyph: they are HTML too. */
+export function CodeFileIcon() {
+  return <ShellIcon icon={FileCode} />;
+}
+
+export function DataFileIcon() {
+  return <ShellIcon icon={FileBraces} />;
+}
+
+export function ArchiveFileIcon() {
+  return <ShellIcon icon={FileArchive} />;
+}
+
+/** A file of a type the tree does not tell apart. */
+export function GenericFileIcon() {
+  return <ShellIcon icon={File} />;
 }
 
 export function MoreIcon() {
@@ -146,8 +230,60 @@ export function FilesIcon() {
   return <ShellIcon icon={FolderTree} />;
 }
 
+/** A workspace as the root of its folders, in the workspace folder picker. */
+export function WorkspaceRootIcon() {
+  return <ShellIcon icon={FolderRoot} />;
+}
+
 export function BackupIcon() {
   return <ShellIcon icon={Download} />;
+}
+
+/** The shell's places: Home, Tasks, Ask and the journal and Unfiled folders. */
+export function HomeIcon() {
+  return <ShellIcon icon={House} />;
+}
+
+export function TasksIcon() {
+  return <ShellIcon icon={ListChecks} />;
+}
+
+export function AskIcon() {
+  return <ShellIcon icon={MessageCircleQuestionMark} />;
+}
+
+/** Ask's saved chats. */
+export function ChatsIcon() {
+  return <ShellIcon icon={MessagesSquare} />;
+}
+
+export function NewChatIcon() {
+  return <ShellIcon icon={MessageSquarePlus} />;
+}
+
+export function RenameIcon() {
+  return <ShellIcon icon={Pencil} />;
+}
+
+export function DeleteIcon() {
+  return <ShellIcon icon={Trash2} />;
+}
+
+export function JournalIcon() {
+  return <ShellIcon icon={NotebookPen} />;
+}
+
+export function DictateIcon() {
+  return <ShellIcon icon={Mic} />;
+}
+
+export function AttachmentIcon() {
+  return <ShellIcon icon={Paperclip} />;
+}
+
+/** An in-tray: where shared and dropped notes wait to be filed. */
+export function UnfiledIcon() {
+  return <ShellIcon icon={Inbox} />;
 }
 
 /**

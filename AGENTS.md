@@ -131,6 +131,120 @@ DBK conflicts stage the complete external bundle until the user chooses a
 branch: Keep mine preserves the complete local tree, while Reload external
 atomically replaces markdown and media together.
 
+The shell looks at the file under the open document in one place,
+`useExternalDocumentObserver`, on every surface: on watch events where the
+provider has them, whenever the app comes back (`subscribeRevalidationSignal`:
+focus, visibility, resume, network return, first input after a quiet spell),
+and on a heartbeat where native storage cannot watch. Its observation sequence
+must outlive effect re-runs, because the session ignores a sequence it has
+already seen. Do not add a second observer or a separate freshness timer.
+
+Storage that cannot meet the `watch` contract can still say "something
+changed": another tab wrote to the same IndexedDB workspace
+(`BroadcastChannel`), or a phone's native layer saw iCloud deliver a file.
+That is a change hint (`packages/core/src/filesystem/change-hints.ts`): no
+path, no ordering. Hints reach consumers through the revalidation signal as
+reason `storage`, which re-checks cheaply (a version check before any read)
+because a hint also follows this app's own saves. A new source publishes a
+hint; it does not add a listener of its own to the shell.
+
+When the file and unsaved edits disagree, the session decides in this order.
+Edits to different parts of the document are combined by itself
+(`three-way-merge.ts`, line based and conservative: neighbouring lines count
+as an overlap), once typing has paused, and only for a target that offers
+`park()`: the text from before the merge is kept first, and the shell offers
+Undo. Otherwise the conflict waits for the user, who can keep either version
+or combine them by hand. A conflict no longer traps the user on a document:
+leaving parks the unsaved text and takes the saved file. The session never
+drops text by its own choice; keep that invariant when touching it.
+
+Versions that are not the document live in its sidecar as conflict copies,
+`<stem>_files/conflicts/<UTC stamp>-<origin>[-s]-<hash16>[ (<label>)].<ext>`
+(`packages/core/src/filesystem/conflict-copies.ts`). One immutable file per
+copy, every fact in the name, no manifest, deduplicated by content hash.
+Origins: `sync` (set aside by a sync service), `local` and `draft` (parked by
+the session), `premerge` (undo material, removed after a week). The Swift
+storage layer writes `sync` copies with the same grammar;
+`packages/core/test/fixtures/conflict-copy-names.json` is read by both test
+suites, so change the grammar in both places or not at all. The shell surfaces
+copies through `DocumentVersionsLayer` and the explorer badge; do not list
+`conflicts/` as media or as documents.
+
+Two devices saving at the same moment is the common case on synced storage,
+and the sync service settles it before the session sees a disagreement: one
+save becomes the file, the other a `sync` copy. That copy is the proof the two
+saves never saw each other, so `DocumentVersionsLayer` offers it to the
+session first (`absorbConcurrentVersion`) and only shows it for review when
+the session declines. Combining needs the text both started from, which no
+sync service reports; `DocumentLineage` (`packages/core/src/document/lineage.ts`)
+works it out from the texts the session has held (opened, saved, taken from
+outside) and refuses when it cannot defend the answer: a version saved before
+the starting point existed, nothing typed here since, or a save of this
+session's own that the other version does not carry. Closeness is counted in
+characters, not lines, because a paragraph is one line and two devices typing
+hand each other half-finished paragraphs; a version that is only a stage the
+document has already passed is cleared, not queued for review. Do not combine a plain
+newer file the same way: without a set-aside copy, text missing from it may
+have been deleted on purpose. A version the user turned down (Undo) is kept as
+`local`, never `sync`, or every device would combine it again.
+`DocumentLineageStore` keeps the starting point across restarts, device-local.
+
+Three things settle a set-aside version without a starting text, and they are
+the only ones: the document already holds all of it (`holdsAllOf`: the version
+plus text added, nothing reworded or removed); it only typed into a paragraph
+that the document has typed further into; or the same text is already kept as
+a `premerge` copy, which means some device combined or replaced it. Age alone
+never settles one: an old version can still hold a paragraph that went
+nowhere else. Before the layer clears any version as already included it asks
+the shell to re-read the document (`checkDocument`) and asks the session
+again, because a sync service sets a save aside at the moment it replaces it:
+a session that has not seen the replacement would call its own lost save
+"included" and delete the only copy.
+
+The same set-aside copy decides how the session treats the version that
+replaced its save. Measured from the session's last save, that version looks
+as if it deleted the typing in it: combined that way the typing vanishes until
+the copy puts it back, and typing on in the same paragraph becomes a conflict
+the user is asked to resolve. So when storage hands over a version that was
+not built on the saves made here (`DocumentLineage.parting`), the session
+holds it for up to `concurrentSaveGraceMs` (2 s) as a conflict with `merging`
+set, clean text included. A set-aside copy of one of those saves
+(`sawSetAside`, recorded by `absorbConcurrentVersion`, which the layer calls
+during a conflict for this reason) proves the two were written at the same
+time, and they are combined from the text they parted at. With no copy by
+then it is an ordinary newer version: taken as it is when nothing is unsaved,
+combined from the last save otherwise. Never use the parting text without
+that proof; a version that lacks the typing here may have removed it on
+purpose. `mergeText` also takes the fuller of two versions of one paragraph
+when both only added to it and one has all of the other's additions: after a
+merge on each device, both hold the same typing at different stages, and
+that is not a disagreement. `packages/core/test/document-lineage.test.ts`
+ends with a two-device simulation of all this (a sync service that keeps one
+save and sets the other aside); it must never show text vanishing from the
+device that typed it, a conflict to resolve, or a version left for review.
+
+Deleting breaks the fuller-one rule, and so does a word typed and taken out
+again, which leaves a text exactly as it once was. The session therefore
+combines through `DocumentLineage.merge`, never bare `mergeText`: it passes
+what is known of the texts behind the two (`MergeHistory`), and the side that
+already had the other's text for a paragraph and moved on from it has the
+later word. Where the other version has a paragraph exactly as a text held
+here had it, the text here stands. Where the text here still has a paragraph
+exactly as an earlier version from the other writer had it, theirs stands,
+even when theirs is back to what it was before. That second rule depends on
+how the earlier version arrived: one that was the saved document (`outside`)
+was certainly on its writer's screen, but one a sync service set aside
+(`aside`) may have been lost on its writer's own device to the version that
+replaced it. So a set-aside version counts only where the newer one plainly
+goes on from it and is not simply the replacing text. Keep that distinction:
+treating a lost word as a deleted one removes typing from every device.
+Versions are told apart by time as well as text (`findVersion`), because the
+same text saved half a minute later is another version, not a copy of the save
+made here. What text cannot settle is left alone: a word that reached the
+other device only as a set-aside copy, and was then deleted, can come back
+once. The simulation covers typing, deleting, and both mixed; for the mixed
+runs it requires only that both devices end on one text and nobody is asked.
+
 ### `FileSystemProviderV2` is the storage correctness boundary
 
 `packages/core/src/filesystem/v2.ts` defines the byte-authoritative contract.
@@ -192,6 +306,15 @@ provider read queues behind the same per-workspace lock as the user's saves.
 Which entries count as documents, and which folders are skipped, lives in
 `packages/core/src/filesystem/workspace-entry-rules.ts`. The index is never
 persisted inside the workspace (`.docblocks/` syncs and lands in git).
+
+On desktop and the phone apps the index's analysis and text live in a worker
+over an origin-private SQLite store (Gezel's `@bendyline/gezel-retrieval` live
+index), which survives relaunch and ranks passages ("Best matches"); the site
+and VS Code keep the in-memory engine. Semantic search embeds through
+`host.embeddings` (desktop: the bundled model in a utility process; phones:
+Gezel's on-device model). Core never imports a Gezel package — the worker entry
+lives in `packages/react` and each app injects it via `workspaceIndexConfig.ts`.
+See [`docs/workspace-search.md`](docs/workspace-search.md).
 
 ### Ask what the host can do, never which host it is
 
@@ -255,7 +378,10 @@ The connection asks for `openai` plus scoped
 `knowledge` access with a typed verification code. Catalog
 inventory and explicit download/update/enable/remove actions use optional
 `host.ai.knowledge`; every desktop chat retrieves bounded cited passages and
-leaves ranking to the SDK. Model locality and Apple readiness come from Gezel
+leaves ranking to the SDK, except a request that sets `searchKnowledge: false`
+(transcript tidying, whose prompt forbids adding information). Reviews search
+with the document's title and headings (`packages/react/src/Ai/review-knowledge.ts`),
+never the whole prompt, which matches large catalogs by stray words. Model locality and Apple readiness come from Gezel
 inventory, never provider-name heuristics or a DocBlocks native-helper probe.
 Knowledge never blocks a request: missing SDK support,
 a failed retrieval, or a malformed answer sends the request without passages.
@@ -405,24 +531,38 @@ block (which the sanitizer drops) is fenced as `svg`, and an `xml`/`html` fence
 holding one SVG document is retagged — never text copied verbatim from the
 document, so an author's `xml` fence stays code.
 
-**Study aids are saved beside the document, never into it.** Summarize
-document, Create quiz and Create flashcards (`AiStudyDialog.tsx`) write
-`<stem>_files/ai/{summary,quiz,flashcards}.md` through the editor's
-`workspaceContainer`, which the shell roots at the sidecar. They sit under
-`ai/`, not the sidecar root, because an outside-in companion finds its own
-Markdown as the first `*.md` there. Each file carries flat `docblocks-*`
-frontmatter — source name, SHA-256 of the source body, time, model — so the
-dialog can say when the document has changed since, and is written only after
-a run succeeds. A summary is model-written Markdown; quizzes and flashcards
-follow the diagram rule: the model returns a JSON array (`study-prompts.ts`)
-and `study-compile.ts` compiles Squisq `{study=…}` heading cards, sanitizing
-every label and keeping only cards `materializeFlashcards` reads back as
-exactly the card meant. Long documents are read in parts sized by
-`studyBudget` (`study-sections.ts`), one call at a time, and a multi-part
+**A document summary is saved beside the document, never into it.**
+Summarize document (`AiStudyDialog.tsx`) writes `<stem>_files/ai/summary.md`
+through the editor's `workspaceContainer`, which the shell roots at the
+sidecar. It sits under `ai/`, not the sidecar root, because an outside-in
+companion finds its own Markdown as the first `*.md` there. The file carries
+flat `docblocks-*` frontmatter — source name, SHA-256 of the source body,
+time, model — so the dialog can say when the document has changed since, and
+is written only after a run succeeds. Long documents are read in parts sized
+by `studyBudget` (`study-sections.ts`), one call at a time, and a multi-part
 summary is written from notes on each part. Every call carries `purpose:
 'study'`, never `write`: desktop lets only `write` reason, and a thinking model
-such as Gemma 4 spent each quiz call's whole explicit cap reasoning and
-returned no JSON at all.
+such as Gemma 4 spent a whole explicit cap reasoning and returned nothing.
+Decks earlier versions saved there (`ai/quiz.md`, `ai/flashcards.md`) are left
+alone and never read.
+
+**Study cards are Squisq's and live in the document; DocBlocks only makes the
+calls.** Flashcards and quiz questions are `{[flashcard]}` / `{[quiz]}`
+accessory blocks under the section they test, made and edited in Squisq's
+Write › Study cards view and studied in Use › Flashcards
+(`docs/study-cards.md`). Squisq owns the format, the reader and writer, the
+view, and the protocol — prompts, reply formats, the checks every card must
+pass, and the loop (`generateStudyCards` in `@bendyline/squisq/study`).
+DocBlocks lends its AI as `createStudyAssistant` (`Study/study-assistant.tsx`,
+passed to `EditorShell` as `studyAssistant` only while AI is offered) over
+the transport in `Study/study-ai.ts`: `purpose: 'study'`, the reply format,
+`searchKnowledge: false`, one request at a time, sized by the model's window
+and reply cap. "Create quiz…" and "Create flashcards…" in the AI menu open
+the view; they never start a run. Do not restate a card rule here — change it
+in Squisq. Every reader that treats a document as the person's writing —
+the workspace index and Ask, Review, Compose, Illustrate, the catalog —
+leaves accessory blocks out (`workspace-index/content-source.ts`,
+`Ai/ai-accessories.ts`).
 
 ### Speech runs natively behind `host.speech`
 
@@ -546,6 +686,13 @@ nearest ancestor `_squisq/squisq-player.js`. Keep companion path/frontmatter
 rules in `@bendyline/squisq-formats/outside-in`; hosts own filesystem authority,
 transaction ordering, visibility, and lifecycle behavior.
 
+PNG, JPEG, and WebP files in a folder workspace are edited the same way through
+Squisq's `ImageFileEditor`. Layers live in `<name.ext>_files/`
+(`imageEditCompanionPath`, whole file name, so `photo.png` and `photo.jpg` never
+share one), and `createImageWriteBack` in `DocBlocksShell/image-write-back.ts`
+writes the flattened picture over the file on Save and on leave. Squisq owns the
+picture-replaced-outside check; see [`docs/outside-in.md`](docs/outside-in.md#images).
+
 ### Workspace settings live in `.docblocks/workspace.json`
 
 Settings that belong to a folder — the default document theme, catalog
@@ -578,10 +725,47 @@ CLI (`docblocks workspace refresh`) supply only IO and a renderer.
 - Every durable commit in a folder workspace reaches `afterWorkspaceCommit`
   in `DocBlocksShell`. A new mutation path must call `notifyWorkspaceChanged`
   with the workspace ID it acted on, never the currently active one.
-- Desktop chokidar ignores dot-folders and IndexedDB/native providers cannot
-  watch, so settings are re-read on activation, focus, resume, and after a git
-  pull or branch switch. VS Code writes catalogs only in trusted, writable
+- Desktop chokidar ignores dot-folders (except `<folder>/.docblocks/folder.json`)
+  and IndexedDB/native providers cannot watch, so settings are re-read on
+  activation, focus, resume, and after a git pull or branch switch. VS Code writes catalogs only in trusted, writable
   folders.
+
+### Tasks, journals and Unfiled are folders of Markdown files
+
+- A folder says what it is for in `<folder>/.docblocks/folder.json`
+  (`@bendyline/docblocks/folders`), parsed with the exact v1 shape; an unknown
+  kind or newer version leaves it an ordinary folder. Never record a folder's
+  kind anywhere else: the file travels with the folder.
+- Task state is the file's place: the first folder below a tasks folder is its
+  bucket, and the folder wins over `completed` in frontmatter. Moves go
+  through `moveFileSystemEntry` (or the tree's `renameEntry` for the active
+  workspace) so the `_files` companion, pins and the open session follow.
+- Properties (`due`, `category`, `tags`, `repeat`, `completed`) are read
+  tolerantly and written key by key (`@bendyline/docblocks/properties`).
+  Dates are calendar days kept as `YYYY-MM-DD` text, never `Date`-parsed.
+- `enumerate` lists a `.docblocks` folder (and never enters it) so the index
+  finds folder settings without probing each folder. Adding a field to
+  `IndexedDocument` means bumping `DOCUMENT_ANALYZER_REVISION`, not
+  `LIVE_ENGINE_PAYLOAD_FORMAT`: older stored records are rebuilt from the
+  engine's own text instead of wiping every stored index.
+- Page routes are `#<workspace>/:home`, `:tasks`, `:ask` and `:folder/<path>`.
+  The pages are one lazy chunk under `packages/react/src/Home/`.
+- Reminders cross the host seam as a whole set (`host.notifications.syncReminders`,
+  `packages/core/src/host/notifications.ts`): the renderer decides what to
+  remind about, the host keeps, re-arms and fires them.
+- What Ask suggests doing is structured output checked by
+  `parseProposedActions` (`packages/react/src/Ai/chat-actions.ts`), never
+  tool calls, and nothing is written until the person confirms each card.
+  Edits are offered only after "Allow edits to cited notes", only for cited
+  documents, and keep a version first (`Home/keep-version.ts`).
+- Ask is a chat: every message reaches the model, and notes found by meaning
+  are enrichment, never a gate. Each conversation is a Markdown file in a
+  `chats` kind folder, appended per exchange (`core/src/folders/chats.ts`,
+  `react/src/Ai/ask-chats.ts`). Saved chats must stay out of every AI
+  request's passages (`chatDocumentPaths`), or the model cites its own words
+  as the person's notes.
+
+See [`docs/home-and-folders.md`](docs/home-and-folders.md).
 
 ### Squisq is a dependency, not a fork
 
@@ -604,7 +788,7 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **Native authority is physical and revocable.** Resolve registered roots and targets with real-path containment, reject escaping symlinks/junctions and platform aliases, revalidate identity around reads, and revoke grants on navigation, renderer loss, or panel/document disposal.
 - **External navigation uses one policy.** Only canonical, credential-free HTTP(S) URLs accepted by `parseExternalHttpUrl` may reach an OS browser. BrowserWindow redirects, popups, webview messages, Git helpers, and CLI output must not bypass it.
 - **Privileged work is budgeted.** Bound strings, arrays, files, decoded payloads, child-process output, execution time, concurrency, and recursive traversal. A fixed argv is still unsafe if it can run forever or return unbounded data.
-- **The canonical assurance gate is `npm run all`.** CI invokes it rather than copying its steps. It includes shipped-bundle budgets, desktop packaging configuration, packed public-package consumers, generated guidance freshness, all TypeScript surfaces, unit/integration tests, and every site, VS Code Web, source-desktop, and packaged-desktop E2E suite runnable on the current OS. Cross-platform CI jobs still cover desktop behavior and artifacts for the other operating systems.
+- **The canonical assurance gate is `npm run all`.** CI invokes it rather than copying its steps. It includes shipped-bundle budgets, desktop packaging configuration, packed public-package consumers, generated guidance freshness, all TypeScript surfaces, unit/integration tests, and every site, VS Code Web, source-desktop, and packaged-desktop E2E suite runnable on the current OS. Cross-platform CI jobs still cover desktop behavior and artifacts for the other operating systems. It refuses to start while a server already listens on an E2E port (5220 site dev, 5230 offline preview), because off CI Playwright would reuse that server instead of testing the checkout; stop it and rerun. On macOS it holds `caffeinate -i` for its run, because a Mac that idle-sleeps on battery mid-run fails every test in flight at once on wake; closing the lid still sleeps it.
 - **Conventional Commits.** commitlint runs in CI on pull requests **and on pushes to `main`** — the latter matters because multi-semantic-release derives every published version bump from those exact messages. There is **no local git hook**, so a malformed message is caught in CI, not at commit time.
 - **Dependency changes cool down for seven days.** Keep registry dependencies exact-pinned and let `.npmrc` enforce `min-release-age=7`; our own `@bendyline/*` packages (Squisq, Gezel, and their first-party siblings) are the only exception, and changing it is a policy change that must update the checker and `docs/dependency-governance.md` together. A release owner can admit one third-party version early only with a command-line exclusion naming that package alone, recorded in that document's override table; never by editing `.npmrc`. Every install script must have an exact-version approval in root `package.json#allowScripts`, and `npm run check:dependency-governance` must agree with the complete cross-platform lockfile. Follow `docs/dependency-governance.md`; never blanket-approve scripts or use `npm audit fix --force` to bypass the policy.
 - **Git management is the user's job — never do it for them.** Do not create pull requests, create new branches, or create git worktrees. The user owns all branch, PR, and worktree management. Commit only when explicitly asked; otherwise leave the working tree and git state alone.
@@ -622,7 +806,21 @@ Native contract tests use real Swift and Java storage. Android device conformanc
 against a test-only DocumentsProvider in the isolated `.tests` app; it requires an
 explicit device ID. See `packages/mobile/README.md` for build, package, and device commands.
 No test may clear the personal app's documents. Mobile provider atomicity is process-scoped,
-with best-effort durability and no watcher; resume re-observes the active document.
+with best-effort durability and no `watch` support; the open document is re-checked on
+return, on a change hint, and on a 20-second heartbeat. iOS asks iCloud for the current
+version before it reads or changes a file it knows is out of date (`CloudState` in
+`native/ios`), and refuses a change for a bounded time rather than save over old content.
+It raises change hints from an `NSMetadataQuery` on the app's iCloud documents
+(`StorageChangeWatcher`, observation only: it takes no part in file coordination), and
+moves the versions iCloud sets aside into the document's sidecar (`ConflictHarvester`).
+
+The Mac app reaches iCloud folders as ordinary files, which hides those set-aside versions.
+A small helper (`CloudHelper` target in `packages/mobile/native/ios`, sharing the harvester)
+runs as a child of the desktop main process and is the only thing that calls
+`NSFileVersion` there (`packages/desktop/main/cloud-helper.ts`, `cloud-conflicts.ts`).
+`beforePack` builds it from source with the Swift toolchain; a source checkout stages it
+with `npm run stage:cloud-helper`, and runs without it otherwise.
+Harvested copies land in a watched folder, so no new wire reaches the renderer.
 
 Mobile AI implements the existing optional `host.ai` seam through Gezel's Capacitor
 App SDK in `packages/mobile/src/ai`. Keep native engines in the upstream SDK,
@@ -699,14 +897,16 @@ Tracked repository skills:
 
 ## Where to look first
 
-| Task                       | Start with                                                                                                   |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Add a storage backend      | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture                  |
-| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`                   |
-| Add a CLI command          | `docs/cli.md` → `packages/cli/src/commands/` → register in `packages/cli/src/program.ts`                     |
-| Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides        |
-| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                          |
-| Add a workspace setting    | `core/src/workspace-settings/settings.ts` + `schema.ts` → `react/src/Settings/WorkspaceSettingsControls.tsx` |
-| Add a new format converter | Linked Squisq CLI registry in `..\squisq`; then `docs/mcp.md` and MCP target/fidelity exposure               |
-| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes                     |
-| Retone the Squisq editor   | The `--squisq-*` bridge in `docblocks.css` (search "Squisq chrome palette") — not a new per-selector rule    |
+| Task                           | Start with                                                                                                            |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| Add a storage backend          | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture                           |
+| Add an Electron capability     | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`                            |
+| Add a CLI command              | `docs/cli.md` → `packages/cli/src/commands/` → register in `packages/cli/src/program.ts`                              |
+| Add a VS Code message          | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides                 |
+| Add a shared UI component      | `packages/react/src/` — exported via `src/index.ts`                                                                   |
+| Add a workspace setting        | `core/src/workspace-settings/settings.ts` + `schema.ts` → `react/src/Settings/WorkspaceSettingsControls.tsx`          |
+| Add a folder kind or task rule | `packages/core/src/folders/` → `packages/react/src/Home/pages.tsx` → `docs/home-and-folders.md`                       |
+| Add a new format converter     | Linked Squisq CLI registry in `..\squisq`; then `docs/mcp.md` and MCP target/fidelity exposure                        |
+| Change theming                 | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes                              |
+| Retone the Squisq editor       | The `--squisq-*` bridge in `docblocks.css` (search "Squisq chrome palette") — not a new per-selector rule             |
+| Change study cards             | Squisq (`@bendyline/squisq/study`, `editor-react/src/study/`); here only `react/src/Study/` and `docs/study-cards.md` |

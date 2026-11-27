@@ -8,7 +8,11 @@
  * in proportion rather than dropping the end.
  */
 
-import { extractPlainText, parseMarkdown } from '@bendyline/squisq/markdown';
+import {
+  extractPlainText,
+  parseMarkdown,
+  withoutAccessorySectionNodes,
+} from '@bendyline/squisq/markdown';
 import { clipPassage } from './illustrate-passages.js';
 
 export interface StudyBudget {
@@ -21,10 +25,6 @@ export interface StudyBudget {
   readonly notesTokens: number;
   /** Output tokens for the finished summary. */
   readonly summaryTokens: number;
-  /** Output tokens for one call that writes quiz questions or flashcards. */
-  readonly itemTokens: number;
-  /** Most questions or cards one call is asked for. */
-  readonly itemsPerCall: number;
 }
 
 /** Characters per token, deliberately low so prompts never overrun the window. */
@@ -39,17 +39,13 @@ export function studyBudget(contextWindow: number | null): StudyBudget {
   const small = contextTokens < SMALL_CONTEXT;
   // Apple's on-device model stops every reply at 1,024 tokens.
   const summaryTokens = small ? 700 : 1_500;
-  const itemTokens = small ? 700 : 1_600;
-  const inputTokens =
-    contextTokens - Math.max(summaryTokens, itemTokens) - SYSTEM_TOKENS - SAFETY_TOKENS;
+  const inputTokens = contextTokens - summaryTokens - SYSTEM_TOKENS - SAFETY_TOKENS;
   return {
     contextTokens,
     chunkCharacters: Math.min(24_000, Math.max(1_200, inputTokens * CHARACTERS_PER_TOKEN)),
     maxChunks: small ? 6 : 10,
     notesTokens: small ? 320 : 700,
     summaryTokens,
-    itemTokens,
-    itemsPerCall: small ? 4 : 6,
   };
 }
 
@@ -81,7 +77,8 @@ function plain(text: string): string {
 export function segmentStudySections(source: string): StudySection[] {
   let children: ReturnType<typeof parseMarkdown>['children'];
   try {
-    children = parseMarkdown(source).children;
+    // A slide summary (`{[summary]}`) restates its section; it is not a section to study.
+    children = withoutAccessorySectionNodes(parseMarkdown(source).children);
   } catch {
     return [];
   }

@@ -61,6 +61,10 @@ describe('AI editor assistant', () => {
     );
     expect(user).to.match(/Do not repeat the document or its title\.$/u);
     expect(compose.messages[0]?.content).to.contain('reply with new text only');
+    // Apple's model on an iPad wrote a whole draft as HTML elements. Listing
+    // the Markdown syntax instead made it turn prose into bullet lists.
+    expect(compose.messages[0]?.content).to.contain('Use Markdown formatting, not HTML.');
+    expect(compose.messages[0]?.content).not.to.contain('- list');
     // Naming the title to avoid made Apple's model copy it in every try.
     const body = compose.messages.map((message) => message.content).join('\n');
     expect(body.split('Twit')).to.have.length(2);

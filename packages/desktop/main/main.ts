@@ -15,6 +15,7 @@ import {
   dialog,
   Menu,
   net,
+  powerMonitor,
   protocol,
   screen,
   session,
@@ -29,6 +30,8 @@ import { isTrustedRendererUrl, parseExternalHttpUrl } from '@bendyline/docblocks
 
 import { registerFsIpc } from './ipc-fs.js';
 import { registerFsV2Ipc } from './ipc-fs-v2.js';
+import { FileSystemV2IpcService } from './filesystem-v2-ipc-service.js';
+import { createCloudConflicts } from './cloud-conflicts.js';
 import { registerExternalIpc } from './ipc-external.js';
 import { ensureDevelopmentWorkspace, registerWorkspaceIpc } from './ipc-workspaces.js';
 import { registerShellIpc } from './ipc-shell.js';
@@ -60,7 +63,8 @@ import { handleOpenFileArg, handleOpenUrl } from './open-requests.js';
 import { PendingOpenRequests } from './pending-open-requests.js';
 import { MainWindowSlot } from './main-window.js';
 import { showAndFocusWindow, showWhenReady } from './window-activation.js';
-import { registerTray, resolveIconPath } from './tray.js';
+import { registerTray, resolveIconPath, trayVisible } from './tray.js';
+import { createNotificationService, type NotificationService } from './ipc-notifications.js';
 import { startAccessingBookmark, releaseAllScopedResources } from './security-scoped.js';
 import {
   attachWindowCloseGuard,
@@ -97,12 +101,18 @@ import {
   aiImagesAvailabilityArguments,
   hostEnvironmentArguments,
   speechAvailabilityArguments,
+  embeddingsAvailabilityArguments,
 } from '../shared/host-environment.js';
 import type { AiImageService } from './ai/ai-image-service.js';
 import type { AiService } from './ai/ai-service.js';
 import { createAiImageService, createAiService, registerAiIpc } from './ipc-ai.js';
 import type { SpeechService } from './speech/speech-service.js';
 import { createSpeechService, registerSpeechIpc } from './ipc-speech.js';
+import {
+  createEmbeddingService,
+  registerEmbeddingsIpc,
+  type EmbeddingService,
+} from './ipc-embeddings.js';
 
 const DEV_SERVER_URL = DESKTOP_DEVELOPMENT_SERVER_URL;
 const TITLE_BAR_HEIGHT = 42;
@@ -166,6 +176,8 @@ const mainWindow = new MainWindowSlot<BrowserWindow>(reopenWindow, (error: unkno
 let aiService: AiService | null = null;
 let aiImageService: AiImageService | null = null;
 let speechService: SpeechService | null = null;
+let embeddingService: EmbeddingService | null = null;
+let notificationService: NotificationService | null = null;
 let appExitApproved = false;
 let appExitPreparing = false;
 const pendingOpenRequests = new PendingOpenRequests();
@@ -390,6 +402,7 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
           stt: speechService?.sttAvailable ?? false,
           tts: speechService?.ttsAvailable ?? false,
         }),
+        ...embeddingsAvailabilityArguments(embeddingService?.available ?? false),
       ],
     },
   });
@@ -461,6 +474,7 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
   showWhenReady(win, () => {
     // Drain any pending open requests received before the window existed.
     drainPendingOpenRequests(win);
+    notificationService?.windowReady(win);
     handleOpenFileArg(win, process.argv);
   });
 
@@ -495,6 +509,8 @@ async function prepareApplicationExit(reason: 'app-quit' | 'update-install'): Pr
   // Cancel in-flight completions and release the Gezel transport. Bounded: a
   // provider that has stopped answering must not hold the app open.
   aiImageService?.dispose();
+  // Kills the semantic search model's utility process, if one is running.
+  embeddingService?.dispose();
   if (aiService || speechService) {
     let disposeTimer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
@@ -673,7 +689,41 @@ async function bootstrap(): Promise<void> {
   }
 
   registerFsIpc();
-  registerFsV2Ipc();
+  // macOS only: versions iCloud set aside when two devices saved a document are
+  // collected into its sidecar. Null on other platforms and unstaged checkouts.
+  const cloudConflicts = createCloudConflicts({
+    platform: process.platform,
+    packaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+    systemVersion: process.getSystemVersion(),
+  });
+  registerFsV2Ipc(new FileSystemV2IpcService(undefined, cloudConflicts?.observer));
+  // A computer that slept, or sat locked, missed whatever a sync client did
+  // meanwhile, and a watcher does not replay it. Tell every window to look
+  // again at what it shows, as a phone does when its app returns.
+  const announceResume = () => {
+    cloudConflicts?.refresh();
+    // Reminders that came due while asleep are shown now, before any new set
+    // from the renderer could leave them out.
+    notificationService?.scheduler.wake();
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('lifecycle:resume');
+    }
+  };
+  powerMonitor.on('resume', announceResume);
+  powerMonitor.on('unlock-screen', announceResume);
+  if (cloudConflicts) {
+    app.on('browser-window-focus', () => cloudConflicts.refresh());
+    const cloudTimer = setInterval(() => {
+      if (BrowserWindow.getFocusedWindow()) cloudConflicts.refresh();
+    }, 60_000);
+    cloudTimer.unref();
+    app.on('will-quit', () => {
+      clearInterval(cloudTimer);
+      cloudConflicts.dispose();
+    });
+  }
   registerExternalIpc();
   registerWorkspaceIpc();
   registerShellIpc();
@@ -691,6 +741,14 @@ async function bootstrap(): Promise<void> {
   // Engines start lazily on first use; nothing is spawned here.
   speechService = await createSpeechService();
   registerSpeechIpc(speechService);
+  // Checks files only; the model's utility process starts on the first batch.
+  embeddingService = createEmbeddingService();
+  registerEmbeddingsIpc(embeddingService);
+  // Re-arms kept reminders and shows any that came due while closed.
+  notificationService = await createNotificationService({
+    getWindow: () => mainWindow.current(),
+    ensureWindow: () => mainWindow.ensure(),
+  });
   // Before the window loads: the shell publishes its pinned documents as soon
   // as it mounts, and the tray has to be listening already.
   registerTray(
@@ -714,6 +772,7 @@ async function bootstrap(): Promise<void> {
   // narrow interval where an OS event still observed no main window after the
   // first drain and therefore queued one late request.
   drainPendingOpenRequests(win);
+  notificationService?.windowReady(win);
 
   buildMenu(() => mainWindow.current(), gitAvailable, {
     stt: speechService?.sttAvailable ?? false,
@@ -769,6 +828,9 @@ app.on('window-all-closed', () => {
   // failure can leave a headless Electron process (and Playwright worker)
   // alive indefinitely.
   if (process.platform !== 'darwin' || isAutomation) {
+    // With the tray icon on and a reminder still to come, keep running so it
+    // fires (Windows and Linux; macOS apps stay running anyway).
+    if (!isAutomation && trayVisible() && notificationService?.hasPending()) return;
     app.quit();
   }
 });
@@ -779,6 +841,7 @@ async function reopenWindow(): Promise<void> {
   const win = await createWindow(developmentWorkspace?.id);
   mainWindow.set(win);
   drainPendingOpenRequests(win);
+  notificationService?.windowReady(win);
   buildMenu(() => mainWindow.current(), gitAvailable, {
     stt: speechService?.sttAvailable ?? false,
     tts: speechService?.ttsAvailable ?? false,

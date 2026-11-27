@@ -25,6 +25,7 @@
 import type { MediaProvider, MediaEntry } from '@bendyline/squisq/schemas';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import { guessMimeType } from './internal/mime.js';
+import { isConflictCopyPath } from './conflict-copies.js';
 
 function stripExt(name: string): string {
   return name.replace(/\.[^.]+$/, '');
@@ -140,7 +141,7 @@ export function createFileMediaProvider(
     async listMedia(): Promise<MediaEntry[]> {
       const entries = await container.listFiles(prefix);
       return entries
-        .filter((e) => !e.path.toLowerCase().endsWith('.md'))
+        .filter((e) => !e.path.toLowerCase().endsWith('.md') && !isConflictCopyPath(e.path))
         .map((e) => ({
           name: e.path,
           mimeType: e.mimeType,

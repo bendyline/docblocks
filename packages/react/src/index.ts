@@ -5,6 +5,7 @@
 // FileExplorer
 export { FileExplorer } from './FileExplorer/index.js';
 export type {
+  FileExplorerHandle,
   FileExplorerProps,
   FileExplorerSortMode,
   FileTreeChange,
@@ -20,6 +21,23 @@ export type { FileTreeActions, FileTreeReadIssue, FileTreeState } from './FileEx
 export { WorkspacePicker } from './WorkspacePicker/index.js';
 export type { WorkspacePickerProps } from './WorkspacePicker/index.js';
 
+// Workspace folder picker: a folder in any workspace, as a tree with each workspace a root
+export {
+  WorkspaceFolderPicker,
+  describeChoice,
+  listProviderFolders,
+} from './FolderPicker/index.js';
+export type {
+  FolderChoice,
+  ListedFolders,
+  ListFoldersOptions,
+  PickerFolder,
+  PickerWorkspace,
+  WorkspaceFolderPickerProps,
+  WorkspaceFolders,
+  WorkspaceFolderSource,
+} from './FolderPicker/index.js';
+
 // Proofing (grammar + spellcheck) is reached through the
 // '@bendyline/docblocks-react/proofing' subpath rather than re-exported here:
 // it pulls Squisq's harper adapter, and a host that never wires the capability
@@ -33,6 +51,11 @@ export type { WorkspacePickerProps } from './WorkspacePicker/index.js';
 // DocBlocksShell
 export { DocBlocksShell } from './DocBlocksShell/index.js';
 export type { DocBlocksShellProps } from './DocBlocksShell/index.js';
+export type { WorkspaceIndexWorkerOption } from './WorkspaceIndex/useWorkspaceIndex.js';
+export type {
+  SemanticProgress,
+  WorkspaceIndexEmbedder,
+} from './WorkspaceIndex/embedding-scheduler.js';
 
 // AppMenu
 export { AppMenu } from './AppMenu/index.js';

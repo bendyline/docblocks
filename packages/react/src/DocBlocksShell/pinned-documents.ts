@@ -192,3 +192,21 @@ export function movePinnedDocumentsToWorkspace(
     ),
   );
 }
+
+/** A pinned document that moved into another workspace, pinned where it is now. */
+export function relocatePinnedDocumentToWorkspace(
+  documents: readonly PinnedDocument[],
+  from: Pick<PinnedDocument, 'workspaceId' | 'path'>,
+  to: PinnedDocument,
+): PinnedDocument[] {
+  const fromPath = tryParseWorkspacePath(from.path);
+  const toPath = tryParseWorkspacePath(to.path);
+  if (fromPath === null || toPath === null) return [...documents];
+  return parsePinnedDocuments(
+    documents.map((document) =>
+      document.workspaceId === from.workspaceId && document.path === fromPath
+        ? { workspaceId: to.workspaceId, workspaceName: to.workspaceName, path: toPath }
+        : document,
+    ),
+  );
+}

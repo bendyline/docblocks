@@ -114,6 +114,11 @@ export interface SearchableDocument {
   readonly text: SearchText | null;
   /** Analysis still queued: content not searched yet. */
   readonly pending: boolean;
+  /**
+   * Whether `text` is non-null, for a document whose text costs a read to
+   * fetch (a persistent store): counting skipped documents then reads nothing.
+   */
+  readonly hasText?: boolean;
 }
 
 function stemOf(path: string): string {
@@ -145,7 +150,7 @@ export async function searchDocuments(
   let skippedDocuments = 0;
   for (const document of documents) {
     if (document.pending) pendingDocuments += 1;
-    else if (!document.text) skippedDocuments += 1;
+    else if (!(document.hasText ?? document.text)) skippedDocuments += 1;
   }
   if (!matcher) {
     return {
@@ -170,8 +175,10 @@ export async function searchDocuments(
       titleRanges.length > 0 ||
       countIn(matcher, stemOf(document.record.path).normalize('NFC'), 1) > 0;
     let matchCount = 0;
-    if (document.text && !truncated) {
-      for (const line of document.text.lines) {
+    // Read once: a persistent engine's text is a store read each time.
+    const text = truncated ? null : document.text;
+    if (text) {
+      for (const line of text.lines) {
         const room = Math.min(
           limits.maxMatchesPerDocument - matchCount,
           limits.maxTotalMatches - totalMatches - matchCount,

@@ -601,6 +601,108 @@ describe('ElectronFileSystemProviderV2', () => {
     expect(legacy.v2).to.be.instanceOf(ElectronFileSystemProviderV2);
     expect(legacy.v2.capabilities.symlinkPolicy).to.equal('follow-contained');
   });
+
+  describe('recursive metadata listing', () => {
+    const at = (path: string, kind: 'file' | 'directory' = 'file') => ({
+      kind,
+      path: parseWorkspacePath(path),
+      name: path.slice(path.lastIndexOf('/') + 1),
+      size: kind === 'file' ? 1 : null,
+      version: parseFileSystemVersion(`meta:${path}`),
+      lastModified: new Date(0).toISOString(),
+    });
+
+    /** A host whose listing is `pages`, recording continue and close calls. */
+    function pagedHost(pages: readonly (readonly unknown[])[], unreadable: string[][] = []) {
+      const calls = { continued: 0, closed: [] as string[] };
+      const step = (index: number) => ({
+        ok: true as const,
+        value: {
+          cursor: index + 1 < pages.length ? `cursor-${index + 1}` : null,
+          page: { entries: pages[index], unreadable: unreadable[index] ?? [] },
+        },
+      });
+      installHost({
+        beginEnumerate: async () => step(0) as never,
+        continueEnumerate: async (_instance, cursor) => {
+          calls.continued += 1;
+          return step(Number(cursor.slice('cursor-'.length))) as never;
+        },
+        closeEnumerate: async (_instance, cursor) => {
+          calls.closed.push(cursor);
+          return { ok: true, value: null };
+        },
+      });
+      return calls;
+    }
+
+    it('yields every page and reports unreadable folders', async () => {
+      const calls = pagedHost(
+        [
+          [at('notes', 'directory'), at('a.md')],
+          [at('notes/b.md'), at('locked', 'directory')],
+        ],
+        [[], ['locked']],
+      );
+      const provider = new ElectronFileSystemProviderV2('workspace', 'Workspace', '/tmp/workspace');
+      const paths: string[] = [];
+      const unreadable: string[] = [];
+      for await (const page of provider.enumerate!(parseWorkspacePath(''))) {
+        paths.push(...page.entries.map((entry) => entry.path));
+        unreadable.push(...page.unreadable);
+      }
+      expect(paths).to.deep.equal(['notes', 'a.md', 'notes/b.md', 'locked']);
+      expect(unreadable).to.deep.equal(['locked']);
+      expect(calls).to.deep.equal({ continued: 1, closed: [] });
+      await provider.dispose();
+    });
+
+    it('closes the host listing when the consumer stops early', async () => {
+      const calls = pagedHost([[at('a.md')], [at('b.md')], [at('c.md')]]);
+      const provider = new ElectronFileSystemProviderV2('workspace', 'Workspace', '/tmp/workspace');
+      for await (const page of provider.enumerate!(parseWorkspacePath(''))) {
+        expect(page.entries).to.have.length(1);
+        break;
+      }
+      expect(calls.closed).to.deep.equal(['cursor-1']);
+      await provider.dispose();
+    });
+
+    for (const [label, pages] of [
+      ['an entry whose folder was never listed', [[at('ghost/a.md')]]],
+      ['a path listed twice', [[at('a.md')], [at('a.md')]]],
+      ['an entry outside the listed folder', [[at('other/a.md')]]],
+    ] as const) {
+      it(`rejects ${label}`, async () => {
+        pagedHost(pages);
+        const provider = new ElectronFileSystemProviderV2(
+          'workspace',
+          'Workspace',
+          '/tmp/workspace',
+        );
+        const root = label === 'an entry outside the listed folder' ? 'notes' : '';
+        const failure = await (async () => {
+          for await (const _page of provider.enumerate!(parseWorkspacePath(root))) {
+            // drain
+          }
+        })().catch((error: unknown) => error);
+        expect(failure).to.be.instanceOf(FsError);
+        expect((failure as FsError).code).to.equal('io');
+        await provider.dispose();
+      });
+    }
+
+    it('reports not-supported when the host bridge predates it', async () => {
+      installHost();
+      const provider = new ElectronFileSystemProviderV2('workspace', 'Workspace', '/tmp/workspace');
+      const failure = await provider.enumerate!(parseWorkspacePath(''))
+        .next()
+        .catch((error: unknown) => error);
+      expect(failure).to.be.instanceOf(FsError);
+      expect((failure as FsError).code).to.equal('not-supported');
+      await provider.dispose();
+    });
+  });
 });
 
 async function expectRejected(promise: Promise<unknown>, code: FsError['code']): Promise<FsError> {

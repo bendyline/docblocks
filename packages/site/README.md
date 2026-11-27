@@ -36,6 +36,34 @@ custom 404, canonical metadata, social metadata, and structured data are shipped
 build. The service-worker navigation fallback is allowlisted to `/` so it cannot replace those
 static responses with the editor shell.
 
+## Apps page and store listings
+
+`/apps/` is the page that says where DocBlocks runs, what each app costs, and how to get it. It
+replaced Desktop in the primary navigation; `/desktop/` is still the direct-download page (and the
+Mac App Store listing's marketing URL), reached from `/apps/` and from every page's footer. The
+store listings tell people the desktop apps are free at docblocks.com, so never remove that link.
+
+Every store listing is live, and each badge links straight to it. A store that has not approved
+DocBlocks shows a `.store-pending` plate of our own ("Coming soon"), never a faded badge; the
+styles stay in `marketing.css` for the next one.
+
+| Store                    | Link                                                                                |
+| ------------------------ | ----------------------------------------------------------------------------------- |
+| App Store (iPhone, iPad) | `https://apps.apple.com/us/app/docblocks-markdown-editor/id6792768923`              |
+| Mac App Store            | `https://apps.apple.com/us/app/docblocks-markdown-editor/id6792768923?platform=mac` |
+| Google Play              | `https://play.google.com/store/apps/details?id=com.bendyline.docblocks`             |
+| Microsoft Store          | `https://apps.microsoft.com/detail/9MTLPD213DL0`                                    |
+
+The App Store listing is one purchase for iPhone, iPad, and Mac, so the structured data in
+`index.html` carries one Apple offer for all three. A listing that moves or changes price is a
+markup change on `/apps/` (badges, "What it costs", the note under the computer cards),
+`/desktop/` (the store panel), `index.html`'s `offers`, and bendyline.com's `index.html`.
+`seo.test.ts` fails if a store is both pending and live on a page.
+
+The four badges in `public/marketing/stores/` are the stores' own artwork. Size them only through
+`.store-badge img`; never recolor or crop them. The phone screenshots on `/apps/` are the App Store
+captures from the store kit, scaled to 640px wide.
+
 ## PWA / offline
 
 The site ships as an installable Progressive Web App (`vite-plugin-pwa`, configured in `vite.config.ts`):

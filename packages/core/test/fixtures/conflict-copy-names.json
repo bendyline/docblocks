@@ -1,0 +1,113 @@
+{
+  "comment": "Shared by packages/core/test/conflict-copies.test.ts and the Swift storage tests. A name must format and parse identically in TypeScript and Swift.",
+  "names": [
+    {
+      "name": "20261120T103612Z-sync-3f9a1c2e77b04d15 (Mike's MacBook Pro).md",
+      "capturedAt": "2026-11-20T10:36:12Z",
+      "origin": "sync",
+      "source": false,
+      "hash": "3f9a1c2e77b04d15",
+      "label": "Mike's MacBook Pro",
+      "extension": ".md"
+    },
+    {
+      "name": "20261120T104105Z-local-9b1d44c07aa2e310.md",
+      "capturedAt": "2026-11-20T10:41:05Z",
+      "origin": "local",
+      "source": false,
+      "hash": "9b1d44c07aa2e310",
+      "label": null,
+      "extension": ".md"
+    },
+    {
+      "name": "20270101T000000Z-sync-s-0000000000000000 (iPad (2)).md",
+      "capturedAt": "2027-01-01T00:00:00Z",
+      "origin": "sync",
+      "source": true,
+      "hash": "0000000000000000",
+      "label": "iPad (2)",
+      "extension": ".md"
+    },
+    {
+      "name": "20261231T235959Z-premerge-ffffffffffffffff (Mike’s iPhone 14.2).markdown",
+      "capturedAt": "2026-12-31T23:59:59Z",
+      "origin": "premerge",
+      "source": false,
+      "hash": "ffffffffffffffff",
+      "label": "Mike’s iPhone 14.2",
+      "extension": ".markdown"
+    },
+    {
+      "name": "20240229T120000Z-draft-0123456789abcdef",
+      "capturedAt": "2024-02-29T12:00:00Z",
+      "origin": "draft",
+      "source": false,
+      "hash": "0123456789abcdef",
+      "label": null,
+      "extension": ""
+    }
+  ],
+  "rejected": [
+    ".gitignore",
+    "Unicorns (conflict from Mike's iPhone 2026-11-20 103612).md",
+    "20261120T103612Z-sync-3f9a1c2e77b04d1.md",
+    "20261120T103612Z-sync-3F9A1C2E77B04D15.md",
+    "20261120T103612Z-other-3f9a1c2e77b04d15.md",
+    "20261120T103612-sync-3f9a1c2e77b04d15.md",
+    "20261320T103612Z-sync-3f9a1c2e77b04d15.md",
+    "20261120T103612Z-sync-3f9a1c2e77b04d15 ().md",
+    "20260229T120000Z-draft-0123456789abcdef"
+  ],
+  "labels": [
+    {
+      "input": "Mike's MacBook Pro",
+      "output": "Mike's MacBook Pro"
+    },
+    {
+      "input": "  a/b\\c:d*e?f\"g<h>i|j  ",
+      "output": "abcdefghij"
+    },
+    {
+      "input": "tab\there\nnewline",
+      "output": "tabherenewline"
+    },
+    {
+      "input": "many   spaces",
+      "output": "many spaces"
+    },
+    {
+      "input": "...",
+      "output": null
+    },
+    {
+      "input": "",
+      "output": null
+    },
+    {
+      "input": "0123456789012345678901234567890123456789-over",
+      "output": "0123456789012345678901234567890123456789"
+    },
+    {
+      "input": "012345678901234567890123456789012345678 .x",
+      "output": "012345678901234567890123456789012345678"
+    },
+    {
+      "input": "abc",
+      "output": "abc"
+    },
+    {
+      "input": "no break　wide",
+      "output": "no break wide"
+    }
+  ],
+  "hashes": [
+    {
+      "text": "",
+      "hash": "e3b0c44298fc1c14"
+    },
+    {
+      "text": "hello\n",
+      "hash": "5891b5b522d5df08"
+    }
+  ]
+}

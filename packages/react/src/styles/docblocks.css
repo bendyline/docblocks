@@ -96,6 +96,13 @@
   /* Git status colors — file badges, sync chips. Deleted/conflicted reuse
      the danger hue on purpose; renamed gets the one cool accent. */
   --db-git-modified: #9a6b00;
+  /* Category colours on tasks: one per hue, readable as text on the page. */
+  --db-hue-green: #2e7d32;
+  --db-hue-blue: #1565c0;
+  --db-hue-violet: #6a3fa0;
+  --db-hue-amber: #8a5f00;
+  --db-hue-rose: #a82c63;
+  --db-hue-teal: #00695c;
   --db-git-added: #2e7d32;
   --db-git-untracked: #2e7d32;
   --db-git-renamed: #1565c0;
@@ -319,6 +326,12 @@
      match it instead of bracketing it in a brighter frame. */
   --db-gutter-bg: #16110b;
   --db-git-modified: #e5b567;
+  --db-hue-green: #81c784;
+  --db-hue-blue: #64b5f6;
+  --db-hue-violet: #b99be0;
+  --db-hue-amber: #e5b567;
+  --db-hue-rose: #e98bb4;
+  --db-hue-teal: #4db6ac;
   --db-git-added: #81c784;
   --db-git-untracked: #81c784;
   --db-git-renamed: #64b5f6;
@@ -364,6 +377,12 @@
     --db-shadow: rgba(0, 0, 0, 0.4);
     --db-gutter-bg: #16110b;
     --db-git-modified: #e5b567;
+    --db-hue-green: #81c784;
+    --db-hue-blue: #64b5f6;
+    --db-hue-violet: #b99be0;
+    --db-hue-amber: #e5b567;
+    --db-hue-rose: #e98bb4;
+    --db-hue-teal: #4db6ac;
     --db-git-added: #81c784;
     --db-git-untracked: #81c784;
     --db-git-renamed: #64b5f6;
@@ -378,6 +397,9 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  /* Stated, not left to `overflow`: the rule below unclips the explorer while
+     a toolbar menu is open, and must not change how tall it is. */
+  min-height: 0;
   overflow: hidden;
   font-size: 13px;
   position: relative;
@@ -403,6 +425,9 @@
 
 .db-explorer-toolbar {
   container: db-explorer-toolbar / inline-size;
+  /* The containing block for the workspace picker's dropdown (below); being a
+     size container does not make it one. */
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -430,14 +455,122 @@
   white-space: nowrap;
 }
 
-/* The workspace picker in the sidebar header already names the workspace, so
-   in anything short of a wide sidebar the toolbar drops its copy and leaves the
-   actions the room. Phone drawers top out at 400px, so this always applies
-   there; on desktop the name returns once the sidebar is dragged wide. */
+/* Without a host picker the toolbar is headed by the workspace's name. In
+   anything short of a wide sidebar it drops the name and leaves the actions
+   the room. Phone drawers top out at 400px, so this always applies there. */
 @container db-explorer-toolbar (max-width: 479px) {
   .db-explorer-workspace-name {
     display: none;
   }
+}
+
+/* The shell's workspace picker and workspace settings button lead the
+   toolbar, sized to its controls. Short of a wide sidebar the picker folds to
+   its folder glyph (below). Where even that leaves the file actions too little
+   room -- a narrow desktop sidebar, a touch drawer -- the actions drop to a
+   second row rather than overlapping the picker. */
+.db-explorer-toolbar--workspace {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.db-explorer-workspace-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin-right: 8px;
+}
+
+/* Static, so its dropdown hangs from the toolbar rather than from the folded
+   glyph button: it opens just under the toolbar, as wide as the sidebar
+   allows. The name's cap keeps a long one beside the actions in a wide
+   sidebar (a row is broken before anything shrinks), cut short instead. */
+.db-explorer-workspace-controls .db-workspace-picker {
+  position: static;
+  flex: 0 1 auto;
+  max-width: 200px;
+}
+
+.db-explorer-workspace-controls .db-workspace-picker-btn {
+  box-sizing: border-box;
+  height: var(--db-control-size);
+  padding-block: 0;
+}
+
+.db-explorer-workspace-controls .db-ws-settings-btn {
+  width: var(--db-control-size);
+  height: var(--db-control-size);
+}
+
+/* The file actions' reach: 44px on a coarse pointer without moving a glyph
+   (see .db-explorer-btn::after). The dropdowns are the buttons' siblings, so
+   positioning the buttons leaves where those hang alone. */
+.db-explorer-workspace-controls :is(.db-workspace-picker-btn, .db-ws-settings-btn) {
+  position: relative;
+}
+
+.db-explorer-workspace-controls :is(.db-workspace-picker-btn, .db-ws-settings-btn)::after {
+  content: '';
+  position: absolute;
+  inset: calc((var(--db-control-size) - var(--db-target-min)) / 2);
+}
+
+/* The button sits at the sidebar's start, so its menu opens rightward. */
+.db-explorer-workspace-controls .db-ws-settings-dropdown {
+  right: auto;
+  left: 0;
+}
+
+/* On desktop the name returns once the sidebar is dragged wide. */
+@container db-explorer-toolbar (max-width: 479px) {
+  .db-explorer-workspace-controls .db-workspace-picker {
+    flex: 0 0 auto;
+  }
+
+  .db-explorer-workspace-controls .db-workspace-picker-btn {
+    width: auto;
+    gap: 6px;
+  }
+
+  .db-explorer-workspace-controls .db-workspace-picker-label {
+    display: none;
+  }
+
+  .db-explorer-workspace-controls .db-workspace-picker-compact-icon {
+    display: inline-flex;
+  }
+}
+
+/* A phone's drawer cannot fit the picker beside seven touch-sized actions, so
+   there the toolbar is always two rows -- and the picker's own row has room
+   for the workspace's name. A tablet's 420px drawer keeps the single row. */
+@container db-explorer-toolbar (max-width: 399px) {
+  [data-db-pointer='coarse'] .db-explorer-workspace-controls {
+    flex: 1 0 100%;
+    margin-right: 0;
+  }
+
+  [data-db-pointer='coarse'] .db-explorer-workspace-controls .db-workspace-picker {
+    flex: 0 1 auto;
+  }
+
+  [data-db-pointer='coarse'] .db-explorer-workspace-controls .db-workspace-picker-label {
+    display: block;
+  }
+
+  [data-db-pointer='coarse'] .db-explorer-workspace-controls .db-workspace-picker-compact-icon {
+    display: none;
+  }
+}
+
+/* The toolbar's workspace menus hang over the tree below it. While one is
+   open the explorer stops clipping, so the menu reaches as far as the sidebar
+   allows -- and past it on desktop, where the sidebar itself does not clip. */
+.db-file-explorer:has(
+  > .db-explorer-toolbar :is(.db-workspace-dropdown, .db-ws-settings-dropdown)
+) {
+  overflow: visible;
 }
 
 .db-explorer-actions {
@@ -606,6 +739,22 @@
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* A 360px phone's drawer leaves the toolbar about 290px for seven 40px touch
+   buttons. Narrowing them keeps every one in the row at full height; `min()`
+   leaves the 24px desktop buttons as they are. After the rule above, which
+   these override at the same specificity. */
+@container db-explorer-toolbar (max-width: 320px) {
+  .db-explorer-btn {
+    width: min(var(--db-control-size), 36px);
+  }
+}
+
+@container db-explorer-toolbar (max-width: 280px) {
+  .db-explorer-btn {
+    width: min(var(--db-control-size), 32px);
+  }
 }
 
 .db-explorer-btn:hover:not(:disabled) {
@@ -978,14 +1127,50 @@
 }
 
 .db-tree-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 16px;
   flex-shrink: 0;
-  text-align: center;
   font-size: 14px;
   line-height: 1;
-  font-family:
-    ui-monospace, 'SF Mono', 'Menlo', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
   color: var(--db-text-secondary);
+}
+
+/* One chevron for both states, turned down while its row is open. */
+.db-tree-icon svg,
+.db-search-chevron svg {
+  transition: transform 120ms ease;
+}
+
+.db-tree-row[aria-expanded='true'] > .db-tree-icon svg,
+[aria-expanded='true'] > .db-search-chevron svg {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-tree-icon svg,
+  .db-search-chevron svg {
+    transition: none;
+  }
+}
+
+/* The type glyph beside each name: a folder, a kind folder's own glyph, or the
+   file's type. Muted like the disclosure triangle so the names lead; sized
+   from the row's own text, so touch layouts' larger rows get larger glyphs. */
+.db-tree-glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin-right: 6px;
+  line-height: 1;
+  color: var(--db-text-secondary);
+}
+
+.db-tree-row--selected .db-tree-glyph,
+.db-tree-row--drop-target .db-tree-glyph {
+  color: inherit;
 }
 
 .db-tree-label {
@@ -1065,6 +1250,14 @@
    while still getting coarse-pointer hit targets. */
 [data-db-hover='none'] .db-tree-more {
   visibility: visible;
+}
+
+/* On a touch screen the button takes the explorer buttons' control size, so
+   the ring below pads it to the full target. At 22px the ring reached only
+   26px. The 44px row content box holds it without growing the row. */
+[data-db-pointer='coarse'] .db-tree-more {
+  width: var(--db-control-size);
+  height: var(--db-control-size);
 }
 
 /* Grow the touchable area without growing the glyph. Both operands are tokens,
@@ -1731,6 +1924,11 @@
   overflow: hidden;
   flex-shrink: 0;
   position: relative;
+  /* iOS's keyboard covers the bottom of the layout without resizing it (see
+     useKeyboardInset), which is where Quick Jot and the footer sit. The
+     footer already pads for the home indicator the keyboard also covers, so
+     only the rest of the keyboard's height is added. 0 on desktop. */
+  padding-bottom: max(0px, calc(var(--db-keyboard-inset) - var(--db-safe-bottom)));
 }
 
 /* ── Sidebar as an overlay drawer ─────────────────────────────
@@ -1918,30 +2116,23 @@ body.db-resizing-sidebar * {
   min-height: 40px;
 }
 
-@container db-sidebar-header (max-width: 300px) {
-  .db-workspace-picker {
-    flex: 0 0 auto;
-  }
-
-  .db-workspace-picker-btn {
-    width: auto;
-    gap: 6px;
-  }
-
-  .db-workspace-picker-label {
-    display: none;
-  }
-
-  .db-workspace-picker-compact-icon {
-    display: inline-flex;
-  }
+/* The app menu leads the header, followed by the places (Home, Tasks, ...);
+   the controls after them (restore split view, the desktop window grip) keep
+   to its far end. */
+.db-shell-sidebar-header > :is(.db-app-menu, .db-shell-nav) {
+  margin-right: auto;
 }
 
-/* Squisq's status bar leaves line-height at `normal`, so its height depends on
-   the installed UI font's metrics — 16px on Segoe UI, 14px on the Linux CI
-   stack. The footer below pins itself to a fixed height, so an unpinned status
-   bar makes their shared top border jog by 2px on some platforms. Pin the line
-   box here so both chrome regions are 25px everywhere. */
+.db-shell-sidebar-header > .db-app-menu:has(~ .db-shell-nav) {
+  margin-right: 0;
+}
+
+/* Squisq sizes its status bar as one fixed row in every view
+   (`--squisq-status-row-height`: 32px, 44px on a touch screen) plus a 1px top
+   border, and the sidebar footer below matches that height. Squisq leaves
+   line-height at `normal`, which follows the installed UI font's metrics
+   (16px on Segoe UI, 14px on the Linux CI stack), so pin the line box too:
+   text in the bar then sits the same everywhere. */
 .db-shell .squisq-status-bar {
   line-height: 16px;
   font-family: var(--db-meta-font);
@@ -1953,14 +2144,23 @@ body.db-resizing-sidebar * {
   display: flex;
   align-items: center;
   gap: 6px;
-  /* Match the status bar's pinned line box + 8px vertical padding + 1px border. */
-  height: calc(25px + var(--db-safe-bottom));
+  /* Match the status bar beside it, so the two share one top border: Squisq's
+     32px row (`--squisq-status-row-height`, declared on the bar itself, so
+     out of reach here) plus its 1px border. */
+  height: calc(33px + var(--db-safe-bottom));
   /* Clears the iOS home indicator; 0px on every other surface. */
   padding: 0 12px var(--db-safe-bottom) 18px;
   border-top: 1px solid var(--db-border-strong);
   flex-shrink: 0;
   font-size: 11px;
   line-height: 1;
+}
+
+/* A touch screen gets Squisq's taller 44px status row; follow it. Squisq
+   keys that row off `(pointer: coarse)`, the same query the stamped
+   `data-db-pointer` reads. */
+[data-db-pointer='coarse'] .db-shell-sidebar-footer {
+  height: calc(45px + var(--db-safe-bottom));
 }
 
 .db-shell-sidebar-footer > * {
@@ -2246,28 +2446,11 @@ body.db-resizing-sidebar * {
   width: 24px;
 }
 
-/* The compact layout puts Squisq's overflow trigger part-way along the second
-   row, wherever the formatting buttons stop. Its desktop right-aligned
-   placement would hang the menu off-canvas from there, so anchor the mobile
-   popover to the full-width toolbar instead. The trigger's own wrapper must
-   not be the containing block: an offset from it moves with the trigger, and
-   once Squisq kept Insert inline the trigger moved right and the menu ran
-   89px off a 390px screen. */
-.db-shell--mobile .squisq-toolbar {
-  position: relative;
-}
-
-.db-shell--mobile .squisq-toolbar-overflow {
-  position: static;
-}
-
-html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
-  right: auto !important;
-  left: max(4px, env(safe-area-inset-left)) !important;
-  max-width: calc(100vw - 8px);
-  max-height: calc(100dvh - 96px);
-  overflow-y: auto;
-}
+/* No placement override for Squisq's overflow menu here. Squisq portals it to
+   the body and positions it from the trigger's viewport rect (right-aligned
+   under the "···" button, clamped 8px inside the viewport, flipped above
+   when there is more room there). An `!important` left edge used to pin it
+   to the screen's left side, so on iPad it opened far from the trigger. */
 
 /* A wide sidebar or a narrow window can leave the editor pane too small for
    the view tabs, formatting controls, and host controls to share one row —
@@ -2319,6 +2502,157 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   margin-right: calc(-1 * var(--db-toolbar-wrapped-inline-end));
   height: var(--db-toolbar-wrapped-row);
   border-right: 0;
+}
+
+/* ── Document title field ─────────────────────────────────────────
+   The open document's name, renamable in place, at the toolbar's left edge
+   just before the View button (DocumentTitleField). The field sizes to the
+   name, up to `--db-document-title-width`. That cap is declared on the
+   toolbar so its `cqi` resolves against the toolbar, a size container;
+   Squisq's image-mode header is not one, hence the fallbacks. The field
+   publishes its rendered width as `--db-document-title-used`, which the rows
+   below size the View section against. */
+.db-shell .squisq-toolbar {
+  --db-document-title-width: clamp(8rem, 24cqi, 15rem);
+}
+
+/* In the two-row layouts the name shares the first row with only the View
+   button, so it can take more of it. */
+.db-shell--mobile .squisq-toolbar,
+.db-shell--desktop-toolbar-wrapped .squisq-toolbar {
+  --db-document-title-width: clamp(7rem, 40cqi, 18rem);
+}
+
+/* One grid cell holds the input and, invisibly, the name it shows: the
+   cell — and so the field — takes the name's width, growing as it is typed.
+   The negative margin closes the toolbar's 1px item gap, which would
+   otherwise show the toolbar's color as a seam beside the View section. */
+.db-document-title {
+  display: grid;
+  align-items: center;
+  align-self: stretch;
+  box-sizing: border-box;
+  flex: 0 1 auto;
+  min-width: 6rem;
+  max-width: var(--db-document-title-width, 15rem);
+  margin-right: -1px;
+  padding-left: 6px;
+}
+
+.db-document-title::after,
+.db-document-title-input {
+  grid-area: 1 / 1;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* The input's padding plus its border, and a space of room for the caret. */
+.db-document-title::after {
+  content: attr(data-value) ' ';
+  height: 0;
+  overflow: hidden;
+  padding: 0 9px;
+  white-space: pre;
+  visibility: hidden;
+}
+
+/* A soft box at rest says the name can be edited; hover firms it up. */
+.db-document-title-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 29px;
+  padding: 0 8px;
+  border: 1px solid var(--db-border);
+  border-radius: 7px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  text-overflow: ellipsis;
+}
+
+.db-document-title-input:hover:not(:read-only) {
+  border-color: var(--db-border-strong);
+}
+
+/* A name that cannot be edited (a generated page) is plain text. The field is
+   also read-only for the moment a rename runs; it keeps its box then. */
+.db-document-title-input:read-only:not([aria-busy='true']) {
+  border-color: transparent;
+  background: transparent;
+}
+
+/* A 2px accent ring drawn inside the field (WCAG 2.4.7). An outline would
+   reach past the field's edge and pass under the View section beside it. */
+.db-document-title-input:focus {
+  outline: none;
+  border-color: var(--db-accent);
+  box-shadow: inset 0 0 0 1px var(--db-accent);
+  background: var(--db-bg);
+  text-overflow: clip;
+}
+
+.db-document-title-input:read-only {
+  cursor: default;
+}
+
+/* With the outline pane open, Squisq widens the View section to the pane's
+   width so their dividers line up. The name now comes first, so the two
+   share that width: the name is capped clear of the View button's ~130px,
+   and the View section's floor gives back what the name uses. The
+   single-row toolbar only — the two-row layouts run the View row full width. */
+.db-shell:not(.db-shell--mobile):not(.db-shell--desktop-toolbar-wrapped)
+  .squisq-editor-shell[data-outline-visible='true']
+  .squisq-toolbar:has(> .db-document-title) {
+  --db-document-title-width: clamp(6rem, calc(var(--squisq-outline-width, 240px) - 9rem), 15rem);
+}
+
+.db-shell:not(.db-shell--mobile):not(.db-shell--desktop-toolbar-wrapped)
+  .squisq-editor-shell[data-outline-visible='true']
+  .squisq-toolbar
+  > .db-document-title {
+  flex-shrink: 0;
+}
+
+.db-shell:not(.db-shell--mobile):not(.db-shell--desktop-toolbar-wrapped)
+  .squisq-editor-shell[data-outline-visible='true']
+  .squisq-toolbar:has(> .db-document-title)
+  .squisq-toolbar-view-tabs {
+  min-width: max(
+    0px,
+    calc(
+      var(--squisq-outline-width, 240px) -
+        var(--db-document-title-used, var(--db-document-title-width))
+    )
+  );
+}
+
+/* The two-row layouts: the name, then the View section filling the rest of
+   the first row exactly, which is what breaks the actions onto the second.
+   The name must not shrink, or the width it published would be stale. The
+   View section is sized half a pixel short and grows into it, so subpixel
+   rounding can never push it onto a row of its own. */
+.db-shell--desktop-toolbar-wrapped .squisq-toolbar > .db-document-title,
+.db-shell--mobile .squisq-toolbar > .db-document-title {
+  flex-shrink: 0;
+}
+
+.db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile)
+  .squisq-toolbar:has(> .db-document-title)
+  .squisq-toolbar-view-tabs {
+  flex-grow: 1;
+  width: calc(
+    100% + var(--db-toolbar-wrapped-inline-end) -
+      var(--db-document-title-used, var(--db-document-title-width)) - 0.5px
+  );
+}
+
+/* Compact: 45px is the files button and the item gap after it. */
+.db-shell--mobile .squisq-toolbar:has(> .db-document-title) .squisq-toolbar-view-tabs {
+  flex-basis: calc(
+    100% - 45px - var(--db-document-title-used, var(--db-document-title-width)) - 0.5px
+  );
+  width: auto;
 }
 
 .db-mobile-back {
@@ -2457,8 +2791,11 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   font-size: 12px;
 }
 
-/* In folder/empty views, the back button sits as a standalone bar */
+/* In folder/empty views, the back button sits as a standalone bar. Its 12px
+   inline padding, 24px icon, and 6px gap set the column the folder header and
+   rows below align to (see Folder View). */
 .db-folder-view > .db-mobile-back {
+  margin-bottom: 12px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--db-border);
   border-radius: 0;
@@ -3419,6 +3756,13 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   color: var(--db-danger);
 }
 
+/* A caution, not an error: the model works, it just reviews less well. */
+.db-settings-ai-docbench-warning {
+  padding-left: 8px;
+  border-left: 2px solid var(--db-accent);
+  color: var(--db-text-secondary);
+}
+
 .db-settings-ai-models {
   margin-top: 8px;
 }
@@ -3618,12 +3962,15 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   overflow-y: auto;
 }
 
+/* Header, rows, and the phone back button share one column: a 24px icon slot
+   inset 12px, then the label 6px after it. Backgrounds and the divider keep
+   the pane's outer edge. */
 .db-folder-view-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   margin-bottom: 16px;
-  padding-bottom: 12px;
+  padding: 0 12px 12px;
   border-bottom: 1px solid var(--db-border);
 }
 
@@ -3658,7 +4005,7 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 .db-folder-view-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 8px 12px;
   border-radius: 4px;
   cursor: pointer;
@@ -3673,6 +4020,8 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 .db-folder-view-item-icon {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  width: 24px;
   flex-shrink: 0;
   color: var(--db-text-secondary);
 }
@@ -4305,7 +4654,8 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   --squisq-toolbar-icon: var(--db-text-muted);
 }
 
-.db-shell[data-theme='dark'] .squisq-toolbar-view-tabs {
+.db-shell[data-theme='dark'] .squisq-toolbar-view-tabs,
+.db-shell[data-theme='dark'] .squisq-toolbar > .db-document-title {
   background: var(--db-editor-canvas);
 }
 
@@ -4599,7 +4949,11 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   border-bottom-color: var(--db-border-strong);
 }
 
-.db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-toolbar-view-tabs {
+.db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-toolbar-view-tabs,
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-toolbar
+  > .db-document-title {
   background: var(--db-bg);
 }
 
@@ -6464,6 +6818,24 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   outline-offset: 2px;
 }
 
+/* Text or a file dragged over the welcome screen: it becomes a document. The
+   editor area's own "Drop to import" sits beneath this screen, unseen. */
+.db-welcome-gateway--dragging::after {
+  content: 'Drop to make it a document';
+  position: absolute;
+  inset: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--db-accent);
+  border-radius: 12px;
+  background: var(--db-accent-soft-08);
+  color: var(--db-accent);
+  font-size: 16px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
 /* Drawn by .db-close-button; this only places it. */
 .db-welcome-gateway-dismiss {
   position: absolute;
@@ -6778,58 +7150,9 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   pointer-events: none;
 }
 
-.db-document-conflict {
-  position: fixed;
-  top: 16px;
-  left: 50%;
-  z-index: 210;
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  max-width: min(720px, calc(100vw - 32px));
-  padding: 10px 12px;
-  color: var(--db-text);
-  background: var(--db-bg-elevated, var(--db-bg));
-  border: 1px solid var(--db-warning, #b7791f);
-  border-radius: 8px;
-  box-shadow: 0 6px 20px var(--db-shadow);
-  transform: translateX(-50%);
-}
-
-.db-document-conflict-text {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.db-document-conflict-details {
-  color: var(--db-text-muted);
-  font-size: 12px;
-}
-
-.db-document-conflict-actions {
-  display: flex;
-  flex: none;
-  gap: 8px;
-}
-
-.db-document-conflict-actions button {
-  padding: 5px 9px;
-  color: var(--db-text);
-  cursor: pointer;
-  background: var(--db-bg);
-  border: 1px solid var(--db-border);
-  border-radius: 5px;
-}
-
-.db-document-conflict-actions button:focus-visible {
-  outline: 2px solid var(--db-focus, var(--db-accent));
-  outline-offset: 2px;
-}
-
-/* After Dismiss: saving is still blocked, so a small notice stays clear of
-   the toolbar (top), the save toasts (bottom centre) and the status bar. */
+/* While a conflict blocks saving: a small notice, clear of the toolbar (top),
+   the save toasts (bottom centre) and the status bar, that leads straight to
+   the comparison. */
 .db-document-conflict-notice {
   position: fixed;
   right: 16px;
@@ -6850,6 +7173,7 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-document-conflict-notice button {
   flex: none;
+  min-height: var(--db-target-min, 0);
   padding: 4px 9px;
   color: var(--db-text);
   cursor: pointer;
@@ -6861,6 +7185,155 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 .db-document-conflict-notice button:focus-visible {
   outline: 2px solid var(--db-focus, var(--db-accent));
   outline-offset: 2px;
+}
+
+/* Other versions are waiting but nothing is blocked: the same place as the
+   conflict notice (the two never show together), without its warning edge. */
+.db-document-versions-notice {
+  border-color: var(--db-border-strong, var(--db-border));
+}
+
+/* What the app just did to the open document by itself. Sits above the save
+   toasts' line so an Undo is never covered by "Saved". */
+.db-document-session-notice {
+  position: fixed;
+  left: 50%;
+  bottom: calc(84px + var(--db-safe-bottom, 0px) + var(--db-keyboard-inset, 0px));
+  z-index: 210;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: center;
+  /* Sized by its content, not by the half of the screen right of its anchor. */
+  width: max-content;
+  max-width: min(640px, calc(100vw - 32px));
+  padding: 8px 8px 8px 14px;
+  font-size: 13px;
+  color: var(--db-text);
+  background: var(--db-bg-elevated, var(--db-bg));
+  border: 1px solid var(--db-border-strong, var(--db-border));
+  border-radius: 8px;
+  box-shadow: 0 6px 20px var(--db-shadow);
+  transform: translateX(-50%);
+}
+
+.db-document-session-notice span {
+  /* On a phone the sentence takes the first line and the buttons the next,
+     instead of the buttons squeezing it into a column one word wide. */
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.db-document-session-notice-actions {
+  display: flex;
+  flex: none;
+  gap: 10px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.db-document-session-notice button {
+  flex: none;
+  min-height: var(--db-target-min, 32px);
+  padding: 4px 10px;
+  color: var(--db-text);
+  cursor: pointer;
+  background: var(--db-bg);
+  border: 1px solid var(--db-border);
+  border-radius: 5px;
+}
+
+.db-document-session-notice button.db-document-session-notice-close {
+  color: var(--db-text-muted);
+  background: transparent;
+  border-color: transparent;
+}
+
+.db-document-session-notice button:focus-visible {
+  outline: 2px solid var(--db-focus, var(--db-accent));
+  outline-offset: 2px;
+}
+
+.db-versions-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.db-versions-picker select {
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--db-target-min, 32px);
+  padding: 0 8px;
+  color: var(--db-text);
+  background: var(--db-bg);
+  border: 1px solid var(--db-border-strong);
+  border-radius: 5px;
+  font: inherit;
+}
+
+.db-versions-picker select:focus-visible {
+  outline: 2px solid var(--db-accent);
+  outline-offset: 2px;
+}
+
+/* A version that could not be opened yet: say so in the app's own type, with a way to retry. */
+.db-versions-unread {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+  font: inherit;
+  font-size: 13px;
+}
+
+/* Documents elsewhere in the workspace with versions waiting: above the tree,
+   where a collapsed folder cannot hide it. */
+.db-tree-versions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 4px 8px;
+  padding: 6px 8px 6px 10px;
+  font-size: 12px;
+  color: var(--db-text);
+  background: var(--db-bg-elevated, var(--db-bg));
+  border: 1px solid var(--db-warning, #b7791f);
+  border-radius: 6px;
+}
+
+.db-tree-versions span {
+  min-width: 0;
+}
+
+.db-tree-versions button {
+  flex: none;
+  min-height: var(--db-target-min, 28px);
+  padding: 2px 8px;
+  color: var(--db-text);
+  cursor: pointer;
+  background: var(--db-bg);
+  border: 1px solid var(--db-border);
+  border-radius: 5px;
+  font: inherit;
+}
+
+.db-tree-versions button:focus-visible {
+  outline: 2px solid var(--db-focus, var(--db-accent));
+  outline-offset: 2px;
+}
+
+/* A file row whose document has other versions waiting for review. */
+.db-git-badge--versions {
+  min-width: 14px;
+  padding: 0 4px;
+  color: var(--db-bg);
+  text-align: center;
+  background: var(--db-warning, #b7791f);
+  border-radius: 8px;
 }
 
 /* Three panes need more than the standard full dialog's 1100px. */
@@ -6965,9 +7438,114 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   font: inherit;
 }
 
-.db-conflict-consequence {
-  margin: 12px 0;
-  font-size: 12px;
+/* The choices sit above the versions, so they are on screen however long
+   the versions run. The choices proper stand out from the way to put the
+   decision off, which is pushed to the far end. */
+.db-dialog-body .db-compare-intro {
+  margin: 0 0 12px;
+}
+
+.db-compare-actions {
+  display: flex;
+  flex-wrap: wrap;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 16px;
+}
+
+.db-conflict-dialog .db-compare-actions .db-compare-choice {
+  font-weight: 600;
+  border-color: var(--db-border-strong, var(--db-border));
+}
+
+.db-conflict-dialog .db-compare-actions .db-compare-later {
+  margin-left: auto;
+  color: var(--db-text-secondary);
+  background: transparent;
+  border-color: transparent;
+}
+
+.db-dialog-body .db-compare-error {
+  margin: -8px 0 12px;
+  color: var(--db-danger, #b22b1b);
+}
+
+/* Tabs choose the version a phone shows; wider screens show all three. */
+.db-compare-tabs {
+  display: none;
+}
+
+/* Each version wears the colour and the mark of its side of the differences:
+   red and − for the one whose lines show as taken out, green and + for the
+   one whose lines show as added. Its choice, its tab and its column all
+   match, so which button keeps which text can be read off the diff. The mark
+   is there for anyone who cannot tell the two colours apart; screen readers
+   skip it (the second `content` value), since the words already say it. */
+.db-conflict-dialog [data-side='removed'] {
+  --db-compare-side: var(--db-git-deleted);
+}
+
+.db-conflict-dialog [data-side='inserted'] {
+  --db-compare-side: var(--db-git-added);
+}
+
+.db-conflict-dialog .db-compare-actions .db-compare-choice[data-side] {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--db-compare-side) 16%, var(--db-bg));
+  border-color: color-mix(in srgb, var(--db-compare-side) 70%, transparent);
+}
+
+.db-conflict-dialog .db-compare-actions .db-compare-choice[data-side]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--db-compare-side) 26%, var(--db-bg));
+}
+
+.db-conflict-dialog .db-compare-choice[data-side]::before,
+.db-conflict-dialog .db-conflict-version[data-side] > h3::before,
+.db-compare-tabs button[role='tab'][data-side]::before {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.3em;
+  height: 1.3em;
+  color: var(--db-bg);
+  font-weight: 700;
+  line-height: 1;
+  background: var(--db-compare-side);
+  border-radius: 4px;
+}
+
+.db-conflict-dialog .db-compare-choice[data-side='removed']::before,
+.db-conflict-dialog .db-conflict-version[data-side='removed'] > h3::before,
+.db-compare-tabs button[role='tab'][data-side='removed']::before {
+  content: '−';
+  content: '−' / '';
+}
+
+.db-conflict-dialog .db-compare-choice[data-side='inserted']::before,
+.db-conflict-dialog .db-conflict-version[data-side='inserted'] > h3::before,
+.db-compare-tabs button[role='tab'][data-side='inserted']::before {
+  content: '+';
+  content: '+' / '';
+}
+
+.db-conflict-dialog .db-conflict-version[data-side] {
+  border-top: 3px solid var(--db-compare-side);
+}
+
+.db-conflict-dialog .db-conflict-version[data-side] > h3 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.db-diff-mark[data-side] {
+  color: var(--db-compare-side);
+  font-weight: 700;
 }
 
 .db-conflict-dialog button:not(.db-dialog-close) {
@@ -6991,8 +7569,233 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   outline-offset: 2px;
 }
 
-[data-db-width='compact'] .db-conflict-columns {
-  grid-template-columns: minmax(0, 1fr);
+/* ── Comparing on a phone ──
+   One version at a time, chosen by tabs under the choices, filling the rest
+   of the sheet and scrolling inside it. The frames that separate three
+   columns on a wide screen (the body's padding, each pane's border and
+   padding, the preview's border) have nothing to separate here, and on a
+   phone they cost the document a fifth of its width, so they go. */
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-dialog-body {
+  padding: 0;
+  overflow: hidden;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-intro {
+  margin: 0;
+  padding: 10px 16px 0;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-actions {
+  margin: 0;
+  padding: 10px 16px 12px;
+}
+
+/* Two choices to a row, wide enough to hit; the lesser buttons keep their size. */
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-actions
+  .db-compare-choice {
+  flex: 1 1 140px;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-error {
+  margin: 0;
+  padding: 0 16px 10px;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-versions-picker {
+  margin: 0;
+  padding: 0 16px 10px;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-tabs {
+  display: flex;
+  flex: none;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--db-border);
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-tabs
+  button[role='tab'] {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 6px 4px;
+  color: var(--db-text-secondary);
+  font-weight: 600;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-tabs
+  button[role='tab'][aria-selected='true'] {
+  color: var(--db-text);
+  border-bottom-color: var(--db-accent);
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-tabs
+  button[role='tab'][data-side][aria-selected='true'] {
+  border-bottom-color: var(--db-compare-side);
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-tabs
+  button[role='tab'][data-side] {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-tabs
+  button[role='tab'][data-side]::before {
+  width: 1.15em;
+  height: 1.15em;
+  font-size: 0.9em;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-compare-tabs
+  button[role='tab']:focus-visible {
+  outline-offset: -2px;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-columns {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 0;
+  min-height: 0;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-columns
+  > :not(.db-compare-pane--active) {
+  display: none;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-version,
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-diff {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+/* The tab already names the pane. */
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-version
+  > h3,
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-diff-header
+  > h3 {
+  display: none;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-diff-header {
+  padding: 8px 16px 0;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-diff-header:not(:has(> :not(h3))) {
+  display: none;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-metadata {
+  margin: 0;
+  padding: 6px 16px;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-preview {
+  min-height: 0;
+  border: 0;
+  border-top: 1px solid var(--db-border);
+  border-radius: 0;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-preview--rendered {
+  padding: 4px 8px;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-git-diff-host {
+  min-height: 0;
+  border: 0;
+  border-top: 1px solid var(--db-border);
+  border-radius: 0;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-combine {
+  min-height: 0;
+}
+
+:root:is([data-db-width='compact'], [data-db-form-factor='phone'])
+  .db-conflict-dialog
+  .db-conflict-combine
+  .db-conflict-metadata {
+  padding-top: 0;
+}
+
+/* The grid is hidden, not unmounted, while combining: its previews keep
+   their scroll position for the way back. */
+.db-conflict-columns[hidden] {
+  display: none;
+}
+
+/* Combining by hand takes the whole dialog: two source columns need the room. */
+.db-conflict-combine {
+  flex: 1;
+  min-height: 300px;
+}
+
+.db-conflict-combine .db-git-diff-host {
+  flex: 1;
+  min-height: 240px;
 }
 
 /* Browser PWA update notice. It is docked over the right side of Squisq's
@@ -7194,6 +7997,47 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-ai-toolbar-menu {
   min-width: 220px;
+}
+
+/* AI is off, but this device runs a capable model: a dot asks for a look. */
+.db-ai-toolbar-trigger--invite {
+  position: relative;
+}
+
+.db-ai-toolbar-trigger--invite::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--db-accent);
+  box-shadow: 0 0 0 2px var(--db-bg);
+  pointer-events: none;
+}
+
+.db-ai-invite {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--db-text-secondary);
+  font-size: 12px;
+}
+
+.db-ai-invite-title {
+  color: var(--db-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.db-ai-invite-note {
+  color: var(--db-text-muted);
+  font-size: 11px;
+}
+
+.db-ai-invite-accept {
+  font-weight: 600;
 }
 
 /* Read aloud: the speech menu and its inline transport while playing. */
@@ -7527,6 +8371,28 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   font-weight: 600;
 }
 
+/* A cited workspace note: its title opens it where that is safe; its place follows. */
+.db-ai-knowledge .db-ai-knowledge-note {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--db-accent);
+  font: inherit;
+  text-align: start;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.db-ai-knowledge .db-ai-knowledge-note:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
+.db-ai-knowledge-where {
+  color: var(--db-text-muted);
+  overflow-wrap: anywhere;
+}
+
 /* Facts to check: details in AI output that no source shows. */
 .db-ai-facts > summary {
   border-color: var(--db-danger);
@@ -7638,6 +8504,485 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   width: 100%;
   min-width: 0;
   border-left: 0;
+}
+
+/* Ask: the conversation scrolls; the message field stays at the bottom. */
+.db-ai-review-panel.db-ai-ask-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.db-ai-ask-panel .db-ai-review-header {
+  align-items: center;
+}
+
+/* Ask as a page: the saved chats beside the side panel's conversation, at
+   reading width. Too narrow for both, the chats go behind the Chats button. */
+.db-ask-page {
+  container: db-ask-page / inline-size;
+}
+
+.db-page > .db-ask-page-body {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 16px;
+  min-height: 0;
+  max-width: 820px;
+}
+
+.db-page > .db-ask-page-body--chats {
+  max-width: 1100px;
+}
+
+.db-ask-page-body > .db-ai-ask-panel {
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.db-ask-page-body > .db-ai-ask-chats {
+  flex: 0 0 272px;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  background: var(--db-bg-raised);
+}
+
+.db-ai-ask-panel .db-ai-ask-chats-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* On the page the list is beside the conversation: no button, until it is not. */
+.db-ai-ask-panel .db-ai-ask-chats-toggle--narrow {
+  display: none;
+}
+
+@container db-ask-page (max-width: 720px) {
+  .db-ask-page-body > .db-ai-ask-chats {
+    display: none;
+  }
+
+  .db-ai-ask-panel .db-ai-ask-chats-toggle--narrow {
+    display: inline-flex;
+  }
+}
+
+.db-ai-ask-panel .db-ai-ask-chats-toggle[aria-expanded='true'] {
+  border-color: var(--db-accent);
+  color: var(--db-text);
+}
+
+/* Toggled in the side panel (or a narrow page): the list takes the conversation's place. */
+.db-ai-ask-chats-overlay {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.db-ai-ask-chats {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+}
+
+.db-ai-ask-chats-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 12px 8px;
+}
+
+.db-ai-ask-chats-header h3 {
+  margin: 0;
+  color: var(--db-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.db-ai-ask-chats button {
+  min-height: var(--db-target-min);
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--db-text-secondary);
+  font: 400 13px/1.3 var(--db-ui-font);
+  cursor: pointer;
+}
+
+.db-ai-ask-chats .db-ai-ask-chats-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-color: var(--db-input-border);
+  background: var(--db-bg);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.db-ai-ask-chats button:hover:not(:disabled) {
+  background: var(--db-bg-hover);
+  color: var(--db-text);
+}
+
+.db-ai-ask-chats button:focus-visible,
+.db-ai-ask-chat-rename input:focus-visible {
+  outline: 2px solid var(--db-accent);
+  outline-offset: 1px;
+}
+
+.db-ai-ask-chats-empty {
+  margin: 4px 12px 12px;
+  color: var(--db-text-muted);
+}
+
+.db-ai-ask-chats ul {
+  margin: 0;
+  padding: 0 6px 8px;
+  list-style: none;
+}
+
+.db-ai-ask-chat {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 6px;
+}
+
+.db-ai-ask-chat--active {
+  background: var(--db-bg-selected, var(--db-bg-hover));
+}
+
+.db-ai-ask-chats .db-ai-ask-chat-open {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.db-ai-ask-chat--active .db-ai-ask-chat-open {
+  color: var(--db-text);
+  font-weight: 600;
+}
+
+.db-ai-ask-chat-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-ai-ask-chat-when {
+  flex: none;
+  color: var(--db-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* Rename and Delete show on hover or focus, and always where there is no hover. */
+.db-ai-ask-chats .db-ai-ask-chat-tool {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--db-target-min);
+  padding: 0;
+  opacity: 0;
+}
+
+.db-ai-ask-chat:hover .db-ai-ask-chat-tool,
+.db-ai-ask-chat:focus-within .db-ai-ask-chat-tool {
+  opacity: 1;
+}
+
+[data-db-hover='none'] .db-ai-ask-chats .db-ai-ask-chat-tool {
+  opacity: 1;
+}
+
+.db-ai-ask-chat-rename {
+  flex: 1 1 auto;
+  padding: 2px;
+}
+
+.db-ai-ask-chat-rename input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--db-target-min);
+  padding: 4px 8px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  background: var(--db-bg-subtle);
+  color: var(--db-text);
+  font: 400 var(--db-input-font-size) / 1.3 var(--db-ui-font);
+}
+
+.db-ai-ask-panel .db-ai-review-header > div {
+  flex: 1 1 auto;
+}
+
+.db-ai-ask-notice {
+  margin: 12px 14px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: var(--db-bg-subtle);
+}
+
+.db-ai-ask-notice p {
+  margin: 0 0 8px;
+}
+
+.db-ai-ask-turns {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 14px 12px;
+}
+
+.db-ai-ask-empty {
+  margin: 12px 0;
+  color: var(--db-text-muted);
+}
+
+.db-ai-ask-empty p {
+  margin: 0 0 8px;
+}
+
+.db-ai-ask-turn {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--db-border);
+}
+
+.db-ai-ask-turn:last-of-type {
+  border-bottom: 0;
+}
+
+.db-ai-ask-question {
+  margin: 0 0 8px;
+  color: var(--db-text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.db-ai-ask-answer {
+  color: var(--db-text);
+  overflow-wrap: anywhere;
+}
+
+.db-ai-ask-answer p,
+.db-ai-ask-answer ul,
+.db-ai-ask-answer ol {
+  margin: 0 0 8px;
+}
+
+.db-ai-ask-answer ul,
+.db-ai-ask-answer ol {
+  padding-left: 20px;
+}
+
+.db-ai-ask-answer h3 {
+  margin: 10px 0 6px;
+  font-size: 13px;
+}
+
+.db-ai-ask-answer code {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--db-bg-subtle);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+/* A citation: a small numbered chip; one naming a workspace note opens it. */
+.db-ai-ask-cites {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 2px;
+  vertical-align: super;
+}
+
+.db-ai-ask-panel .db-ai-ask-cite {
+  min-width: 18px;
+  min-height: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--db-accent);
+  border-radius: 9px;
+  background: var(--db-badge-bg);
+  color: var(--db-badge-text);
+  font: 600 10px/16px var(--db-ui-font);
+  text-align: center;
+}
+
+.db-ai-ask-panel button.db-ai-ask-cite:hover:not(:disabled) {
+  border-color: var(--db-accent-hover);
+  background: var(--db-badge-bg);
+  color: var(--db-badge-text-hover);
+}
+
+.db-ai-ask-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.db-ai-ask-actions .db-ai-note {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* What Ask suggests after an answer: one card per action, each confirmed on its own. */
+.db-ai-proposals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.db-ai-proposals > .db-ai-note {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.db-ai-proposal-list {
+  display: flex;
+  flex-basis: 100%;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.db-ai-proposal {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: var(--db-bg-raised);
+}
+
+/* A change to an existing document carries the accent edge, so it never reads as a new one. */
+.db-ai-proposal--edit {
+  border-left: 3px solid var(--db-accent);
+}
+
+.db-ai-proposal[data-state='skipped'] {
+  opacity: 0.6;
+}
+
+.db-ai-proposal-what {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.db-ai-proposal-preview {
+  margin-top: 4px;
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+.db-ai-proposal-preview pre {
+  max-height: 160px;
+  margin: 4px 0 0;
+  overflow: auto;
+  font:
+    12px/1.45 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.db-ai-proposal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.db-ai-proposal-actions .db-ai-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.db-ai-ask-allow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px 0;
+  border-top: 1px solid var(--db-border);
+  background: var(--db-bg-raised);
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+.db-ai-ask-allow + .db-ai-ask-form {
+  border-top: 0;
+}
+
+.db-ai-ask-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 14px 14px;
+  border-top: 1px solid var(--db-border);
+  background: var(--db-bg-raised);
+}
+
+.db-ai-ask-form textarea {
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: var(--db-target-min);
+  max-height: 160px;
+  padding: 8px 10px;
+  resize: vertical;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  outline: none;
+  background: var(--db-bg-subtle);
+  color: var(--db-text);
+  font: 400 var(--db-input-font-size) / 1.45 var(--db-ui-font);
+}
+
+.db-ai-ask-form textarea:focus-visible {
+  border-color: var(--db-accent);
+  box-shadow: 0 0 0 1px var(--db-accent);
+}
+
+.db-ai-ask-running {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.db-ai-ask-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--db-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .db-ai-review-header {
@@ -8972,21 +10317,195 @@ button.db-git-file-row:hover {
   box-sizing: border-box;
 }
 
-/* New document dialog: label/field pairs in two aligned columns */
-.db-new-document-fields {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 10px 8px;
-  margin: 10px 0;
+/* New document gallery: the type chips, then a grid of starter cards. A card
+   creates the document, so each is one large button. Wider than the other
+   wide dialogs so the six type chips stay on one row; a phone shows it as a
+   full-window sheet (above) whatever this says. */
+.db-dialog.db-new-document-gallery {
+  width: 700px;
+  max-height: min(100%, 720px);
 }
 
-.db-new-document-hint {
-  grid-column: 2;
-  margin: -4px 0 0;
+.db-new-document-gallery-folder {
+  margin: 0 0 10px;
+  color: var(--db-text-secondary);
+  font-size: 13px;
+}
+
+.db-new-document-gallery-type {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.db-new-document-gallery-hint {
+  margin: 0;
   color: var(--db-text-muted);
   font-size: 12px;
   line-height: 1.4;
+}
+
+/* Above the folder starters, which follow the documents' grid. */
+.db-new-document-gallery-heading {
+  margin: 16px 0 8px;
+  color: var(--db-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.db-new-document-gallery-grid {
+  display: grid;
+  /* Four a row in the dialog, two on a phone. */
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.db-new-document-card {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 8px 8px 10px;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-new-document-card:hover:not(:disabled) {
+  border-color: var(--db-accent);
+  background: var(--db-bg-hover);
+}
+
+/* A starter that does not suit the chosen type keeps its place, dimmed, so
+   the gallery never changes size as the type changes. */
+.db-new-document-card:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.db-new-document-card:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 2px;
+}
+
+.db-template-thumb {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-bottom: 5px;
+  border-radius: 5px;
+  background: var(--db-bg-subtle);
+}
+
+.db-new-document-card-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.db-new-document-card-description {
+  color: var(--db-text-muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+/* The drawings. Tokens only, so they follow the theme and the accent. */
+.db-template-thumb-page,
+.db-template-thumb-slide {
+  fill: var(--db-bg);
+  stroke: var(--db-border-strong);
+  stroke-width: 0.8;
+}
+
+.db-template-thumb-slide {
+  fill: var(--db-accent-soft-10);
+}
+
+.db-template-thumb-slide-title,
+.db-template-thumb-accent {
+  fill: var(--db-accent);
+}
+
+.db-template-thumb-slide-text,
+.db-template-thumb-ink {
+  fill: var(--db-text-muted);
+  opacity: 0.45;
+}
+
+.db-template-thumb-box,
+.db-template-thumb-cell {
+  fill: none;
+  stroke: var(--db-text-muted);
+  stroke-width: 0.8;
+  opacity: 0.6;
+}
+
+/* Paste-or-drop dialog: one large paste target, and a file picker under it.
+   The whole body takes drops, so it carries the drag highlight. */
+.db-paste-document {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0;
+  padding: 2px;
+  border: 2px dashed transparent;
+  border-radius: 8px;
+}
+
+.db-paste-document--dragging {
+  border-color: var(--db-accent);
+  background: var(--db-accent-soft-08);
+}
+
+.db-paste-document > p {
+  margin: 0;
+  color: var(--db-text-secondary);
+  line-height: 1.5;
+}
+
+.db-paste-document > .db-paste-document-notice {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--db-accent-soft-10);
+  color: var(--db-text);
+}
+
+.db-paste-document-target {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 132px;
+  padding: 10px 12px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 6px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font: inherit;
+  font-size: var(--db-input-font-size);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.db-paste-document-target:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
+.db-paste-document-files {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--db-text-muted);
+  font-size: 13px;
 }
 
 /* ── Keyboard shortcut sheet ─────────────────────────────────── */
@@ -9166,11 +10685,33 @@ button.db-git-file-row:hover {
 
 /* Diff dialog */
 .db-git-diff-host {
+  position: relative;
   flex: 1;
   min-height: 320px;
   border: 1px solid var(--db-border);
   border-radius: 5px;
   overflow: hidden;
+}
+
+/* Monaco fills the box and scrolls its own view... */
+.db-git-diff-editor {
+  position: absolute;
+  inset: 0;
+}
+
+/* ...except on a touch screen, where the editor is as tall as the diff (set
+   by GitDiffView) and the box scrolls it with the device's own scrolling.
+   The box keeps the size its layout gives it, as when Monaco filled it,
+   rather than growing to the diff. */
+.db-git-diff-host--scrolls {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  contain: size;
+}
+
+.db-git-diff-host--scrolls > .db-git-diff-editor {
+  position: relative;
+  inset: auto;
 }
 
 .db-git-diff-loading {
@@ -9322,8 +10863,7 @@ button.db-git-file-row:hover {
   /* Keep the shell controls inside the compact native caption band. These
      overrides apply only to an installed app using Window Controls Overlay;
      the regular browser toolbar keeps its roomier metrics. */
-  .db-shell .db-app-menu-btn,
-  .db-shell .db-workspace-picker-btn {
+  .db-shell .db-app-menu-btn {
     padding-block: 3px;
   }
 
@@ -9368,9 +10908,9 @@ button.db-git-file-row:hover {
     padding-block: 0;
   }
 
-  /* Make the draggable header space beside the workspace gear discoverable,
-     matching the Electron titlebar without introducing another control. The
-     12px dotted content and its 8px right padding form one drag region. */
+  /* Make the draggable header space discoverable, matching the Electron
+     titlebar without introducing another control. The 12px dotted content
+     and its 8px right padding form one drag region. */
   .db-shell .db-window-drag-grip {
     box-sizing: border-box;
     width: 20px;
@@ -9396,7 +10936,8 @@ button.db-git-file-row:hover {
   }
 
   /* Let the workspace menu size itself to its contents and cross the sidebar
-     boundary above the editor. The explorer still clips its own contents. */
+     boundary into the editor. The explorer clips its own contents except
+     while one of its toolbar's workspace menus is open. */
   .db-shell .db-shell-sidebar {
     overflow: visible;
   }
@@ -9560,333 +11101,6 @@ button.db-git-file-row:hover {
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
-}
-
-/* Presentation review uses the same source and timeline as the saved player. */
-.db-presentation-workspace {
-  display: grid;
-  flex: 1;
-  min-height: 0;
-  grid-template-columns: minmax(140px, 24%) minmax(0, 1fr);
-  gap: 18px;
-  align-items: stretch;
-}
-.db-presentation-beats {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-  min-height: 0;
-  padding: 8px;
-  border: 1px solid var(--db-border);
-  border-radius: 8px;
-  background: var(--db-bg-subtle);
-  overflow-y: auto;
-}
-.db-presentation-beats button {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  flex: 0 0 auto;
-  gap: 8px;
-  min-width: 0;
-  max-width: 100%;
-  text-align: left;
-  min-height: var(--db-target-min);
-  padding: 12px;
-  border: 1px solid var(--db-input-border);
-  border-radius: 6px;
-  color: var(--db-text);
-  background: var(--db-bg);
-  cursor: pointer;
-  font: inherit;
-  overflow: hidden;
-}
-.db-presentation-beat-title {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  line-height: 1.5;
-}
-.db-presentation-beats button:hover {
-  background: var(--db-bg-hover);
-}
-.db-presentation-beats button:focus-visible {
-  outline: 2px solid var(--db-focus);
-  outline-offset: 2px;
-}
-.db-presentation-beats button[aria-current='step'] {
-  border-color: var(--db-accent);
-  background: var(--db-bg-hover);
-  box-shadow: inset 3px 0 0 var(--db-accent);
-}
-.db-presentation-detail {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow-y: auto;
-}
-.db-presentation-preview {
-  flex-shrink: 0;
-  box-sizing: border-box;
-  width: 100%;
-  height: clamp(120px, 23vh, 240px);
-  overflow: hidden;
-  border: 1px solid var(--db-input-border);
-  border-radius: 8px;
-}
-.db-presentation-preview > * {
-  width: 100%;
-  height: 100%;
-}
-.db-presentation-fields {
-  display: flex;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-.db-presentation-preferences {
-  align-items: flex-end;
-}
-.db-presentation-beats small {
-  display: block;
-  max-width: 100%;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: var(--db-bg-subtle);
-  color: var(--db-text-muted);
-  overflow-wrap: anywhere;
-}
-.db-presentation-beat-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  max-width: 100%;
-}
-/* Marks the slide a request is open for, then every slide with AI wording. */
-.db-presentation-beats small.db-presentation-beat-ai {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  background: var(--db-accent-soft-12);
-  color: var(--db-accent-deep);
-}
-.db-presentation-beat-ai .db-ai-spinner {
-  width: 10px;
-  height: 10px;
-  flex-basis: 10px;
-}
-/* While slides are being suggested, this takes the Suggest button's place in
-   the footer, with Stop beside it, so progress sits where the action started. */
-.db-presentation-progress {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-width: 0;
-  min-height: var(--db-target-min);
-  color: var(--db-text-secondary);
-  font: 600 12px/1.2 var(--db-ui-font);
-}
-.db-presentation-progress progress {
-  width: 120px;
-  height: 6px;
-  accent-color: var(--db-accent);
-}
-.db-presentation label.db-presentation-toggle {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 0.6rem;
-  box-sizing: border-box;
-  width: auto;
-  max-width: 100%;
-  min-height: var(--db-target-min);
-  padding: 8px 0;
-}
-.db-presentation input[type='checkbox'] {
-  width: 1.1rem;
-  height: 1.1rem;
-  min-height: 0;
-  padding: 0;
-  margin: 0;
-  flex: 0 0 auto;
-}
-.db-presentation-fields label {
-  width: min(100%, 320px);
-}
-/* A hidden slide stays listed so it can be shown again, set apart without
-   dimming its text below readable contrast. */
-.db-presentation-beats button.db-presentation-beat-hidden {
-  border-style: dashed;
-}
-.db-presentation-beat-hidden .db-presentation-beat-title {
-  color: var(--db-text-secondary);
-  text-decoration: line-through;
-}
-.db-presentation-preview-hidden > * {
-  opacity: 0.45;
-}
-/* Says what the chosen layout shows and which slides it can apply to. */
-.db-presentation-layout-help {
-  flex-shrink: 0;
-  margin: 0;
-  color: var(--db-text-secondary);
-  line-height: 1.5;
-}
-.db-presentation-source {
-  flex-shrink: 0;
-  padding: 12px;
-  border: 1px solid var(--db-input-border);
-  border-radius: 6px;
-}
-.db-presentation-source-label {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-}
-.db-presentation-source-label h3 {
-  margin: 0;
-  font-size: inherit;
-}
-.db-presentation-source-label span {
-  color: var(--db-text-secondary);
-  font-size: 12px;
-}
-.db-presentation-source p {
-  margin: 8px 0 0;
-  max-height: 150px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  line-height: 1.5;
-}
-.db-presentation-wording summary {
-  cursor: pointer;
-  min-height: var(--db-target-min);
-  align-content: center;
-}
-.db-presentation-wording label + label {
-  margin-top: 12px;
-}
-.db-presentation label {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-weight: 600;
-}
-.db-presentation input,
-.db-presentation select,
-.db-presentation textarea {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: var(--db-target-min);
-  padding: 8px;
-  border: 1px solid var(--db-input-border);
-  border-radius: 5px;
-  background: var(--db-bg);
-  color: var(--db-text);
-  font: inherit;
-  /* Below 16px, iOS zooms the page when a field takes focus. */
-  font-size: var(--db-input-font-size);
-}
-.db-presentation [role='alert'] {
-  color: var(--db-danger);
-}
-.db-presentation details p {
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--db-text-secondary);
-}
-/* The slide picker stands in for the slide list in a small panel. */
-.db-presentation-picker {
-  display: none;
-  flex-direction: column;
-  gap: 5px;
-  min-width: 0;
-}
-.db-presentation-picker-row {
-  display: flex;
-  align-items: stretch;
-  gap: 6px;
-}
-.db-presentation-picker-row select {
-  flex: 1 1 auto;
-  min-width: 0;
-  text-overflow: ellipsis;
-  /* WebKit lays out the chosen option's text at full width and counts it as
-     overflow of every ancestor, though the control clips what it draws, so a
-     long slide title scrolled the phone sheet sideways. `overflow` does not
-     reach that text; paint containment does. */
-  contain: paint;
-}
-.db-presentation-picker-row button {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  min-width: max(var(--db-target-min), 36px);
-  padding: 0 8px;
-  border: 1px solid var(--db-input-border);
-  border-radius: 5px;
-  background: var(--db-bg);
-  color: var(--db-text);
-  font-size: 16px;
-  cursor: pointer;
-}
-.db-presentation-picker-row button:hover:not(:disabled) {
-  background: var(--db-bg-hover);
-}
-.db-presentation-picker-row button:focus-visible {
-  outline: 2px solid var(--db-focus);
-  outline-offset: 2px;
-}
-.db-presentation-picker-row button:disabled {
-  color: var(--db-text-muted);
-  cursor: default;
-}
-
-/* The designer sizes itself from its own panel, not from the shell's stamped
-   width: the VS Code webview mounts it with no shell to stamp one, and a short
-   window squeezes the two columns as badly as a narrow one does. The panel's
-   size never depends on its content (the full dialog sets both dimensions, and
-   the phone sheet is pinned to the window edges), so it can be a size
-   container. Below these sizes the list becomes the picker above, the columns
-   stack, and the dialog body scrolls as one instead of each column scrolling
-   in a sliver. The height is measured: a 460px panel left the columns 185px,
-   room for one slide in the list and the preview alone beside it, while a
-   540px panel (a 1366x768 laptop's browser) and a 600px one (the desktop app
-   on a 1024x768 screen) still show three slides, the preview and the layout
-   choices at once. The picker there hid all of that below one oversized
-   preview. */
-.db-dialog.db-presentation {
-  container: db-presentation / size;
-}
-@container db-presentation (max-width: 719px) or (max-height: 499px) {
-  .db-presentation-workspace {
-    display: flex;
-    flex: none;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .db-presentation-beats {
-    display: none;
-  }
-  .db-presentation-picker {
-    display: flex;
-  }
-  .db-presentation-detail {
-    overflow: visible;
-  }
-  .db-presentation-preview {
-    height: auto;
-    aspect-ratio: 16 / 9;
-    max-height: 50cqh;
-  }
 }
 
 /* ── Workspace search and quick-open ───────────────────────────── */
@@ -10064,6 +11278,14 @@ button.db-git-file-row:hover {
   color: var(--db-text-on-selected);
 }
 
+/* Best matches ignores case and word edges, so those toggles rest meanwhile. */
+.db-search-toggle:disabled {
+  opacity: 0.45;
+  cursor: default;
+  background: none;
+  color: var(--db-text-muted);
+}
+
 .db-search-toggle:focus-visible {
   outline: 2px solid var(--db-focus);
   outline-offset: 1px;
@@ -10115,10 +11337,13 @@ button.db-git-file-row:hover {
 }
 
 .db-search-chevron {
+  display: inline-flex;
   flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
   width: 12px;
+  font-size: 12px;
   color: var(--db-text-muted);
-  text-align: center;
 }
 
 .db-search-document-title,
@@ -10164,4 +11389,1370 @@ button.db-git-file-row:hover {
 
 .db-search-snippet {
   flex: 1 1 auto;
+}
+
+/* ── Home, Tasks, Journal and Unfiled ───────────────────────────────────
+   The shell's own pages. Each renders inside a .db-folder-view, so the
+   desktop titlebar drag strip and the phone back bar apply unchanged. */
+
+/* Places: icon buttons right after the app menu in the sidebar header. The
+   label is each button's tooltip and accessible name. */
+.db-shell-nav {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.db-shell-nav-list {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* More places than the header holds (several journals in a narrow sidebar)
+   narrow every button rather than push the grip out of the row; the glyph
+   still fits at the floor. */
+.db-shell-nav-list > li {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 20px;
+}
+
+/* The shell's 24px control on a fine pointer, so five places fit beside the
+   logo in a 320px sidebar even behind the macOS window buttons; 40px on touch. */
+.db-shell-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 1 auto;
+  width: var(--db-control-size);
+  min-width: 0;
+  height: var(--db-control-size);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--db-text-muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* A phone drawer is narrower than the desktop sidebar's minimum; trim the
+   touch buttons as the explorer toolbar does. `min()` leaves 24px alone. */
+@container db-sidebar-header (max-width: 320px) {
+  .db-shell-nav-item {
+    width: min(var(--db-control-size), 34px);
+  }
+}
+
+.db-shell-nav-item:hover {
+  background: var(--db-bg-hover);
+  border-color: var(--db-border);
+  color: var(--db-text-secondary);
+}
+
+.db-shell-nav-item[aria-current='page'] {
+  background: var(--db-bg-selected);
+  border-color: var(--db-bg-selected);
+  color: var(--db-text-on-selected);
+}
+
+.db-shell-nav-item:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
+/* A count rides the glyph's upper-right corner, measured from the button's
+   centre so it hugs the glyph in a 24px button and a 40px touch one alike;
+   in the 24px one it reaches just past the edge, covering less of the glyph. */
+.db-shell-nav-count {
+  position: absolute;
+  top: calc(50% - 14px);
+  left: calc(50% + 4px);
+  box-sizing: border-box;
+  min-width: 12px;
+  height: 12px;
+  padding: 0 3px;
+  border-radius: 6px;
+  /* A ring in the sidebar's colour parts the badge from the glyph under it. */
+  box-shadow: 0 0 0 1.5px var(--db-bg-subtle);
+  background: var(--db-accent);
+  color: var(--db-text-on-accent);
+  font-family: var(--db-meta-font);
+  font-size: 8.5px;
+  font-weight: 600;
+  line-height: 12px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.db-page {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-inline: max(16px, 4vw);
+}
+
+.db-page > * {
+  width: 100%;
+  max-width: 880px;
+  margin-inline: auto;
+  box-sizing: border-box;
+}
+
+/* A board needs the room; everything above it widens to stay aligned. */
+.db-page--wide > * {
+  max-width: 1240px;
+}
+
+.db-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.db-page-heading {
+  min-width: 0;
+}
+
+.db-page-eyebrow,
+.db-page-subtitle {
+  margin: 0;
+  color: var(--db-text-muted);
+  font-size: 13px;
+}
+
+.db-page-eyebrow {
+  font-family: var(--db-meta-font);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.db-page-title {
+  margin: 2px 0;
+  color: var(--db-text);
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.db-page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.db-page-primary,
+.db-page-secondary {
+  min-height: var(--db-target-min);
+  padding: 4px 14px;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.db-page-primary {
+  border: 1px solid var(--db-accent);
+  background: var(--db-accent);
+  color: var(--db-text-on-accent);
+  font-weight: 600;
+}
+
+.db-page-primary:hover:not(:disabled) {
+  border-color: var(--db-accent-hover);
+  background: var(--db-accent-hover);
+}
+
+.db-page-secondary {
+  border: 1px solid var(--db-border-strong);
+  background: transparent;
+  color: var(--db-text);
+}
+
+.db-page-secondary:hover:not(:disabled) {
+  background: var(--db-bg-hover);
+}
+
+.db-page-primary:disabled,
+.db-page-secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.db-page-link {
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  color: var(--db-accent);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.db-page-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.db-page-link--danger {
+  color: var(--db-danger);
+}
+
+.db-page-primary:focus-visible,
+.db-page-secondary:focus-visible,
+.db-page-link:focus-visible,
+.db-task-title:focus-visible,
+.db-home-tile:focus-visible,
+.db-journal-open:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 2px;
+}
+
+.db-page-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.db-page-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  color: var(--db-text-secondary);
+  font-family: var(--db-meta-font);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.db-page-count {
+  color: var(--db-text-muted);
+  font-family: var(--db-meta-font);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.db-page-section-action {
+  margin-left: auto;
+  font-family: var(--db-ui-font);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.db-page-empty {
+  margin-block: 4px;
+  color: var(--db-text-muted);
+  font-size: 14px;
+}
+
+.db-page-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+/* An offer at the top of a page: documents shared to the phone earlier,
+   waiting in its Inbox. Wraps its buttons under the text when narrow. */
+.db-page-offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  background: var(--db-bg-subtle);
+}
+
+.db-page-offer-text {
+  flex: 1 1 240px;
+  margin: 0;
+  color: var(--db-text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.db-page-offer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.db-capture {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.db-capture-label {
+  color: var(--db-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.db-capture-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.db-capture-input {
+  flex: 1 1 260px;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: var(--db-target-min);
+  padding: 4px 10px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font-family: inherit;
+  font-size: var(--db-input-font-size);
+}
+
+.db-task-column-input {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: var(--db-target-min);
+  padding: 4px 10px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font-family: inherit;
+  font-size: var(--db-input-font-size);
+}
+
+.db-capture-input:focus-visible,
+.db-task-column-input:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
+.db-capture-input::placeholder,
+.db-task-column-input::placeholder {
+  color: var(--db-text-placeholder);
+}
+
+.db-capture-hint {
+  min-height: 1.3em;
+  margin: 0;
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+/* ── Quick Jot (bottom of the left pane, above the footer) ───── */
+
+.db-quick-jot {
+  container: db-quick-jot / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* Like the header and footer: the file list gives way, not this. Sitting on
+     the footer, the box keeps its bottom edge and grows upward. */
+  flex-shrink: 0;
+  padding: 8px 8px 4px;
+  border-top: 1px solid var(--db-border);
+}
+
+.db-quick-jot-field {
+  position: relative;
+}
+
+.db-quick-jot-input,
+.db-quick-jot-pending {
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: 1px solid var(--db-input-border);
+  font-family: inherit;
+  font-size: var(--db-input-font-size);
+  line-height: 1.4;
+}
+
+.db-quick-jot-input {
+  display: block;
+  width: 100%;
+  /* Two rows to start (`rows`), growing with the text to six, then scrolling. */
+  max-height: calc(6 * 1.4em + 12px);
+  border-radius: 5px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  resize: none;
+  overflow-y: auto;
+}
+
+.db-quick-jot-input:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
+.db-quick-jot-input::placeholder {
+  /* It carries the instructions, and rests on the pane's colour: muted, not placeholder grey. */
+  color: var(--db-text-muted);
+}
+
+/* Empty and idle, the box is part of the pane: its colour, a dashed edge.
+   Text, focus, a drag or dictation make it a proper field. */
+.db-quick-jot:not(.db-quick-jot--dragging, .db-quick-jot--dictating)
+  .db-quick-jot-input:placeholder-shown:not(:focus) {
+  border-style: dashed;
+  background: transparent;
+}
+
+.db-quick-jot--dragging .db-quick-jot-input {
+  border-color: var(--db-focus);
+  outline: 2px dashed var(--db-focus);
+  outline-offset: 1px;
+}
+
+/* Empty and idle with the pointer elsewhere, the whole jot recedes a little;
+   pointing at it, focusing it, or putting anything in it brings it back. The
+   contents fade, not the section, so its top rule still matches the pane's.
+   0.75 keeps the hint at 3:1 or better in both themes. Only where there is a
+   pointer to hover with: on touch it would stay faded until tapped. Driven by
+   the stamped `any-hover` attribute, so an iPad with a trackpad fades too. */
+[data-db-hover='hover'] .db-quick-jot > * {
+  transition: opacity 0.15s ease-out;
+}
+
+[data-db-hover='hover'] .db-quick-jot--resting:not(:hover, :focus-within) > * {
+  opacity: 0.75;
+}
+
+.db-quick-jot-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.db-quick-jot-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 2px 2px 3px;
+  border: 1px solid var(--db-border);
+  border-radius: 4px;
+  background: var(--db-bg);
+  color: var(--db-text-secondary);
+  font-size: 12px;
+}
+
+.db-quick-jot-thumb {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 2px;
+  object-fit: cover;
+  color: var(--db-text-muted);
+}
+
+.db-quick-jot-attachment-name {
+  min-width: 0;
+  max-width: 14em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-quick-jot-remove {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: var(--db-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.db-quick-jot-remove:hover:not(:disabled) {
+  background: var(--db-bg-hover);
+  color: var(--db-text-secondary);
+}
+
+.db-quick-jot-remove:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
+.db-quick-jot-status {
+  margin: 0;
+  color: var(--db-text-muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+/* "Still converting" dots, laid over the box: the jot's text again, unseen,
+   wrapping exactly as the box does, with the dots after its last word. */
+.db-quick-jot-pending {
+  position: absolute;
+  inset: 0;
+  padding-right: calc(8px + var(--db-quick-jot-gutter, 0px));
+  border-color: transparent;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  pointer-events: none;
+}
+
+.db-quick-jot-pending-text {
+  visibility: hidden;
+}
+
+.db-quick-jot-dots {
+  color: var(--db-text-muted);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.db-quick-jot-dots > span {
+  animation: db-quick-jot-dot 1.2s ease-in-out infinite;
+}
+
+.db-quick-jot-dots > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.db-quick-jot-dots > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes db-quick-jot-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+/* Kept in the page (a live region must exist before it speaks), taking no room. */
+.db-quick-jot-status:empty {
+  margin-top: -4px;
+}
+
+.db-quick-jot-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.db-quick-jot-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* The make buttons arrive with the jot's first content. */
+.db-quick-jot-make {
+  animation: db-quick-jot-reveal 0.12s ease-out;
+}
+
+@keyframes db-quick-jot-reveal {
+  from {
+    opacity: 0;
+  }
+}
+
+.db-quick-jot-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--db-control-size);
+  height: var(--db-control-size);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: none;
+  color: var(--db-text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* With room on the row (QuickJot's fitToolbarLabels decides), the make
+   buttons carry a word beside the icon; without it, icons alone. The doubled
+   classes beat the narrow-pane width cap below. */
+.db-quick-jot-toolbar:not([data-labels='off']) .db-quick-jot-btn.db-quick-jot-btn--labeled {
+  width: auto;
+  gap: 4px;
+  padding: 0 7px 0 5px;
+}
+
+.db-quick-jot-btn-label {
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.db-quick-jot-toolbar[data-labels='off'] .db-quick-jot-btn-label {
+  display: none;
+}
+
+/* The explorer buttons' trick: a touch-sized hit area around a small glyph. */
+.db-quick-jot-btn::after,
+.db-quick-jot-remove::after {
+  content: '';
+  position: absolute;
+  inset: calc((var(--db-control-size) - var(--db-target-min)) / 2);
+}
+
+.db-quick-jot-remove::after {
+  inset: calc((20px - var(--db-target-min)) / 2);
+}
+
+.db-quick-jot-btn:hover:not(:disabled) {
+  background: var(--db-bg-hover);
+  border-color: var(--db-border);
+  color: var(--db-text-secondary);
+}
+
+.db-quick-jot-btn:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
+.db-quick-jot-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.db-quick-jot-btn--recording,
+.db-quick-jot-btn--recording:hover:not(:disabled) {
+  border-color: currentColor;
+  background: var(--db-danger-bg);
+  color: var(--db-danger);
+}
+
+/* Recording widens the button to carry the editor's rolling level meter
+   (doubled class: it must beat the narrow-pane width cap below). */
+.db-quick-jot-btn.db-quick-jot-btn--recording {
+  width: auto;
+  gap: 6px;
+  padding: 0 8px;
+}
+
+.db-quick-jot-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  height: 16px;
+}
+
+.db-quick-jot-meter-bar {
+  width: 2px;
+  min-height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  transition: height 0.05s linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-quick-jot-dots > span {
+    animation: none;
+    opacity: 0.6;
+  }
+
+  .db-quick-jot-meter-bar {
+    transition: none;
+  }
+
+  .db-quick-jot-make {
+    animation: none;
+  }
+
+  .db-quick-jot > * {
+    transition: none;
+  }
+}
+
+@container db-quick-jot (max-width: 220px) {
+  .db-quick-jot-btn {
+    width: min(var(--db-control-size), 32px);
+  }
+}
+
+/* A phone on its side: one line to type in, so the file list keeps some room. */
+.db-shell[data-db-form-factor='phone'][data-db-orientation='landscape'] .db-quick-jot-input {
+  max-height: calc(1.4em + 12px);
+}
+
+.db-task-list,
+.db-home-recent,
+.db-journal-list,
+.db-unfiled-list,
+.db-task-cards {
+  /* Block margins only: a list placed straight in a page keeps its centring. */
+  margin-block: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.db-task-list,
+.db-journal-list,
+.db-unfiled-list {
+  border-top: 1px solid var(--db-border);
+}
+
+.db-task-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 10px;
+  padding: 7px 2px;
+  border-bottom: 1px solid var(--db-border);
+}
+
+[data-db-layout='single-pane'] .db-task-row {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+[data-db-layout='single-pane'] .db-task-row > .db-task-meta {
+  grid-column: 2;
+  justify-content: flex-start;
+}
+
+.db-task-check {
+  width: 17px;
+  height: 17px;
+  margin: 3px 0 0;
+  accent-color: var(--db-accent);
+  cursor: pointer;
+}
+
+[data-db-pointer='coarse'] .db-task-check {
+  width: 22px;
+  height: 22px;
+}
+
+.db-task-row-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.db-task-title {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--db-text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.db-task-title:hover {
+  color: var(--db-accent);
+  text-decoration: underline;
+}
+
+.db-task-row[data-done] .db-task-title,
+.db-task-card[data-done] .db-task-title {
+  color: var(--db-text-muted);
+  font-weight: 400;
+  text-decoration: line-through;
+}
+
+.db-task-row[aria-busy='true'],
+.db-task-card[aria-busy='true'],
+.db-unfiled-item[aria-busy='true'] {
+  opacity: 0.6;
+}
+
+.db-task-where {
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+.db-task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px 10px;
+  padding-top: 2px;
+  color: var(--db-text-secondary);
+  font-size: 12px;
+}
+
+.db-task-meta-steps {
+  font-family: var(--db-meta-font);
+  font-variant-numeric: tabular-nums;
+}
+
+.db-task-category {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.db-task-category::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--db-task-hue, var(--db-text-muted));
+}
+
+.db-task-category[data-hue='green'] {
+  --db-task-hue: var(--db-hue-green);
+}
+
+.db-task-category[data-hue='blue'] {
+  --db-task-hue: var(--db-hue-blue);
+}
+
+.db-task-category[data-hue='violet'] {
+  --db-task-hue: var(--db-hue-violet);
+}
+
+.db-task-category[data-hue='amber'] {
+  --db-task-hue: var(--db-hue-amber);
+}
+
+.db-task-category[data-hue='rose'] {
+  --db-task-hue: var(--db-hue-rose);
+}
+
+.db-task-category[data-hue='teal'] {
+  --db-task-hue: var(--db-hue-teal);
+}
+
+.db-task-due {
+  padding: 0 6px;
+  border: 1px solid var(--db-border-strong);
+  border-radius: 4px;
+  font-family: var(--db-meta-font);
+  white-space: nowrap;
+}
+
+.db-task-due[data-status='today'] {
+  border-color: var(--db-accent);
+  background: var(--db-accent-soft-12);
+  color: var(--db-text);
+}
+
+.db-task-due[data-status='overdue'] {
+  border-color: var(--db-danger);
+  color: var(--db-danger);
+}
+
+.db-home-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.db-home-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  background: var(--db-bg-subtle);
+  color: var(--db-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-home-tile:hover:not(:disabled) {
+  border-color: var(--db-border-strong);
+  background: var(--db-bg-hover);
+}
+
+.db-home-tile-title {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.db-home-tile-text {
+  color: var(--db-text-secondary);
+  font-size: 13px;
+}
+
+.db-home-starts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.db-home-start {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 12px 0;
+  border-top: 1px solid var(--db-border);
+}
+
+.db-home-start-title {
+  margin: 0;
+  color: var(--db-text);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.db-home-start-text {
+  flex: 1 1 auto;
+  margin: 0 0 4px;
+  color: var(--db-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.db-home-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.db-task-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+[data-db-layout='single-pane'] .db-task-board {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.db-task-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  background: var(--db-bg-subtle);
+}
+
+.db-task-column[data-drop] {
+  border-color: var(--db-accent);
+  background: var(--db-accent-soft-08);
+}
+
+.db-task-column-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  color: var(--db-text);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.db-task-column-add {
+  display: flex;
+}
+
+.db-task-column-add .db-task-column-input {
+  flex: 1 1 auto;
+  border-style: dashed;
+}
+
+.db-task-column-empty {
+  margin: 2px 0;
+  color: var(--db-text-muted);
+  font-size: 13px;
+}
+
+.db-task-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.db-task-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px;
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: var(--db-bg);
+}
+
+.db-task-card[draggable='true'] {
+  cursor: grab;
+}
+
+.db-task-card-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+}
+
+.db-task-card-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding-left: 26px;
+}
+
+.db-task-card-bottom .db-task-meta {
+  justify-content: flex-start;
+  padding-top: 0;
+}
+
+.db-task-move {
+  max-width: 100%;
+  min-height: 26px;
+  padding: 1px 4px;
+  border: 1px solid var(--db-border);
+  border-radius: 4px;
+  background: var(--db-bg);
+  color: var(--db-text-secondary);
+  font-family: inherit;
+  font-size: var(--db-input-font-size);
+}
+
+.db-task-add-bucket {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.db-task-add-bucket .db-task-column-input {
+  flex: 0 1 320px;
+}
+
+.db-journal-entry,
+.db-unfiled-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--db-border);
+}
+
+.db-journal-open {
+  display: flex;
+  flex: 1 1 320px;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--db-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-journal-open:hover .db-journal-excerpt {
+  color: var(--db-accent);
+}
+
+.db-journal-date {
+  flex-shrink: 0;
+  min-width: 7.5em;
+  color: var(--db-text-secondary);
+  font-family: var(--db-meta-font);
+  font-size: 13px;
+}
+
+.db-journal-excerpt {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-journal-done {
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+.db-unfiled-main {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.db-unfiled-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The workspace folder picker: a button that drops down a find field over a
+   tree whose roots are the workspaces. One click on a row chooses it. Rows
+   borrow the file tree's look (.db-tree-row) so a folder reads the same here
+   as in the sidebar. Portaled onto <body> and placed in script (top or
+   bottom, left and max-height), so no scrolling pane clips it. */
+.db-folder-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.db-folder-picker-caret {
+  display: inline-flex;
+  color: var(--db-text-secondary);
+  transform: rotate(90deg);
+}
+
+.db-folder-picker {
+  position: fixed;
+  z-index: 1000;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(340px, calc(100vw - 16px));
+  padding: 6px;
+  overflow: hidden;
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: var(--db-bg-raised);
+  box-shadow: 0 6px 18px var(--db-shadow);
+  color: var(--db-text);
+  /* Outside .db-shell, where no font is set. */
+  font-family: var(--db-ui-font);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Focused only so its keys work on a touch screen; nothing to show. */
+.db-folder-picker:focus {
+  outline: none;
+}
+
+.db-folder-picker-find {
+  box-sizing: border-box;
+  width: 100%;
+  flex-shrink: 0;
+  padding: 6px 9px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font: inherit;
+  font-size: var(--db-input-font-size);
+}
+
+.db-folder-picker-find:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -1px;
+}
+
+.db-folder-picker-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.db-folder-picker-tree:empty {
+  display: none;
+}
+
+.db-folder-picker-row {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-radius: 4px;
+}
+
+/* A wider disclosure than the sidebar's, so a finger can open a folder
+   without choosing it. */
+.db-folder-picker-disclosure {
+  align-self: stretch;
+  width: 24px;
+  margin: -4px 0;
+  cursor: pointer;
+}
+
+.db-folder-picker-row--workspace .db-tree-label {
+  font-weight: 600;
+}
+
+.db-folder-picker-row--unavailable {
+  cursor: default;
+}
+
+.db-folder-picker-row--unavailable .db-tree-label {
+  color: var(--db-text-muted);
+}
+
+.db-folder-picker-note {
+  flex-shrink: 1;
+  min-width: 0;
+  margin-left: 8px;
+  overflow: hidden;
+  color: var(--db-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+}
+
+.db-folder-picker-empty {
+  margin: 0;
+  padding: 4px 6px 6px;
+  color: var(--db-text-secondary);
+}
+
+/* The details row between the editor's toolbar and the document. */
+.db-properties {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 6px 16px;
+  /* The same seam as the toolbar's edge above (`.db-shell .squisq-editor-header`),
+     so the row's two edges read alike and the controls look centred. */
+  border-bottom: 1px solid var(--db-border-strong);
+  background: var(--db-bg-subtle);
+  color: var(--db-text-secondary);
+  font-size: 13px;
+}
+
+.db-properties-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--db-text);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.db-properties-done .db-task-check {
+  margin: 0;
+}
+
+.db-properties-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.db-properties-label {
+  font-family: var(--db-meta-font);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.db-properties-input {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 1px 6px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 4px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font-family: inherit;
+  font-size: var(--db-input-font-size);
+}
+
+.db-properties-input:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
+.db-properties-problem {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--db-danger);
+  font-size: 12px;
+}
+
+.db-page[data-dropping] {
+  outline: 2px dashed var(--db-accent);
+  outline-offset: -8px;
+  background: var(--db-accent-soft-08);
+}
+
+.db-home-elsewhere {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.db-home-elsewhere + .db-home-elsewhere {
+  margin-top: 10px;
+}
+
+.db-home-elsewhere-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0;
+  color: var(--db-text);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.db-home-launch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--db-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.db-home-launch input {
+  accent-color: var(--db-accent);
+}
+
+.db-home-reminders {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }

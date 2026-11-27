@@ -19,8 +19,10 @@ export interface TreeRow {
   kind: 'file' | 'directory';
   /** 0 for a root row; mirrors the rendered indentation. */
   depth: number;
-  /** Directories only — always false for a file. */
+  /** Directories only — always false for a file, and for an empty folder. */
   expanded: boolean;
+  /** A folder known to hold nothing the tree shows: the arrows treat it as a leaf. */
+  empty?: boolean;
   /** null for a root row. */
   parentPath: string | null;
 }
@@ -32,6 +34,8 @@ export interface TreeShape {
   isExpanded: (dirPath: string) => boolean;
   /** Mirrors the explorer's hidden-entry filter so order matches the DOM. */
   isVisible: (entry: FileSystemEntry) => boolean;
+  /** Folders known to hold nothing the tree shows; see `folder-contents.ts`. */
+  isEmpty?: (dirPath: string) => boolean;
 }
 
 export type TreeKeyAction =
@@ -61,8 +65,16 @@ export function flattenVisibleRows(shape: TreeShape): TreeRow[] {
   const walk = (entries: readonly FileSystemEntry[], depth: number, parentPath: string | null) => {
     for (const entry of entries) {
       if (!shape.isVisible(entry)) continue;
-      const expanded = entry.kind === 'directory' && shape.isExpanded(entry.path);
-      rows.push({ path: entry.path, kind: entry.kind, depth, expanded, parentPath });
+      const empty = entry.kind === 'directory' && (shape.isEmpty?.(entry.path) ?? false);
+      const expanded = entry.kind === 'directory' && !empty && shape.isExpanded(entry.path);
+      rows.push({
+        path: entry.path,
+        kind: entry.kind,
+        depth,
+        expanded,
+        ...(empty ? { empty } : {}),
+        parentPath,
+      });
       if (expanded) walk(shape.childrenOf(entry.path), depth + 1, entry.path);
     }
   };
@@ -114,7 +126,7 @@ export function treeKeyAction(
       return previous ? { type: 'focus', path: previous.path } : NONE;
     }
     case 'ArrowRight': {
-      if (row.kind !== 'directory') return NONE;
+      if (row.kind !== 'directory' || row.empty) return NONE;
       if (!row.expanded) return { type: 'expand', path: row.path };
       const child = rows[index + 1];
       // Only descend when the next row really is this folder's child: an

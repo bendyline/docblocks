@@ -1,6 +1,8 @@
 /**
- * Study aids: a summary, a quiz, or a flashcard deck made from a document by
- * AI and saved beside it.
+ * The study aid saved beside a document: a summary made from it by AI.
+ * (Quiz questions and flashcards are study cards kept with each section, in
+ * the document itself — see `Study/`. Decks saved here by earlier versions,
+ * `ai/quiz.md` and `ai/flashcards.md`, are left as they are.)
  *
  * Each lives in the document's sidecar folder (`notes.md` → `notes_files/`),
  * under `ai/` rather than at the sidecar root: an outside-in companion folder
@@ -21,17 +23,17 @@ import {
   splitFrontmatterBlock,
 } from '@bendyline/squisq/markdown';
 
-export type StudyAidKind = 'summary' | 'quiz' | 'flashcards';
+export type StudyAidKind = 'summary';
 
-export const STUDY_AID_KINDS: readonly StudyAidKind[] = ['summary', 'quiz', 'flashcards'];
+export const STUDY_AID_KINDS: readonly StudyAidKind[] = ['summary'];
 
 export interface StudyAidLabels {
   /** Menu item in the AI actions menu. */
   readonly menu: string;
   readonly dialogTitle: string;
-  /** The heading prefix of the generated document: "Quiz: Onboarding". */
+  /** The heading prefix of the generated document: "Summary: Onboarding". */
   readonly title: string;
-  /** Lower-case noun for sentences: "Generate quiz", "Saved flashcards". */
+  /** Lower-case noun for sentences: "Generate summary", "Saved summary". */
   readonly noun: string;
   /** What a Report output names as the AI action. */
   readonly feature: string;
@@ -44,20 +46,6 @@ export const STUDY_AID_LABELS: Readonly<Record<StudyAidKind, StudyAidLabels>> = 
     title: 'Summary',
     noun: 'summary',
     feature: 'Summarize document',
-  },
-  quiz: {
-    menu: 'Create quiz…',
-    dialogTitle: 'Create a quiz with AI',
-    title: 'Quiz',
-    noun: 'quiz',
-    feature: 'Create quiz',
-  },
-  flashcards: {
-    menu: 'Create flashcards…',
-    dialogTitle: 'Create flashcards with AI',
-    title: 'Flashcards',
-    noun: 'flashcards',
-    feature: 'Create flashcards',
   },
 };
 
@@ -93,7 +81,7 @@ export interface SavedStudyAid {
 }
 
 function isStudyAidKind(value: unknown): value is StudyAidKind {
-  return value === 'summary' || value === 'quiz' || value === 'flashcards';
+  return value === 'summary';
 }
 
 /** `body` with its title and provenance written as frontmatter. */
@@ -105,8 +93,6 @@ export function withStudyAidFrontmatter(
   // A blank line between the frontmatter and the body, as people write it.
   return setFrontmatterValues(`\n${body.replace(/^\n+/u, '')}`, {
     title,
-    // Squisq opens a document carrying this hint in its Study view.
-    'display-mode': provenance.kind === 'summary' ? null : 'flashcards',
     [KEY_KIND]: provenance.kind,
     [KEY_SOURCE]: provenance.source,
     [KEY_SOURCE_SHA256]: provenance.sourceSha256,

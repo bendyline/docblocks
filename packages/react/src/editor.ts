@@ -104,7 +104,8 @@ export function pickEmptyDocumentPrompt(random: () => number = Math.random): Emp
   return EMPTY_DOCUMENT_PROMPTS[index] ?? EMPTY_DOCUMENT_PROMPTS[0];
 }
 
-export { PresentationMaker } from './Presentation/PresentationMaker.js';
+// The Custom summary designer is Squisq's; DocBlocks lends it AI.
+export { createPresentationAssistant } from './Presentation/presentation-assistant.js';
 export { FindButton, type FindButtonProps } from './components/FindButton.js';
 export { focusFindInput } from './components/find-input.js';
 export { findShortcutLabel, isFindShortcut } from './DocBlocksShell/keyboard-shortcuts.js';

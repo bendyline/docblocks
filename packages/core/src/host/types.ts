@@ -11,6 +11,8 @@ import type { FileCommitResult, FileSystemEntry, FileMeta } from '../filesystem/
 import type { DocBlocksHostAiAPI } from './ai.js';
 import type { DocBlocksHostFsV2API } from './filesystem-v2.js';
 import type { DocBlocksHostGitAPI } from './git.js';
+import type { DocBlocksHostEmbeddingsAPI } from './embeddings.js';
+import type { DocBlocksHostNotificationsAPI } from './notifications.js';
 import type { DocBlocksHostSpeechAPI } from './speech.js';
 import type { HostPlatform, HostSurfaceKind } from './capabilities.js';
 
@@ -414,6 +416,16 @@ export interface DocBlocksHostAPI {
    * downloaded model, not a provider connection.
    */
   speech?: DocBlocksHostSpeechAPI;
+  /**
+   * Absent on a host that ships no embedding model. Independent of `ai`:
+   * the model runs in the host, so semantic search needs no provider.
+   */
+  embeddings?: DocBlocksHostEmbeddingsAPI;
+  /**
+   * Reminders when tasks come due, and a count on the app icon. Absent on a
+   * host that cannot notify.
+   */
+  notifications?: DocBlocksHostNotificationsAPI;
   /**
    * Subscribe to menu commands dispatched by the native menu.
    * Returns an unsubscribe function.

@@ -1,6 +1,7 @@
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
 import { openAttachments } from './helpers/toolbar.js';
+import { createDocument } from './helpers/new-document.js';
 
 /**
  * Video and audio files dropped onto a document are stored beside it and
@@ -33,10 +34,7 @@ function dropFile(
 
 test('inserts dropped video and audio as players wherever it lands', async ({ page }) => {
   await openInitializedSite(page);
-  await page.getByRole('button', { name: 'New File', exact: true }).click();
-  const name = page.getByRole('textbox', { name: 'New file name' });
-  await name.fill('media-drop.md');
-  await name.press('Enter');
+  await createDocument(page, 'media-drop.md', { empty: true });
   const editor = page.getByRole('textbox', { name: /^Edit \/?media-drop\.md$/ });
   await expect(editor).toBeVisible({ timeout: 15_000 });
   // Body text first: leading media in an otherwise empty document collapses

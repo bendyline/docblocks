@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from './helpers/test.js';
-import { chooseDocumentAction } from './helpers/toolbar.js';
+import { chooseDocumentAction, selectUseMode } from './helpers/toolbar.js';
 
 /**
  * Chrome that ran off a 360px phone, found by the affordance crawl's overflow
@@ -87,8 +87,7 @@ test.describe('Chrome on a 360px phone', () => {
 
   test('wraps the teleprompter controls inside the player', async ({ page }) => {
     await openWelcomeDocument(page);
-    await page.getByRole('button', { name: 'Choose Use mode', exact: true }).click();
-    await page.getByRole('menuitemradio', { name: /^Narrate/ }).click();
+    await selectUseMode(page, 'Narrate');
     const controls = page.locator('.squisq-teleprompter-controls');
     await expect(controls).toBeVisible({ timeout: 30_000 });
     expect(await spillsOutside(controls)).toEqual([]);
@@ -96,11 +95,25 @@ test.describe('Chrome on a 360px phone', () => {
 
   test('gives the video timeline a usable width', async ({ page }) => {
     await openWelcomeDocument(page);
-    await page.getByRole('button', { name: 'Choose Use mode', exact: true }).click();
-    await page.getByRole('menuitemradio', { name: /^Video/ }).click();
+    await selectUseMode(page, 'Video');
     const timeline = page.getByRole('group', { name: 'Playback timeline' });
     await expect(timeline).toBeVisible({ timeout: 30_000 });
-    expect((await timeline.boundingBox())!.width).toBeGreaterThanOrEqual(120);
-    expect(await spillsOutside(page.locator('.doc-player__controls'))).toEqual([]);
+    // Playback runs from compact controls on the status bar: one row whose
+    // timeline flexes between fixed buttons and readouts. It must stay at
+    // least one touch target wide, and nothing may spill past the bar. The
+    // row is still settling when the timeline first shows (WebKit measured
+    // the counter and captions button past the bar's edge for a frame), so
+    // wait for it rather than reading a single frame.
+    await expect
+      .poll(async () => (await timeline.boundingBox())?.width ?? 0)
+      .toBeGreaterThanOrEqual(48);
+    await expect
+      .poll(() =>
+        spillsOutside(
+          page.getByRole('group', { name: 'Playback controls' }),
+          page.locator('.squisq-status-bar'),
+        ),
+      )
+      .toEqual([]);
   });
 });

@@ -1,9 +1,21 @@
 import { z } from 'zod';
-import { parseWorkspacePath } from '../filesystem/workspace-path.js';
+import { parseWorkspacePath, type WorkspacePath } from '../filesystem/workspace-path.js';
 import { parseFileSystemVersion } from '../filesystem/v2.js';
 import { parseFileSystemCapabilities } from '../filesystem/capabilities.js';
 import { FsError, deserializeFsError, isSerializedFsError } from '../filesystem/fs-error.js';
-import type { DocBlocksHostFsV2API, HostFileSystemV2Result } from './filesystem-v2.js';
+import {
+  SQUISQ_RUNTIME_DIRECTORY_NAME,
+  WORKSPACE_METADATA_DIRECTORY_NAME,
+  isCompanionDirectoryName,
+  isEnumeratedWorkspaceEntryName,
+} from '../filesystem/workspace-entry-rules.js';
+import type { FileSystemEntrySnapshot } from '../filesystem/v2.js';
+import {
+  FILE_SYSTEM_ENUMERATION_LIMITS,
+  type DocBlocksHostFsV2API,
+  type HostFileSystemEnumerationStep,
+  type HostFileSystemV2Result,
+} from './filesystem-v2.js';
 
 export const MOBILE_STORAGE_LIMITS = Object.freeze({
   fileBytes: 16 * 1024 * 1024,
@@ -47,6 +59,21 @@ const directory = z
   .object({ ...entryFields, kind: z.literal('directory'), size: z.null() })
   .strict();
 const entry = z.union([file, directory]);
+/**
+ * A folder child as `listMetadata` reports it: versioned from metadata, so a
+ * file of any size and a cloud placeholder are listed without being read.
+ */
+const metadataEntry = z.union([
+  z
+    .object({
+      ...entryFields,
+      kind: z.literal('file'),
+      size: integer.max(Number.MAX_SAFE_INTEGER),
+      onlineOnly: z.literal(true).optional(),
+    })
+    .strict(),
+  directory,
+]);
 const base64 = z
   .string()
   .max(Math.ceil(MOBILE_STORAGE_LIMITS.fileBytes / 3) * 4)
@@ -80,6 +107,7 @@ const mobileRequests = {
     .strict(),
   stat: z.object({ op: z.literal('stat'), ...location }).strict(),
   list: z.object({ op: z.literal('list'), ...location }).strict(),
+  listMetadata: z.object({ op: z.literal('listMetadata'), ...location }).strict(),
   readBegin: z.object({ op: z.literal('readBegin'), ...location }).strict(),
   readChunk: z
     .object({
@@ -164,24 +192,184 @@ const snapshot = z
   })
   .strict();
 
+/** Folder failures that leave a folder out of a listing rather than unreadable. */
+const ENUMERATION_SKIPPED = new Set(['not-found', 'type-mismatch', 'path-escape', 'invalid-path']);
+/** As on desktop: a listing larger than this is refused rather than paged forever. */
+const ENUMERATION_ENTRY_LIMIT = 1_000_000;
+
+interface MobileEnumeration {
+  readonly instanceId: string;
+  readonly root: WorkspacePath;
+  readonly queue: WorkspacePath[];
+  readonly entries: FileSystemEntrySnapshot[];
+  readonly unreadable: WorkspacePath[];
+  total: number;
+  touched: number;
+}
+
+/**
+ * Native storage answers one request at a time and refuses, rather than
+ * queues, past two limits: requests waiting (32) and transfers open at once
+ * (`MOBILE_STORAGE_LIMITS.transfers`). Refusal is the right answer to a page
+ * that has run away, and the wrong one to a page that is merely busy: one
+ * slow request (a file iCloud is still bringing up to date) backs up a
+ * heartbeat, a folder listing and a read behind it, and the unlucky one fails
+ * for no reason the user could act on. So the page takes turns instead.
+ */
+const MOBILE_REQUESTS_IN_FLIGHT = 8;
+/** Native forgets an idle transfer after two minutes; a slot must not outlive it by much. */
+const MOBILE_TRANSFER_SLOT_TIMEOUT_MS = 130_000;
+
+/** Up to `capacity` holders at once; the rest wait their turn, first come first served. */
+class Turnstile {
+  private held = 0;
+  private readonly waiting: Array<() => void> = [];
+
+  public constructor(private readonly capacity: number) {}
+
+  public async enter(): Promise<void> {
+    if (this.held < this.capacity) {
+      this.held += 1;
+      return;
+    }
+    // The slot is handed over by leave(), so the count does not change.
+    await new Promise<void>((resolve) => this.waiting.push(resolve));
+  }
+
+  public leave(): void {
+    const next = this.waiting.shift();
+    if (next) next();
+    else this.held -= 1;
+  }
+}
+
 /** JSON-safe transport shared by Capacitor and the real-native conformance runner. */
 export function createMobileFileSystemBridge(
   send: MobileNativeSend,
   capabilities: ReturnType<typeof parseFileSystemCapabilities>,
 ): DocBlocksHostFsV2API {
+  const requests = new Turnstile(MOBILE_REQUESTS_IN_FLIGHT);
+  const transferSlots = new Turnstile(MOBILE_STORAGE_LIMITS.transfers);
+  /** Open transfers, each with the timer that frees its slot if it is never closed. */
+  const openTransfers = new Map<string, ReturnType<typeof setTimeout>>();
+  const transferOpened = (transferId: string) => {
+    openTransfers.set(
+      transferId,
+      setTimeout(() => transferClosed(transferId), MOBILE_TRANSFER_SLOT_TIMEOUT_MS),
+    );
+  };
+  const transferClosed = (transferId: string) => {
+    const timer = openTransfers.get(transferId);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    openTransfers.delete(transferId);
+    transferSlots.leave();
+  };
+  /** Wait for a transfer slot, then begin; keep the slot only if a transfer really opened. */
+  async function beginTransfer<T>(
+    begin: () => Promise<HostFileSystemV2Result<T>>,
+    transferIdOf: (value: T) => string | null,
+  ): Promise<HostFileSystemV2Result<T>> {
+    await transferSlots.enter();
+    let transferId: string | null = null;
+    try {
+      const result = await begin();
+      transferId = result.ok ? transferIdOf(result.value) : null;
+      return result;
+    } finally {
+      if (transferId === null) transferSlots.leave();
+      else transferOpened(transferId);
+    }
+  }
   async function call<T>(
     request: MobileFsRequest,
     parse: (value: unknown) => T,
   ): Promise<HostFileSystemV2Result<T>> {
     const validated = mobileRequests[request.op].parse(request) as MobileFsRequest;
+    await requests.enter();
     try {
       return { ok: true, value: parseMobileResult(await send(validated), parse) };
     } catch (error) {
       if (error instanceof FsError) return { ok: false, error: error.toJSON() };
       throw error;
+    } finally {
+      requests.leave();
     }
   }
   const nullResult = (value: unknown) => z.null().parse(value);
+  // Recursive metadata listings (`enumerate`), walked here one folder per
+  // native call: native lists a folder from metadata, never opening a file.
+  const enumerations = new Map<string, MobileEnumeration>();
+  let enumerationSequence = 0;
+  const pruneEnumerations = () => {
+    const now = Date.now();
+    for (const [cursor, walk] of enumerations) {
+      if (now - walk.touched > FILE_SYSTEM_ENUMERATION_LIMITS.idleMs) enumerations.delete(cursor);
+    }
+  };
+  async function enumerationStep(cursor: string, walk: MobileEnumeration) {
+    const pageSize = FILE_SYSTEM_ENUMERATION_LIMITS.pageEntries;
+    walk.touched = Date.now();
+    while (walk.queue.length > 0 && walk.entries.length + walk.unreadable.length < pageSize) {
+      const folder = walk.queue.shift()!;
+      let children: z.infer<typeof metadataEntry>[];
+      try {
+        const request = mobileRequests.listMetadata.parse({
+          op: 'listMetadata',
+          instanceId: walk.instanceId,
+          path: folder,
+        }) as MobileFsRequest;
+        children = parseMobileResult(await send(request), (value) =>
+          z.array(metadataEntry).max(MOBILE_STORAGE_LIMITS.entries).parse(value),
+        );
+      } catch (error) {
+        if (folder === walk.root) throw error;
+        if (!(error instanceof FsError && ENUMERATION_SKIPPED.has(error.code))) {
+          walk.unreadable.push(folder);
+        }
+        continue;
+      }
+      for (const child of children) {
+        if (!isEnumeratedWorkspaceEntryName(child.name)) continue;
+        // The metadata folder is listed as a folder only, and never entered.
+        if (child.name === WORKSPACE_METADATA_DIRECTORY_NAME && child.kind !== 'directory')
+          continue;
+        walk.entries.push(child);
+        if (
+          child.kind === 'directory' &&
+          !isCompanionDirectoryName(child.name) &&
+          child.name !== SQUISQ_RUNTIME_DIRECTORY_NAME &&
+          child.name !== WORKSPACE_METADATA_DIRECTORY_NAME
+        ) {
+          walk.queue.push(child.path);
+        }
+      }
+      walk.total += children.length;
+      if (walk.total > ENUMERATION_ENTRY_LIMIT) {
+        enumerations.delete(cursor);
+        throw new FsError('quota-exceeded', 'Folder listing exceeds the entry limit.', {
+          operation: 'list',
+          path: walk.root,
+        });
+      }
+    }
+    const unreadable = walk.unreadable.splice(0, pageSize);
+    const entries = walk.entries.splice(0, pageSize - unreadable.length);
+    const done =
+      walk.queue.length === 0 && walk.entries.length === 0 && walk.unreadable.length === 0;
+    if (done) enumerations.delete(cursor);
+    return { cursor: done ? null : cursor, page: { entries, unreadable } };
+  }
+  async function runEnumeration(
+    run: () => Promise<HostFileSystemEnumerationStep>,
+  ): Promise<HostFileSystemV2Result<HostFileSystemEnumerationStep>> {
+    try {
+      return { ok: true, value: await run() };
+    } catch (error) {
+      if (error instanceof FsError) return { ok: false, error: error.toJSON() };
+      throw error;
+    }
+  }
   const unwrap = <T>(result: HostFileSystemV2Result<T>): T => {
     if (!result.ok) throw deserializeFsError(result.error);
     return result.value;
@@ -196,8 +384,50 @@ export function createMobileFileSystemBridge(
       call({ op: 'list', instanceId, path }, (value) =>
         z.array(entry).max(MOBILE_STORAGE_LIMITS.entries).parse(value),
       ),
+    beginEnumerate: (instanceId, path) =>
+      runEnumeration(() => {
+        pruneEnumerations();
+        const open = [...enumerations.values()].filter((walk) => walk.instanceId === instanceId);
+        if (open.length >= FILE_SYSTEM_ENUMERATION_LIMITS.sessions) {
+          throw new FsError('busy', 'Too many folder listings are open.', {
+            operation: 'list',
+            path,
+          });
+        }
+        const root = parseWorkspacePath(path);
+        const cursor = `mobile-enumeration-${++enumerationSequence}`;
+        const walk: MobileEnumeration = {
+          instanceId,
+          root,
+          queue: [root],
+          entries: [],
+          unreadable: [],
+          total: 0,
+          touched: Date.now(),
+        };
+        enumerations.set(cursor, walk);
+        return enumerationStep(cursor, walk).catch((error: unknown) => {
+          enumerations.delete(cursor);
+          throw error;
+        });
+      }),
+    continueEnumerate: (instanceId, cursor) =>
+      runEnumeration(() => {
+        const walk = enumerations.get(cursor);
+        if (!walk || walk.instanceId !== instanceId) {
+          throw new FsError('not-found', 'That folder listing has ended.', { operation: 'list' });
+        }
+        return enumerationStep(cursor, walk);
+      }),
+    closeEnumerate: async (instanceId, cursor) => {
+      if (enumerations.get(cursor)?.instanceId === instanceId) enumerations.delete(cursor);
+      return { ok: true, value: null };
+    },
     beginRead: (instanceId, path) =>
-      call({ op: 'readBegin', instanceId, path }, (value) => readTransfer.parse(value)),
+      beginTransfer(
+        () => call({ op: 'readBegin', instanceId, path }, (value) => readTransfer.parse(value)),
+        (transfer) => transfer?.transferId ?? null,
+      ),
     readChunk: (instanceId, transferId, offset) =>
       call({ op: 'readChunk', instanceId, transferId, offset }, (value) => {
         const bytes = decodeBytes(value);
@@ -206,16 +436,27 @@ export function createMobileFileSystemBridge(
         return bytes;
       }),
     beginWrite: (instanceId, path, byteLength, options = {}) =>
-      call({ op: 'writeBegin', instanceId, path, byteLength, options }, (value) => id.parse(value)),
+      beginTransfer(
+        () =>
+          call({ op: 'writeBegin', instanceId, path, byteLength, options }, (value) =>
+            id.parse(value),
+          ),
+        (transferId) => transferId,
+      ),
     writeChunk: (instanceId, transferId, offset, data) =>
       call(
         { op: 'writeChunk', instanceId, transferId, offset, data: encodeMobileBytes(data) },
         nullResult,
       ),
+    // Finishing or closing ends the transfer natively whether or not it succeeds.
     finishWrite: (instanceId, transferId) =>
-      call({ op: 'writeFinish', instanceId, transferId }, (value) => file.parse(value)),
+      call({ op: 'writeFinish', instanceId, transferId }, (value) => file.parse(value)).finally(
+        () => transferClosed(transferId),
+      ),
     closeTransfer: (instanceId, transferId) =>
-      call({ op: 'closeTransfer', instanceId, transferId }, nullResult),
+      call({ op: 'closeTransfer', instanceId, transferId }, nullResult).finally(() =>
+        transferClosed(transferId),
+      ),
     async readFile(instanceId, path) {
       let transferId: string | undefined;
       try {

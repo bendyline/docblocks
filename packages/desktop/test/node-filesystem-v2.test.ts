@@ -2,6 +2,7 @@ import { expect } from 'chai';
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -9,6 +10,7 @@ import {
   parseWorkspacePath,
   type FileSystemWatchEvent,
 } from '@bendyline/docblocks/filesystem';
+import { HOST_WIRE_LIMITS } from '@bendyline/docblocks/host';
 import { defineFileSystemProviderV2Conformance } from '../../core/test/helpers/filesystem-v2-conformance.js';
 import { NodeWorkspaceFileSystemV2 } from '../main/node-workspace-filesystem-v2.js';
 import { getWorkspaceRoots } from '../main/workspace-roots.js';
@@ -623,7 +625,7 @@ describe('NodeWorkspaceFileSystemV2 watch hardening', () => {
     }
   });
 
-  it('does not hash dot-folders or node_modules when a watch session opens', async () => {
+  it('opens no file when a watch session opens, not even a note', async () => {
     const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'docblocks-node-v2-watch-ignored-'));
     const id = `node-v2-watch-ignored-${++providerSequence}`;
     for (const folder of ['.git/objects', 'node_modules/pkg', 'notes']) {
@@ -654,7 +656,113 @@ describe('NodeWorkspaceFileSystemV2 watch hardening', () => {
       await provider.initialize();
       const subscription = provider.watch(() => undefined);
       await subscription.ready;
-      expect(new Set(opened)).to.deep.equal(new Set(['notes/note.md']));
+      // Its baseline is metadata: a large workspace is not read on every launch.
+      expect(opened).to.deep.equal([]);
+      await subscription.dispose();
+    } finally {
+      await provider.dispose();
+      roots.unregister(id);
+      await fs.rm(rootPath, { recursive: true, force: true });
+    }
+  });
+
+  it('lists a flat folder holding more notes than the generic wire limit', async function () {
+    this.timeout(60_000);
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'docblocks-node-v2-flat-'));
+    const id = `node-v2-flat-${++providerSequence}`;
+    const count = HOST_WIRE_LIMITS.arrayEntries + 1;
+    for (let start = 0; start < count; start += 500) {
+      await Promise.all(
+        Array.from({ length: Math.min(500, count - start) }, (_, n) =>
+          fs.writeFile(path.join(rootPath, `note-${String(start + n).padStart(5, '0')}.md`), ''),
+        ),
+      );
+    }
+    roots.register(id, rootPath);
+    const provider = new NodeWorkspaceFileSystemV2(id, 'Flat folder', rootPath, roots);
+    try {
+      await provider.initialize();
+      expect(await provider.readDirectory(parseWorkspacePath(''))).to.have.length(count);
+    } finally {
+      await provider.dispose();
+      roots.unregister(id);
+      await fs.rm(rootPath, { recursive: true, force: true });
+    }
+  });
+
+  it('watches a workspace larger than the traversal limit', async () => {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'docblocks-node-v2-watch-large-'));
+    const id = `node-v2-watch-large-${++providerSequence}`;
+    for (let n = 0; n < 6; n += 1) await fs.writeFile(path.join(rootPath, `${n}.md`), `${n}`);
+    roots.register(id, rootPath);
+    const control = new ControlledWatcher();
+    const provider = new NodeWorkspaceFileSystemV2(id, 'Watch large', rootPath, roots, {
+      traversalEntryLimit: 2,
+      acquireWatcher: () => control.handle,
+    });
+    const errors: FsError[] = [];
+    try {
+      await provider.initialize();
+      const subscription = provider.watch(() => undefined, {
+        onError: (error) => errors.push(error),
+      });
+      await subscription.ready;
+      expect(errors).to.deep.equal([]);
+      expect(control.eventListenerCount).to.equal(1);
+      await subscription.dispose();
+    } finally {
+      await provider.dispose();
+      roots.unregister(id);
+      await fs.rm(rootPath, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a change made while the watcher was starting', async () => {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'docblocks-node-v2-watch-start-'));
+    const id = `node-v2-watch-start-${++providerSequence}`;
+    await fs.mkdir(path.join(rootPath, 'notes'));
+    await fs.writeFile(path.join(rootPath, 'notes', 'note.md'), 'before');
+    roots.register(id, rootPath);
+    const provider = new NodeWorkspaceFileSystemV2(id, 'Watch start', rootPath, roots, {
+      acquireWatcher: () => {
+        // Between the two baselines, as a sync client might.
+        fsSync.writeFileSync(path.join(rootPath, 'notes', 'note.md'), 'changed meanwhile');
+        return new ControlledWatcher().handle;
+      },
+    });
+    const events: FileSystemWatchEvent[] = [];
+    try {
+      await provider.initialize();
+      const subscription = provider.watch((event) => events.push(event));
+      await subscription.ready;
+      expect(events.map((event) => event.type)).to.deep.equal(['overflow']);
+      await subscription.dispose();
+    } finally {
+      await provider.dispose();
+      roots.unregister(id);
+      await fs.rm(rootPath, { recursive: true, force: true });
+    }
+  });
+
+  it("moves a folder's version on when a note in it is first seen changed", async () => {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'docblocks-node-v2-watch-epoch-'));
+    const id = `node-v2-watch-epoch-${++providerSequence}`;
+    await fs.mkdir(path.join(rootPath, 'notes', 'deep'), { recursive: true });
+    await fs.writeFile(path.join(rootPath, 'notes', 'deep', 'note.md'), 'before');
+    roots.register(id, rootPath);
+    const control = new ControlledWatcher();
+    const provider = new NodeWorkspaceFileSystemV2(id, 'Watch epoch', rootPath, roots, {
+      acquireWatcher: () => control.handle,
+    });
+    try {
+      await provider.initialize();
+      const subscription = provider.watch(() => undefined);
+      await subscription.ready;
+      const notes = parseWorkspacePath('/notes');
+      const before = (await provider.stat(notes))?.version;
+      await fs.writeFile(path.join(rootPath, 'notes', 'deep', 'note.md'), 'edited elsewhere');
+      await control.emit({ type: 'modified', kind: 'file', path: '/notes/deep/note.md' });
+      expect((await provider.stat(notes))?.version).not.to.equal(before);
       await subscription.dispose();
     } finally {
       await provider.dispose();

@@ -1,11 +1,14 @@
 /**
- * GitDiffView — read-only Monaco side-by-side diff.
+ * GitDiffView — Monaco side-by-side diff, read-only unless `editable`.
  *
  * Monaco is never statically imported: squisq's useMonacoLoader() lazily
  * imports the editor bundle once per page and hands back the namespace.
  * The diff editor and both text models are created imperatively into a
  * host div and disposed on unmount (the classic Monaco leak). Content and
  * theme changes update the existing editor without recreating it.
+ *
+ * On a touch screen a read-only diff is as tall as its content and the box
+ * around it does the scrolling, so it scrolls like every other page there.
  */
 
 // The default import serves the classic JSX transform the Mocha suite runs.
@@ -15,6 +18,12 @@ import {
   useMonacoLoader,
   type UseMonacoLoaderResult,
 } from '@bendyline/squisq-editor-react';
+import { useMediaQuery } from '../layout/useMediaQuery.js';
+
+/** A screen used with fingers: no hover, and a pointer as coarse as a fingertip. */
+const TOUCH_SCREEN_QUERY = '(hover: none) and (pointer: coarse)';
+
+const TOUCH_EVENTS = ['touchstart', 'touchmove', 'touchend', 'touchcancel'] as const;
 
 type MonacoModule = NonNullable<UseMonacoLoaderResult['monaco']>;
 type DiffEditorInstance = ReturnType<MonacoModule['editor']['createDiffEditor']>;
@@ -37,6 +46,14 @@ export interface GitDiffViewProps {
   changesOnly?: boolean;
   /** Optional column headers rendered above the two panes. */
   labels?: { original: string; modified: string };
+  /**
+   * Let the modified side be edited, with an arrow beside each change that
+   * puts the original text back. For combining two versions by hand. Fixed
+   * for the life of the view.
+   */
+  editable?: boolean;
+  /** The modified side's text after each edit. Only called when `editable`. */
+  onModifiedChange?: (value: string) => void;
 }
 
 function languageFor(fileName: string): string {
@@ -54,6 +71,8 @@ export function GitDiffView({
   layout = 'auto',
   changesOnly = false,
   labels,
+  editable = false,
+  onModifiedChange,
 }: GitDiffViewProps) {
   const language = languageOverride ?? languageFor(fileName);
   // Monaco registers languages on demand; ask for this one so the diff is highlighted.
@@ -64,6 +83,13 @@ export function GitDiffView({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<DiffEditorInstance | null>(null);
   const modelsRef = useRef<{ original: TextModel; modified: TextModel } | null>(null);
+  // The `modified` prop last written into its model. While editing, the model
+  // moves ahead of the prop; only a new prop value may replace what was typed.
+  const appliedModifiedRef = useRef<string | null>(null);
+  const onModifiedChangeRef = useRef(onModifiedChange);
+  onModifiedChangeRef.current = onModifiedChange;
+  // Editing keeps Monaco's own touch handling: a tap places the caret through it.
+  const browserScrolls = useMediaQuery(TOUCH_SCREEN_QUERY) && !editable;
 
   // Create the editor once monaco settles; dispose editor AND models on unmount.
   useEffect(() => {
@@ -72,7 +98,9 @@ export function GitDiffView({
     const originalModel = monaco.editor.createModel('', 'plaintext');
     const modifiedModel = monaco.editor.createModel('', 'plaintext');
     const editor = monaco.editor.createDiffEditor(host, {
-      readOnly: true,
+      readOnly: !editable,
+      originalEditable: false,
+      renderMarginRevertIcon: editable,
       automaticLayout: true,
       minimap: { enabled: false },
       wordWrap: 'on',
@@ -82,14 +110,63 @@ export function GitDiffView({
     editor.setModel({ original: originalModel, modified: modifiedModel });
     editorRef.current = editor;
     modelsRef.current = { original: originalModel, modified: modifiedModel };
+    appliedModifiedRef.current = null;
+    const changes = editable
+      ? modifiedModel.onDidChangeContent(() =>
+          onModifiedChangeRef.current?.(modifiedModel.getValue()),
+        )
+      : null;
     return () => {
       editorRef.current = null;
       modelsRef.current = null;
+      changes?.dispose();
       editor.dispose();
       originalModel.dispose();
       modifiedModel.dispose();
     };
-  }, [monaco]);
+  }, [monaco, editable]);
+
+  // Monaco scrolls its own view, and on a touch screen it does so by imitating
+  // touch scrolling: it moves with the finger, glides a moment, and stops
+  // dead, and while it handles a touch the browser's own scrolling is held
+  // off. Here, instead, the editor grows to the height of the diff and the box
+  // around it scrolls, so a flick carries on, slows, and bounces as anywhere
+  // else on the device.
+  useEffect(() => {
+    const editor = editorRef.current;
+    const host = hostRef.current;
+    if (!monaco || !editor || !host) return;
+    editor.updateOptions({
+      scrollbar: browserScrolls
+        ? { vertical: 'hidden', handleMouseWheel: false, alwaysConsumeMouseWheel: false }
+        : { vertical: 'auto', handleMouseWheel: true, alwaysConsumeMouseWheel: true },
+    });
+    if (!browserScrolls) return;
+    const sides = [editor.getOriginalEditor(), editor.getModifiedEditor()];
+    // Side by side, the two are padded to line up; inline, the hidden original
+    // is never the taller. Either way the taller side is the diff's height.
+    const fit = () => {
+      // Behind another tab the editor is laid out zero wide, wrapping every
+      // character onto a line of its own: no measure of anything. It is
+      // measured again when it is shown.
+      if (host.clientWidth === 0) return;
+      host.style.height = `${Math.ceil(Math.max(...sides.map((side) => side.getContentHeight())))}px`;
+    };
+    fit();
+    const sizing = sides.map((side) => side.onDidContentSizeChange(fit));
+    // Monaco takes touches through listeners on the document, and cancels the
+    // browser's scrolling for the ones it handles. Stopped here, they never
+    // reach it, and a tap still makes a click.
+    const keepFromMonaco = (event: TouchEvent) => event.stopPropagation();
+    for (const type of TOUCH_EVENTS) {
+      host.addEventListener(type, keepFromMonaco, { passive: true });
+    }
+    return () => {
+      for (const subscription of sizing) subscription.dispose();
+      for (const type of TOUCH_EVENTS) host.removeEventListener(type, keepFromMonaco);
+      host.style.height = '';
+    };
+  }, [monaco, editable, browserScrolls]);
 
   // Sync content + language into the existing models — never recreate the editor.
   useEffect(() => {
@@ -97,7 +174,10 @@ export function GitDiffView({
     const models = modelsRef.current;
     if (!models) return;
     if (models.original.getValue() !== original) models.original.setValue(original);
-    if (models.modified.getValue() !== modified) models.modified.setValue(modified);
+    if (appliedModifiedRef.current !== modified) {
+      appliedModifiedRef.current = modified;
+      if (models.modified.getValue() !== modified) models.modified.setValue(modified);
+    }
     monaco.editor.setModelLanguage(models.original, language);
     monaco.editor.setModelLanguage(models.modified, language);
   }, [monaco, original, modified, language]);
@@ -132,7 +212,13 @@ export function GitDiffView({
           <span>{labels.modified}</span>
         </div>
       )}
-      <div ref={hostRef} className="db-git-diff-host" />
+      <div
+        className={
+          browserScrolls ? 'db-git-diff-host db-git-diff-host--scrolls' : 'db-git-diff-host'
+        }
+      >
+        <div ref={hostRef} className="db-git-diff-editor" />
+      </div>
     </>
   );
 }

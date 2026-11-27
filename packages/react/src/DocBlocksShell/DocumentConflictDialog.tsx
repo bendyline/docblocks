@@ -1,13 +1,13 @@
-import React, { Component, useEffect, useMemo, useState, type ReactNode } from 'react';
+import React, { useEffect, useState } from 'react';
 import { resolveFileKind } from '@bendyline/squisq-editor-react';
 import { MediaContext } from '@bendyline/squisq-react';
-import { LinearDocView } from '@bendyline/squisq-react/page';
-import { markdownToDoc, resolveThemeForDoc } from '@bendyline/squisq/doc';
-import { parseMarkdown } from '@bendyline/squisq/markdown';
 import type { MediaProvider } from '@bendyline/squisq/schemas';
 import type { DocumentSessionConflict } from '@bendyline/docblocks/document';
 import { Dialog } from '../components/Dialog.js';
 import { GitDiffView } from '../Git/GitDiffView.js';
+import { ComparePanes } from './ComparePanes.js';
+import { startsOnPhoneLayout } from './compare-layout.js';
+import { RenderedVersion, VersionText } from './ConflictVersionPreview.js';
 
 export interface DocumentConflictDialogProps {
   conflict: DocumentSessionConflict;
@@ -22,6 +22,11 @@ export interface DocumentConflictDialogProps {
   readSavedFile: () => Promise<{ content: string | null; lastModified: string | null } | null>;
   onUseLocal: () => Promise<boolean>;
   onUseSaved: () => Promise<boolean>;
+  /**
+   * Save text the user combined from both versions. When absent, or when the
+   * saved file was deleted, the dialog offers only the two whole versions.
+   */
+  onUseMerged?: (content: string) => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -39,91 +44,6 @@ function formattedTime(value: string | number | null | undefined): string | null
   return Number.isFinite(date.getTime()) ? date.toLocaleString() : null;
 }
 
-function VersionText({ label, content }: { label: string; content: string }) {
-  return (
-    <textarea
-      className="db-conflict-preview"
-      aria-label={`${label} preview`}
-      value={content}
-      readOnly
-      spellCheck={false}
-    />
-  );
-}
-
-interface RenderBoundaryProps {
-  /** A new value clears a caught error: a changed version gets another try. */
-  resetKey: string;
-  fallback: ReactNode;
-  children: ReactNode;
-}
-
-class RenderBoundary extends Component<RenderBoundaryProps, { failed: boolean; resetKey: string }> {
-  state = { failed: false, resetKey: this.props.resetKey };
-
-  static getDerivedStateFromError(): { failed: boolean } {
-    return { failed: true };
-  }
-
-  static getDerivedStateFromProps(
-    props: RenderBoundaryProps,
-    state: { failed: boolean; resetKey: string },
-  ): { failed: boolean; resetKey: string } | null {
-    return props.resetKey === state.resetKey ? null : { failed: false, resetKey: props.resetKey };
-  }
-
-  render(): ReactNode {
-    return this.state.failed ? this.props.fallback : this.props.children;
-  }
-}
-
-/**
- * One version as the editor's preview draws it. A version that cannot be
- * parsed or drawn falls back to its exact text: both versions must stay
- * readable, or there is nothing to choose between.
- */
-function RenderedVersion({
-  label,
-  content,
-  defaultThemeId,
-}: {
-  label: string;
-  content: string;
-  defaultThemeId?: string;
-}) {
-  const rendered = useMemo(() => {
-    try {
-      const doc = markdownToDoc(parseMarkdown(content));
-      // The workspace default applies only when the version names no theme.
-      return { doc, theme: resolveThemeForDoc(doc, doc.themeId ? undefined : defaultThemeId) };
-    } catch {
-      return null;
-    }
-  }, [content, defaultThemeId]);
-  const text = <VersionText label={label} content={content} />;
-  if (!rendered) return text;
-  return (
-    <RenderBoundary resetKey={content} fallback={text}>
-      <div
-        className="db-conflict-preview db-conflict-preview--rendered"
-        role="region"
-        aria-label={`${label} preview`}
-        tabIndex={0}
-        style={{ background: rendered.theme.colors.background }}
-      >
-        <LinearDocView
-          doc={rendered.doc}
-          theme={rendered.theme}
-          variant="document"
-          showCover={false}
-          thinMargins
-          animationsEnabled={false}
-        />
-      </div>
-    </RenderBoundary>
-  );
-}
-
 export default function DocumentConflictDialog({
   conflict,
   fileName,
@@ -133,6 +53,7 @@ export default function DocumentConflictDialog({
   readSavedFile,
   onUseLocal,
   onUseSaved,
+  onUseMerged,
   onClose,
 }: DocumentConflictDialogProps) {
   const [savedFile, setSavedFile] = useState<{
@@ -141,8 +62,20 @@ export default function DocumentConflictDialog({
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Inline by default: it fits the middle pane, which side by side widens.
-  const [diffView, setDiffView] = useState<DiffView>('inline');
+  // Inline by default: it fits the middle pane, which side by side widens. On
+  // a phone, only the changes: a whole document scrolled past a few edits
+  // hides what there is to decide about.
+  const [diffView, setDiffView] = useState<DiffView>(() =>
+    startsOnPhoneLayout() ? 'changes' : 'inline',
+  );
+  // The pane a phone shows; wider screens show all three.
+  const [pane, setPane] = useState('changes');
+  // Combining by hand: the text the editable side started from (fixed while
+  // editing, so typing is never replaced) and what it holds now.
+  const [combineStart, setCombineStart] = useState<string | null>(null);
+  const [combined, setCombined] = useState('');
+  const canCombine = onUseMerged !== undefined && conflict.externalContent !== null;
+  const combining = canCombine && combineStart !== null;
   useEffect(() => {
     let disposed = false;
     void readSavedFile().then(
@@ -188,6 +121,8 @@ export default function DocumentConflictDialog({
     }
   };
 
+  const localTab = conflict.recoveredDraft ? 'Draft' : 'Yours';
+
   return (
     <Dialog
       title="Compare document versions"
@@ -197,100 +132,187 @@ export default function DocumentConflictDialog({
         if (!busy) onClose();
       }}
       closeOnBackdrop={!busy}
-      footer={
-        <button type="button" disabled={busy} onClick={onClose}>
+    >
+      {/* The choices come first, above the versions they choose between: on a
+          phone the versions run on for screens, and the decision must not
+          wait at the end of them. */}
+      <div className="db-compare-actions" role="group" aria-label="Choose a version">
+        {combining ? (
+          <>
+            <button
+              type="button"
+              className="db-compare-choice"
+              disabled={busy}
+              onClick={() => void choose(() => onUseMerged!(combined))}
+            >
+              Save combined version
+            </button>
+            <button type="button" disabled={busy} onClick={() => setCombineStart(null)}>
+              Back to comparing
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="db-compare-choice"
+              data-side="removed"
+              disabled={busy}
+              onClick={() => void choose(onUseLocal)}
+            >
+              {conflict.recoveredDraft ? 'Use draft' : 'Keep mine'}
+            </button>
+            <button
+              type="button"
+              className="db-compare-choice"
+              data-side="inserted"
+              disabled={busy}
+              onClick={() => void choose(onUseSaved)}
+            >
+              {conflict.externalContent === null ? 'Accept deletion' : 'Use saved file'}
+            </button>
+            {canCombine && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setCombined(conflict.localContent);
+                  setCombineStart(conflict.localContent);
+                }}
+              >
+                Combine by hand
+              </button>
+            )}
+          </>
+        )}
+        <button type="button" className="db-compare-later" disabled={busy} onClick={onClose}>
           Decide later
         </button>
-      }
-    >
-      <p>
-        {conflict.recoveredDraft
-          ? 'This draft was recovered from a previous session. The saved file may contain newer edits.'
-          : 'The saved file changed while you had unsaved edits.'}{' '}
-        Compare the two versions before choosing. Neither version changes until you choose.
-      </p>
+      </div>
+      {error && (
+        <p className="db-compare-error" role="alert">
+          {error}
+        </p>
+      )}
       <MediaContext.Provider value={mediaProvider ?? null}>
-        <div
-          className={
-            diffView === 'side-by-side'
-              ? 'db-conflict-columns db-conflict-columns--wide-diff'
-              : 'db-conflict-columns'
-          }
-          aria-busy={busy}
-        >
-          <section className="db-conflict-version" aria-label={localLabel}>
-            <h3>{localLabel}</h3>
+        {combining && (
+          <section className="db-conflict-diff db-conflict-combine" aria-label="Combined version">
             <p className="db-conflict-metadata">
-              {conflict.recoveredDraft
-                ? capturedAt
-                  ? `Recovery copy captured: ${capturedAt}`
-                  : 'Recovery capture time unavailable'
-                : 'Not saved in this session'}
-            </p>
-            {version(localLabel, conflict.localContent)}
-            <p className="db-conflict-consequence">
-              Replaces the saved file with the draft shown above.
-            </p>
-            <button type="button" disabled={busy} onClick={() => void choose(onUseLocal)}>
-              {conflict.recoveredDraft ? 'Replace file with draft' : 'Keep mine'}
-            </button>
-          </section>
-          <section className="db-conflict-diff" aria-label="Differences">
-            <div className="db-conflict-diff-header">
-              <h3>Differences</h3>
-              <label className="db-conflict-diff-view">
-                <span>View</span>
-                <select
-                  value={diffView}
-                  onChange={(event) => setDiffView(event.currentTarget.value as DiffView)}
-                >
-                  {DIFF_VIEWS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <p className="db-conflict-metadata">
-              − Only in {localLabel.toLowerCase()} · + Only in the saved file
+              The saved file is shown for reference. The other side starts as{' '}
+              {localLabel.toLowerCase()} and is yours to edit: type in it, or use the arrow beside a
+              difference to take the saved file&rsquo;s text there.
             </p>
             <GitDiffView
-              original={conflict.localContent}
-              modified={conflict.externalContent ?? ''}
+              original={conflict.externalContent ?? ''}
+              modified={combineStart ?? ''}
               fileName={fileName}
               language={fileKind.language}
               theme={theme}
-              layout={diffView === 'side-by-side' ? 'side-by-side' : 'inline'}
-              changesOnly={diffView === 'changes'}
+              editable
+              onModifiedChange={setCombined}
+              labels={{ original: 'Saved file', modified: 'Combined version (edit here)' }}
             />
           </section>
-          <section className="db-conflict-version" aria-label="Saved file">
-            <h3>Saved file</h3>
-            <p className="db-conflict-metadata">
-              {conflict.externalContent === null
-                ? 'File was deleted outside DocBlocks'
-                : savedAt
-                  ? `File last modified: ${savedAt}`
-                  : 'File modification time unavailable'}
-            </p>
-            {conflict.externalContent === null ? (
-              <div className="db-conflict-preview">The saved file no longer exists.</div>
-            ) : (
-              version('Saved file', conflict.externalContent)
-            )}
-            <p className="db-conflict-consequence">
-              {conflict.externalContent === null
-                ? 'Discards the draft and closes this document.'
-                : 'Discards the draft and opens the saved file shown above.'}
-            </p>
-            <button type="button" disabled={busy} onClick={() => void choose(onUseSaved)}>
-              {conflict.externalContent === null ? 'Accept deletion' : 'Use saved file'}
-            </button>
-          </section>
-        </div>
+        )}
+        <ComparePanes
+          active={pane}
+          onSelect={setPane}
+          className={diffView === 'side-by-side' ? 'db-conflict-columns--wide-diff' : undefined}
+          busy={busy}
+          hidden={combining}
+          panes={[
+            {
+              key: 'local',
+              tab: localTab,
+              label: localLabel,
+              className: 'db-conflict-version',
+              side: 'removed',
+              children: (
+                <>
+                  <h3>{localLabel}</h3>
+                  <p className="db-conflict-metadata">
+                    {conflict.recoveredDraft
+                      ? capturedAt
+                        ? `Recovery copy captured: ${capturedAt}`
+                        : 'Recovery capture time unavailable'
+                      : 'Not saved in this session'}
+                  </p>
+                  {version(localLabel, conflict.localContent)}
+                </>
+              ),
+            },
+            {
+              key: 'changes',
+              tab: 'Changes',
+              label: 'Differences',
+              className: 'db-conflict-diff',
+              children: (
+                <>
+                  <div className="db-conflict-diff-header">
+                    <h3>Differences</h3>
+                    <label className="db-conflict-diff-view">
+                      <span>View</span>
+                      <select
+                        value={diffView}
+                        onChange={(event) => setDiffView(event.currentTarget.value as DiffView)}
+                      >
+                        {DIFF_VIEWS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <p className="db-conflict-metadata">
+                    <span className="db-diff-mark" data-side="removed">
+                      −
+                    </span>{' '}
+                    Only in {localLabel.toLowerCase()} ·{' '}
+                    <span className="db-diff-mark" data-side="inserted">
+                      +
+                    </span>{' '}
+                    Only in the saved file
+                  </p>
+                  <GitDiffView
+                    original={conflict.localContent}
+                    modified={conflict.externalContent ?? ''}
+                    fileName={fileName}
+                    language={fileKind.language}
+                    theme={theme}
+                    layout={diffView === 'side-by-side' ? 'side-by-side' : 'inline'}
+                    changesOnly={diffView === 'changes'}
+                  />
+                </>
+              ),
+            },
+            {
+              key: 'saved',
+              tab: 'Saved file',
+              label: 'Saved file',
+              className: 'db-conflict-version',
+              side: 'inserted',
+              children: (
+                <>
+                  <h3>Saved file</h3>
+                  <p className="db-conflict-metadata">
+                    {conflict.externalContent === null
+                      ? 'File was deleted outside DocBlocks'
+                      : savedAt
+                        ? `File last modified: ${savedAt}`
+                        : 'File modification time unavailable'}
+                  </p>
+                  {conflict.externalContent === null ? (
+                    <div className="db-conflict-preview">The saved file no longer exists.</div>
+                  ) : (
+                    version('Saved file', conflict.externalContent)
+                  )}
+                </>
+              ),
+            },
+          ]}
+        />
       </MediaContext.Provider>
-      {error && <p role="alert">{error}</p>}
     </Dialog>
   );
 }

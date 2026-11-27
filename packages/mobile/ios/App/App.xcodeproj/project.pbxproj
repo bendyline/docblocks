@@ -21,6 +21,9 @@
 		DBC100000000000000000003 = {isa = PBXBuildFile; fileRef = DBC000000000000000000003; };
 		DBC100000000000000000004 = {isa = PBXBuildFile; fileRef = DBC000000000000000000004; };
 		DBC100000000000000000005 = {isa = PBXBuildFile; fileRef = DBC000000000000000000005; };
+		DBC100000000000000000006 = {isa = PBXBuildFile; fileRef = DBC000000000000000000006; };
+		DBC100000000000000000007 = {isa = PBXBuildFile; fileRef = DBC000000000000000000007; };
+		DBC100000000000000000008 = {isa = PBXBuildFile; fileRef = DBC000000000000000000008; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -40,6 +43,9 @@
 		DBC000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../../native/ios/Sources/DocBlocksStorage/ExportStaging.swift"; sourceTree = "<group>"; };
 		DBC000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceRegistry.swift; sourceTree = "<group>"; };
 		DBC000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		DBC000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../../native/ios/Sources/DocBlocksStorage/CloudState.swift"; sourceTree = "<group>"; };
+		DBC000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../../native/ios/Sources/DocBlocksStorage/ConflictCopies.swift"; sourceTree = "<group>"; };
+		DBC000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../../native/ios/Sources/DocBlocksStorage/StorageChangeWatcher.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -77,6 +83,9 @@
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
 				DBC000000000000000000005,
 				DBC000000000000000000004,
+				DBC000000000000000000006,
+				DBC000000000000000000007,
+				DBC000000000000000000008,
 				DBC000000000000000000003,
 				DBC000000000000000000002,
 				DBC000000000000000000001,
@@ -176,6 +185,9 @@
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				DBC100000000000000000004,
+				DBC100000000000000000006,
+				DBC100000000000000000007,
+				DBC100000000000000000008,
 				DBC100000000000000000003,
 				DBC100000000000000000002,
 				DBC100000000000000000001,

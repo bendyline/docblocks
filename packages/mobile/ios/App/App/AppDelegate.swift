@@ -7,7 +7,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        BundledEmbeddingModel.install()
         return true
     }
 
@@ -40,5 +40,69 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                                           sessionRole: connectingSceneSession.role)
         config.delegateClass = SceneDelegate.self
         return config
+    }
+}
+
+/// The search-by-meaning model ships inside the app (`public/embedding-model`,
+/// staged by scripts/stage-embedding-model.mjs). Gezel's knowledge plugin
+/// installs only models it downloads, but it counts a model as installed when
+/// its store folder holds the files and an `installed.json` record of their
+/// digests. So at launch the bundled files are cloned into that folder (APFS
+/// clones: instant, no extra space) and recorded, and search by meaning and
+/// the knowledge catalogs' questions work offline from the first launch.
+/// A model already recorded with the same files is left alone.
+enum BundledEmbeddingModel {
+    private struct Manifest: Decodable {
+        struct File: Decodable {
+            let name: String
+            let sha256: String
+            let size: Int64
+        }
+        let store: String
+        let files: [File]
+    }
+
+    /// Gezel's knowledge store (`SpeechModelStore(folder: "gezel-knowledge/catalogs")`).
+    private static let storeFolder = "gezel-knowledge/catalogs"
+
+    static func install() {
+        let manager = FileManager.default
+        guard let source = Bundle.main.resourceURL?.appendingPathComponent("public/embedding-model", isDirectory: true),
+              let data = try? Data(contentsOf: source.appendingPathComponent("manifest.json")),
+              let manifest = try? JSONDecoder().decode(Manifest.self, from: data),
+              manifest.store.range(of: "^[a-z0-9][a-z0-9._-]{0,63}$", options: .regularExpression) != nil,
+              !manifest.files.isEmpty,
+              manifest.files.allSatisfy({ !$0.name.contains("..") && !$0.name.hasPrefix("/") }) else { return }
+        var root = manager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(storeFolder, isDirectory: true)
+        let folder = root.appendingPathComponent(manifest.store, isDirectory: true)
+        let marker = folder.appendingPathComponent("installed.json")
+        let expected = Dictionary(uniqueKeysWithValues: manifest.files.map { ($0.name, $0.sha256) })
+        if let record = try? Data(contentsOf: marker),
+           let value = try? JSONSerialization.jsonObject(with: record) as? [String: Any],
+           value["files"] as? [String: String] == expected,
+           manifest.files.allSatisfy({ manager.fileExists(atPath: folder.appendingPathComponent($0.name).path) }) {
+            return
+        }
+        do {
+            try manager.createDirectory(at: folder, withIntermediateDirectories: true)
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try? root.setResourceValues(values)
+            try? manager.removeItem(at: marker)
+            for file in manifest.files {
+                let target = folder.appendingPathComponent(file.name)
+                try manager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try? manager.removeItem(at: target)
+                try manager.copyItem(at: source.appendingPathComponent(file.name), to: target)
+                let size = try target.resourceValues(forKeys: [.fileSizeKey]).fileSize
+                guard size.map(Int64.init) == file.size else { throw CocoaError(.fileReadCorruptFile) }
+            }
+            let record = try JSONSerialization.data(withJSONObject: ["files": expected])
+            try record.write(to: marker, options: .atomic)
+        } catch {
+            // Not recorded, so the app offers the download instead.
+            try? manager.removeItem(at: marker)
+        }
     }
 }
