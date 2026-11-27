@@ -8,6 +8,7 @@ import {
   E2E_SERVER_PORTS,
   describeBusyE2EPorts,
   gateStepEnvironment,
+  idleSleepGuardCommand,
   isPortListening,
 } from '../../../scripts/run-canonical-gate.js';
 
@@ -61,6 +62,20 @@ describe('canonical gate E2E server ports', () => {
     );
     expect(message).to.include('port 5230 (offline preview server): something is listening');
     expect(message).to.include('Stop it, then run the gate again.');
+  });
+});
+
+describe('canonical gate idle-sleep guard', () => {
+  it('holds a Mac awake until the gate process exits', () => {
+    expect(idleSleepGuardCommand('darwin', 4242)).to.deep.equal({
+      command: 'caffeinate',
+      args: ['-i', '-w', '4242'],
+    });
+  });
+
+  it('does nothing on other platforms', () => {
+    expect(idleSleepGuardCommand('linux', 4242)).to.equal(null);
+    expect(idleSleepGuardCommand('win32', 4242)).to.equal(null);
   });
 });
 

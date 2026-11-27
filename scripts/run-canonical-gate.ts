@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -135,7 +135,35 @@ export function describeBusyE2EPorts(busy: readonly BusyE2EPort[], before: strin
   ].join('\n');
 }
 
+/**
+ * The command that keeps this machine awake for the gate, or null where none
+ * is needed. The gate runs for 40 minutes or more, long enough for a Mac on
+ * battery with its display off to idle-sleep mid-run. Every test in flight
+ * then freezes, and its waits all expire together on wake, as unrelated
+ * failures written in the same second (burn-ins on 2026-11-23 and
+ * 2026-11-26). `caffeinate -i` holds an assertion against idle sleep, on
+ * battery too, without keeping the display on; `-w` ends it when the gate's
+ * process exits, however it exits. Closing the lid still sleeps the Mac.
+ */
+export function idleSleepGuardCommand(
+  platform: NodeJS.Platform,
+  pid: number,
+): { command: string; args: string[] } | null {
+  if (platform !== 'darwin') return null;
+  return { command: 'caffeinate', args: ['-i', '-w', String(pid)] };
+}
+
+function preventIdleSleep(): void {
+  const guard = idleSleepGuardCommand(process.platform, process.pid);
+  if (!guard) return;
+  const child = spawn(guard.command, guard.args, { stdio: 'ignore' });
+  // Without caffeinate the gate runs as it always has.
+  child.on('error', () => undefined);
+  child.unref();
+}
+
 export async function runCanonicalGate(): Promise<number> {
+  preventIdleSleep();
   // Checked before anything runs, so a stale server costs seconds rather than
   // the build and test steps ahead of the first E2E step, and again before
   // each E2E step in case one was started meanwhile.
