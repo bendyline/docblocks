@@ -329,9 +329,10 @@ export function resolveCloudHelperBinary(location: CloudHelperLocation): string 
     if (!Number.isFinite(major) || major < MINIMUM_MACOS_MAJOR) return null;
   }
   const exists = location.exists ?? ((candidate: string) => fs.existsSync(candidate));
+  // Only macOS gets here, so these are POSIX paths whatever host computes them.
   const candidate = location.packaged
     ? // Contents/Resources -> Contents/Helpers, where macOS expects nested programs.
-      path.join(location.resourcesPath, '..', 'Helpers', CLOUD_HELPER_BINARY_NAME)
-    : path.join(location.appPath, 'dist', 'cloud-helper', CLOUD_HELPER_BINARY_NAME);
+      path.posix.join(location.resourcesPath, '..', 'Helpers', CLOUD_HELPER_BINARY_NAME)
+    : path.posix.join(location.appPath, 'dist', 'cloud-helper', CLOUD_HELPER_BINARY_NAME);
   return exists(candidate) ? candidate : null;
 }

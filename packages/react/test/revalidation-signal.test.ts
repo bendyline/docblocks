@@ -63,6 +63,21 @@ describe('subscribeRevalidationSignal', () => {
     expect(reasons).to.deep.equal(['focus', 'storage']);
   });
 
+  it('delivers a held storage report when its timer fires just before the clock agrees', async () => {
+    stop = subscribeRevalidationSignal((reason) => reasons.push(reason), {
+      now: () => clock,
+      minIntervalMs: 40,
+      idleMs: 10_000,
+    });
+    window.dispatchEvent(new Event('focus'));
+    publishFileSystemChangeHint('workspace');
+    // Node times the wait on its own millisecond clock, which can run one
+    // millisecond ahead of the wall clock the spacing was measured with.
+    clock += 39;
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(reasons).to.deep.equal(['focus', 'storage']);
+  });
+
   it('forgets a held storage report once unsubscribed', async () => {
     stop = subscribeRevalidationSignal((reason) => reasons.push(reason), {
       minIntervalMs: 40,

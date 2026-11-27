@@ -42,16 +42,17 @@ export function subscribeRevalidationSignal(
   let stopped = false;
   let deferred: ReturnType<typeof setTimeout> | null = null;
 
-  const signal = (reason: RevalidationReason) => {
-    if (stopped) return;
-    const at = now();
-    if (at - lastSignalAt < minIntervalMs) return;
-    lastSignalAt = at;
+  const emit = (reason: RevalidationReason) => {
+    lastSignalAt = now();
     if (deferred) {
       clearTimeout(deferred);
       deferred = null;
     }
     listener(reason);
+  };
+  const signal = (reason: RevalidationReason) => {
+    if (stopped || now() - lastSignalAt < minIntervalMs) return;
+    emit(reason);
   };
   // A reported change must not be dropped for arriving just after another
   // signal: the look that signal caused may have happened before the change.
@@ -61,12 +62,15 @@ export function subscribeRevalidationSignal(
     if (stopped || deferred || document.visibilityState !== 'visible') return;
     const wait = lastSignalAt + minIntervalMs - now();
     if (wait <= 0) {
-      signal('storage');
+      emit('storage');
       return;
     }
     deferred = setTimeout(() => {
       deferred = null;
-      signal('storage');
+      // The wait was the spacing, so this fires unconditionally. Re-checking it
+      // against `now()` would drop the report whenever the timer's clock runs a
+      // millisecond ahead of the wall clock, which Node's timers can do.
+      if (!stopped) emit('storage');
     }, wait);
   };
   const onFocus = () => signal('focus');
