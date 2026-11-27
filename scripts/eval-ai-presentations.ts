@@ -28,6 +28,11 @@
  * desktop host sends them, with the structured-output schema; `--no-schema`
  * leaves it out, as a host that cannot enforce one would. `--only <name>`
  * runs the documents whose file name contains it.
+ *
+ * `--density <length>` plans the decks at one summary length instead of the
+ * designer's default (`section`, `keypoints`, `detailed`, `balanced` or
+ * `concise`, as the installed Squisq names them). Runs made before key points
+ * became the default measured `balanced`; pass it to compare with them.
  */
 
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
@@ -288,6 +293,7 @@ async function main(): Promise<void> {
   }
   const label = option('label') ?? `run-${new Date().toISOString().replace(/[:.]/gu, '-')}`;
   const only = option('only');
+  const density = option('density');
   const schema = !process.argv.includes('--no-schema');
 
   const { parseMarkdown } = await import('@bendyline/squisq/markdown');
@@ -308,7 +314,7 @@ async function main(): Promise<void> {
   const summary: string[] = [
     `# AI presentation eval: ${label}`,
     '',
-    `Endpoint: ${baseUrl}. Structured output: ${schema ? 'sent' : 'not sent'}.`,
+    `Endpoint: ${baseUrl}. Structured output: ${schema ? 'sent' : 'not sent'}. Summary length: ${density ?? 'the default'}.`,
     '',
   ];
 
@@ -318,7 +324,12 @@ async function main(): Promise<void> {
       const source = fs.readFileSync(path.join(corpusDir, name), 'utf8');
       const entry = gold[name] as GoldEntry;
       const doc = markdownToDoc(parseMarkdown(source), { generateCoverBlock: false });
-      const plan = transform.createPresentationPlan(doc);
+      const plan = density
+        ? transform.createPresentationPlan(doc, {
+            ...transform.defaultPresentationHints(),
+            density: density as ReturnType<typeof transform.defaultPresentationHints>['density'],
+          })
+        : transform.createPresentationPlan(doc);
       const calls: CallRecord[] = [];
       const ai = endpointChat(
         baseUrl,

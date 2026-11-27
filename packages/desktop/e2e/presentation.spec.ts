@@ -215,7 +215,7 @@ test('designs Custom summaries in View › Summaries and exports a timed MP4', a
     await expect(maker).toContainText('Follows narration');
     await expect(maker.getByRole('alert')).toHaveCount(0);
     await expect(
-      maker.getByRole('checkbox', { name: 'Add supporting visual slides where useful' }),
+      maker.getByRole('checkbox', { name: /^Add supporting (visual )?slides/ }),
     ).toBeChecked();
     await expect(
       maker.getByRole('navigation', { name: 'Presentation slides' }).getByRole('button'),
@@ -474,9 +474,7 @@ test('refreshes dynamic summaries after editing prose without saving generated t
   // Opening the designer saves nothing; a design change saves only intent.
   const opened = fs.readFileSync(file, 'utf8');
   expect(opened).not.toContain(SUMMARY_SUPPORTING_SLIDES_KEY);
-  await designer
-    .getByRole('checkbox', { name: 'Add supporting visual slides where useful' })
-    .uncheck();
+  await designer.getByRole('checkbox', { name: /^Add supporting (visual )?slides/ }).uncheck();
   await expect
     .poll(() => fs.readFileSync(file, 'utf8'))
     .toContain(`${SUMMARY_SUPPORTING_SLIDES_KEY}: false`);

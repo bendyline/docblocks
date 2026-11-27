@@ -20,10 +20,46 @@ For PowerPoint exports, choose **Transform → None** in the export dialog to us
 the document's content and slide layouts without summarization. This overrides
 saved presentation settings for that export without changing the document.
 
-Choose a summary density, a preferred layout per section, and whether to add
-supporting visual slides (on by default). **One slide per section** makes exactly
-one summary slide for each section, timed to that section's narration, however
-long the section is; it never adds supporting slides. A section can override the document-wide preference
+Choose a **Summary length**, a preferred layout per section, and whether to add
+supporting visual slides (on by default). The dropdown lists the lengths from the
+fewest slides to the most, each with the number of slides it makes of the current
+document:
+
+- **One slide per section** makes exactly one summary slide for each section,
+  timed to that section's narration, however long the section is; it never adds
+  supporting slides.
+- **Key points** (the default) tells each section in one to three slides: one for
+  a section of up to about 130 words, two up to about 330, three beyond that, and
+  another for each further 220 words of a very long section. The narration tells
+  the section; each slide shows what an audience should keep of its part.
+- **Follow the text**, **Follow the text closely** and **Sentence by sentence**
+  start a new slide every 64, 42 or 28 words and show the sentences each slide is
+  made from. These were Detailed, Balanced and Concise; a 4,500-word post makes
+  about 55, 85 and 108 slides with them, and about 23 as key points.
+
+A key-points section is cut evenly at sentences, at a paragraph when one is near
+the even cut, and never between a short list and the sentence that introduces it.
+Each slide shows up to four points chosen from its passage: the items of a list
+the author wrote (a numbered list draws as steps), otherwise the sentences that
+carry the passage. Those are chosen for the words they share with the rest of the
+section and its heading, for opening the passage or a paragraph, for saying they
+are the point ("the lesson is…", "as a result…") and for stating a figure. A
+sentence that only introduces a list, gives an example, or asks a question is left
+to the narration, and two sentences that say the same thing are not both shown. A
+point is the whole sentence when it fits in 140 characters, without the word that
+joined it to the one before ("However, …"); a longer one loses its asides in
+brackets, then is cut at a clause and marked with an ellipsis. One slide per
+section chooses its points the same way. When the deck's opening passage is long,
+the title slide shows as it begins, with its first sentence beneath it, and the
+passage's points follow on a slide of their own.
+
+**Slides for this section** sets how many slides tell the selected section, from 1
+to 12, whatever the summary length; **Automatic** returns it to the document's
+choice. The section is cut evenly and each of its slides shows its key points. A
+section too short for the number asked makes as many as its text divides into, and
+the designer says how many.
+
+A section can override the document-wide supporting-slides preference
 with **Allow** or **Do not add**. A supporting slide is added only when it shows
 something different from the slide before it: an introduction followed by a
 diagram of the sentences that open with First / Then / Next / Finally, or the
@@ -102,15 +138,20 @@ changes, so recorded narration still fits and switching back restores the deck.
 
 Automatic slides are titled with their section heading and show the section's
 own sentences beneath it, so a slide never repeats its title as its body. Each
-document image appears once, on a slide from the section that contains it.
+document image appears once, on a slide from the section that contains it. In a
+key-points deck a picture keeps the section's points: it takes a supporting slide
+of its own when the passage is long enough to share and supporting slides are on,
+and otherwise sits beside the words of the section's last slide.
 
 A section's features (its tables, its pictures, and its embedded videos and
 diagrams: a `<video>`, a hosted video, a Mermaid or SVG fence, or a `diagram` /
-`tree` / `timeline` fence) appear on its slides in every layout and density
-rather than being dropped. The section's slides are shared out among them in
+`tree` / `timeline` fence) appear on its slides in every layout and at every
+summary length rather than being dropped. The section's slides are shared out among them in
 source order, so every one is shown. A table, picture, diagram or HTML video stays
 on screen across consecutive slides, and the video plays on from where the
-previous slide left it instead of restarting. A picture normally gets its own
+previous slide left it instead of restarting. A key-points section, or one with its
+own slide count, shows a table once instead, on the slide whose passage speaks of
+it, so its other slides keep the room for their points. A picture normally gets its own
 image slide; when no slide shows it that way (a layout preference other than
 Image, or more pictures than slides) it appears beside the slide text instead. A
 slide that carries one prefers a list over a steps diagram, unless the section's
@@ -121,7 +162,7 @@ A slide that carries a feature keeps its words short so the feature has the room
 at most two points, each cut at a clause near 100 characters (points typed in
 **Customize slide wording** stand as written). The words summarize the section's
 prose: a table's cells and a diagram's source never become a slide's points, and
-never start a slide of their own at any density. A table is drawn whole beneath
+never start a slide of their own at any summary length. A table is drawn whole beneath
 the headline and points at the slide's full width, its cells wrapping and keeping
 their own line breaks, with the type set as large as every row allows. A chart
 section summarized this way shows its data as a table; show it **As authored** to
@@ -133,14 +174,14 @@ design** returns every slide to its automatic summary: it removes the section
 settings, the summary keys, and every `{[summary]}` block, including ones not in use.
 
 **Hide this slide in the presentation** leaves the selected slide out of the deck
-and video in any density. The narration still speaks its passage, so the shown
+and video at any summary length. The narration still speaks its passage, so the shown
 slide before it stays on screen (or, at the very start, the next shown slide opens
 the deck). A section's features move to its shown slides, and its music
 bed still plays. Hidden slides stay in the designer's list, struck through, and
 still preview, so they can be shown again; AI never suggests wording for them. At
 least one slide must stay shown. A hidden slide is remembered by a short key for
-its exact passage, so editing that passage, or a density or layout change that
-splits the section differently, shows it again — the summary that hid it is listed
+its exact passage, so editing that passage, or a change of summary length, slide
+count or layout that splits the section differently, shows it again — the summary that hid it is listed
 as **not in use**, and hides the slide again if the passage returns.
 
 **Customize slide wording (slides only)** overrides a section's opening headline
@@ -153,7 +194,15 @@ slides), and each slide's request then uses its planned layout where the passage
 can fill it. Each accepted suggestion appears in the
 slide list and preview as soon as it arrives, marked **AI**; the footer shows which
 slide is being suggested, and **Stop** keeps everything suggested so far. On a
-slide that carries a feature, AI is asked for at most two short points. Only
+slide that carries a feature, AI is asked for at most two short points. A slide
+whose passage is long (450 characters or more, as a key-points slide of a long
+section is) is asked about differently: the request says to summarize, the model
+is asked for the two to four ideas worth remembering from the whole passage as
+phrases of at most twelve words, and it is not shown the automatic slide's points,
+which are sentences of the passage a small model tends to hand back. A point
+longer than 140 characters on such a slide is refused and asked for again as a
+short phrase. A key-points deck also asks far fewer questions: about 23 requests
+for the 4,500-word post above, where Sentence by sentence made 108. Only
 accepted AI results are stored; failed suggestions get one repair attempt, then
 retain the automatic version. AI never runs automatically while typing.
 
@@ -183,14 +232,17 @@ DocBlocks only makes the calls. A reply is held to its passage:
 `packages/bench/fixtures/ai-presentations` and reports reply shape,
 acceptance, whether passages with a shape were drawn with it, and faithfulness.
 It needs an OpenAI-compatible endpoint (see the header of
-`scripts/eval-ai-presentations.ts`).
+`scripts/eval-ai-presentations.ts`). It plans decks at the designer's default
+length; `-- --density balanced` plans them as runs before key points did. The
+docbench presentation task (`packages/bench/src/tasks/presentation.ts`) stays on
+`balanced`, so its scores remain comparable with recorded rounds.
 
 Saved wording is tied to its exact source passage (the whole section for a manual
 opening override). If “The sky is pink” changes to “The sky is blue,” the old AI or
 customized wording stops applying and a fresh automatic summary is used. An
-unrelated section edit can retain matching AI summaries. Changing density or the
-supporting-slide design can change passage boundaries and therefore which AI
-summaries still match. AI headlines may paraphrase and need editorial review.
+unrelated section edit can retain matching AI summaries. Changing the summary
+length, a section's slide count or the supporting-slide design can change passage
+boundaries and therefore which AI summaries still match. AI headlines may paraphrase and need editorial review.
 Body points may condense the passage, but their numbers and most of their
 distinctive words must come from it, and a point that restates the headline is
 dropped; a suggestion whose every point does so is rejected. Models cannot
@@ -222,12 +274,19 @@ The saved mode is `squisq-transform: dynamic-slides`. The design lives in the
 document, where it can be read and edited by hand (Squisq's `readPresentationHints`
 and `writePresentationHints`):
 
-- **Document settings** are frontmatter keys: `squisq-summary-density` (`concise`,
-  `detailed` or `section`; omitted at `balanced`) and
-  `squisq-summary-supporting-slides: false`.
+- **Document settings** are frontmatter keys: `squisq-summary-density` (`section`,
+  `keypoints`, `detailed`, `balanced` or `concise`) and
+  `squisq-summary-supporting-slides: false`. The density is left out at
+  `keypoints` unless the document holds summaries keyed to a passage, which are
+  always written with it. A document with such summaries and no density was
+  designed when `balanced` was the default, and is read as `balanced`, so its
+  hidden slides and AI wording still apply; the designer writes the key the first
+  time its design changes. Any other document without the key is summarized as key
+  points.
 - **Section settings** are on the section's heading tag: `slideLayout=` (a layout,
   `authored` to show the block itself, or `feature` to draw a picture block on the
-  last slide of the section before it) and `supportingSlides=`.
+  last slide of the section before it), `supportingSlides=` and `slideCount=` (1 to
+  12).
 - **Slide designs** are `{[summary]}` accessory blocks under the section. The
   heading is the slide's headline and the first list its points. A summary
   without `passage=` words the section's opening slide; `passage=<key>` names one
